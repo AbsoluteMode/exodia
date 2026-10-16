@@ -60,3 +60,16 @@ Check the model cards on Hugging Face for the exact terms of each model.
 `Resources/UsefulLinkIcons/` holds logos of third-party products used to
 label those products inside the app. They remain the trademarks of their
 owners and are not licensed under the MIT License. See `TRADEMARK.md`.
+
+## Agent and dashboard integrations
+
+- OpenCode is downloaded from the official
+  [anomalyco/opencode releases](https://github.com/anomalyco/opencode/releases)
+  only after an explicit installation action, or discovered from the user's
+  existing installation. Its source is MIT-licensed; it is not bundled in the
+  Whytap source or application. See the
+  [OpenCode license](https://github.com/anomalyco/opencode/blob/dev/LICENSE).
+- Monitor's passive dashboard format is compatible with
+  [AbsoluteMode/easy-monitoring](https://github.com/AbsoluteMode/easy-monitoring).
+  Copyright (c) 2026 AbsoluteMode; MIT. The original notice is retained in
+  [docs/licenses/ez-monitor-MIT.txt](docs/licenses/ez-monitor-MIT.txt).
