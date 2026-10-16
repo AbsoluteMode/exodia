@@ -13,7 +13,7 @@ import SwiftUI
 /// The view is deliberately pure: capability toggles route through injected
 /// closures (`onMeetingsToggle`, `onGoogleToggle`) so the host — not this
 /// view — owns the cache write. This mirrors the pattern used in
-/// `OnboardingSkillsScreen`.
+/// Settings capability toggles.
 @MainActor
 struct SettingsOtherView: View {
     /// Injected (the host owns it as `@StateObject`) so the options list

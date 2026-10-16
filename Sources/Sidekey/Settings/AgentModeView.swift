@@ -8,21 +8,15 @@ struct AgentModeView: View {
     private let agentEnabledProvider: () -> Bool
     private let onAgentToggle: (Bool) -> Void
     @State private var agentEnabled: Bool
-    @State private var claudeCatalog = ClaudeModelCatalog()
-    @StateObject private var claudeSetup = AgentSetupChecklistViewModel(probes: .claude())
-    @StateObject private var codexSetup = AgentSetupChecklistViewModel(probes: .codex())
+    @State private var apiKey = ""
+    @State private var hasSavedKey = false
+    @State private var installed = false
+    @State private var installing = false
+    @State private var message: String?
+    @State private var modelSearch = ""
 
-    /// Reading the model list from the (large) claude binary takes ~1-2s; the
-    /// binary does not change mid-session, so cache the result for the process.
-    private static var cachedCatalog: ClaudeModelCatalog?
-
-    init(
-        viewModel: AgentModeViewModel,
-        settings: AgentSettingsStore,
-        store: AgentProviderStore,
-        agentEnabled: @escaping () -> Bool,
-        onAgentToggle: @escaping (Bool) -> Void
-    ) {
+    init(viewModel: AgentModeViewModel, settings: AgentSettingsStore, store: AgentProviderStore,
+         agentEnabled: @escaping () -> Bool, onAgentToggle: @escaping (Bool) -> Void) {
         self.viewModel = viewModel
         self.settings = settings
         self.store = store
@@ -34,168 +28,140 @@ struct AgentModeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                header
-                capabilitySection
-                skipPermissionNotice
-                claudeSection
-                codexSection
+                Text("OpenCode runs your agent on this Mac. Choose any OpenRouter model and use your own API key. Project memory and conversation sessions stay separate on your Mac; your requests and selected context are sent to the model provider.")
+                    .font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if store.legacyConnectionNeedsSetup {
+                    Text("Agent now uses OpenCode. Choose your OpenRouter model and press Save & connect to reconnect. Your previous CLI credentials remain on this Mac.")
+                        .font(.caption).foregroundStyle(MacSettingsTheme.text2)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    MacGroupTitle(title: "Agent")
+                    MacCard {
+                        MacRow(title: "Use Agent shortcuts", subtitle: "Right Command: tap for text, hold for voice.") {
+                            MacSwitch(isOn: Binding(get: { agentEnabled }, set: {
+                                agentEnabled = $0; onAgentToggle($0)
+                            }))
+                        }
+                    }
+                }
+                installationSection
+                modelSection
+                MacCard {
+                    MacRow(title: "Allow agent actions",
+                           subtitle: "The agent can edit files and run commands, including tests, with your Mac user’s permissions.") {
+                        MacSwitch(isOn: $settings.openCodeAllowActions)
+                    }
+                }
+                HStack(spacing: 12) {
+                    if viewModel.connecting == .opencode || installing { ProgressView().controlSize(.small) }
+                    if store.activeProvider == .opencode {
+                        MacPill(text: "Connected", tone: .green, showsDot: true)
+                        MacButton(title: "Disconnect", style: .default) { viewModel.disconnect() }
+                    }
+                    Spacer()
+                    MacButton(title: "Save & connect", style: .primary) { Task { await connect() } }
+                        .disabled(installing || viewModel.connecting != nil)
+                }
+                if let message { Text(message).font(.caption).foregroundStyle(MacSettingsTheme.text2) }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 22)
+            .padding(.horizontal, 24).padding(.vertical, 22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .task {
-            await loadClaudeCatalog()
+            hasSavedKey = (try? OpenRouterLLMKeyStore().read())?.isEmpty == false
+            installed = await Task.detached { OpenCodeBinaryLocator().locate() != nil }.value
+            if hasSavedKey { await settings.refreshOpenRouterCatalog() }
         }
-        .task { await settings.refreshCodexCatalog() }
-        .onAppear {
-            agentEnabled = agentEnabledProvider()
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: .sidekeyCapabilityFlagsChanged)
-        ) { _ in
+        .onAppear { agentEnabled = agentEnabledProvider() }
+        .onReceive(NotificationCenter.default.publisher(for: .sidekeyCapabilityFlagsChanged)) { _ in
             agentEnabled = agentEnabledProvider()
         }
     }
 
-    /// Derive the Claude model list from the located binary, off the main thread
-    /// (the scan blocks ~1-2s), then publish it. Cached per process.
-    private func loadClaudeCatalog() async {
-        if let cached = Self.cachedCatalog { claudeCatalog = cached; return }
-        let catalog = await Task.detached {
-            let binary = ClaudeBinaryLocator().locate()
-            return ClaudeModelCatalogReader().read(binary: binary)
-        }.value
-        Self.cachedCatalog = catalog
-        claudeCatalog = catalog
-    }
-
-    private var header: some View {
-        Text("Whytap is the voice. The brain is your own agent CLI, running on your machine under your login — your subscription, your MCP servers, your memory. Connect one; choosing another replaces the active agent.")
-            .font(.system(size: 12))
-            .foregroundStyle(MacSettingsTheme.text2)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var capabilitySection: some View {
+    private var installationSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Agent")
+            MacGroupTitle(title: "OpenCode")
             MacCard {
-                MacRow(
-                    title: "Use Agent shortcuts",
-                    subtitle: agentEnabled
-                        ? "Right Command is ready for text and voice requests."
-                        : "Turn this on to use Agent with Right Command."
-                ) {
-                    MacSwitch(isOn: Binding(
-                        get: { agentEnabled },
-                        set: { newValue in
-                            agentEnabled = newValue
-                            onAgentToggle(newValue)
-                        }
-                    ))
+                MacRow(title: installed ? "OpenCode is installed" : "Install OpenCode",
+                       subtitle: "Whytap can install a verified copy for this app. Existing terminal installations stay available.") {
+                    MacButton(title: installing ? "Installing…" : installed ? "Update app copy" : "Install", style: .default) {
+                        Task { await install() }
+                    }.disabled(installing)
                 }
             }
         }
     }
 
-    /// Skip-permission disclosure. While we test, both CLIs run with all
-    /// approval prompts bypassed AND no sandbox (Claude Code `--permission-mode
-    /// bypassPermissions`, Codex `--dangerously-bypass-approvals-and-sandbox`),
-    /// so the agent acts with full machine access without asking. Surfaced
-    /// here, at connect time, so the user knows what they are granting. (A
-    /// future in-island approval bar will reintroduce per-call approval.)
-    private var skipPermissionNotice: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: "bolt.shield")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(MacSettingsTheme.text2)
-            Text("Skip-permission mode: the agent auto-approves and runs every action — edits, commands, MCP tools — without asking, with full access to your machine (no sandbox). Connect only an agent you trust.")
-                .font(.system(size: 12))
-                .foregroundStyle(MacSettingsTheme.text2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5)
-        )
-    }
-
-    private var claudeSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Connect Claude Code")
-            MacCard {
-                providerRow(.claude, "Claude Code")
-                // Setup guide while not connected; hidden once active. Connect
-                // stays enabled regardless — the probe is the source of truth,
-                // the checklist only guides.
-                if store.activeProvider != .claude {
-                    MacRowSeparator()
-                    AgentSetupGuideView(content: .claude, checklist: claudeSetup)
-                }
-            }
-            if store.activeProvider == .claude {
-                AgentControlsClaude(settings: settings, catalog: claudeCatalog)
-                    .padding(.top, 10)
-            }
-        }
-    }
-
-    private var codexSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Connect Codex")
-            MacCard {
-                providerRow(.codex, "Codex")
-                if store.activeProvider != .codex {
-                    MacRowSeparator()
-                    AgentSetupGuideView(content: .codex, checklist: codexSetup)
-                }
-            }
-            if store.activeProvider == .codex {
-                AgentControlsCodex(settings: settings)
-                    .padding(.top, 10)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func providerRow(_ id: CLIProviderID, _ name: String) -> some View {
-        let isActive = store.activeProvider == id
-        let isConnecting = viewModel.connecting == id
-        MacRow(
-            title: name,
-            leading: { ProviderBrandIcon(assetName: agentBrandAssetName(id)) }
-        ) {
-            HStack(spacing: 10) {
-                if isActive {
-                    MacPill(text: "Connected", tone: .green, showsDot: true)
-                }
-                if isConnecting {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Connecting…")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(MacSettingsTheme.text2)
+    private var modelSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MacGroupTitle(title: "OpenRouter")
+            SecureField(hasSavedKey ? "Key saved — enter to replace" : "API key", text: $apiKey)
+                .textFieldStyle(.roundedBorder)
+            Text("The key is shared with Models and saved in your Mac Keychain.")
+                .font(.caption).foregroundStyle(MacSettingsTheme.text2)
+            TextField("Model ID, for example provider/model", text: Binding(
+                get: { settings.openCodeModel ?? "" }, set: { settings.openCodeModel = $0 }))
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                TextField("Find a model", text: $modelSearch).textFieldStyle(.roundedBorder)
+                Menu("Choose model") {
+                    ForEach(matchingModels) { model in
+                        Button(model.displayName) { settings.openCodeModel = model.id }
                     }
-                } else if isActive {
-                    MacButton(title: "Disconnect", style: .default) { viewModel.disconnect() }
-                } else {
-                    MacButton(title: "Connect", style: .primary) { Task { await viewModel.connect(id) } }
+                    if matchingModels.isEmpty { Text("Refresh the catalog to choose a model") }
                 }
+                Button("Refresh") { Task { await refreshModels() } }
+                    .disabled(settings.openRouterCatalogLoading)
+                if settings.openRouterCatalogLoading { ProgressView().controlSize(.small) }
             }
+            if let error = settings.openRouterCatalogError {
+                Text(error).font(.caption).foregroundStyle(MacSettingsTheme.text2)
+            }
+            Text("Enter an exact OpenRouter model ID or choose from the live catalog. OpenRouter charges your own account for requests.")
+                .font(.caption).foregroundStyle(MacSettingsTheme.text2)
         }
     }
 
-    private func agentBrandAssetName(_ id: CLIProviderID) -> String {
-        switch id {
-        case .claude: return "claude-code"
-        case .codex: return "codex"
+    private var matchingModels: [OpenRouterModelOption] {
+        let query = modelSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Array(settings.openRouterCatalog.filter {
+            query.isEmpty || $0.displayName.localizedCaseInsensitiveContains(query)
+        }.prefix(200))
+    }
+
+    private func saveKeyIfEntered() throws {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        try OpenRouterLLMKeyStore().save(key: key)
+        hasSavedKey = true
+        apiKey = ""
+    }
+
+    private func refreshModels() async {
+        do { try saveKeyIfEntered() }
+        catch { message = "Couldn’t save the OpenRouter key to Keychain."; return }
+        await settings.refreshOpenRouterCatalog()
+    }
+
+    private func connect() async {
+        guard settings.selectedOpenCodeModel != nil else { message = "Choose an OpenRouter model first."; return }
+        do { try saveKeyIfEntered() }
+        catch { message = "Couldn’t save the OpenRouter key to Keychain."; return }
+        message = nil
+        await viewModel.connect(.opencode)
+    }
+
+    private func install() async {
+        installing = true
+        message = nil
+        defer { installing = false }
+        do {
+            let version = try await OpenCodeInstaller().install()
+            installed = true
+            message = "OpenCode \(version) installed. Choose a model and press Save & connect."
+        } catch {
+            message = (error as? OpenCodeInstallError)?.localizedDescription ?? "Couldn’t install OpenCode. Check your connection and retry."
         }
     }
 }

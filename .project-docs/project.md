@@ -2,11 +2,11 @@
 id: whytap-project
 type: project
 title: Whytap desktop application
-summary: Native macOS voice input, meeting notes and local CLI agent integration.
+summary: Native macOS voice input, meeting notes, local project knowledge and a customizable local agent workspace.
 status: confirmed
 tags: [macos, swift, dictation, meetings, agent]
 canonical_for: [project-overview]
-verified_at: 2026-09-10
+verified_at: 2026-10-17
 sources:
   - type: repository
     reference: README.md
@@ -14,7 +14,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/PostProcessor.swift
     confirmed_at: 2026-09-07
-related: [decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md]
+related: [decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md]
 ---
 
 # Whytap
@@ -30,6 +30,10 @@ New reasoning-policy and finalization behavior is recorded in
 
 Build and publication policy: [local builds](decisions/2026-09-10-byok-and-local-builds.md).
 
-First-run setup: [keys and models in onboarding](decisions/2026-09-10-onboarding-models.md).
+Launch opens the island directly; setup lives in Settings. Project folders,
+notes and a lexical source index stay local. Current scope and limits:
+[local workspace and direct launch](decisions/2026-10-17-local-workspace.md).
+
+Coding harnesses share the [source customization workflow](../docs/customization/README.md).
 
 Distribution: [public installation](decisions/2026-09-10-public-installation.md).

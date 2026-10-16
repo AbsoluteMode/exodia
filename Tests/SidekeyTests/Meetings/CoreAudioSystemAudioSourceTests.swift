@@ -149,4 +149,77 @@ final class CoreAudioSystemAudioSourceTests: XCTestCase {
         XCTAssertNil(SystemAudioCallbackRateMonitor.normalizedCommonRate(.nan))
         XCTAssertNil(SystemAudioCallbackRateMonitor.normalizedCommonRate(0))
     }
+
+    // MARK: - Streaming resampler
+
+    /// Regression guard: resampling each 512-frame 48 kHz callback from
+    /// position zero produced 170 samples instead of 170.67, so an hour of
+    /// system audio came out ~14 s short and drifted away from the mic track.
+    func test_streamingResampler_keepsDurationAcrossCallbacks() {
+        var resampler = SystemAudioStreamingResampler(targetSampleRate: 16_000)
+        let callback = [Float](repeating: 0.25, count: 512)
+        var produced = 0
+        for _ in 0..<(60 * 48_000 / 512) {
+            produced += resampler.process(callback, sourceSampleRate: 48_000).count
+        }
+
+        XCTAssertEqual(produced, 60 * 16_000, "60 s of 48 kHz input must yield 60 s at 16 kHz")
+    }
+
+    func test_streamingResampler_keepsDurationForUnevenCallbacksAt44k() {
+        var resampler = SystemAudioStreamingResampler(targetSampleRate: 16_000)
+        let sizes = [441, 512, 1_024, 300, 7, 999]
+        var consumed = 0
+        var produced = 0
+        var index = 0
+        while consumed < 30 * 44_100 {
+            let size = min(sizes[index % sizes.count], 30 * 44_100 - consumed)
+            produced += resampler.process([Float](repeating: 0, count: size), sourceSampleRate: 44_100).count
+            consumed += size
+            index += 1
+        }
+
+        XCTAssertEqual(Double(produced), 30 * 16_000, accuracy: 1)
+    }
+
+    func test_streamingResampler_matchesOneShotResampleOfWholeSignal() {
+        // 44.1 kHz gives a fractional step, so callback boundaries land
+        // between samples and exercise the carried-over neighbour.
+        let rate = 44_100.0
+        let signal = (0..<44_100).map { Float(sin(2 * Double.pi * 440 * Double($0) / rate)) }
+        var whole = SystemAudioStreamingResampler(targetSampleRate: 16_000)
+        let expected = whole.process(signal, sourceSampleRate: rate)
+
+        var streaming = SystemAudioStreamingResampler(targetSampleRate: 16_000)
+        var actual: [Float] = []
+        var offset = 0
+        for size in [512, 1, 2, 511, 4_096, 13] where offset < signal.count {
+            let end = min(offset + size, signal.count)
+            actual += streaming.process(Array(signal[offset..<end]), sourceSampleRate: rate)
+            offset = end
+        }
+        while offset < signal.count {
+            let end = min(offset + 512, signal.count)
+            actual += streaming.process(Array(signal[offset..<end]), sourceSampleRate: rate)
+            offset = end
+        }
+
+        XCTAssertEqual(actual.count, expected.count)
+        for (a, e) in zip(actual, expected) {
+            XCTAssertEqual(a, e, accuracy: 1e-4)
+        }
+    }
+
+    func test_streamingResampler_restartsPhaseWhenClockChanges() {
+        var resampler = SystemAudioStreamingResampler(targetSampleRate: 16_000)
+        _ = resampler.process([Float](repeating: 1, count: 512), sourceSampleRate: 48_000)
+
+        // Bluetooth HFP: the callback clock drops to the target rate.
+        let passThrough: [Float] = [0.1, 0.2, 0.3]
+        XCTAssertEqual(resampler.process(passThrough, sourceSampleRate: 16_000), passThrough)
+
+        let resumed = resampler.process([Float](repeating: 0.5, count: 48), sourceSampleRate: 48_000)
+        XCTAssertEqual(resumed.count, 16)
+        XCTAssertTrue(resumed.allSatisfy { $0 == 0.5 }, "No stale sample from before the clock change may leak in")
+    }
 }

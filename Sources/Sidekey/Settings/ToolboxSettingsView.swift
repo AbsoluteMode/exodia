@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// Settings -> Toolbox tab. Three-pane layout:
-///   Top:  live 5-slot hover row (editable slots are drop targets)
+///   Top: chosen tools and one permanent empty add target
 ///   Left: catalog of all non-Settings tools (draggable + clickable)
 ///   Right: action / panel for the selected tool
 @MainActor
@@ -38,17 +38,19 @@ struct ToolboxSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            hoverRow
-            HStack(alignment: .top, spacing: 16) {
-                catalogPane
-                    .frame(maxWidth: .infinity)
-                rightPane
-                    .frame(width: 300)
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 20) {
+                hoverRow
+                HStack(alignment: .top, spacing: 16) {
+                    catalogPane
+                        .frame(maxWidth: .infinity)
+                    rightPane
+                        .frame(width: 300)
+                }
+                .frame(minHeight: 300)
             }
-            .frame(maxHeight: .infinity)
+            .padding(24)
         }
-        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -61,10 +63,12 @@ struct ToolboxSettingsView: View {
                 .tracking(0.9)
                 .foregroundStyle(.white.opacity(0.42))
 
-            HStack(spacing: 12) {
-                ForEach(Array(hoverStore.slots.enumerated()), id: \.offset) { index, tool in
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
+                                    count: HoverLayoutStore.columns), spacing: 16) {
+                ForEach(Array(hoverStore.slots.enumerated()), id: \.element) { index, tool in
                     hoverSlotTile(tool: tool, index: index)
                 }
+                emptySlot
             }
             .padding(16)
             .background(
@@ -82,11 +86,11 @@ struct ToolboxSettingsView: View {
 
     @ViewBuilder
     private func hoverSlotTile(tool: HoverTool, index: Int) -> some View {
-        let isLocked = index == HoverLayoutStore.lockSlotIndex
+        let isLocked = tool == .settings
         let info = HoverToolRegistry.info(for: tool)
         let isSelected = selectedTool == tool
 
-        ToolboxTileView(
+        let tile = ToolboxTileView(
             title: info.title,
             sfSymbol: info.sfSymbol,
             isSelected: isSelected,
@@ -99,11 +103,52 @@ struct ToolboxSettingsView: View {
         .onHover { hovering in
             updateHoveredTool(tool, hovering: hovering)
         }
+        ZStack(alignment: .topTrailing) {
+            if isLocked {
+                tile
+            } else {
+                tile.draggable(tool.rawValue)
+                Button {
+                    hoverStore.removeTool(tool)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color(white: 0.18)))
+                }
+                .buttonStyle(.plain)
+                .help("Remove \(info.title) from hover")
+                .accessibilityLabel("Remove \(info.title) from hover")
+                .offset(x: 6, y: -4)
+            }
+        }
         .dropDestination(for: String.self) { items, _ in
-            guard !isLocked, let rawValue = items.first,
-                  let dropped = HoverTool(rawValue: rawValue) else { return false }
-            hoverStore.setSlot(index, to: dropped)
-            return true
+            guard let raw = items.first, let tool = HoverTool(rawValue: raw) else { return false }
+            return hoverStore.placeTool(tool, at: index)
+        }
+    }
+
+    private var emptySlot: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .light))
+                .frame(width: 56, height: 56)
+                .background(Circle().strokeBorder(Color.white.opacity(0.22),
+                                                  style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+            Text("ADD TOOL")
+                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .frame(width: 56, height: 26)
+        }
+        .foregroundStyle(.white.opacity(0.45))
+        .contentShape(Rectangle())
+        .help("Drag a tool here to add it to your hover")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Drop a tool here to add it to hover")
+        .dropDestination(for: String.self) { items, _ in
+            guard let raw = items.first, let tool = HoverTool(rawValue: raw) else { return false }
+            return hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
         }
     }
 
@@ -166,6 +211,12 @@ struct ToolboxSettingsView: View {
             updateHoveredTool(tool, hovering: hovering)
         }
         .disabled(isInHover)
+        .contextMenu {
+            Button("Add to hover") {
+                hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
+            }
+            .disabled(isInHover)
+        }
         .opacity(isInHover ? 0.45 : 1)
         .overlay(alignment: .topTrailing) {
             if isInHover {
@@ -189,7 +240,7 @@ struct ToolboxSettingsView: View {
                     .lineLimit(1)
                 .transition(.opacity)
             } else {
-                Text("Settings is locked. Drag a tool from the catalog onto any other slot.")
+                Text("Drag tools into the empty slot to add them, or onto another tool to reorder. Settings stays pinned.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.white.opacity(0.4))
             }
@@ -294,7 +345,7 @@ struct ToolboxSettingsView: View {
                 dropModePane
             case .clipboard:
                 clipboardPane
-            case .hotkeys, .notes, .meetingRecord, .quit, .settings:
+            case .hotkeys, .notes, .meetingRecord, .monitor, .quit, .settings:
                 Color.clear
             }
         }

@@ -3,6 +3,16 @@ import XCTest
 
 final class IslandDropModeControlTests: XCTestCase {
 
+    func test_controls_height_wraps_at_five_tools_and_grows_for_every_row() {
+        let single = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 1)
+        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelHeight(toolCount: 5), single)
+        let twoRows = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 6)
+        XCTAssertGreaterThan(twoRows, single)
+        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelHeight(toolCount: 10), twoRows)
+        let threeRows = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 13)
+        XCTAssertEqual(threeRows - twoRows, twoRows - single)
+    }
+
     func test_smartModeUsesSparklesPresentation() {
         XCTAssertEqual(IslandDropModeControl.title, "Drop Mode")
         XCTAssertEqual(IslandDropModeControl.label(for: .smart), "Smart")
@@ -239,7 +249,7 @@ final class IslandDropModeControlTests: XCTestCase {
         XCTAssertTrue(source.contains("static let tileWidth: CGFloat = 55"))
         XCTAssertTrue(source.contains("static let tileHeight: CGFloat = 72"))
         XCTAssertTrue(source.contains(".frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .center)"))
-        XCTAssertTrue(source.contains("private static let tileSpacing: CGFloat = 2"))
+        XCTAssertTrue(source.contains("count: HoverLayoutStore.columns"))
         XCTAssertTrue(controlSource.contains("static let compactCircleSize: CGFloat = 34"))
     }
 

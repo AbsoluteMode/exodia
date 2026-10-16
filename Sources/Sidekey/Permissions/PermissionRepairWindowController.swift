@@ -8,11 +8,11 @@ import SwiftUI
 /// auto-closes once all required permissions are granted.
 @MainActor
 final class PermissionRepairWindowController: NSWindowController, NSWindowDelegate {
-    private let viewModel: OnboardingPermissionsViewModel
+    private let viewModel: PermissionsSettingsViewModel
     private var pollTimer: Timer?
 
     init(onComplete: @escaping () -> Void) {
-        let viewModel = OnboardingPermissionsViewModel(onComplete: onComplete, autoComplete: true)
+        let viewModel = PermissionsSettingsViewModel(onComplete: onComplete, autoComplete: true)
         self.viewModel = viewModel
 
         let hosting = NSHostingController(

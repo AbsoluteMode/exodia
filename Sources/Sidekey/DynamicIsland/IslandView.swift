@@ -203,6 +203,7 @@ struct IslandView: View {
         cancelAgentFlow: @escaping () -> Void = {},
         onAgentKeyboardFocusChange: @escaping (Bool) -> Void = { _ in },
         displayPreferences: DisplayPreferences? = nil,
+        hoverLayout: HoverLayoutStore? = nil,
         vocabulary: (() -> VocabularyCache)? = nil
     ) {
         let resolvedActions = actions ?? .noOp
@@ -223,6 +224,7 @@ struct IslandView: View {
             wrappedValue: agentLinksSelection ?? UsefulLinksSelectionState()
         )
         self._appState = ObservedObject(wrappedValue: appState ?? .shared)
+        self._hoverStore = ObservedObject(wrappedValue: hoverLayout ?? .shared)
         self._displayPreferences = ObservedObject(wrappedValue: displayPreferences ?? .shared)
         self._dropMode = State(initialValue: resolvedActions.currentDropMode())
         self._selectedLanguage = State(initialValue: resolvedActions.currentLanguage())
@@ -240,6 +242,7 @@ struct IslandView: View {
     }
 
     @ObservedObject private var appState: AppState
+    @ObservedObject private var hoverStore: HoverLayoutStore
     @ObservedObject private var displayPreferences: DisplayPreferences
     /// Hover over the compact pill rectangle (top portion of the host frame).
     /// Tracks the cursor inside `compactWidth × compactHeight` only — the
@@ -281,11 +284,18 @@ struct IslandView: View {
     /// `historyHoverPanelHeight` / `onHoverPanelBandHeightChange`).
     static func hoverPanelHeight(
         for mode: IslandHoverPanelMode,
-        musicActive: Bool
+        musicActive: Bool,
+        toolCount: Int = HoverLayoutStore.columns
     ) -> CGFloat {
-        let base = mode == .history
-            ? IslandDropModeControl.historyHoverPanelHeight
-            : IslandDropModeControl.hoverPanelHeight
+        let base: CGFloat
+        switch mode {
+        case .controls:
+            base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
+        case .history:
+            base = IslandDropModeControl.historyHoverPanelHeight
+        default:
+            base = IslandDropModeControl.hoverPanelHeight
+        }
         return base + (musicActive
             ? IslandDropModeControl.musicStripHeight + IslandDropModeControl.musicStripBottomGap
             : 0)
@@ -301,7 +311,8 @@ struct IslandView: View {
     private var activeHoverPanelHeight: CGFloat {
         Self.hoverPanelHeight(
             for: hoverPanelMode,
-            musicActive: hoverNowPlaying != nil
+            musicActive: hoverNowPlaying != nil,
+            toolCount: hoverStore.slots.count
         )
     }
 
@@ -1057,7 +1068,7 @@ struct IslandView: View {
                             selectedLanguage: selectedLanguage,
                             targetLanguage: targetLanguage,
                             panelMode: $hoverPanelMode,
-                            hoverStore: HoverLayoutStore.shared,
+                            hoverStore: hoverStore,
                             hotkeys: HotkeyPreferences.shared,
                             vocabularyViewModel: vocabularyViewModel,
                             fillerViewModel: fillerViewModel,
@@ -1084,6 +1095,7 @@ struct IslandView: View {
                             onPasteHistoryCard: actions.pasteHistoryCard,
                             historyPasteTargetName: actions.historyPasteTargetName,
                             onOpenNotes: actions.openMeetings,
+                            onOpenMonitor: actions.openMonitor,
                             onOpenHelp: actions.openHelp,
                             onQuit: actions.quitApplication,
                             onToggleMeetingRecord: actions.toggleMeetingRecord,
@@ -1222,11 +1234,15 @@ struct IslandView: View {
                 appState.programmaticHoverExpansion = false
             }
         }
+        .onChange(of: hoverStore.slots.count) { _, _ in
+            onHoverPanelBandHeightChange(activeHoverPanelHeight)
+        }
         .onChange(of: hoverPanelMode) { _, newValue in
             onHoverPanelBandHeightChange(
                 Self.hoverPanelHeight(
                     for: newValue,
-                    musicActive: hoverNowPlaying != nil
+                    musicActive: hoverNowPlaying != nil,
+                    toolCount: hoverStore.slots.count
                 )
             )
             onKeyboardFocusRequest(isHoverExpanded && newValue.needsKeyboardFocus)
@@ -1244,7 +1260,8 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(
                 Self.hoverPanelHeight(
                     for: hoverPanelMode,
-                    musicActive: hoverNowPlaying != nil
+                    musicActive: hoverNowPlaying != nil,
+                    toolCount: hoverStore.slots.count
                 )
             )
         }
@@ -1259,7 +1276,8 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(
                 Self.hoverPanelHeight(
                     for: hoverPanelMode,
-                    musicActive: hoverNowPlaying != nil
+                    musicActive: hoverNowPlaying != nil,
+                    toolCount: hoverStore.slots.count
                 )
             )
         }
@@ -1277,7 +1295,8 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(
                 Self.hoverPanelHeight(
                     for: hoverPanelMode,
-                    musicActive: hoverNowPlaying != nil
+                    musicActive: hoverNowPlaying != nil,
+                    toolCount: hoverStore.slots.count
                 )
             )
         }
@@ -2300,6 +2319,7 @@ private struct IslandDropModeHoverPanel: View {
     let onPasteHistoryCard: (HistoryStripCard) -> Void
     let historyPasteTargetName: () -> String?
     let onOpenNotes: () -> Void
+    var onOpenMonitor: () -> Void = {}
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
     /// Manual meeting-record toggle (the "Record" tile). Defaults to a
@@ -2307,13 +2327,6 @@ private struct IslandDropModeHoverPanel: View {
     var onToggleMeetingRecord: () -> Void = {}
     let onSelectLanguage: (AppLanguage?) -> Void
     let onSelectOutputLanguage: (AppLanguage?) -> Void
-
-    /// Tile gap inside one row. 2pt keeps six 48pt tiles + 5 gaps = 298pt,
-    /// matching the production 6-column hover grid under the compact pill.
-    private static let tileSpacing: CGFloat = 2
-    /// Inter-row gap. 6pt keeps the panel under `hoverPanelHeight`
-    /// while leaving each row room for title + orb + label.
-    private static let rowSpacing: CGFloat = 6
 
     /// Controls the staged fade-in of the inner controls so the panel
     /// container reads as "drawer slides up first, then its contents
@@ -2452,7 +2465,7 @@ private struct IslandDropModeHoverPanel: View {
         }
     }
 
-    /// Split layout: icons-only row (top) + thin divider + hovered label strip (bottom).
+    /// User-selected tools wrap into rows of five above the description strip.
     private var controls: some View {
         let circleSize: CGFloat = 70
         return VStack(spacing: 0) {
@@ -2463,9 +2476,9 @@ private struct IslandDropModeHoverPanel: View {
             // tile stays reserved and tiles never jump vertically when the cursor
             // moves between them. The fade uses the same hoveredTool value and
             // easeInOut(0.15s) that drives the description strip below.
-            HStack(spacing: 0) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0),
+                                         count: HoverLayoutStore.columns), spacing: 8) {
                 ForEach(Array(hoverStore.slots.enumerated()), id: \.offset) { offset, tool in
-                    Spacer(minLength: 0)
                     VStack(spacing: 1) {
                         hoverSlotHint(for: offset)
                             .opacity(hoveredTool == tool ? 1 : 0)
@@ -2476,9 +2489,9 @@ private struct IslandDropModeHoverPanel: View {
                         if isHovering { hoveredTool = tool }
                         else if hoveredTool == tool { hoveredTool = nil }
                     }
-                    Spacer(minLength: 0)
                 }
             }
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // Divider
@@ -2655,6 +2668,12 @@ private struct IslandDropModeHoverPanel: View {
                 action: {
                     onOpenNotes()
                 }
+            )
+        case .monitor:
+            IslandHoverPanelControl(
+                title: "Monitor", systemImage: "chart.xyaxis.line", pdfResource: nil,
+                label: nil, circleSize: circleSize, accessibilityLabel: "Open monitoring dashboards",
+                centersIcon: true, action: onOpenMonitor
             )
         case .meetingRecord:
             IslandHoverPanelControl(

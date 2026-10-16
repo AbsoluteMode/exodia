@@ -418,21 +418,12 @@ if [ -d "${LANGUAGE_FLAGS_DIR}" ]; then
     cp -R "${LANGUAGE_FLAGS_DIR}" "${APP_BUNDLE}/Contents/Resources/LanguageFlags"
 fi
 
-# Custom fonts (Instrument Serif) for the native SwiftUI onboarding.
+# Custom fonts (Instrument Serif) for editorial display typography.
 # Mirror dev-run.sh — registered automatically via Info.plist
 # ATSApplicationFontsPath = "Fonts".
 FONTS_DIR="${PROJECT_DIR}/Resources/Fonts"
 if [ -d "${FONTS_DIR}" ]; then
     cp -R "${FONTS_DIR}" "${APP_BUNDLE}/Contents/Resources/Fonts"
-fi
-
-# Onboarding voice samples. Loaded by `OnboardingAudioResources` from
-# Bundle.main/OnboardingAudio so beta + prod DMGs match the preview's audible
-# Drop + Agent demos without relying on SwiftPM resource bundles in a signed
-# .app wrapper.
-ONBOARDING_AUDIO_DIR="${PROJECT_DIR}/Resources/OnboardingAudio"
-if [ -d "${ONBOARDING_AUDIO_DIR}" ]; then
-    cp -R "${ONBOARDING_AUDIO_DIR}" "${APP_BUNDLE}/Contents/Resources/OnboardingAudio"
 fi
 
 # Orb actions overlay icons (round 3) — Agent / Drop / Clipboard PDFs.

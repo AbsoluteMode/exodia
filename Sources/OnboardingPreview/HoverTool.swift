@@ -1,1 +1,0 @@
-../Sidekey/Settings/HoverTool.swift

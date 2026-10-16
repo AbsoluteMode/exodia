@@ -16,13 +16,23 @@ final class AgentProviderStore: ObservableObject {
     /// instead of snapping back to the Claude default. Turn dispatch never
     /// reads this — `activeProvider` is the only thing that runs a CLI.
     @Published private(set) var preferredProvider: CLIProviderID?
+    @Published private(set) var legacyConnectionNeedsSetup: Bool
     private let defaults: UserDefaults
     private static let key = "agent.activeProvider"
     private static let preferredKey = "agent.preferredProvider"
+    private static let migrationKey = "agent.opencode.needsSetup"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.activeProvider = defaults.string(forKey: Self.key).flatMap(CLIProviderID.init)
+        let previous = defaults.string(forKey: Self.key).flatMap(CLIProviderID.init)
+        self.legacyConnectionNeedsSetup = (previous != nil && previous != .opencode)
+            || defaults.bool(forKey: Self.migrationKey)
+        if legacyConnectionNeedsSetup { defaults.set(true, forKey: Self.migrationKey) }
+        // The OpenCode migration requires an explicit BYOK connection. Keep
+        // old CLI credentials/settings untouched, but never silently dispatch
+        // to a hidden legacy provider after the Settings chooser is replaced.
+        self.activeProvider = previous == .opencode ? previous : nil
+        if previous != nil && previous != .opencode { defaults.removeObject(forKey: Self.key) }
         self.preferredProvider = defaults.string(forKey: Self.preferredKey).flatMap(CLIProviderID.init)
     }
 
@@ -30,6 +40,10 @@ final class AgentProviderStore: ObservableObject {
         activeProvider = id                            // radio: replaces any previous
         defaults.set(id.rawValue, forKey: Self.key)
         selectPreferred(id)
+        if id == .opencode {
+            legacyConnectionNeedsSetup = false
+            defaults.removeObject(forKey: Self.migrationKey)
+        }
     }
 
     /// Remember a chooser pick without connecting. Keeps the onboarding pane

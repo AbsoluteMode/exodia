@@ -17,6 +17,11 @@ final class AgentSettingsStore: ObservableObject {
     @Published var codexModel: String?        { didSet { write(Keys.codexModel, codexModel) } }
     @Published var codexEffort: String?       { didSet { write(Keys.codexEffort, codexEffort) } }
     @Published var codexServiceTier: String?  { didSet { write(Keys.codexServiceTier, codexServiceTier) } }
+    @Published var openCodeModel: String? { didSet { write(Keys.openCodeModel, openCodeModel) } }
+    @Published var openCodeAllowActions: Bool { didSet { defaults.set(openCodeAllowActions, forKey: Keys.openCodeAllowActions) } }
+    @Published private(set) var openRouterCatalog: [OpenRouterModelOption] = []
+    @Published private(set) var openRouterCatalogLoading = false
+    @Published private(set) var openRouterCatalogError: String?
 
     private enum Keys {
         static let claudeModel = "agent.claude.model"
@@ -24,6 +29,8 @@ final class AgentSettingsStore: ObservableObject {
         static let codexModel = "agent.codex.model"
         static let codexEffort = "agent.codex.effort"
         static let codexServiceTier = "agent.codex.serviceTier"
+        static let openCodeModel = "agent.opencode.model"
+        static let openCodeAllowActions = "agent.opencode.allowActions"
     }
 
     @Published private(set) var codexCatalog: [CodexModelOption] = []
@@ -36,6 +43,7 @@ final class AgentSettingsStore: ObservableObject {
     init(defaults: UserDefaults = .standard, codexConfig: CodexConfigSnapshot = CodexConfigReader().read()) {
         self.codexConfig = codexConfig
         self.defaults = defaults
+        self.openCodeAllowActions = defaults.object(forKey: Keys.openCodeAllowActions) as? Bool ?? true
         // Property observers do not fire on initial assignment in init, so this
         // load does not write back.
         self.claudeModel = defaults.string(forKey: Keys.claudeModel)
@@ -47,6 +55,7 @@ final class AgentSettingsStore: ObservableObject {
         self.codexModel = defaults.string(forKey: Keys.codexModel)
         self.codexEffort = defaults.string(forKey: Keys.codexEffort)
         self.codexServiceTier = defaults.string(forKey: Keys.codexServiceTier)
+        self.openCodeModel = defaults.string(forKey: Keys.openCodeModel)
     }
 
     /// Resolve the overrides for one provider into the run-time options struct.
@@ -66,6 +75,33 @@ final class AgentSettingsStore: ObservableObject {
                 effort: selectedCodexOption?.resolvedEffort(codexEffort),
                 serviceTier: selectedCodexOption?.resolvedTier(codexServiceTier ?? codexConfig.serviceTier)
             )
+        case .opencode:
+            return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions)
+        }
+    }
+
+    var selectedOpenCodeModel: String? {
+        guard let value = openCodeModel.map(OpenCodeEnvironment.normalizeModel),
+              !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
+        return value
+    }
+
+    func refreshOpenRouterCatalog(
+        load: () async throws -> [OpenRouterModelOption] = {
+            try await OpenRouterLLMClient().listModels(apiKey: OpenRouterLLMKeyStore().read())
+        }
+    ) async {
+        guard !openRouterCatalogLoading else { return }
+        openRouterCatalogLoading = true
+        defer { openRouterCatalogLoading = false }
+        do {
+            let models = try await load()
+            try Task.checkCancellation()
+            openRouterCatalog = models.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+            openRouterCatalogError = nil
+        } catch is CancellationError {
+        } catch {
+            openRouterCatalogError = "Couldn’t refresh OpenRouter models. Check your key and network, then retry."
         }
     }
 

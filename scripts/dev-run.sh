@@ -25,7 +25,6 @@
 # Usage:
 #   ./scripts/dev-run.sh                # build dev app (beta flavor)
 #   ./scripts/dev-run.sh --run          # build then launch
-#   ./scripts/dev-run.sh --onboarding   # build, launch, force the onboarding flow
 #
 # There is only one dev flavor (= beta bundle id + beta appcast).
 # Production builds go through scripts/build-dmg.sh (release pipeline +
@@ -51,7 +50,7 @@ BUNDLE_ID="com.rootwise.sidekey.beta"
 BUNDLE_DISPLAY_NAME="Whytap Beta"
 BUNDLE_ICON_FILE="AppIcon"
 DEV_APPCAST_URL="${DEV_APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/download/beta/appcast.xml}"
-SWIFT_BUILD_ARGS=(--product Sidekey -Xswiftc -DBETA -Xswiftc -DSIDEKEY_FILE_TOKEN_STORE)
+SWIFT_BUILD_ARGS=(--product Sidekey -Xswiftc -DBETA)
 # Build/version values used only for the dev bundle's Info.plist. A high
 # CFBundleVersion stops Sparkle from "discovering" a prod release as a
 # downgrade should the dev bundle ever talk to the appcast.
@@ -91,13 +90,9 @@ for arg in "$@"; do
         --run|-r)
             RUN_AFTER_BUILD=1
             ;;
-        --onboarding)
-            RUN_AFTER_BUILD=1
-            LAUNCH_ARGS+=("--force-onboarding")
-            ;;
         *)
             echo "Unknown argument: ${arg}" >&2
-            echo "Usage: $0 [--run|-r] [--onboarding]" >&2
+            echo "Usage: $0 [--run|-r]" >&2
             exit 2
             ;;
     esac
@@ -253,19 +248,10 @@ fi
 
 # Custom fonts (Instrument Serif Regular + Italic). Registered at launch
 # via Info.plist's ATSApplicationFontsPath = "Fonts", consumed by the
-# native SwiftUI onboarding for the editorial serif italic headlines.
+# editorial display typography.
 FONTS_DIR="${PROJECT_DIR}/Resources/Fonts"
 if [ -d "${FONTS_DIR}" ]; then
     cp -R "${FONTS_DIR}" "${APP_BUNDLE}/Contents/Resources/Fonts"
-fi
-
-# Onboarding voice samples. Loaded by `OnboardingAudioResources` from
-# Bundle.main/OnboardingAudio so the real app matches the preview's audible
-# Drop + Agent demos without relying on SwiftPM resource bundles in a signed
-# .app wrapper.
-ONBOARDING_AUDIO_DIR="${PROJECT_DIR}/Resources/OnboardingAudio"
-if [ -d "${ONBOARDING_AUDIO_DIR}" ]; then
-    cp -R "${ONBOARDING_AUDIO_DIR}" "${APP_BUNDLE}/Contents/Resources/OnboardingAudio"
 fi
 
 # Orb actions overlay icons (round 3) — the 3 PDFs that render inside

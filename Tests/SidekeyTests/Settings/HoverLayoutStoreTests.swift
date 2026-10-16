@@ -13,14 +13,14 @@ final class HoverLayoutStoreTests: XCTestCase {
 
     // MARK: - Defaults
 
-    func test_default_slots_are_five_items() {
+    func test_default_layout_includes_monitor() {
         let store = makeStore()
-        XCTAssertEqual(store.slots.count, 5)
+        XCTAssertEqual(store.slots.count, 6)
     }
 
     func test_default_layout_matches_spec() {
         let store = makeStore()
-        XCTAssertEqual(store.slots, [.inputLang, .notes, .meetingRecord, .hotkeys, .settings])
+        XCTAssertEqual(store.slots, [.inputLang, .notes, .meetingRecord, .hotkeys, .monitor, .settings])
     }
 
     func test_last_slot_is_always_settings() {
@@ -41,7 +41,7 @@ final class HoverLayoutStoreTests: XCTestCase {
     func test_setSlot_rejects_locked_index() {
         let store = makeStore()
         let original = store.slots
-        store.setSlot(4, to: .filler)   // index 4 is locked (.settings)
+        store.setSlot(store.lockSlotIndex, to: .filler)
         XCTAssertEqual(store.slots, original)
     }
 
@@ -55,7 +55,7 @@ final class HoverLayoutStoreTests: XCTestCase {
     func test_setSlot_out_of_bounds_is_noop() {
         let store = makeStore()
         let original = store.slots
-        store.setSlot(5, to: .filler)
+        store.setSlot(store.slots.count, to: .filler)
         XCTAssertEqual(store.slots, original)
     }
 
@@ -83,7 +83,7 @@ final class HoverLayoutStoreTests: XCTestCase {
 
         let store = HoverLayoutStore(defaults: defaults)
         XCTAssertFalse(store.slots.contains { $0.rawValue == "UNKNOWN_ID" })
-        XCTAssertEqual(store.slots.count, 5)
+        XCTAssertEqual(store.slots, [.dropMode, .clipboard, .vocab, .settings])
     }
 
     func test_normalization_forces_settings_into_lock_slot() {
@@ -108,12 +108,71 @@ final class HoverLayoutStoreTests: XCTestCase {
         XCTAssertEqual(dropModeCount, 1)
     }
 
-    func test_empty_stored_value_falls_back_to_defaults() {
+    func test_empty_stored_value_keeps_only_settings() {
         let suiteName = "test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.set([String](), forKey: HoverLayoutStore.defaultsKey)
 
         let store = HoverLayoutStore(defaults: defaults)
-        XCTAssertEqual(store.slots, [.inputLang, .notes, .meetingRecord, .hotkeys, .settings])
+        XCTAssertEqual(store.slots, [.settings])
+    }
+
+    func test_adds_more_than_five_tools_and_persists_full_order() {
+        let defaults = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let store = HoverLayoutStore(defaults: defaults)
+        for tool in HoverTool.allCases where tool != .settings {
+            store.placeTool(tool, at: store.lockSlotIndex)
+        }
+        XCTAssertEqual(Set(store.slots), Set(HoverTool.allCases))
+        XCTAssertEqual(store.slots.last, .settings)
+        XCTAssertEqual(HoverLayoutStore(defaults: defaults).slots, store.slots)
+    }
+
+    func test_removing_tools_does_not_pad_and_survives_reload() {
+        let defaults = UserDefaults(suiteName: "test.\(UUID().uuidString)")!
+        let store = HoverLayoutStore(defaults: defaults)
+        for tool in store.slots { store.removeTool(tool) }
+        XCTAssertEqual(store.slots, [.settings])
+        XCTAssertEqual(HoverLayoutStore(defaults: defaults).slots, [.settings])
+        XCTAssertTrue(store.placeTool(.clipboard, at: store.lockSlotIndex))
+        XCTAssertEqual(store.slots, [.clipboard, .settings])
+    }
+
+    func test_dragging_existing_tool_moves_without_duplicate_or_displacement() {
+        let store = makeStore()
+        XCTAssertTrue(store.placeTool(.meetingRecord, at: 0))
+        XCTAssertEqual(store.slots, [.meetingRecord, .inputLang, .notes, .hotkeys, .monitor, .settings])
+        XCTAssertTrue(store.placeTool(.meetingRecord, at: store.lockSlotIndex))
+        XCTAssertEqual(store.slots, [.inputLang, .notes, .hotkeys, .monitor, .meetingRecord, .settings])
+        XCTAssertTrue(store.placeTool(.vocab, at: 1))
+        XCTAssertEqual(store.slots, [.inputLang, .vocab, .notes, .hotkeys, .monitor, .meetingRecord, .settings])
+    }
+
+    func test_dragging_to_the_next_position_changes_order() {
+        let store = makeStore()
+        XCTAssertTrue(store.placeTool(.inputLang, at: 1))
+        XCTAssertEqual(store.slots, [.notes, .inputLang, .meetingRecord, .hotkeys, .monitor, .settings])
+    }
+
+    func test_pinned_settings_cannot_be_moved_removed_or_duplicated() {
+        let store = makeStore()
+        let original = store.slots
+        XCTAssertFalse(store.placeTool(.settings, at: 0))
+        XCTAssertFalse(store.placeTool(.vocab, at: -1))
+        XCTAssertFalse(store.placeTool(.vocab, at: store.slots.count))
+        store.removeTool(.settings)
+        store.setSlot(0, to: .settings)
+        XCTAssertEqual(store.slots, original)
+    }
+
+    func test_replace_keeps_exact_selection_without_padding_or_truncation() {
+        let store = makeStore()
+        store.replaceEditableSlots(with: [.vocab, .vocab])
+        XCTAssertEqual(store.slots, [.vocab, .settings])
+        let allTools = HoverTool.allCases.filter { $0 != .settings }
+        store.replaceEditableSlots(with: allTools)
+        XCTAssertEqual(store.slots, allTools + [.settings])
+        store.replaceEditableSlots(with: [])
+        XCTAssertEqual(store.slots, [.settings])
     }
 }

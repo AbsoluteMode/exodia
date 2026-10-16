@@ -6,7 +6,7 @@ import SwiftUI
 /// until all required permissions are re-granted, then auto-closes.
 @MainActor
 struct PermissionRepairView: View {
-    @ObservedObject var viewModel: OnboardingPermissionsViewModel
+    @ObservedObject var viewModel: PermissionsSettingsViewModel
 
     var body: some View {
         ScrollView {
@@ -76,13 +76,7 @@ struct PermissionRepairView: View {
         }
         .onAppear { viewModel.refresh() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // SidekeyWindowChrome renders this window transparent (clear background,
-        // isOpaque = false, no shadow), so the hosted content MUST paint its own
-        // opaque fill — otherwise the window is see-through and reads as "no
-        // window at all" even after makeKeyAndOrderFront. Every onboarding screen
-        // does the same via OnboardingTheme.bg; this repair surface shares that
-        // palette because it reuses OnboardingPermissionsViewModel.
-        // WHY: docs/decisions/2026-06-15-permission-repair-invisible-window.md
-        .background(OnboardingTheme.bg.ignoresSafeArea())
+        // The shared window chrome is transparent; paint an opaque surface.
+        .background(Color(red: 0.10, green: 0.10, blue: 0.11).ignoresSafeArea())
     }
 }

@@ -14,17 +14,17 @@ tools, terminal commands or administrator script are required.
 
 ## First dictation
 
-The app walks you through the setup:
+Whytap opens directly to the island, without a setup wizard. Open **Settings**
+from its hover controls:
 
-1. Allow **Microphone** so Whytap can hear your speech.
-2. Enable **Whytap** under **System Settings → Privacy & Security →
-   Accessibility** so its shortcut and text insertion can work. Reopen Whytap
-   if macOS asks you to quit it after changing this permission.
-3. Choose **Your key**, select your speech provider and paste its API key.
-   **Save & continue** checks the connection and saves the key in macOS Keychain.
-4. Optionally add an OpenRouter key or your own endpoint for text cleanup and
-   meeting summaries. You can skip this step and try dictation immediately.
-5. Click the practice text field, hold **Space**, speak, then release Space.
+1. In **Permissions**, allow Microphone and Accessibility. macOS may open
+   **System Settings → Privacy & Security** to grant these permissions.
+   Reopen Whytap if macOS asks you to quit it after changing a permission.
+2. In **Models**, choose **Your key**, select a speech provider and paste its
+   API key. Save to check the connection and store it in macOS Keychain.
+3. Optionally configure OpenRouter or your own endpoint for text cleanup and
+   meeting summaries.
+4. Focus a text field in your app, hold **Space**, speak, then release Space.
 
 Whytap is free. When you use a provider key, that provider's account and billing
 apply. Whytap does not sell credits or require a Whytap account.
@@ -34,7 +34,8 @@ Local models require Apple Silicon and internet access for the initial
 download. Local text cleanup uses a separate model. Intel Macs use provider
 keys or compatible endpoints.
 
-Claude Code and Codex are optional: connect one only if you want the agent.
+For the optional agent, open **Settings → Agents**, install OpenCode, choose an
+OpenRouter model and save your OpenRouter key with **Save & connect**.
 Meeting recording may also request **System Audio Recording** permission.
 
 ## If something does not work
@@ -53,7 +54,7 @@ Meeting recording may also request **System Audio Recording** permission.
 - **The API key does not connect:** check the selected provider, its key and
   your internet connection. Save again. For a self-hosted endpoint, also
   check its base URL and model name. Never include your key in a bug report.
-- **You skipped model setup:** open **Settings → Models** from the island.
+- **No speech model or key is configured:** open **Settings → Models** from the island.
   There is no menu-bar icon; Whytap's controls live in the island at the top
   of the screen.
 

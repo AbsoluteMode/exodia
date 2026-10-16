@@ -160,7 +160,7 @@ enum HelpWindowContent {
         hoverSlots: [HoverTool]
     ) -> [HelpHotkeyRowSpec] {
         let shortcuts = configuration.hoverSlotShortcuts
-        return (0..<HoverLayoutStore.slotCount).compactMap { offset in
+        return (0..<HoverLayoutStore.shortcutSlotCount).compactMap { offset in
             guard offset < shortcuts.count, offset < hoverSlots.count else { return nil }
             let info = HoverToolRegistry.info(for: hoverSlots[offset])
             return HelpHotkeyRowSpec(

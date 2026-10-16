@@ -90,7 +90,8 @@ final class AskResponseStore: ObservableObject {
         /// provider honours its contract; absent if the stream errors before
         /// the first event lands.
         onStartedEvent: @escaping (_ turnId: String) -> Void = { _ in },
-        onPermissionRequest: ((PermissionPrompt) -> Void)? = nil
+        onPermissionRequest: ((PermissionPrompt) -> Void)? = nil,
+        isCurrentStream: () -> Bool = { true }
     ) async {
         var didCallFirstBlock = false
         // Error is terminal — once it fires, a trailing `done` must not wipe
@@ -99,6 +100,9 @@ final class AskResponseStore: ObservableObject {
         // disappear after a flicker of "thinking..." with no failure surfaced.
         var didFireError = false
         for await event in stream {
+            // A CLI may deliver buffered events after dismissal or a project
+            // switch. Reject them before touching the shared response/history.
+            guard !Task.isCancelled, isCurrentStream() else { return }
             switch event {
             case .toolExecuting(let tool, let label):
                 os_log(

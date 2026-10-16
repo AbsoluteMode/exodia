@@ -15,6 +15,7 @@ enum HoverTool: String, CaseIterable, Hashable {
     case hotkeys
     case notes
     case meetingRecord
+    case monitor
     case quit
     case settings
 }
@@ -79,6 +80,9 @@ enum HoverToolRegistry {
         case .meetingRecord:
             return HoverToolInfo(title: "Record", sfSymbol: "record.circle", kind: .action,
                                  description: "Start or stop a meeting recording")
+        case .monitor:
+            return HoverToolInfo(title: "Monitor", sfSymbol: "waveform.path.ecg", kind: .action,
+                                 description: "Open server status and custom dashboards")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
                                  kind: .navigate(.quitRow),

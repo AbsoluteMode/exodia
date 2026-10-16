@@ -1,1 +1,0 @@
-../Sidekey/Onboarding/OnboardingPermissionsScreen.swift

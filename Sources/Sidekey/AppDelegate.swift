@@ -202,7 +202,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var systemOutputVolume: SystemOutputVolume?
     private var volumeDuckCancellables: Set<AnyCancellable> = []
 
-    private static let forceOnboardingArgument = "--force-onboarding"
     /// DEBUG-only: preview the update UX (download spinner → "Updated" pill)
     /// end-to-end without a real Sparkle download. Never passed in production.
     private static let demoUpdateArgument = "--demo-update"
@@ -225,11 +224,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var copiedToastPanel: CopiedToastPanel?
     private var clipboardWatcher: ClipboardWatcher?
     private var assetsDirectory: URL?
-    private var onboardingWindowController: OnboardingWindowController?
     private var permissionRepairWindowController: PermissionRepairWindowController?
-    private var didStartLaunchContinuation = false
     private var didCompleteReadyStartup = false
-    private var onboardingTryRuntimePrepared = false
+    private var runtimeAccessibilityGranted = false
 
     /// Sparkle update flow (ROO-186). Owns `SPUUpdater` + `IslandUpdateUserDriver`
     /// via `UpdateController`, which translates driver stage emits into
@@ -251,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Dynamic Island idle-hide engine. Installed once, after the panel is
     /// shown, by `installIslandIdleControllerIfNeeded()`. Nil until then so it
-    /// is never created during an onboarding-try runtime that has no panel.
+    /// is never created before the panel is available.
     private var islandIdleController: IslandIdleController?
 
     /// User's on/off switch for idle auto-hide (Settings → Other). The
@@ -274,7 +271,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// category from `CarbonHotkeyMonitor`.
     private static let hotkeyLog = OSLog(subsystem: "com.rootwise.sidekey", category: "hotkey")
 
-    private var onboardingDockActivationActive = false
 
     /// Lifecycle-scoped logger for activation-policy diagnostics and other
     /// boot-time invariants. Visible to users via `Console.app` filtered by
@@ -429,27 +425,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installDisplayPreferenceObserver()
         installWorkspacePowerObservers()
 
-        showOnboardingIfNeeded {
-            self.continueLaunchAfterPermissions()
-        }
+        startReady()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        onboardingWindowController?.restoreAfterExternalHandoffIfNeeded()
+        guard didCompleteReadyStartup else { return }
+        let granted = PermissionsHelper.accessibilityGranted(prompt: false)
+        guard granted != runtimeAccessibilityGranted else { return }
+        runtimeAccessibilityGranted = granted
+        teardownHotkeyMonitorsForRebuild()
+        registerHotkey()
+        agentController?.start(googleCallbacks: makeGoogleCallbacks())
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if onboardingWindowController != nil {
-            beginOnboardingDockActivation()
-            onboardingWindowController?.show()
-            return true
-        }
-
-        if PermissionsHelper.allRequiredPermissionsGranted() {
-            showRuntimeSurfaceAfterReopen()
-        } else {
-            showOnboardingIfNeeded { }
-        }
+        showRuntimeSurfaceAfterReopen()
         return true
     }
 
@@ -482,155 +472,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func beginOnboardingDockActivation() {
-        guard !onboardingDockActivationActive else {
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        onboardingDockActivationActive = true
-        let accepted = NSApp.setActivationPolicy(.regular)
-        os_log(
-            "lifecycle_activation_policy stage=onboarding_begin accepted=%{public}@ policy=%d",
-            log: Self.lifecycleLog, type: .info,
-            accepted ? "true" : "false",
-            NSApp.activationPolicy().rawValue
-        )
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func endOnboardingDockActivation() {
-        guard onboardingDockActivationActive else { return }
-
-        onboardingDockActivationActive = false
-        let accepted = NSApp.setActivationPolicy(.accessory)
-        os_log(
-            "lifecycle_activation_policy stage=onboarding_end accepted=%{public}@ policy=%d",
-            log: Self.lifecycleLog, type: .info,
-            accepted ? "true" : "false",
-            NSApp.activationPolicy().rawValue
-        )
-    }
-
-    // MARK: - Onboarding lifecycle
-
-    private func showOnboardingIfNeeded(force: Bool = false, onComplete: @escaping () -> Void) {
-        let forceOnboarding = ProcessInfo.processInfo.arguments.contains(Self.forceOnboardingArgument)
-        let needsPermissions = !PermissionsHelper.allRequiredPermissionsGranted()
-
-        switch OnboardingRouter.route(
-            needsPermissions: needsPermissions,
-            hasCompletedOnboarding: OnboardingResumeStore.hasCompletedOnboarding(),
-            force: force || forceOnboarding
-        ) {
-        case .ready:
-            OnboardingResumeStore.clear()
-            onboardingWindowController?.close()
-            onboardingWindowController = nil
-            endOnboardingDockActivation()
-            onComplete()
-
-        case .repair:
-            presentPermissionRepair(onComplete: onComplete)
-
-        case .onboarding:
-            beginOnboardingDockActivation()
-
-            let completion = { [weak self] in
-                guard let self else { return }
-                self.stopOnboardingTryRuntime()
-                self.onboardingWindowController?.close()
-                self.onboardingWindowController = nil
-                self.endOnboardingDockActivation()
-                onComplete()
-            }
-
-            // When forced (`force == true`) we want the window to stay open
-            // in the All Done state instead of auto-closing the moment every
-            // permission is already granted.
-            let autoComplete = !force
-            if onboardingWindowController == nil {
-                onboardingWindowController = OnboardingWindowController(
-                    onComplete: completion,
-                    autoComplete: autoComplete,
-                    initialStep: initialOnboardingStep(needsPermissions: needsPermissions),
-                    onClosed: { [weak self] in
-                        self?.stopOnboardingTryRuntime()
-                        self?.endOnboardingDockActivation()
-                        self?.onboardingWindowController = nil
-                    },
-                    onTryStepRuntimeRequired: { [weak self] in
-                        self?.prepareOnboardingTryRuntime()
-                    },
-                    onTryStepRuntimeNoLongerRequired: { [weak self] in
-                        self?.stopOnboardingTryRuntime()
-                    },
-                    onCapabilityToggle: { capability, isOn in
-                        switch capability {
-                        case .agent: UserPreferencesCache.shared.setAgentEnabled(isOn)
-                        case .meetings: UserPreferencesCache.shared.setMeetingsEnabled(isOn)
-                        case .google: UserPreferencesCache.shared.setGoogleEnabled(isOn)
-                        }
-                    }
-                )
-            } else {
-                onboardingWindowController?.updateOnComplete(completion)
-            }
-            onboardingWindowController?.show()
-        }
-    }
-
-    private func initialOnboardingStep(needsPermissions: Bool) -> OnboardingFlowStep {
-        OnboardingResumeStore.resolvedInitialStep(
-            fallback: .permissions,
-            needsPermissions: needsPermissions
-        )
-    }
+    // MARK: - Permission repair
 
     private func presentPermissionRepair(onComplete: @escaping () -> Void) {
-        beginOnboardingDockActivation()
         if permissionRepairWindowController == nil {
             permissionRepairWindowController = PermissionRepairWindowController(onComplete: { [weak self] in
                 self?.permissionRepairWindowController?.close()
                 self?.permissionRepairWindowController = nil
-                self?.endOnboardingDockActivation()
                 onComplete()
             })
         }
         permissionRepairWindowController?.show()
     }
 
-    private func continueLaunchAfterPermissions() {
-        guard !didStartLaunchContinuation else { return }
-        didStartLaunchContinuation = true
-        startReady()
-    }
-
     private func startReady() {
-        guard PermissionsHelper.allRequiredPermissionsGranted() else {
-            showOnboardingIfNeeded { [weak self] in
-                self?.startReady()
-            }
-            return
-        }
         didCompleteReadyStartup = true
-        onboardingTryRuntimePrepared = false
+        runtimeAccessibilityGranted = PermissionsHelper.accessibilityGranted(prompt: false)
         showFloatingPanelIfNeeded()
-        // Dynamic Island is the default visible orb surface now. Shown
-        // here (not in `applicationDidFinishLaunching`) so the panel
-        // appears only after permission setup completes — matches the
-        // gating of every other always-on UI surface above.
-        // Wire the expanded-state toolbar's action closures before
-        // `show()` so the rootView captures real handlers on first
-        // render (assigning afterward also works — the setter rebuilds
-        // the rootView — but doing it pre-show is the cleanest order).
+        // The island and Settings are available immediately. Permissions and
+        // provider configuration gate the corresponding action, never launch.
         IslandPanel.shared.actions = makeIslandActions()
         configureSettingsDeps(from: IslandPanel.shared.actions)
         IslandPanel.shared.show()
-        // Dynamic Island idle auto-hide: install after the panel is on screen
-        // in the normal ready runtime. Deliberately NOT wired into the
-        // onboarding-try runtime (the other `show()` site) — the pill must stay
-        // visible while the user exercises hotkeys during onboarding.
         installIslandIdleControllerIfNeeded()
         // Post-relaunch "Updated" indicator (variant A): if the previous
         // session installed an update and this is the new binary, surface a
@@ -677,8 +540,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Thread the island's action closures into the Settings shell (Toolbox
-    /// deps + Other-tab capability toggles). Shared by the ready startup and
-    /// the onboarding-try runtime so both wire the same closures.
+    /// deps + Other-tab capability toggles).
     private func configureSettingsDeps(from actions: IslandActions) {
         ensureSettingsWindowController().configure(toolboxDeps: ToolboxDeps(
             toggleDropMode: actions.toggleDropMode,
@@ -701,56 +563,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 UserPreferencesCache.shared.setGoogleEnabled(isOn)
             }
         )
-    }
-
-    /// The onboarding try screens are still inside onboarding, but the user is
-    /// explicitly testing the real product. Bring only the interactive runtime
-    /// online here: island actions, Drop hotkey, and Agent hotkeys. The broader
-    /// `startReady()` launch continuation still runs after onboarding finishes,
-    /// so launch telemetry and secondary privacy prompts keep their old timing.
-    private func prepareOnboardingTryRuntime() {
-        if !didCompleteReadyStartup {
-            onboardingTryRuntimePrepared = true
-        }
-
-        // Try screens exercise the real hotkeys and island actions
-        // before full app startup. The surrounding onboarding flow
-        // already owns Dock-visible `.regular` activation; this method
-        // only wires the interactive runtime. Try Drop's final transcript
-        // is routed directly into the onboarding field by
-        // `deliverDropTranscript(_:)` instead of depending on Cmd+V.
-        showFloatingPanelIfNeeded()
-        IslandPanel.shared.actions = makeIslandActions()
-        configureSettingsDeps(from: IslandPanel.shared.actions)
-        IslandPanel.shared.show()
-
-        guard PermissionsHelper.allRequiredPermissionsGranted() else {
-            os_log(
-                "onboarding_try_runtime actions_only permissions=missing",
-                log: Self.hotkeyLog,
-                type: .info
-            )
-            return
-        }
-
-        observeHotkeyPreferences()
-        registerHotkey()
-        startAgentIfEnabled()
-    }
-
-    private func stopOnboardingTryRuntime() {
-        guard onboardingTryRuntimePrepared, !didCompleteReadyStartup else { return }
-
-        hotkey?.stop()
-        hotkey = nil
-        helpHotkey?.stop()
-        helpHotkey = nil
-        stopHistoryHotkey()
-        agentController?.stop()
-        agentController = nil
-        googleSearchController = nil
-        IslandPanel.shared.hide()
-        onboardingTryRuntimePrepared = false
     }
 
     // MARK: - Sleep / wake lifecycle
@@ -1131,6 +943,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openMeetings: { [weak self] in
                 self?.openMeetingsWindowFromIsland()
             },
+            openMonitor: { MonitorWindowController.shared.show() },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .models)
             },
@@ -1299,15 +1112,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func deliverDropTranscript(_ text: String) async -> Bool {
         guard !text.isEmpty else { return false }
 
-        if onboardingWindowController?.currentStep == .tryDrop {
-            NotificationCenter.default.post(
-                name: .sidekeyOnboardingDropTranscript,
-                object: nil,
-                userInfo: ["text": text]
-            )
-            return true
-        }
-
         return await autoPasteEngine.paste(text)
     }
 
@@ -1369,6 +1173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHoverSlotHotkeys()
         registerMeetingRecordHotkey()
         guard hotkey == nil else { return }
+        guard PermissionsHelper.accessibilityGranted(prompt: false) else { return }
         // Keep Drop working during meetings. Meeting mic capture and the
         // Drop voice route can coexist, so configurable drop shortcuts
         // register without the old meeting suppression gate.
@@ -1756,7 +1561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // invisible and reads as "the hotkey does nothing".
             let newMode = IslandPanel.shared.actions.toggleDropMode()
             AppState.shared.publishDropModeHotkeyToggle(newMode)
-        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .quit:
+        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .quit:
             // Action/navigate tools open their own surfaces (window / toggle)
             // instantly — forcing the drawer open here would flash an empty
             // Hover for ~4s (Stage 3 review fix). Run the effect directly
@@ -1958,6 +1763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               agentController == nil else { return }
         let claudeProvider: any CLIProvider = ClaudeCodeProvider()
         let codexProvider: any CLIProvider = CodexProvider()
+        let openCodeProvider: any CLIProvider = OpenCodeProvider()
         // ONE shared response store backs both the controller's agent stream
         // and the island flow store the answer panel renders from. Building
         // the flow store here (not letting the controller mint its own) lets
@@ -1969,10 +1775,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             resolveProvider: {
                 // nil when nothing is connected (full Disconnect) -> the agent
                 // refuses the turn instead of defaulting to Claude.
-                AgentProviderStore.shared.activeProvider.map {
-                    $0 == .codex ? codexProvider : claudeProvider
+                switch AgentProviderStore.shared.activeProvider {
+                case .claude: return claudeProvider
+                case .codex: return codexProvider
+                case .opencode: return openCodeProvider
+                case nil: return nil
                 }
             },
+            resolveProjectContext: { ProjectKnowledgeStore.shared.activeProjectContext(query: $0) },
             responseStore: responseStore,
             chatStackStore: chatStackStore,
             // Stage 2 capability gate: read the live flag on every gesture so
@@ -2013,11 +1823,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Connect the island surfaces to the live store + action handlers so
         // the agent flow renders in the island instead of the orb panels.
         IslandPanel.shared.installAgentFlow(islandFlow)
-        // If the runtime is being armed while the user already sits on the
-        // onboarding Try-Agent step (e.g. resumed straight onto it), suppress
-        // the island answer panel up front — that step shows the reply in its
-        // own card. The normal advance path also sets this via onStepChanged.
-        islandFlow.answerPanelSuppressed = (onboardingWindowController?.currentStep == .tryAgent)
         IslandPanel.shared.installAgentActions(
             submitText: { [weak agentController] text in
                 agentController?.submitIslandText(text)
@@ -3932,7 +3737,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Stand up the Dynamic Island idle-hide controller and its bridges, once.
     /// Idempotent — called after `IslandPanel.shared.show()` from both the ready
-    /// startup and onboarding-try paths, but only the first call installs.
+    /// startup and wake paths, but only the first call installs.
     ///
     /// Three bridges (spec §7.2 / §7.3):
     ///   * controller.$visibility → `AppState.idleVisibility` (drives the fade +

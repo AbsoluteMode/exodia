@@ -132,7 +132,8 @@ releases over itself.
 Builds a `Whytap-Beta-dev.app` with a stable ad-hoc signing identity so the
 Accessibility, Microphone and System Audio grants survive rebuilds. Do not
 use `swift run` for the app: each rebuild would get a new identity and macOS
-would silently revoke the grants.
+would silently revoke the grants. Dev builds use the beta Keychain service
+for provider keys; legacy file-backed keys migrate into Keychain on launch.
 
 `Resources/mlx.metallib` is version-locked to the resolved `mlx-swift`
 revision (`Resources/mlx.metallib.revision`). When bumping MLX, rebuild it

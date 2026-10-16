@@ -19,12 +19,11 @@ final class TranscriptionProviderBrandTests: XCTestCase {
     }
 
     func testAgentCoversEveryCLIProvider() {
-        // Guard: every CLIProviderID maps to an asset-backed brand. If a new
-        // case is added without a mapping the switch won't compile; this also
-        // asserts no agent brand silently falls back to systemName.
+        // Every provider has exactly one renderable icon and a user-facing name.
+        // OpenCode uses the native terminal symbol; existing brands use assets.
         for provider in CLIProviderID.allCases {
             let brand = TranscriptionProviderBrand.agent(provider)
-            XCTAssertNotNil(brand.assetName, "agent(\(provider)) has no assetName")
+            XCTAssertNotEqual(brand.assetName == nil, brand.systemName == nil, "agent(\(provider)) must have exactly one icon")
             XCTAssertFalse(brand.label.isEmpty, "agent(\(provider)) has empty label")
         }
     }

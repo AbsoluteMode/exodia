@@ -27,6 +27,11 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
     /// resample an aggregate callback that is already arriving at 16 kHz.
     private var captureFormat: SystemAudioCaptureFormat?
     private var activeGeneration: UUID?
+    /// Carries the interpolation phase across IOProc callbacks. Touched only
+    /// from `handleInput`, which runs on the serial `ioQueue`; a new tap
+    /// generation starts from a fresh phase.
+    private var resampler = SystemAudioStreamingResampler(targetSampleRate: 16_000)
+    private var resamplerGeneration: UUID?
     private var callbackRateMonitor = SystemAudioCallbackRateMonitor()
     private var callbackRateMismatchWindows = 0
     private var defaultOutputListenerInstalled = false
@@ -503,11 +508,11 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
             )
         }
 
-        let outputSamples = Self.resample(
-            inputSamples,
-            sourceSampleRate: sourceSampleRate,
-            targetSampleRate: 16_000
-        )
+        if resamplerGeneration != generation {
+            resampler.reset()
+            resamplerGeneration = generation
+        }
+        let outputSamples = resampler.process(inputSamples, sourceSampleRate: sourceSampleRate)
         guard !outputSamples.isEmpty else { return }
 
         stateLock.lock()
@@ -630,30 +635,6 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         default:
             return 0
         }
-    }
-
-    private static func resample(
-        _ samples: [Float],
-        sourceSampleRate: Double,
-        targetSampleRate: Double
-    ) -> [Float] {
-        guard !samples.isEmpty else { return [] }
-        guard sourceSampleRate > 0, targetSampleRate > 0 else { return samples }
-        guard abs(sourceSampleRate - targetSampleRate) > 0.5 else { return samples }
-
-        let ratio = sourceSampleRate / targetSampleRate
-        let outputCount = max(1, Int(Double(samples.count) / ratio))
-        var out = [Float](repeating: 0, count: outputCount)
-        for i in 0..<outputCount {
-            let sourcePosition = Double(i) * ratio
-            let lower = Int(sourcePosition)
-            let upper = min(lower + 1, samples.count - 1)
-            let fraction = Float(sourcePosition - Double(lower))
-            let a = samples[min(lower, samples.count - 1)]
-            let b = samples[upper]
-            out[i] = a + (b - a) * fraction
-        }
-        return out
     }
 
     /// Builds the aggregate-device description that wraps the process tap.
@@ -853,6 +834,68 @@ struct SystemAudioCallbackRateMonitor {
         }) else { return nil }
         let relativeDelta = abs(nearest - observedRate) / nearest
         return relativeDelta <= 0.12 ? nearest : nil
+    }
+}
+
+/// Linear-interpolation resampler for the system-audio track that keeps its
+/// read position across IOProc callbacks.
+///
+/// Restarting every callback at position zero dropped the fractional output
+/// sample each time (512 frames at 48 kHz gave 170 samples instead of
+/// 170.67), so the system track lost ~0.39 % and ran ahead of the mic track:
+/// ~4 s after 17 minutes, ~14 s after an hour. The far end's voice also
+/// leaks into the mic from the speakers, so the mixed track carried every
+/// remote phrase twice and transcripts repeated it under a second speaker.
+/// WHY: docs/decisions/2026-10-07-system-audio-resampler-phase.md
+struct SystemAudioStreamingResampler {
+    let targetSampleRate: Double
+    private var sourceSampleRate: Double?
+    /// Position of the next output sample, in source samples, relative to the
+    /// first sample of the next input buffer. Lies in [-1, 0) when the output
+    /// falls between the previous buffer's last sample and this buffer's first.
+    private var nextPosition: Double = 0
+    private var previousSample: Float?
+
+    init(targetSampleRate: Double) {
+        self.targetSampleRate = targetSampleRate
+    }
+
+    mutating func reset() {
+        sourceSampleRate = nil
+        nextPosition = 0
+        previousSample = nil
+    }
+
+    mutating func process(_ samples: [Float], sourceSampleRate rate: Double) -> [Float] {
+        guard !samples.isEmpty else { return [] }
+        guard rate > 0, targetSampleRate > 0, abs(rate - targetSampleRate) > 0.5 else {
+            // Pass-through clock. A later resampled stretch must not inherit
+            // a phase from before it.
+            reset()
+            return samples
+        }
+        if sourceSampleRate != rate {
+            reset()
+            sourceSampleRate = rate
+        }
+
+        let step = rate / targetSampleRate
+        let lastIndex = samples.count - 1
+        var out: [Float] = []
+        out.reserveCapacity(Int(Double(samples.count) / step) + 1)
+        // Interpolating at `position` needs the sample after floor(position);
+        // once that neighbour is in the next buffer, carry the phase over.
+        while nextPosition < Double(lastIndex) {
+            let lower = Int(nextPosition.rounded(.down))
+            let fraction = Float(nextPosition - Double(lower))
+            let a = lower >= 0 ? samples[lower] : (previousSample ?? samples[0])
+            let b = samples[lower + 1]
+            out.append(a + (b - a) * fraction)
+            nextPosition += step
+        }
+        nextPosition -= Double(samples.count)
+        previousSample = samples[lastIndex]
+        return out
     }
 }
 

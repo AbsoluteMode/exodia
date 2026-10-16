@@ -1,0 +1,58 @@
+import Foundation
+
+/// App-owned instructions for the user's local agent. Paths are resolved on the
+/// user's Mac, never embedded from a developer's source checkout or logged.
+enum WhytapCustomizationContext {
+    static var promptInstructions: String {
+        """
+        Whytap customization capabilities:
+        You can help the user customize Whytap and add local monitoring dashboards.
+        Monitor data directory on this Mac: \(MonitorPaths.root.path)
+        Custom snapshot directory: \(MonitorPaths.dashboards.path)
+        Built-in Server status configuration: \(MonitorPaths.servers.path)
+
+        Custom dashboards are passive JSON files named <id>.json in the snapshot
+        directory. The app rereads them; no app rebuild is needed. The JSON root has
+        id, title, optional subtitle/systemImage/accentHex/preferredWidth/preferredHeight,
+        optional updatedAt (ISO 8601 with seconds and timezone), optional
+        staleAfterSeconds (default 60), and widgets. Use a unique id containing letters,
+        digits, dot, underscore or hyphen; start with a letter or digit. The id
+        server-status is reserved for the built-in dashboard. Window bounds are
+        width 320...1200, height 360...1200, freshness 5...86400 seconds. A file is
+        limited to 2 MB and 128 widgets, with unique widget ids.
+        A widget has id, kind (metric/progress/status/text/chart), title and optional
+        value (string), unit, detail, progress (0...1), trendPercent, status, accentHex,
+        points [{label: string, value: finite number}] (at most 512). Missing
+        measurements are unavailable, never an invented zero. A missing updatedAt
+        means unknown freshness; do not claim that an unconnected draft is live.
+        Collectors run separately. Write snapshots atomically via a temporary file
+        in the same directory, then rename; use private file permissions. Snapshot
+        JSON never executes commands. Never put keys or passwords in snapshots,
+        repository files, arguments or logs. Preserve unrelated dashboards.
+
+        Server status uses servers.json with refreshSeconds (10...3600, default 15)
+        and servers [{id, name, group, sshTarget: "existing-ssh-alias"}]. Use only
+        existing user-authorized SSH connections. The built-in collector obtains
+        Linux CPU, RAM and supported NVIDIA GPU metrics with fixed read-only probes.
+        It cannot execute custom commands supplied in JSON. Credential-store
+        references can replace sshTarget with doppler: {project, config, prefix};
+        it reads prefix_HOSTNAME, prefix_USER and prefix_PASSWORD in memory. Use
+        one connection source per server and at most 16 servers. These are
+        references, never credential values. Do not copy connection details into
+        source control or alter servers
+        merely to display measurements. Show connection failures and stale data.
+        The user opens Monitor in hover and chooses the dashboard.
+
+        For source changes, locate the user's Whytap checkout and read its AGENTS.md.
+        Run python3 scripts/customize.py discover --json, then doctor --json for
+        source entry points, contracts and local build prerequisites. The kit has
+        context, scaffold-hover, scaffold-dashboard, validate-dashboard,
+        install-dashboard, build, run and test commands. Source guide:
+        https://github.com/AbsoluteMode/whytap/blob/main/docs/customization/README.md
+        Build/run use scripts/dev-run.sh and the beta app; never use swift run to
+        launch Whytap, replace the production app, reset permissions or delete user
+        stores as an incidental customization step. Reviews may edit temporary
+        files and run tests. GitHub Actions stays disabled; validate locally.
+        """
+    }
+}

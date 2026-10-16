@@ -1,0 +1,19 @@
+{
+  "id": "custom-server-status",
+  "title": "Custom server status",
+  "subtitle": "Connect a collector to receive live data",
+  "systemImage": "server.rack",
+  "preferredWidth": 720,
+  "preferredHeight": 520,
+  "staleAfterSeconds": 60,
+  "widgets": [
+    {
+      "id": "connection",
+      "kind": "status",
+      "title": "Collector",
+      "value": "Not connected",
+      "status": "unknown",
+      "detail": "No server addresses or credentials are included"
+    }
+  ]
+}

@@ -47,6 +47,13 @@ enum IslandDropModeControl {
     /// grid centres itself within this space.
     /// Minimum: edgeInset(5) + chipH(20) + startY(48) + 3*minimumStride(72) = 145.
     static let hoverPanelHeight: CGFloat = 145
+
+    /// Match the existing one-row size; each extra row needs a tile, shortcut
+    /// hint and gap. The host receives this height for click/hover routing too.
+    static func controlsHoverPanelHeight(toolCount: Int) -> CGFloat {
+        let rows = max(1, (toolCount + HoverLayoutStore.columns - 1) / HoverLayoutStore.columns)
+        return hoverPanelHeight + CGFloat(rows - 1) * 96
+    }
     static let modeCircleSize: CGFloat = IslandHoverPanelIconStyle.circleSize
     /// Gap between the compact island and the detached hover panel.
     static let detachedPanelGap: CGFloat = 8
@@ -382,7 +389,7 @@ enum IslandLanguageControl {
         "vi": "VN",
         "zh": "CN",
         // Expanded ElevenLabs Scribe set. Keep in sync with
-        // `LanguageFlag.countryCodes` in OnboardingLanguageScreen.
+        // the language picker country-code mapping.
         "af": "ZA", "am": "ET", "as": "IN", "ast": "ES", "az": "AZ",
         "ceb": "PH", "cy": "GB", "ff": "SN", "ga": "IE", "gl": "ES",
         "ha": "NG", "ig": "NG", "is": "IS", "jv": "ID", "ka": "GE",

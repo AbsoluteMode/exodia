@@ -32,11 +32,8 @@ final class ScreenRecordingRemovalTests: XCTestCase {
     }
 
     func testPermissionsSurfacesDoNotAskForScreenRecording() throws {
-        let onboarding = try loadSource(named: "OnboardingWindowController.swift")
         let settings = try loadSource(named: "SettingsPermissionsView.swift")
 
-        XCTAssertFalse(onboarding.contains("title: \"Screen Recording\""))
-        XCTAssertFalse(onboarding.contains("requestScreenRecording"))
         XCTAssertFalse(settings.contains("title: \"Screen Recording\""))
         XCTAssertFalse(settings.contains("requestScreenRecording"))
     }

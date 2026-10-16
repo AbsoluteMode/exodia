@@ -6,8 +6,8 @@ Voice input and a voice-driven agent for macOS. Bring your own API keys
 (BYOK), or use local models on Apple Silicon.
 
 Hold **Space** in any text field, speak, release: the transcript is pasted
-where the cursor is. Tap **Right Command** to ask your local coding agent
-(Claude Code or Codex CLI) a question by text, hold it to ask by voice. Let
+where the cursor is. Tap **Right Command** to ask your local OpenCode agent
+by text, hold it to ask by voice. Choose its model through OpenRouter. Let
 Whytap notice your meetings and turn them into notes. All of it without an
 account, without Whytap servers and without telemetry.
 
@@ -23,7 +23,7 @@ One signed and notarized DMG for Apple Silicon and Intel. Open it, drag
 Spotlight. Eject the disk image when you're done. Updates arrive in the app.
 
 You do not need Xcode, Homebrew, Node.js or a terminal to install Whytap.
-Claude Code / Codex is optional and only needed for the agent feature.
+OpenCode is optional and can be installed from Settings for the agent feature.
 See the [installation guide](docs/install.md) if you get stuck.
 
 Requirements: macOS 14.2 (Sonoma) or newer. Local speech and text models
@@ -37,33 +37,52 @@ need Apple Silicon; on Intel Macs use your own provider key instead.
 | Dictation (Drop) | Local model: FluidAudio Parakeet TDT v3 (Core ML) | your Mac, offline after a one-time download |
 | Smart cleanup of dictated text | OpenRouter with your key, or a custom OpenAI-compatible endpoint (Ollama, LM Studio, vLLM) | the endpoint you chose |
 | Smart cleanup of dictated text | Local model: Qwen3-4B on MLX | your Mac |
-| Agent (Right Command) | Claude Code or Codex CLI installed on your machine, your subscription | your Mac plus the CLI's own provider |
+| Agent (Right Command) | OpenCode with your OpenRouter key and selected model | tools and memory on your Mac; inference at your selected provider |
 | Meeting Notes | Your key, or local Parakeet + FluidAudio diarization + MLX summary | the provider you chose, or your Mac |
 
 Keys you enter are stored in the macOS Keychain and sent only to the
 provider you selected. Transcripts, notes and history are SQLite files under
 `~/Library/Application Support/`.
 
-## First run
+## Set up in Settings
 
-1. Grant **Accessibility**, **Microphone** and (for Meeting Notes) **System
-   Audio Recording** when prompted. Accessibility is what lets the hold-Space
-   gesture and the agent hotkey work globally.
-2. In onboarding, choose **Your key**, select a speech provider and enter
-   your API key. **Save & continue** checks the connection and saves the key.
-   For on-device processing, choose **Local** and download the model
-   (Apple Silicon).
-3. Optionally connect OpenRouter, your own endpoint or a local model for
-   text cleanup and meeting summaries. Then try holding Space and speaking.
+Whytap opens directly to the island. There is no onboarding wizard or account.
+Open **Settings** from the island's hover controls:
 
-Keys are stored in macOS Keychain. You can skip setup and complete it later
-in **Settings, Models**.
+1. In **Models**, choose **Your key**, select a speech provider and enter your
+   API key. Save to check the connection and store the key in macOS Keychain.
+   On Apple Silicon, you can choose **Local** and download the model instead.
+2. Optionally configure OpenRouter, your own endpoint or a local model for text
+   cleanup and meeting summaries.
+3. In **Permissions**, grant Accessibility and Microphone for dictation.
+   Meeting recording also needs System Audio Recording. Features may request
+   a missing permission when you use them.
 
-![Whytap's first-run setup: choose Your key or Local and connect a speech provider.](docs/assets/onboarding-speech.png)
+Hold Space in a text field, speak, then release. Settings remains available
+for changing keys, permissions and models later. The Dynamic Island at the
+top of the screen is the main UI; there is no menu bar item.
 
-The Dynamic Island at the top of the screen is the whole UI. There is no
-menu bar item; open Settings from the island or with the Settings hover
-button.
+## Connect your agent
+
+In **Settings, Agents**, install OpenCode or use an existing installation. Enter
+an OpenRouter key, choose a model from the catalog or enter its exact ID, then
+click **Save & connect**. OpenRouter charges your account for model requests.
+The connection check itself does not submit a paid model request.
+
+The agent can edit files and run tests by default. **Allow agent actions** can
+be turned off in Settings. Its model configuration, memory and conversation
+sessions stay local and are separated by active project.
+
+## Local project knowledge
+
+In **Settings, Projects**, add a project folder, index it and select the active
+project. Keep project notes there too. The local search returns code and document
+excerpts with file and line references for the agent's question; it does not
+send the entire folder to a provider. Reindex explicitly after source changes.
+There is no automatic live meeting copilot yet.
+
+The catalog and text index stay on your Mac. Selected excerpts and notes can be
+sent to the model provider you configure when you ask the agent a question.
 
 ## Hotkeys
 
@@ -102,6 +121,13 @@ GitHub hosts the source and finished releases; GitHub Actions is disabled.
 Architecture notes live in `CLAUDE.md`, the product spec in `docs/SPEC.md`,
 hotkey conventions in `docs/hotkey.md`, and the reasoning behind
 non-obvious choices in `docs/decisions/`.
+
+## Customize it with your agent
+
+Use Claude Code, Codex, OpenCode or another harness in a local source checkout.
+Start with `python3 scripts/customize.py discover --json`; the shared guides and
+helpers cover source navigation, native build/run, focused tests, hover tools,
+local data and custom monitoring dashboards. See [Customize Whytap](docs/customization/README.md).
 
 ## Contributing
 

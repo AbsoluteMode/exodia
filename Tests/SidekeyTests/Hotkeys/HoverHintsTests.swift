@@ -51,9 +51,9 @@ final class HoverHintsTests: XCTestCase {
 
     func test_hover_slot_shortcuts_expose_exactly_five_positions() {
         // The positional family the hint row iterates is always 5 entries, in
-        // slot order, so a `HoverLayoutStore` (also 5 slots) maps 1:1.
+        // slot order, independently of the user-selected tool count.
         XCTAssertEqual(HotkeyConfiguration.defaults.hoverSlotShortcuts.count, 5)
-        XCTAssertEqual(HoverLayoutStore.slotCount, 5)
+        XCTAssertEqual(HoverLayoutStore.shortcutSlotCount, 5)
     }
 
     // MARK: - Help window lists the five hover hotkeys
@@ -96,8 +96,8 @@ final class HoverHintsTests: XCTestCase {
         )
         let slot5 = try XCTUnwrap(rows.first { $0.title == "Hover slot 5" })
         XCTAssertTrue(
-            slot5.detail.contains(HoverToolRegistry.info(for: .settings).title),
-            "slot 5 detail should name the Settings tool, got: \(slot5.detail)"
+            slot5.detail.contains(HoverToolRegistry.info(for: HoverLayoutStore.defaultSlots[4]).title),
+            "slot 5 detail should name its current tool, got: \(slot5.detail)"
         )
     }
 
@@ -153,7 +153,7 @@ final class HoverHintsTests: XCTestCase {
         AppState.shared.programmaticHoverExpansion = false
     }
 
-    // MARK: - D2: slot 5 key editable, tool fixed to Settings
+    // MARK: - Settings remains pinned while its position changes
 
     func test_slot5_key_is_editable_in_config() {
         // The 5th hover shortcut is a normal editable field (assigning a new
@@ -163,21 +163,22 @@ final class HoverHintsTests: XCTestCase {
         XCTAssertEqual(config.hoverSlotShortcuts[4], .combo(.optionD))
     }
 
-    func test_slot5_tool_is_locked_to_settings() {
-        // D2: position 5 is always `.settings` — `setSlot` refuses to change
-        // the lock slot, even when the Toolbox tries. So ⌥5 (whatever its key)
-        // always resolves to the Settings effect.
+    func test_settings_remains_locked_when_its_position_changes() {
+        // Settings moves to the last position when tools are added, and
+        // remains locked there regardless of the shortcut family size.
         let store = makeLayoutStore()
-        XCTAssertEqual(HoverLayoutStore.lockSlotIndex, 4)
-        XCTAssertEqual(store.slots[HoverLayoutStore.lockSlotIndex], .settings)
+        let previousLockIndex = store.lockSlotIndex
+        store.placeTool(.clipboard, at: store.lockSlotIndex)
+        XCTAssertEqual(store.lockSlotIndex, previousLockIndex + 1)
+        XCTAssertEqual(store.slots[store.lockSlotIndex], .settings)
 
-        store.setSlot(HoverLayoutStore.lockSlotIndex, to: .clipboard)
+        store.setSlot(store.lockSlotIndex, to: .clipboard)
         XCTAssertEqual(
-            store.slots[HoverLayoutStore.lockSlotIndex], .settings,
+            store.slots[store.lockSlotIndex], .settings,
             "lock slot must stay .settings"
         )
         XCTAssertEqual(
-            HoverSlotRouter.effect(for: store.slots[HoverLayoutStore.lockSlotIndex]),
+            HoverSlotRouter.effect(for: store.slots[store.lockSlotIndex]),
             .openSettings
         )
     }

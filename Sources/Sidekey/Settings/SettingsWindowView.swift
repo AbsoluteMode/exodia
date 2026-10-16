@@ -4,7 +4,7 @@ import SwiftUI
 /// Settings shell: one predictable home for every user-facing preference.
 @MainActor
 struct SettingsWindowView: View {
-    @ObservedObject var permissionsViewModel: OnboardingPermissionsViewModel
+    @ObservedObject var permissionsViewModel: PermissionsSettingsViewModel
     @ObservedObject var modelsViewModel: SettingsModelsViewModel
     @ObservedObject var selection: SettingsWindowSelection
     @ObservedObject var agentModeViewModel: AgentModeViewModel
@@ -29,7 +29,7 @@ struct SettingsWindowView: View {
     /// pre-built config can pass `nil` and let `SettingsOtherView` construct its
     /// own (that init is also `@MainActor`-gated and builds fine at call time).
     init(
-        permissionsViewModel: OnboardingPermissionsViewModel,
+        permissionsViewModel: PermissionsSettingsViewModel,
         modelsViewModel: SettingsModelsViewModel,
         selection: SettingsWindowSelection,
         agentModeViewModel: AgentModeViewModel,
@@ -121,8 +121,7 @@ struct SettingsWindowView: View {
         Button {
             selection.select(tab)
         } label: {
-            HStack(spacing: SettingsSidebarStyle.iconTextSpacing) {
-                SettingsSidebarIcon(tab: tab)
+            HStack(spacing: 0) {
                 Text(tab.title)
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
@@ -152,18 +151,7 @@ struct SettingsWindowView: View {
         Button {
             NSWorkspace.shared.open(HelpWindowContent.learningCenterURL)
         } label: {
-            HStack(spacing: SettingsSidebarStyle.iconTextSpacing) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: SettingsSidebarIconStyle.cornerRadius,
-                                     style: .continuous)
-                        .fill(MacSettingsTheme.accent.opacity(0.24))
-                    Image(systemName: "book.pages")
-                        .font(.system(size: SettingsSidebarIconStyle.symbolFontSize, weight: .regular))
-                        .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(Color.white.opacity(0.88))
-                }
-                .frame(width: SettingsSidebarIconStyle.tileSize, height: SettingsSidebarIconStyle.tileSize)
-
+            HStack(spacing: 0) {
                 Text("FAQ & Learning")
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
@@ -172,9 +160,6 @@ struct SettingsWindowView: View {
 
                 Spacer(minLength: 0)
 
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(MacSettingsTheme.text3)
             }
             .foregroundStyle(MacSettingsTheme.text2)
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
@@ -194,18 +179,7 @@ struct SettingsWindowView: View {
         return Button {
             NSApp.terminate(nil)
         } label: {
-            HStack(spacing: SettingsSidebarStyle.iconTextSpacing) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: SettingsSidebarIconStyle.cornerRadius,
-                                     style: .continuous)
-                        .fill(Color(red: 0.55, green: 0.10, blue: 0.10))
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: SettingsSidebarIconStyle.symbolFontSize, weight: .regular))
-                        .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(.white.opacity(0.85))
-                }
-                .frame(width: SettingsSidebarIconStyle.tileSize, height: SettingsSidebarIconStyle.tileSize)
-
+            HStack(spacing: 0) {
                 Text("Quit Whytap")
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
@@ -273,6 +247,8 @@ struct SettingsWindowView: View {
                 selection: selection,
                 deps: toolboxDeps
             )
+        case .projects:
+            ProjectsSettingsView()
         }
     }
 }
@@ -374,7 +350,6 @@ enum SettingsSidebarStyle {
     static let horizontalPadding: CGFloat = 10
     static let verticalPadding: CGFloat = 14
     static let buttonHorizontalPadding: CGFloat = 10
-    static let iconTextSpacing: CGFloat = 9
     static let rowHeight: CGFloat = 34
     static let labelFontSize: CGFloat = 13
     static let labelMinimumScaleFactor: CGFloat = 0.88
@@ -383,68 +358,5 @@ enum SettingsSidebarStyle {
         width
             - horizontalPadding * 2
             - buttonHorizontalPadding * 2
-            - SettingsSidebarIconStyle.tileSize
-            - iconTextSpacing
-    }
-}
-
-enum SettingsSidebarIconStyle {
-    static let tileSize: CGFloat = 24
-    static let cornerRadius: CGFloat = 6
-    static let symbolFontSize: CGFloat = 13
-}
-
-@MainActor
-private struct SettingsSidebarIcon: View {
-    let tab: SettingsWindowTab
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(
-                cornerRadius: SettingsSidebarIconStyle.cornerRadius,
-                style: .continuous
-            )
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.110, green: 0.110, blue: 0.133),
-                        Color(red: 0.075, green: 0.075, blue: 0.094),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay(
-                RoundedRectangle(
-                    cornerRadius: SettingsSidebarIconStyle.cornerRadius,
-                    style: .continuous
-                )
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-            )
-
-            iconArtwork
-                .frame(
-                    width: SettingsSidebarIconStyle.tileSize,
-                    height: SettingsSidebarIconStyle.tileSize
-                )
-        }
-        .frame(
-            width: SettingsSidebarIconStyle.tileSize,
-            height: SettingsSidebarIconStyle.tileSize
-        )
-    }
-
-    @ViewBuilder
-    private var iconArtwork: some View {
-        if let resourceName = tab.pdfResourceName,
-           let nsImage = IslandControlIcon.image(named: resourceName) {
-            Image(nsImage: nsImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-        } else {
-            Image(systemName: tab.fallbackSystemImageName)
-                .font(.system(size: SettingsSidebarIconStyle.symbolFontSize, weight: .regular))
-                .symbolRenderingMode(.monochrome)
-        }
     }
 }

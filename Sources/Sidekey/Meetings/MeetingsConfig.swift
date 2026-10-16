@@ -69,7 +69,7 @@ final class MeetingsConfig {
     /// Skip pill, however short the gap. Manual Stop still finalizes
     /// immediately.
     /// WHY: docs/decisions/2026-07-29-reconnect-always-asks.md
-    static let reconnectGracePeriodSeconds: TimeInterval = 3 * 60
+    static let reconnectGracePeriodSeconds: TimeInterval = 45
 
     /// After the user dismisses a pill, suppress new pills for this many
     /// minutes within the same mic session. Spec: do not nag.

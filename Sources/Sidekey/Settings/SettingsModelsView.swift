@@ -2,18 +2,8 @@ import SwiftUI
 
 @MainActor
 struct SettingsModelsView: View {
-    enum Section { case all, transcription, smart }
-
     @ObservedObject var viewModel: SettingsModelsViewModel
-    var section: Section = .all
-
-    /// The onboarding footer owns Save & continue; keep its embedded form focused.
-    private var isOnboarding: Bool { section != .all }
-    private var displayedProviders: [BYOKProvider] {
-        isOnboarding
-            ? [viewModel.provider] + BYOKProvider.selectable.filter { $0 != viewModel.provider }
-            : BYOKProvider.selectable
-    }
+    private var displayedProviders: [BYOKProvider] { BYOKProvider.selectable }
 
     /// Canonical user-facing name for the user-supplied OpenAI-compatible
     /// self-hosted endpoint. Shared by the STT "Your key" provider list and
@@ -23,8 +13,8 @@ struct SettingsModelsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                if section != .smart { transcribeSection }
-                if section != .transcription { llmSection }
+                transcribeSection
+                llmSection
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 22)
@@ -95,13 +85,12 @@ struct SettingsModelsView: View {
     @ViewBuilder
     private var yourKeyConfig: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !isOnboarding {
-                MacBanner(
-                    tone: .privacy,
-                    systemImage: "lock.shield",
-                    text: "Transcription goes straight to the provider with your key. Nothing passes through any Whytap server."
-                )
-            }
+            MacBanner(
+                tone: .privacy,
+                systemImage: "lock.shield",
+                text: "Transcription goes straight to the provider with your key. Nothing passes through any Whytap server."
+            )
+
 
             VStack(alignment: .leading, spacing: 0) {
                 MacGroupTitle(
@@ -156,7 +145,7 @@ struct SettingsModelsView: View {
                     Text(providerName(provider))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(MacSettingsTheme.text)
-                    MacPill(text: isOnboarding ? "Selected" : "Active", tone: .blue)
+                    MacPill(text: "Active", tone: .blue)
                     Spacer()
                 }
 
@@ -177,20 +166,19 @@ struct SettingsModelsView: View {
                 )
 
                 HStack(spacing: 10) {
-                    if !isOnboarding {
-                        MacButton(
-                            title: "Save",
-                            style: .primary,
-                            isEnabled: viewModel.connectionStatus != .testing
-                        ) {
-                            Task { await viewModel.saveCurrentSelection() }
-                        }
-                        if provider == .openAI || provider == .selfHosted {
-                            MacButton(title: "Test connection", style: .default) {
-                                Task { await viewModel.testConnection() }
-                            }
+                    MacButton(
+                        title: "Save",
+                        style: .primary,
+                        isEnabled: viewModel.connectionStatus != .testing
+                    ) {
+                        Task { await viewModel.saveCurrentSelection() }
+                    }
+                    if provider == .openAI || provider == .selfHosted {
+                        MacButton(title: "Test connection", style: .default) {
+                            Task { await viewModel.testConnection() }
                         }
                     }
+
                     connectionStatus
                 }
                 .padding(.top, 2)
@@ -448,8 +436,8 @@ struct SettingsModelsView: View {
     private var llmSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             MacGroupTitle(
-                title: isOnboarding ? "Text cleanup" : "Smart processing LLM",
-                trailing: isOnboarding ? nil : llmTrailingTitle
+                title: "Smart processing LLM",
+                trailing: llmTrailingTitle
             )
             MacSegmented(
                 items: [
@@ -640,26 +628,25 @@ struct SettingsModelsView: View {
 
     private var openRouterConfig: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !isOnboarding {
-                MacBanner(
-                    tone: .privacy,
-                    systemImage: "lock.shield",
-                    text: "Drop cleanup and meeting notes go straight to OpenRouter with your key. Agent Mode still uses the provider selected on the Agent tab."
-                )
-            }
+            MacBanner(
+                tone: .privacy,
+                systemImage: "lock.shield",
+                text: "Drop cleanup and meeting notes go straight to OpenRouter with your key. Agent Mode still uses the provider selected on the Agent tab."
+            )
+
 
             MacCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
                         ProviderBrandIcon(assetName: "openrouter")
-                        Text(isOnboarding ? "OpenRouter" : "OpenRouter direct")
+                        Text("OpenRouter direct")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(MacSettingsTheme.text)
-                        MacPill(text: isOnboarding ? "Selected" : "Route active", tone: .blue)
+                        MacPill(text: "Route active", tone: .blue)
                         Spacer()
                     }
 
-                    if !isOnboarding { openRouterRouteStatus }
+                    openRouterRouteStatus
 
                     fieldLabel("OpenRouter model ID")
                     LLMModelSearchField(
@@ -669,9 +656,8 @@ struct SettingsModelsView: View {
                     )
                     .task { await viewModel.loadOpenRouterModelsIfNeeded() }
 
-                    if !isOnboarding {
-                        caption("The provider prefix is part of the OpenRouter model id, for example openai/…, anthropic/…, or google/….")
-                    }
+                    caption("The provider prefix is part of the OpenRouter model id, for example openai/…, anthropic/…, or google/….")
+
 
                     if usingOpenRouterAuto {
                         MacBanner(
@@ -690,21 +676,20 @@ struct SettingsModelsView: View {
                     )
 
                     HStack(spacing: 10) {
-                        if !isOnboarding {
-                            MacButton(
-                                title: "Save",
-                                style: .primary,
-                                isEnabled: viewModel.llmConnectionStatus != .testing
-                            ) {
-                                Task { await viewModel.saveCurrentLLMSelection() }
-                            }
-                            MacButton(title: "Test OpenRouter", style: .default) {
-                                Task { await viewModel.testLLMConnection() }
-                            }
-                            MacButton(title: "Refresh list", style: .default) {
-                                Task { await viewModel.refreshOpenRouterModels() }
-                            }
+                        MacButton(
+                            title: "Save",
+                            style: .primary,
+                            isEnabled: viewModel.llmConnectionStatus != .testing
+                        ) {
+                            Task { await viewModel.saveCurrentLLMSelection() }
                         }
+                        MacButton(title: "Test OpenRouter", style: .default) {
+                            Task { await viewModel.testLLMConnection() }
+                        }
+                        MacButton(title: "Refresh list", style: .default) {
+                            Task { await viewModel.refreshOpenRouterModels() }
+                        }
+
                         llmConnectionStatus
                     }
                     .padding(.top, 2)
@@ -716,13 +701,12 @@ struct SettingsModelsView: View {
 
     private var customLLMConfig: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !isOnboarding {
-                MacBanner(
-                    tone: .privacy,
-                    systemImage: "lock.shield",
-                    text: "Drop cleanup and meeting notes go straight to your OpenAI-compatible endpoint. Agent Mode still uses the provider selected on the Agent tab."
-                )
-            }
+            MacBanner(
+                tone: .privacy,
+                systemImage: "lock.shield",
+                text: "Drop cleanup and meeting notes go straight to your OpenAI-compatible endpoint. Agent Mode still uses the provider selected on the Agent tab."
+            )
+
 
             MacCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -731,11 +715,11 @@ struct SettingsModelsView: View {
                         Text(Self.selfHostedProviderName)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(MacSettingsTheme.text)
-                        MacPill(text: isOnboarding ? "Selected" : "Route active", tone: .blue)
+                        MacPill(text: "Route active", tone: .blue)
                         Spacer()
                     }
 
-                    if !isOnboarding { customLLMRouteStatus }
+                    customLLMRouteStatus
 
                     fieldLabel("Base URL")
                     MacField(
@@ -763,21 +747,20 @@ struct SettingsModelsView: View {
                     )
 
                     HStack(spacing: 10) {
-                        if !isOnboarding {
-                            MacButton(
-                                title: "Save",
-                                style: .primary,
-                                isEnabled: viewModel.llmConnectionStatus != .testing
-                            ) {
-                                Task { await viewModel.saveCurrentLLMSelection() }
-                            }
-                            MacButton(title: "Test endpoint", style: .default) {
-                                Task { await viewModel.testLLMConnection() }
-                            }
-                            MacButton(title: "Refresh list", style: .default) {
-                                Task { await viewModel.refreshCustomLLMModels() }
-                            }
+                        MacButton(
+                            title: "Save",
+                            style: .primary,
+                            isEnabled: viewModel.llmConnectionStatus != .testing
+                        ) {
+                            Task { await viewModel.saveCurrentLLMSelection() }
                         }
+                        MacButton(title: "Test endpoint", style: .default) {
+                            Task { await viewModel.testLLMConnection() }
+                        }
+                        MacButton(title: "Refresh list", style: .default) {
+                            Task { await viewModel.refreshCustomLLMModels() }
+                        }
+
                         llmConnectionStatus
                     }
                     .padding(.top, 2)

@@ -85,8 +85,7 @@ final class SidekeyWindowChromeTests: XCTestCase {
             "Sources/Sidekey/WindowChrome/SidekeyQuitConfirmationController.swift",
             "Sources/Sidekey/Meetings/MeetingsWindowController.swift",
             "Sources/Sidekey/HelpWindowController.swift",
-            "Sources/Sidekey/History/HistoryWindowController.swift",
-            "Sources/Sidekey/OnboardingWindowController.swift"
+            "Sources/Sidekey/History/HistoryWindowController.swift"
         ]
 
         for relativePath in relativePaths {
@@ -116,8 +115,7 @@ final class SidekeyWindowChromeTests: XCTestCase {
             ("Sources/Sidekey/WindowChrome/SidekeyQuitConfirmationController.swift", "window.makeKeyAndOrderFront(nil)"),
             ("Sources/Sidekey/Meetings/MeetingsWindowController.swift", "window.makeKeyAndOrderFront(nil)"),
             ("Sources/Sidekey/HelpWindowController.swift", "window.orderFrontRegardless()"),
-            ("Sources/Sidekey/History/HistoryWindowController.swift", "window.makeKeyAndOrderFront(nil)"),
-            ("Sources/Sidekey/OnboardingWindowController.swift", "window.makeKeyAndOrderFront(nil)")
+            ("Sources/Sidekey/History/HistoryWindowController.swift", "window.makeKeyAndOrderFront(nil)")
         ]
 
         for (relativePath, orderCall) in expectations {

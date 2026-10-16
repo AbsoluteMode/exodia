@@ -2,8 +2,8 @@
 
 Native macOS client (Swift + SwiftUI + AppKit, SwiftPM). BYOK first, with
 optional local models; free, MIT. Two hotkeys: hold Space in an editable
-field -> voice -> paste; Right Command tap (text) / hold (voice) -> the user's local agent CLI (Claude Code
-or Codex) -> rendered answer in the island. No account, no Whytap servers,
+field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
+OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
 no telemetry. The user-facing name is Whytap; the module and most internal
 identifiers are still `Sidekey`.
 
@@ -57,28 +57,32 @@ Voice flow (Drop / dictation):
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
 
-Codex model controls:
-  CodexModelCatalogReader -> short-lived app-server (initialize -> model/list).
-  The CLI registry supplies models, reasoning levels and Fast/service tiers.
-  AgentSettingsStore resolves saved/config/default model and validates controls;
-  Settings and execution use the same options. No GPT-5.5 pin or model-name
-  speed exception. Normal explicitly overrides Fast from the CLI config.
-  Discovery refreshes at startup/Agents open/manual refresh, keeps last good
-  data on failure, and never creates a thread or submits a prompt. Prefer the
-  CLI in ChatGPT.app, then Codex.app and standalone locations. WHY:
-  docs/decisions/2026-09-07-codex-model-registry.md
-
-Agent flow (local CLI):
+Agent flow (OpenCode + OpenRouter):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop
-       -> the user's agent CLI (Connect Claude Code / Codex in
-          Settings -> Agents or in onboarding, Skills -> Agent; runs on the
-          user's machine with the user's subscription)
-       -> permission-bridge prompts -> streamed render in the island
-  Active agent = `agent.activeProvider` (UserDefaults), written ONLY by an
-  explicit Connect confirmed by the provider's `probe()`. The chooser's
-  preference (`agent.preferredProvider`) is stored separately and never read
-  by dispatch. WHY: docs/decisions/2026-08-02-onboarding-connect-is-probe-backed.md
+       -> OpenCodeProvider -> opencode run --format json --model
+          openrouter/<selected-model> --dir <local workspace>, prompt on stdin
+       -> complete text/tool events rendered progressively in the island
+  Settings -> Agents installs an app-managed OpenCode binary from its official
+  GitHub release after SHA-256 digest verification, or locates an existing CLI.
+  The user chooses an exact OpenRouter model ID or one from the live catalog,
+  enters their key, then Save & connect checks the local version and free
+  OpenRouter key endpoint. Connecting does not submit a model request.
+  The key shares the existing OpenRouter Keychain store and enters only the
+  child process environment, never a credential JSON file or argv. The runtime
+  enables only OpenRouter, disables sharing/default plugins/automatic updates
+  and excludes inherited provider credential/config environment variables.
+  Actions are allowed by default so the agent can edit and run tests; the user
+  can turn them off in Settings. This is an action policy, not a filesystem
+  sandbox. No provider fallback or automatic model substitution.
+  AgentDaemonWorkingDirectory uses neutral agent/ or sibling
+  project-agents/<UUID>/ under Application Support/whytap. Each project has its
+  own AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
+  AgentController adds selected project evidence to each turn and uses scoped
+  resume IDs. Evidence is untrusted content, never executable instructions.
+  WhytapCustomizationContext.promptInstructions exposes resolved local Monitor
+  paths, dashboard/collector contracts and source-kit discovery to the runtime
+  agent, so creating a dashboard does not require finding the source checkout.
 
 Meeting Notes:
   Always-on detector (mic activity + CoreAudio system audio + FluidAudio
@@ -99,7 +103,7 @@ Meeting Notes:
   Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
   enable-prompt. Auto-end when the system mic is released for 3s (not before
-  the 30s startup grace); an auto-ended recording waits 3 minutes as
+  the 30s startup grace); an auto-ended recording waits 45 seconds as
   pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
   resuming is always the user's decision. WHY:
   docs/decisions/2026-07-29-reconnect-always-asks.md
@@ -155,20 +159,33 @@ user-facing setup instructions. Preserve saved processing routes; changing
 presentation order does not switch where existing users send audio or text.
 WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md
 
-First run: no sign-in. `OnboardingRouter` sends a newcomer through the tour
-(permissions -> Models -> Try Drop -> Skills -> Helpers), a returning user only to the
-permission-repair screen. Drop with the local level selected but no model
-downloaded opens Settings -> Models (download button / key field) instead
-of idling silently. Settings opens on the Models tab; "Screenshot
-protection" lives in Settings -> Other (default off) and also shields the
-island window.
+First run: no sign-in and no onboarding wizard. Launch and reopen show the
+island immediately. Configure provider keys and optional local models in
+Settings -> Models, the agent in Settings -> Agents, and permissions in
+Settings -> Permissions. A feature can request the permission it needs when
+invoked. Drop with a local model selected but not downloaded opens
+Settings -> Models. Settings opens on Models; screenshot protection is in
+Other (default off). The former tour, resume state, preview target and
+voice demos were removed. WHY:
+.project-docs/decisions/2026-10-17-local-workspace.md
 
-Models onboarding embeds the existing Settings forms: speech first, optional
-Smart processing second, with Your key before Local. Save & continue validates
-and persists through SettingsModelsViewModel; a failed probe or Keychain write
-keeps the current step visible. Skipping speech setup goes to Skills; skipping
-Smart goes to Try Drop. The models resume step does not arm the try runtime.
-WHY: .project-docs/decisions/2026-09-10-onboarding-models.md
+Project knowledge: Settings -> Projects registers a user-selected folder and
+manual notes. ProjectKnowledgeStore keeps a local catalog and SQLite FTS5
+index, with explicit reindexing and path/line citations. Hidden files,
+symlinks, build directories and common credential filenames are excluded;
+indexing is bounded to 5,000 files and 32 MB of text. It does not scan the
+home directory automatically or use semantic embeddings. Retrieval requires
+an explicitly selected project. Matching excerpts and notes become context
+for that project's agent request and may go to its configured API provider.
+This is a knowledge foundation, not live meeting-question detection.
+
+Customization: any local coding harness can use the same source checkout.
+Run `python3 scripts/customize.py discover --json` for commands, change
+contracts and source entry points; `doctor --json` checks build prerequisites.
+Build/run use the canonical dev bundle script; hover and dashboard scaffolds
+are drafts. Guide: docs/customization/README.md. Update the capability map
+when moving its source entry points. Do not publish private monitoring
+configuration, project contents or credentials with the source.
 
 Installation: SidekeyAppMain checks InstallationGuard before constructing the
 app delegate. A read-only or AppTranslocation copy shows Finder installation
@@ -178,9 +195,7 @@ without starting the app runtime. User guide: `docs/install.md`. Policy:
 `.project-docs/decisions/2026-09-10-public-installation.md`.
 
 Targets: library `Sidekey` (all app code) + thin executable `SidekeyApp`
-(product `Sidekey`, `SidekeyAppMain.run()`), `OnboardingPreview` (a small
-window that iterates on onboarding screens through symlinked sources) and
-`SidekeyTests`. Flavors: `prod` (default) and `beta` (`-DBETA`: separate
+(product `Sidekey`, `SidekeyAppMain.run()`) and `SidekeyTests`. Flavors: `prod` (default) and `beta` (`-DBETA`: separate
 bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 
 ## Permissions
@@ -216,8 +231,9 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 # Tests
 swift test
 
-# Onboarding screens preview
-./scripts/onboarding-preview.sh
+# Harness-neutral change discovery and environment check
+python3 scripts/customize.py discover --json
+python3 scripts/customize.py doctor --json
 
 # Release: build + sign + notarize + staple + GitHub Release + signed appcast.
 # Credentials come from the environment (the official builds wrap the command
@@ -241,6 +257,7 @@ Details and the fork checklist: `docs/build-and-release.md`.
 Everything lives in the repository: `CLAUDE.md` (architecture, commands,
 invariants), `README.md` (user-facing), `docs/SPEC.md` (product spec),
 `docs/hotkey.md`, `docs/privacy.md`, `docs/build-and-release.md`,
+`docs/customization/` (coding harness workflow and capability contracts),
 `docs/decisions/` (why), `docs/specs/` and `docs/plans/` (history).
 
 After a change, update the matching place: architecture / components /
@@ -262,9 +279,10 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 
 1. **No Whytap-owned services.** The app never contacts a Whytap backend,
    has no account and sends no telemetry. Network traffic is limited to
-   model downloads from Hugging Face, the provider the user configured with
-   their own key, the local agent CLI's own traffic, `google.com` opened in
-   the browser, and the Sparkle feed on GitHub Releases.
+   model downloads from Hugging Face, providers and monitoring sources the
+   user configured (including their credential store), OpenCode's own provider
+   traffic, its official GitHub release download, `google.com` opened in the
+   browser, and the Sparkle feed on GitHub Releases.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
    Whytap hostname or removed cloud symbol under `Sources/`.
 2. **Keys and content never leave through logs.** BYOK keys live only in the

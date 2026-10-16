@@ -257,23 +257,19 @@ final class HotkeysSettingsViewTests: XCTestCase {
         // Rows read their title/icon from the LIVE layout store position, not a
         // hardcoded label (D1 positional).
         XCTAssertTrue(source.contains("hoverLayout.slots[offset]"))
-        XCTAssertTrue(source.contains("HoverToolRegistry.info(for: tool)"))
+        XCTAssertTrue(source.contains("tool.map { HoverToolRegistry.info(for: $0) }"))
     }
 
-    func testSlotFiveHotkeyEditableButToolFixedToSettings() throws {
-        // D2: the 5th hover row's KEY is editable like every other slot (it
-        // flows through the shared `startRecording(target)` path and the
-        // `.hoverSlot5` switch branch), but its tool is fixed to Settings
-        // (`HoverLayoutStore.lockSlotIndex` = position 5). The row must NOT
-        // offer a tool/action picker — only Toolbox reorders tools, and the
-        // lock keeps slot 5 on `.settings` even there.
+    func testSettingsHotkeyEditableButToolPinned() throws {
+        // Positional keys remain editable. Settings is pinned in Toolbox,
+        // independently of which position it occupies in the current layout.
         let source = try hotkeysSettingsViewSource()
 
         // Key editable: slot 5 is a normal RecordingTarget branch.
         XCTAssertTrue(source.contains("case .hoverSlot5"))
         // The locked-slot fact is referenced so the row reflects the fixed tool
         // rather than pretending it is changeable.
-        XCTAssertTrue(source.contains("HoverLayoutStore.lockSlotIndex"))
+        XCTAssertTrue(source.contains("tool == .settings"))
         XCTAssertTrue(source.contains("isLocked"))
     }
 

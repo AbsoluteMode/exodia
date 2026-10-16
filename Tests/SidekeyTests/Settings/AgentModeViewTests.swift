@@ -11,19 +11,16 @@ final class AgentModeViewTests: XCTestCase {
         XCTAssertTrue(s.contains("MacRow"))
         XCTAssertTrue(s.contains("MacButton"))
         XCTAssertTrue(s.contains("MacPill"))
-        XCTAssertTrue(s.contains("ProviderBrandIcon"))
-        XCTAssertTrue(s.contains("agentBrandAssetName(id)"))
     }
 
-    /// Each provider section embeds the setup guide while that provider is
-    /// not connected (and hides it once it is).
-    func test_agents_embeds_setup_guide_for_disconnected_providers() throws {
+    func test_agents_uses_opencode_byok_setup_without_old_provider_chooser() throws {
         let url = try projectRoot()
             .appendingPathComponent("Sources/Sidekey/Settings/AgentModeView.swift")
         let s = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(s.contains("AgentSetupGuideView"))
-        XCTAssertTrue(s.contains("store.activeProvider != .claude"))
-        XCTAssertTrue(s.contains("store.activeProvider != .codex"))
+        XCTAssertTrue(s.contains("OpenCodeInstaller"))
+        XCTAssertTrue(s.contains("OpenRouterLLMKeyStore"))
+        XCTAssertTrue(s.contains("viewModel.connect(.opencode)"))
+        XCTAssertFalse(s.contains("AgentSetupGuideView"))
     }
 
     func test_agents_exposes_capability_switch_for_disabled_hotkey_prompt() throws {
@@ -32,7 +29,7 @@ final class AgentModeViewTests: XCTestCase {
         let s = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(s.contains("Use Agent shortcuts"))
         XCTAssertTrue(s.contains("MacSwitch"))
-        XCTAssertTrue(s.contains("onAgentToggle(newValue)"))
+        XCTAssertTrue(s.contains("onAgentToggle($0)"))
         XCTAssertTrue(s.contains("sidekeyCapabilityFlagsChanged"))
     }
 

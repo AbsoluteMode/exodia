@@ -71,27 +71,6 @@ let package = Package(
             dependencies: ["Sidekey"],
             path: "Sources/SidekeyApp"
         ),
-        // Standalone preview app for iterating on onboarding screens
-        // without touching the main Sidekey bundle. Shares the SwiftUI
-        // view sources via symlinks (`OnboardingTheme`,
-        // `OnboardingWelcomeScreen`, `OnboardingOrbController`,
-        // `VoiceOrbView`, `HotkeyHintView`, `KeycapView`) and supplies
-        // trivial stubs for the two audio-pipeline singletons that
-        // `VoiceOrbView.displayEnergy` reads (`NoiseFloorEstimator`,
-        // `AudioEnergyFollower`). No FluidAudio / Sparkle dependencies —
-        // runs as a small foreground SwiftUI window.
-        .executableTarget(
-            name: "OnboardingPreview",
-            path: "Sources/OnboardingPreview",
-            resources: [
-                .copy("Fonts"),
-                .copy("Audio"),
-                .copy("UsefulLinkIcons")
-            ],
-            // Lets symlinked screens load bundled brand assets from
-            // `Bundle.module` (preview) vs `Bundle.main` (the Sidekey app).
-            swiftSettings: [.define("ONBOARDING_PREVIEW")]
-        ),
         .testTarget(
             name: "SidekeyTests",
             dependencies: ["Sidekey"],
