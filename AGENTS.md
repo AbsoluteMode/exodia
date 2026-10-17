@@ -172,12 +172,18 @@ Update flow (download-on-action):
   IslandUpdateUserDriver: no Sparkle windows, everything in the island.
   Scheduled check -> "Update" pill -> hover: Download | Skip -> download
   with a CALayer spinner (IslandUpdateSpinner; SwiftUI .repeatForever would
-  freeze during main-thread stalls) -> install + relaunch only while idle -> "Updated"
-  indicator for 5s on the next launch (JustUpdatedIndicator, one-shot
-  marker). A meeting recording, dictation or agent activity defers installation
-  into Ready with Restart / Later; returning to idle alone never restarts it.
-  Restored downloads also need explicit Restart. A final Sparkle delegate guard
-  rechecks activity before installation. Feed = GitHub Releases (`BuildConfig.appcastURL`).
+  freeze during main-thread stalls) -> requested install + relaunch while idle
+  -> "Updated" indicator for 5s on the next launch (JustUpdatedIndicator,
+  one-shot marker). A meeting recording, dictation or agent activity defers the
+  app-initiated relaunch into Ready with Restart / Later; returning to idle alone
+  never restarts it. Ready-stage Later replies .skip, cancelling the current
+  installation without permanently skipping the version. The user approved
+  applying a prepared, already downloaded update on ordinary application quit,
+  unless Later cancelled it. Restored downloads use the same Ready actions and
+  ordinary-quit policy. This does not guarantee behavior after force quit,
+  crashes, process kills or power loss. A final Sparkle delegate guard rechecks
+  activity before an app-initiated relaunch. Feed = GitHub Releases
+  (`BuildConfig.appcastURL`).
   Community archives use our independent Sparkle Ed25519 signature and ad-hoc
   app code signing, without Apple Developer/notarization. Source dev builds
   (9999 / -dev) do not start the binary updater. WHY:
@@ -273,6 +279,7 @@ SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 
 # Community binary: local universal build, no Apple Developer
 FLAVOR=prod ./scripts/user-release.sh --preflight-only
+# Commit relevant build inputs before the build; retain the adjacent DMG manifest
 FLAVOR=prod ./scripts/user-release.sh --build-only
 # Publishing also needs the project's Sparkle signing key and GitHub access
 FLAVOR=prod ./scripts/user-release.sh --upload-only
@@ -287,6 +294,14 @@ optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
 other OS protections. First downloads may require user approval and macOS
 permissions can require regranting. WHY:
 `.project-docs/decisions/2026-10-17-community-updates.md`.
+
+Release provenance is required: commit and clean Sources, Resources, Package.swift,
+Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
+seal archive SHA-256/size, version, build and flavor in `<DMG>.manifest.json`.
+Upload-only requires the adjacent manifest. Reject missing/inconsistent
+provenance, changed HEAD or archive bytes before signing-key access/uploads, and
+target the release at the verified manifest's build commit. Rebuild after changing
+HEAD; do not relabel an old archive. Candidate validation remains a release gate.
 
 Source users still pull and rebuild locally for their own customizations. Dev
 9999/-dev bundles opt out of packaged updates so a binary cannot overwrite their
@@ -341,10 +356,13 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    (`LocalModelSupport.isAppleSilicon`); Intel users get BYOK / custom
    endpoints. There is no paid gate anywhere.
 4. **Sparkle never shows a window.** Scheduled checks only show the island
-   pill; nothing downloads before the user clicks; one-button install +
-   relaunch; "Later" hides the pill for the session; no background
-  install-on-quit; no manual "Check for Updates" menu (there is no status
-   bar item at all).
+   pill; nothing downloads before the user clicks. Requested downloads may
+   install and relaunch while idle. Active meeting recording, dictation or
+   agent work defers app-initiated relaunch; becoming idle alone does not restart
+   it. Ready-stage "Later" cancels the current installation via .skip. A prepared
+   download may apply on ordinary user-initiated app quit unless cancelled.
+   Do not promise installation after arbitrary process termination. No manual
+   "Check for Updates" menu or status bar item.
 5. **Drop is remappable but hold Space by default.** Record a combo or bare
    Space in Settings -> Hotkeys (Raycast-style release-to-commit recorder).
    Space is hold-only; combos support hold or toggle; hold Drop goes through

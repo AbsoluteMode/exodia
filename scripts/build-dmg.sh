@@ -15,6 +15,7 @@
 #   SHORT_VERSION  SemVer       (default: VERSION file)
 #   BUILD_VERSION  monotonic    (default: 1; user-release picks next live build)
 #                  integer
+#   EXODIA_DMG_HEADLESS  1 skips optional Finder layout (default: 0)
 #
 # Community requirements: local Swift/Xcode macOS 26 SDK and build resources.
 # Optional legacy mode additionally needs TEAM_ID and ASC_API_KEY_* credentials.
@@ -31,6 +32,11 @@ case "${LEGACY_SIGNED_RELEASE}" in
     0) DISTRIBUTION_MODE="community"; SIGNING_IDENTITY="-"; SIGNING_TIMESTAMP_ARGS=(--timestamp=none) ;;
     1) DISTRIBUTION_MODE="developer-id"; SIGNING_TIMESTAMP_ARGS=(--timestamp) ;;
     *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 2 ;;
+esac
+DMG_HEADLESS="${EXODIA_DMG_HEADLESS:-0}"
+case "${DMG_HEADLESS}" in
+    0|1) ;;
+    *) echo "ERROR: EXODIA_DMG_HEADLESS must be 0 or 1" >&2; exit 2 ;;
 esac
 PREFLIGHT_ONLY=0
 for argument in "$@"; do
@@ -246,6 +252,10 @@ PYJSON
     exit 0
 fi
 
+# Pin the clean build-input commit before compiling; sealing checks it again.
+BUILD_SOURCE_SHA="$(/usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" capture \
+    --project-root "${PROJECT_DIR}")"
+
 # --- Secrets staging (private umask, mktemp, trap cleanup) ----------------
 
 ASC_KEY_DIR=""
@@ -438,6 +448,8 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     -e "s|__SPARKLE_PUBLIC_ED_KEY__|${SPARKLE_PUBLIC_ED_KEY}|g" \
     "${INFO_PLIST_TEMPLATE}" > "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaDistribution string ${DISTRIBUTION_MODE}" \
+    "${APP_BUNDLE}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ExodiaSourceRevision string ${BUILD_SOURCE_SHA}" \
     "${APP_BUNDLE}/Contents/Info.plist"
 
 if [ -f "${PROJECT_DIR}/Resources/AppIcon.icns" ]; then
@@ -901,6 +913,9 @@ if [ ! -L "${DMG_MOUNT_POINT}/Applications" ]; then
     exit 1
 fi
 
+if [ "${DMG_HEADLESS}" = "1" ]; then
+    echo "▶ Headless packaging: keeping Finder’s default layout"
+else
 echo "▶ Painting Finder window layout (icon view, drag-to-install)..."
 # AppleScript runs against a live Finder session. In a logged-in macOS
 # session this is reliable; on a headless CI runner without a UI session
@@ -958,6 +973,7 @@ else
     echo "  (continuing — symlink + contents + .background/ already on disk, layout is polish)" >&2
 fi
 rm -f "${APPLESCRIPT_LOG}"
+fi
 
 sync
 
@@ -1057,6 +1073,12 @@ if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     xcrun stapler validate "${DMG_PATH}"
 
 fi
+
+# Write the build-time receipt only after final archive bytes are complete.
+/usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" seal \
+    --project-root "${PROJECT_DIR}" --source-sha "${BUILD_SOURCE_SHA}" \
+    --archive "${DMG_PATH}" --version "${SHORT_VERSION}" --build "${BUILD_VERSION}" \
+    --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}" >/dev/null
 
 # --- Final ---------------------------------------------------------------
 

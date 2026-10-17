@@ -57,7 +57,9 @@ Scripts support the Bash 3.2 shipped with macOS; avoid empty-array expansion und
 
 ## Publish a community release
 
-Bump `VERSION` for the intended release. The normal commands are:
+Bump `VERSION` and commit the release inputs before building. `Sources/`,
+`Resources/`, `Package.swift`, `Package.resolved`, `VERSION` and `scripts/` must
+be clean. The normal commands are:
 
 ```bash
 FLAVOR=prod ./scripts/user-release.sh --dry-run
@@ -74,6 +76,28 @@ signed; HTTPS protects its transport and Sparkle verifies each archive before
 extraction.
 The script chooses a build number newer than the live feed and installed copy;
 set `BUILD_VERSION` explicitly for a first release when neither exists.
+
+### Release provenance contract
+
+Every upload must be bound to the commit used for its build. The release helper
+`scripts/release-provenance.py` must capture the build-time HEAD and clean input
+state, then seal the completed DMG's SHA-256 and size together with its version,
+build, flavor, distribution mode, bundle ID and architectures. Its subcommands
+are `capture`, `seal` and `verify`; the build and upload scripts call them.
+Keep the adjacent `<DMG>.manifest.json` with the archive;
+`--upload-only` requires both files from the same build.
+
+The publication gate must reject a missing or inconsistent manifest, changed
+source commit or changed archive bytes before loading signing keys or uploading.
+The GitHub release must target the verified manifest's build commit, rather
+than whichever HEAD happens to be current during upload. Do not reuse a DMG
+after changing HEAD, relabel an old archive or edit a manifest to make it pass;
+commit the intended inputs and rebuild. These are pipeline requirements;
+candidate-specific verification remains part of release acceptance.
+
+For CLI packaging without a live Finder layout session, set
+`EXODIA_DMG_HEADLESS=1`. It skips only cosmetic Finder layout; packaging and
+verification remain the same. The default keeps the Finder layout step.
 
 Default community mode signs ad hoc and skips Apple notarization. Publication
 still requires authenticated GitHub release access and Exodia's Sparkle Ed25519
@@ -106,8 +130,12 @@ installation.
 
 Scheduled discovery shows **Update** in the island; downloading requires the
 user's action. An idle app installs and relaunches after the requested download.
-Busy meeting recording, dictation or agent activity defers a restart. Returning to idle does not restart the app automatically: the user
-chooses **Restart** or **Later**. The updater behavior is defined in
+Busy meeting recording, dictation or agent activity defers app-initiated relaunch.
+Returning to idle does not restart the app automatically. A prepared download may
+apply on ordinary user quit; **Restart** applies it once work is finished, while
+ready-stage **Later** cancels this installation with `.skip` without permanently
+skipping the version. No installation guarantee applies to force quit, crashes,
+process kills or power loss. The updater behavior is defined in
 `Sources/Sidekey/Updates/UpdateController.swift` and `IslandUpdateUserDriver.swift`.
 
 The package is named Exodia, while Swift targets, bundle IDs, Keychain services,

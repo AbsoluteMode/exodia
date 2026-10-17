@@ -135,6 +135,7 @@ final class PackagingRebrandTests: XCTestCase {
         echo unexpected-apple >> "$PROBE_MARKER"
         exit 71
         """#)
+        try prepareProvenanceFixture(temporary)
         let result = try runScript(temporary.appendingPathComponent("scripts/build-dmg.sh"),
             environment: ["PATH": tools.path + ":/usr/bin:/bin", "PROBE_MARKER": marker.path,
                           "BUILD_VERSION": "42", "FLAVOR": "prod"])
@@ -187,6 +188,7 @@ final class PackagingRebrandTests: XCTestCase {
         echo unexpected-verification > "$PROBE_MARKER"
         exit 75
         """#)
+        try prepareProvenanceFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg")
         let result = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
             environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
                 "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
@@ -217,6 +219,7 @@ final class PackagingRebrandTests: XCTestCase {
         echo unexpected-upload > "$PROBE_MARKER"
         exit 74
         """#)
+        try prepareProvenanceFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg")
         let result = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
             environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
                 "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
@@ -228,9 +231,15 @@ final class PackagingRebrandTests: XCTestCase {
 
     private func runScript(_ script: URL, arguments: [String] = [],
                            environment: [String: String]) throws -> (status: Int32, output: String) {
+        try runTool(URL(fileURLWithPath: "/bin/bash"), arguments: [script.path] + arguments,
+                    environment: environment)
+    }
+
+    private func runTool(_ executable: URL, arguments: [String],
+                         environment: [String: String]) throws -> (status: Int32, output: String) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [script.path] + arguments
+        process.executableURL = executable
+        process.arguments = arguments
         process.environment = environment
         let output = Pipe()
         process.standardOutput = output
@@ -239,6 +248,33 @@ final class PackagingRebrandTests: XCTestCase {
         process.waitUntilExit()
         return (process.terminationStatus,
                 String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+    }
+
+    private func prepareProvenanceFixture(_ directory: URL, archiveName: String? = nil) throws {
+        let helper = directory.appendingPathComponent("scripts/release-provenance.py")
+        try FileManager.default.copyItem(at: try projectRoot().appendingPathComponent("scripts/release-provenance.py"),
+            to: helper)
+        try "build/\n.build/\n".write(to: directory.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        let environment = ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
+        for arguments in [["init", "-q"], ["config", "user.name", "Release Fixture"],
+                          ["config", "user.email", "fixture@example.invalid"],
+                          ["config", "commit.gpgsign", "false"], ["config", "core.hooksPath", "/dev/null"],
+                          ["config", "core.fsmonitor", "false"], ["add", "."], ["commit", "-qm", "fixture"]] {
+            let result = try runTool(URL(fileURLWithPath: "/usr/bin/git"),
+                arguments: ["-C", directory.path] + arguments, environment: environment)
+            XCTAssertEqual(result.status, 0, result.output)
+        }
+        if let archiveName {
+            let captured = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+                arguments: [helper.path, "capture", "--project-root", directory.path], environment: environment)
+            XCTAssertEqual(captured.status, 0, captured.output)
+            let result = try runTool(URL(fileURLWithPath: "/usr/bin/python3"), arguments: [helper.path, "seal",
+                "--project-root", directory.path, "--source-sha", captured.output.trimmingCharacters(in: .whitespacesAndNewlines),
+                "--archive", directory.appendingPathComponent("build/" + archiveName).path,
+                "--version", "9.9.9", "--build", "42", "--flavor", "prod", "--distribution", "community"],
+                environment: environment)
+            XCTAssertEqual(result.status, 0, result.output)
+        }
     }
 
     private func temporaryDirectory() throws -> URL {

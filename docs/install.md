@@ -66,8 +66,10 @@ When the island offers **Update**, choose **Download**. Sparkle verifies the
 archive using Exodia's Ed25519 public key. When the app is idle, the requested
 update installs and relaunches when ready. If a meeting recording, dictation or
 agent task is active, the app keeps the update ready without interrupting it.
-Finish the activity, then choose **Restart** to apply the update or **Later**.
-Returning to idle does not force a restart.
+Finish the activity, then choose **Restart** to apply the update. A prepared
+download can also apply when you quit Exodia normally. Choose **Later** to cancel
+the current installation; it will not then apply on that quit. Returning to idle
+does not force a restart. Installation after force quit or a crash is not guaranteed.
 
 You can also install a newer Exodia DMG over the copy in Applications. Keys,
 settings and local knowledge are stored outside the app bundle. Ad-hoc signature

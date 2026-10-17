@@ -27,8 +27,9 @@ Community builds use ad-hoc code signing, without Apple notarization. macOS may
 warn on the first download; see [installation and permissions](docs/install.md).
 Updates use the existing island **Update** button and verify the archive with
 Exodia's Sparkle Ed25519 key, which is independent of Apple signing. An update
-will not restart the app during a meeting recording, dictation or agent task;
-finish the activity, then choose **Restart** or **Later**.
+will not force a restart during a meeting recording, dictation or agent task.
+A prepared download can also apply when you quit Exodia normally. **Later**
+cancels the current installation; **Restart** applies it once work is finished.
 
 Runtime: macOS 14.2 (Sonoma) or newer. Local speech and text models need Apple
 Silicon; Intel Macs can use their own provider keys. Exodia keeps the original

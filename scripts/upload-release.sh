@@ -62,9 +62,6 @@ if ! [[ "$BUILD_VERSION" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-command -v gh >/dev/null 2>&1 || { echo "ERROR: gh (GitHub CLI) is required" >&2; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "ERROR: gh is not authenticated (run: gh auth login)" >&2; exit 1; }
-
 GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/exodia}"
 DOWNLOAD_BASE="https://github.com/${GITHUB_REPO}/releases/download"
 
@@ -96,6 +93,24 @@ case "$FLAVOR" in
         FEED_URL="${DOWNLOAD_BASE}/beta/appcast.xml"
         ;;
 esac
+
+DMG_MANIFEST="${DMG_LOCAL}.manifest.json"
+case "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" in
+    0) DISTRIBUTION_MODE="community" ;;
+    1) DISTRIBUTION_MODE="developer-id" ;;
+    *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 1 ;;
+esac
+verify_archive_provenance() {
+    /usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" verify \
+        --project-root "${PROJECT_DIR}" --archive "$1" --manifest "${DMG_MANIFEST}" \
+        --version "${SHORT_VERSION}" --build "${BUILD_VERSION}" \
+        --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}"
+}
+# Validate before key access or any GitHub operation. Never infer provenance from a filename.
+SOURCE_SHA="$(verify_archive_provenance "${DMG_LOCAL}")"
+
+command -v gh >/dev/null 2>&1 || { echo "ERROR: gh (GitHub CLI) is required" >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "ERROR: gh is not authenticated (run: gh auth login)" >&2; exit 1; }
 
 # Versioned asset URLs are immutable. Never overwrite an existing release,
 # including a draft from a failed attempt; inspect it explicitly before retrying.
@@ -219,6 +234,12 @@ PYXML
 # --- 1. Stage the new DMG next to the previous appcast --------------------
 
 cp "$DMG_LOCAL" "${STAGING_DIR}/${DMG_FILENAME}"
+# Close the source/copy gap and recheck the exact staged archive before publishing.
+STAGED_SOURCE_SHA="$(verify_archive_provenance "${STAGING_DIR}/${DMG_FILENAME}")"
+if [ "${STAGED_SOURCE_SHA}" != "${SOURCE_SHA}" ]; then
+    echo "ERROR: archive source revision changed during staging; refusing publication." >&2
+    exit 1
+fi
 
 echo "Fetching the current ${FLAVOR} appcast from ${GITHUB_REPO} (if any)..."
 if [ "$FLAVOR" = "prod" ]; then
@@ -266,9 +287,9 @@ cp "${STAGING_DIR}/${DMG_FILENAME}" "${STAGING_DIR}/${LATEST_FILENAME}"
 
 # --- 3. Stage a new draft, verify uploaded bytes, then publish last ----------
 
-SOURCE_SHA="$(git -C "$PROJECT_DIR" rev-parse --verify 'HEAD^{commit}')"
-if ! [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "ERROR: could not resolve the exact source commit for the release tag." >&2
+# Recheck immediately before creating the tag; target the verified build-time commit.
+if [ "$(verify_archive_provenance "${STAGING_DIR}/${DMG_FILENAME}")" != "${SOURCE_SHA}" ]; then
+    echo "ERROR: source revision changed before publication." >&2
     exit 1
 fi
 notes_args=(--generate-notes)
