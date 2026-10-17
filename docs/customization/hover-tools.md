@@ -2,7 +2,9 @@
 
 The user chooses any number of tools in **Settings, Toolbox**. Selected tools wrap
 into rows of five. Settings stays last and cannot be removed. The editor always
-shows an add target; the live hover shows only the selected tools. Positions one
+shows an add target; the live hover grid shows the selected tools. The search
+field above it searches the full catalog and launches a tool without pinning it.
+Positions one
 through five have configurable positional hotkeys. Tools in later positions are
 accessible by pointer.
 
@@ -17,6 +19,7 @@ All paths below start at `Sources/Sidekey/`.
 | Tool to activation effect, inline panel requests | `DynamicIsland/HoverSlotRouter.swift` |
 | Action closures and preview defaults | `DynamicIsland/IslandActions.swift` |
 | Native controls, inline views and hover height | `DynamicIsland/IslandView.swift`, `IslandDropModeControl.swift` |
+| Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
 | Drag/drop catalog and selected layout | `Settings/ToolboxSettingsView.swift` |
 | App services and hotkey dispatch | `AppDelegate.swift` (`onHoverSlotActivated`) |
 | Positional hotkey labels and hints | `Settings/HotkeysSettingsView.swift`, `HelpWindowController.swift` |
@@ -31,8 +34,9 @@ All paths below start at `Sources/Sidekey/`.
    `IslandActions` closure with a harmless preview default and a real production
    handler in `AppDelegate`. For an inline panel, also add its panel state and
    view in `IslandView`.
-4. Update exhaustive switches in the live hover, Toolbox and any navigation
-   surfaces. The tile click and the positional hotkey must cause the same effect.
+4. Update exhaustive switches in the live hover, Toolbox, search aliases and any
+   navigation surfaces. Search results, tile clicks and positional hotkeys must
+   cause the same effect. Search results must not mutate the saved layout.
 5. Keep `HoverLayoutStore.columns` and the shared height calculation aligned. A
    new row must resize the AppKit panel and its hit region, not just the SwiftUI
    contents. Do not fill the user's layout with defaults after a removal.
@@ -46,10 +50,13 @@ change and rebuild it with the canonical development script.
 ## Checks
 
 ```bash
-python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests'
+python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests'
 python3 scripts/customize.py run
 ```
 
 Inspect one row and multiple rows, add/reorder/remove, Settings locking, relaunch
 persistence and keyboard activation of the first five positions. Verify that a
 click in the extra rows reaches the tool and that the panel collapses correctly.
+Search for an unpinned Output Lang, verify keyboard and pointer activation,
+clear with Escape, and check that clicking outside releases text focus. Ordinary
+hover must not take focus from another app.

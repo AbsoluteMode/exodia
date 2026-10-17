@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# user-release.sh - the Whytap release path.
+# user-release.sh - the Exodia release path.
 #
 # One command: build, sign and notarize the DMG on a Mac, then publish it as
 # a GitHub Release together with the EdDSA-signed Sparkle appcast so that
@@ -22,7 +22,7 @@
 #   TEAM_ID                      Apple Developer Team ID (Developer ID signing)
 #   ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID, ASC_API_KEY_P8   notarization
 #   SPARKLE_ED_PRIVATE_KEY       base64 Ed25519 seed (see sparkle-keys-bootstrap.sh)
-#   GITHUB_REPO                  owner/name (default: AbsoluteMode/whytap)
+#   GITHUB_REPO                  owner/name (default: AbsoluteMode/exodia)
 #   plus an authenticated `gh` CLI.
 #
 # Optional:
@@ -36,7 +36,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
     cat <<'EOF2'
-user-release.sh - the Whytap release path (local build -> GitHub Releases -> Sparkle).
+user-release.sh - the Exodia release path (local build -> GitHub Releases -> Sparkle).
 
 Usage:
   FLAVOR=prod ./scripts/user-release.sh
@@ -51,7 +51,7 @@ Required in the environment (or via `doppler run -- ...`):
   SPARKLE_ED_PRIVATE_KEY, an authenticated gh CLI
 
 Optional:
-  GITHUB_REPO         default: AbsoluteMode/whytap
+  GITHUB_REPO         default: AbsoluteMode/exodia
   SHORT_VERSION       default: max(VERSION, live appcast shortVersionString)
   BUILD_VERSION       default: max(live appcast build, installed build) + 1
   RELEASE_NOTES_FILE  markdown body for the GitHub Release
@@ -99,18 +99,20 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 
-GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/whytap}"
+GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/exodia}"
 FLAVOR="${FLAVOR:-prod}"
 case "$FLAVOR" in
     prod)
-        APP_BUNDLE_NAME="Whytap"
+        APP_BUNDLE_NAME="Exodia"
         APPCAST_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/appcast.xml"
-        INSTALLED_APP="/Applications/Whytap.app"
+        INSTALLED_APP="/Applications/Exodia.app"
+        LEGACY_INSTALLED_APP="/Applications/Whytap.app"
         ;;
     beta)
-        APP_BUNDLE_NAME="Whytap-Beta"
+        APP_BUNDLE_NAME="Exodia-Beta"
         APPCAST_URL="https://github.com/${GITHUB_REPO}/releases/download/beta/appcast.xml"
-        INSTALLED_APP="/Applications/Whytap-Beta.app"
+        INSTALLED_APP="/Applications/Exodia-Beta.app"
+        LEGACY_INSTALLED_APP="/Applications/Whytap-Beta.app"
         ;;
     *)
         die "invalid FLAVOR='${FLAVOR}' (expected prod or beta)"
@@ -138,7 +140,7 @@ sparkle_ns = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 
 request = urllib.request.Request(
     url,
-    headers={"User-Agent": "whytap-local-release/2.0"},
+    headers={"User-Agent": "exodia-local-release/2.0"},
 )
 with urllib.request.urlopen(request, timeout=15) as response:
     root = ET.fromstring(response.read())
@@ -215,6 +217,10 @@ fi
 
 installed_build_version=""
 installed_plist="${INSTALLED_APP}/Contents/Info.plist"
+# Keep build numbers monotonic when the installed copy still has its old name.
+if [ ! -f "$installed_plist" ]; then
+    installed_plist="${LEGACY_INSTALLED_APP}/Contents/Info.plist"
+fi
 if [ -f "$installed_plist" ]; then
     installed_build_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$installed_plist" 2>/dev/null || true)"
 fi

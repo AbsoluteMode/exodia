@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# build-dmg.sh — Build, sign, notarize, staple, and package Whytap as DMG.
+# build-dmg.sh — Build, sign, notarize, staple, and package Exodia as DMG.
 #
 # Usage:
 #   FLAVOR=beta|prod \
@@ -21,7 +21,7 @@
 #
 # Outputs:
 #   - build/${APP_BUNDLE_NAME}-${SHORT_VERSION}-build${BUILD_VERSION}.dmg
-#     where APP_BUNDLE_NAME = Whytap (prod) or Whytap-Beta (beta).
+#     where APP_BUNDLE_NAME = Exodia (prod) or Exodia-Beta (beta).
 
 set -euo pipefail
 
@@ -41,25 +41,25 @@ fi
 # wrapping the shared "Sidekey" library — see Package.swift), so the
 # artifact stays .build/release/Sidekey and CFBundleExecutable is stable
 # across the product-line split. The .app bundle wrapping it can be named
-# differently per flavor (Whytap.app vs Whytap-Beta.app) so both flavors
+# differently per flavor (Exodia.app vs Exodia-Beta.app) so both flavors
 # can sit side-by-side in /Applications without colliding.
 EXECUTABLE_NAME="Sidekey"
 BUNDLE_ICON_FILE="AppIcon"
 
 case "$FLAVOR" in
     beta)
-        APP_BUNDLE_NAME="Whytap-Beta"
+        APP_BUNDLE_NAME="Exodia-Beta"
         BUNDLE_ID="com.rootwise.sidekey.beta"
-        BUNDLE_DISPLAY_NAME="Whytap Beta"
+        BUNDLE_DISPLAY_NAME="Exodia Beta"
         SWIFT_FLAGS="-Xswiftc -DBETA"
-        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/download/beta/appcast.xml}"
+        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/download/beta/appcast.xml}"
         ;;
     prod)
-        APP_BUNDLE_NAME="Whytap"
+        APP_BUNDLE_NAME="Exodia"
         BUNDLE_ID="com.rootwise.sidekey"
-        BUNDLE_DISPLAY_NAME="Whytap"
+        BUNDLE_DISPLAY_NAME="Exodia"
         SWIFT_FLAGS=""
-        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/latest/download/appcast.xml}"
+        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/latest/download/appcast.xml}"
         ;;
     *)
         echo "ERROR: invalid FLAVOR='${FLAVOR}' (expected beta|prod)" >&2

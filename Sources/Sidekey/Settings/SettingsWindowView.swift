@@ -180,7 +180,7 @@ struct SettingsWindowView: View {
             NSApp.terminate(nil)
         } label: {
             HStack(spacing: 0) {
-                Text("Quit Whytap")
+                Text("Quit Exodia")
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
                     .layoutPriority(1)
@@ -197,7 +197,7 @@ struct SettingsWindowView: View {
             .animation(.easeOut(duration: 0.2), value: isHighlighted)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Quit Whytap")
+        .accessibilityLabel("Quit Exodia")
     }
 
     @ViewBuilder

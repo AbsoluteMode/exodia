@@ -1136,9 +1136,9 @@ final class IslandPanel: NSPanel {
 
     // Borderless / nonactivating panels must opt out of becoming key / main
     // for normal island interactions; otherwise clicking SwiftUI buttons steals
-    // focus from the app the user was typing in. Agent text entry is the lone
-    // exception, and it lives in `IslandAgentComposerPanel` instead of mutating
-    // this overlay panel at runtime.
+    // focus from the app the user was typing in. Inline editors and an explicitly
+    // clicked hover search field request key focus only while entering text.
+    // Agent text entry uses the separate `IslandAgentComposerPanel`.
     override var canBecomeKey: Bool { acceptsKeyboardFocus }
     override var canBecomeMain: Bool { false }
 

@@ -1,29 +1,29 @@
 import XCTest
 
 final class PackagingRebrandTests: XCTestCase {
-    func test_buildDmgUsesWhytapBundleNamesButKeepsStableIdentity() throws {
+    func test_buildDmgUsesExodiaBundleNamesButKeepsStableIdentity() throws {
         let source = try readProjectFile("scripts/build-dmg.sh")
 
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"BUNDLE_ID="com.rootwise.sidekey.beta""#))
         XCTAssertTrue(source.contains(#"BUNDLE_ID="com.rootwise.sidekey""#))
 
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey-Beta""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey""#))
     }
 
-    func test_userReleaseScriptUsesWhytapArtifactNames() throws {
+    func test_userReleaseScriptUsesExodiaArtifactNames() throws {
         // The release artifact names used to be passed by the GitHub Actions
         // workflow (.github/workflows/release.yml). That CI build is gone —
         // releases are cut locally via scripts/user-release.sh, which now owns
         // the flavor → APP_BUNDLE_NAME mapping. The rebrand invariant
-        // (artifacts are "Whytap", never "Sidekey") lives there now.
+        // (artifacts are "Exodia", never "Sidekey") lives there now.
         let source = try readProjectFile("scripts/user-release.sh")
 
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey-Beta""#))
     }
@@ -43,12 +43,12 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("updates.whytap.ai"))
     }
 
-    func test_devRunUsesWhytapDevBundleAndCleansOldSidekeyBundles() throws {
+    func test_devRunUsesExodiaDevBundleAndCleansOldSidekeyBundles() throws {
         let source = try readProjectFile("scripts/dev-run.sh")
 
         XCTAssertTrue(source.contains(#"APP_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta-dev.app""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta-dev.app""#))
         XCTAssertTrue(source.contains("build/Sidekey-Beta-dev.app"))
     }
 
@@ -84,10 +84,10 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("${TEAM_ID}.${BUNDLE_ID}"))
     }
 
-    func test_readmePointsNewInstallsAtWhytapLatestDmg() throws {
+    func test_readmePointsNewInstallsAtExodiaLatestDmg() throws {
         let source = try readProjectFile("README.md")
 
-        XCTAssertTrue(source.contains("Whytap-latest.dmg"))
+        XCTAssertTrue(source.contains("Exodia-latest.dmg"))
         XCTAssertFalse(source.contains("Sidekey-latest.dmg"))
     }
 

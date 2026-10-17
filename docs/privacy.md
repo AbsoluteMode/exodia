@@ -1,6 +1,6 @@
 # Privacy
 
-Whytap has no accounts, no Whytap-operated servers and no telemetry. This
+Exodia has no accounts, no Exodia-operated servers and no telemetry. This
 document lists every way data can leave the Mac, so that "fully local" is a
 verifiable claim rather than a slogan.
 

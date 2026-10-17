@@ -199,10 +199,12 @@ final class IslandDropModeControlTests: XCTestCase {
         // paste-target + remembered-mode capture used to live in this tile
         // closure; the configurable-hotkeys feature moved it onto the
         // `panelMode -> .history` transition so the ⌥N Hover-slot hotkey enters
-        // History through the SAME capture path as a click (D1). The tile now
-        // only flips the mode.
+        // History through the SAME capture path as a click (D1). Tile and
+        // search both use the shared tool activation resolver.
         let historyTile = String(source[historyStart.lowerBound..<nextTileStart.lowerBound])
-        XCTAssertTrue(historyTile.contains("panelMode = .history"))
+        XCTAssertTrue(historyTile.contains("action: { activateTool(tool) }"))
+        XCTAssertEqual(HoverSlotRouter.effect(for: .clipboard), .openPanel(.history))
+        XCTAssertTrue(source.contains("case .history: panelMode = .history"))
         XCTAssertFalse(historyTile.contains("action: {}"))
 
         // Capture lives on the shared panelMode transition, reachable by both
@@ -243,7 +245,7 @@ final class IslandDropModeControlTests: XCTestCase {
         XCTAssertTrue(source.contains("systemImage: \"note.text\""))
         XCTAssertTrue(source.contains("onOpenNotes()"))
         XCTAssertTrue(source.contains("title: \"Quit\""))
-        XCTAssertTrue(source.contains("accessibilityLabel: \"Quit Whytap\""))
+        XCTAssertTrue(source.contains("accessibilityLabel: \"Quit Exodia\""))
         XCTAssertTrue(source.contains("onQuit()"))
         XCTAssertFalse(source.contains("title: \"Exit\""))
         XCTAssertTrue(source.contains("static let tileWidth: CGFloat = 55"))

@@ -279,7 +279,7 @@ struct OpenRouterLLMClient: OpenRouterLLMClienting {
         }
         if endpoint.sendsOpenRouterHeaders {
             request.setValue(BuildConfig.landingURL.absoluteString, forHTTPHeaderField: "HTTP-Referer")
-            request.setValue("Whytap", forHTTPHeaderField: "X-Title")
+            request.setValue("Exodia", forHTTPHeaderField: "X-Title")
         }
     }
 

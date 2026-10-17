@@ -228,7 +228,7 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { agentClient.calls.count == 1 }
 
         let prompt = try XCTUnwrap(agentClient.calls.first?.prompt)
-        XCTAssertTrue(prompt.hasPrefix("You are Whytap"), "Preamble must lead the prompt; got: \(prompt.prefix(40))")
+        XCTAssertTrue(prompt.hasPrefix("You are Exodia"), "Preamble must lead the prompt; got: \(prompt.prefix(40))")
         XCTAssertTrue(prompt.contains("AGENTS.md in your working directory is your memory"))
         XCTAssertTrue(prompt.contains("Lead with the answer in your first sentence"))
         XCTAssertTrue(prompt.contains("useful.actions"))
@@ -258,9 +258,9 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { agentClient.calls.count == 1 }
 
         let prompt = try XCTUnwrap(agentClient.calls.first?.prompt)
-        XCTAssertFalse(prompt.contains("You are Whytap"), "Resume turns must not repeat the preamble; got: \(prompt.prefix(40))")
+        XCTAssertFalse(prompt.contains("You are Exodia"), "Resume turns must not repeat the preamble; got: \(prompt.prefix(40))")
         XCTAssertFalse(prompt.contains("AGENTS.md in your working directory is your memory"))
-        XCTAssertFalse(prompt.contains("You are Whytap"))
+        XCTAssertFalse(prompt.contains("You are Exodia"))
         XCTAssertTrue(prompt.contains("Reply in the language of the user's latest request"))
         XCTAssertTrue(prompt.hasSuffix("снова привет"))
         // The resume id is the stored one, confirming this turn is a resume.
@@ -286,7 +286,7 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { agentClient.calls.count == 1 }
 
         let prompt = try XCTUnwrap(agentClient.calls.first?.prompt)
-        XCTAssertFalse(prompt.contains("You are Whytap"))
+        XCTAssertFalse(prompt.contains("You are Exodia"))
         XCTAssertTrue(prompt.contains("Selected text:\nhighlighted code"))
         XCTAssertTrue(prompt.hasSuffix("explain"))
     }
@@ -295,7 +295,7 @@ final class AgentControllerTests: XCTestCase {
         // Guard: a future edit must not silently drop a whole block of the
         // preamble. Pin one marker per section.
         let preamble = AgentController.systemPromptPreambleForTesting
-        XCTAssertTrue(preamble.contains("You are Whytap"))
+        XCTAssertTrue(preamble.contains("You are Exodia"))
         // ANSWERING — anti-preamble rule.
         XCTAssertTrue(preamble.contains("Lead with the answer in your first sentence"))
         // TOOLS — gating on freshness.
@@ -372,7 +372,7 @@ final class AgentControllerTests: XCTestCase {
         }
         XCTAssertNil(firstProvider.calls.first?.resumeSessionID)
         XCTAssertTrue(firstProvider.calls.first?.prompt.contains("first-schema.sql:8") == true)
-        XCTAssertTrue(firstProvider.calls.first?.prompt.contains("Whytap customization capabilities") == true)
+        XCTAssertTrue(firstProvider.calls.first?.prompt.contains("Exodia customization capabilities") == true)
 
         selected = second
         controller.submitTextQuery("second question", snapshot: snapshot)
@@ -390,7 +390,7 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { firstProvider.calls.count == 2 }
         XCTAssertEqual(firstProvider.calls.last?.resumeSessionID, "first-session")
         XCTAssertTrue(firstProvider.calls.last?.prompt.contains("first-schema.sql:9 revised source") == true)
-        XCTAssertFalse(firstProvider.calls.last?.prompt.contains("Whytap customization capabilities") == true)
+        XCTAssertFalse(firstProvider.calls.last?.prompt.contains("Exodia customization capabilities") == true)
         XCTAssertEqual(neutral.sessionID(for: .opencode), "neutral-session")
     }
 

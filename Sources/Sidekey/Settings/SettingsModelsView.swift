@@ -88,7 +88,7 @@ struct SettingsModelsView: View {
             MacBanner(
                 tone: .privacy,
                 systemImage: "lock.shield",
-                text: "Transcription goes straight to the provider with your key. Nothing passes through any Whytap server."
+                text: "Transcription goes straight to the provider with your key. Nothing passes through any Exodia server."
             )
 
 

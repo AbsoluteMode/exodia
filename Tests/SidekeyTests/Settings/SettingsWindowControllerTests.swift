@@ -14,7 +14,7 @@ final class SettingsWindowControllerTests: XCTestCase {
 
         let window = controller.window
         XCTAssertNotNil(window)
-        XCTAssertEqual(window?.title, "Whytap Settings")
+        XCTAssertEqual(window?.title, "Exodia Settings")
         XCTAssertTrue(window?.styleMask.contains(.titled) ?? false)
         XCTAssertTrue(window?.styleMask.contains(.closable) ?? false)
         XCTAssertTrue(window?.styleMask.contains(.resizable) ?? false)
@@ -222,8 +222,8 @@ final class SettingsWindowControllerTests: XCTestCase {
             .appendingPathComponent("Settings")
             .appendingPathComponent("SettingsWindowView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        XCTAssertTrue(source.contains("Quit Whytap"),
-                      "Sidebar must have a pinned Quit Whytap row")
+        XCTAssertTrue(source.contains("Quit Exodia"),
+                      "Sidebar must have a pinned Quit Exodia row")
         XCTAssertTrue(source.contains("NSApp.terminate(nil)"),
                       "Quit row must call NSApp.terminate(nil)")
     }

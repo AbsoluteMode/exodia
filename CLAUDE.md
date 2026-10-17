@@ -1,11 +1,14 @@
-# whytap
+# Exodia
 
 Native macOS client (Swift + SwiftUI + AppKit, SwiftPM). BYOK first, with
 optional local models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
-OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
-no telemetry. The user-facing name is Whytap; the module and most internal
-identifiers are still `Sidekey`.
+OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Exodia servers,
+no telemetry. The user-facing name is Exodia (formerly Whytap); the module and most internal
+identifiers are still `Sidekey`. The public source repository is
+`https://github.com/AbsoluteMode/exodia`. Preserve legacy bundle IDs, Keychain
+services and Application Support paths so existing settings and permissions
+survive the rename. WHY: .project-docs/decisions/2026-10-17-exodia-name.md
 
 ## Architecture
 
@@ -122,6 +125,28 @@ Local LLM (Apple Silicon):
   put it directly into `Contents/MacOS/` and never sign it separately
   (breaks first-launch Gatekeeper on Sequoia). WHY:
   docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
+
+Hover materials:
+  IslandHoverGlass applies native SwiftUI Liquid Glass to drawer and music-strip
+  content on macOS26+, with regular.interactive circles in a shared glass
+  container. The earlier dark wash/specular/rims and magnetic/pressed transforms
+  are legacy fallback only. Keep adaptive backdrop tint, existing geometry and
+  separate8pt gaps; don't flatten native glass into a bitmap/drawingGroup or
+  add an opaque hosting layer. Compiler/runtime guards preserve older builds
+  and macOS14.2+ support. WHY:
+  .project-docs/decisions/2026-10-17-native-hover-glass.md
+
+Hover tool search:
+  The controls drawer has a Search all tools field above the saved tool grid.
+  IslandHoverToolSearch searches the full catalog (titles, descriptions and
+  aliases), including tools not pinned in Toolbox. Search activation shares
+  HoverSlotRouter with tile activation and never changes the saved layout.
+  Click the field to acquire keyboard focus; ordinary hover leaves the user's
+  app focused. Up/Down select, Return activates, Escape clears the query and
+  then releases focus. A 42pt search band participates in the shared AppKit
+  hit-zone height; focus and programmatic expansion keep it interactive.
+  Output language retains its Smart-mode requirement. WHY:
+  .project-docs/decisions/2026-10-17-hover-tool-search.md
 
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference
@@ -277,7 +302,7 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 
 ## Invariants
 
-1. **No Whytap-owned services.** The app never contacts a Whytap backend,
+1. **No Exodia-owned services.** The app never contacts an Exodia backend,
    has no account and sends no telemetry. Network traffic is limited to
    model downloads from Hugging Face, providers and monitoring sources the
    user configured (including their credential store), OpenCode's own provider

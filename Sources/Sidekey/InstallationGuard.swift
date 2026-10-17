@@ -19,8 +19,8 @@ enum InstallationGuard {
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "Install Whytap before opening it"
-        alert.informativeText = "Drag Whytap to the Applications folder in the disk image, then open Whytap from Applications. This gives permissions and updates a permanent home. This temporary copy will now quit."
+        alert.messageText = "Install Exodia before opening it"
+        alert.informativeText = "Drag Exodia to the Applications folder in the disk image, then open Exodia from Applications. This gives permissions and updates a permanent home. This temporary copy will now quit."
         alert.addButton(withTitle: "Open Applications")
         alert.addButton(withTitle: "Quit")
         if alert.runModal() == .alertFirstButtonReturn {

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# dev-run.sh — Build (and optionally launch) Whytap as a stable .app bundle
+# dev-run.sh — Build (and optionally launch) Exodia as a stable .app bundle
 # for local development.
 #
 # Why this exists:
@@ -20,7 +20,7 @@
 #   - Debug build (swift build, not -c release)
 #   - Local dev signature ("Sidekey Dev") when available, not Developer ID
 #   - No notarization, no DMG packaging
-#   - Output at build/Whytap-Beta-dev.app to avoid colliding with release bundle
+#   - Output at build/Exodia-Beta-dev.app to avoid colliding with release bundle
 #
 # Usage:
 #   ./scripts/dev-run.sh                # build dev app (beta flavor)
@@ -45,11 +45,11 @@ APP_NAME="Sidekey"
 # ("Sidekey" — thin executable target SidekeyApp wrapping the shared
 # library; see Package.swift), so the artifact stays .build/debug/Sidekey.
 EXECUTABLE_NAME="Sidekey"
-APP_BUNDLE_NAME="Whytap-Beta-dev.app"
+APP_BUNDLE_NAME="Exodia-Beta-dev.app"
 BUNDLE_ID="com.rootwise.sidekey.beta"
-BUNDLE_DISPLAY_NAME="Whytap Beta"
+BUNDLE_DISPLAY_NAME="Exodia Beta"
 BUNDLE_ICON_FILE="AppIcon"
-DEV_APPCAST_URL="${DEV_APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/download/beta/appcast.xml}"
+DEV_APPCAST_URL="${DEV_APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/download/beta/appcast.xml}"
 SWIFT_BUILD_ARGS=(--product Sidekey -Xswiftc -DBETA)
 # Build/version values used only for the dev bundle's Info.plist. A high
 # CFBundleVersion stops Sparkle from "discovering" a prod release as a
@@ -133,12 +133,15 @@ fi
 # assets below are copied as normal app resources.
 
 echo "▶ Assembling app bundle at build/${APP_BUNDLE_NAME}..."
+# Stop beta processes before removing old bundles so their Info.plist identity
+# remains readable during conflict detection. Never stop the production flavor.
+stop_conflicting_sidekey_processes
 # Clean up old dev bundles so stale pre-rebrand apps do not linger in build/
 # and accidentally launch with the same bundle identifier.
 rm -rf "${PROJECT_DIR}/build/Sidekey-OrbMetal-dev.app" \
        "${PROJECT_DIR}/build/Sidekey-dev.app" \
-       "${PROJECT_DIR}/build/Sidekey-Beta-dev.app"
-stop_conflicting_sidekey_processes
+       "${PROJECT_DIR}/build/Sidekey-Beta-dev.app" \
+       "${PROJECT_DIR}/build/Whytap-Beta-dev.app"
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"

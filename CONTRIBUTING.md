@@ -1,12 +1,12 @@
-# Contributing to Whytap
+# Contributing to Exodia
 
-Thanks for helping. Whytap is a native macOS app (Swift, SwiftUI, AppKit,
+Thanks for helping. Exodia is a native macOS app (Swift, SwiftUI, AppKit,
 SwiftPM). Users bring their own provider keys or choose local models.
-Pull requests that preserve this independence from Whytap services are welcome.
+Pull requests that preserve this independence from Exodia services are welcome.
 
 ## Ground rules
 
-- No Whytap-owned servers, accounts or telemetry. Network calls are allowed
+- No Exodia-owned servers, accounts or telemetry. Network calls are allowed
   only towards services the user configured with their own keys, model
   downloads, and the Sparkle update feed. `Tests/SidekeyTests/CloudRemovalTests.swift`
   enforces this at build time.
@@ -55,5 +55,5 @@ License of this repository. No CLA is required.
 ## Reporting bugs
 
 Use the issue templates. Include the macOS version, the Mac model (Apple
-Silicon or Intel), the Whytap version from Settings, and which speech / LLM
+Silicon or Intel), the Exodia version from Settings, and which speech / LLM
 route you use (your own key, custom endpoint, local model).

@@ -12,8 +12,8 @@ struct PermissionRepairView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 0) {
-                    MacGroupTitle(title: "Whytap needs permission again")
-                    Text("Whytap lost a permission it needs to run. Re-grant the items below — Drop and the Agent stay disabled until then.")
+                    MacGroupTitle(title: "Exodia needs permission again")
+                    Text("Exodia lost a permission it needs to run. Re-grant the items below — Drop and the Agent stay disabled until then.")
                         .font(.system(size: 12))
                         .foregroundStyle(MacSettingsTheme.text2)
                         .padding(.horizontal, 6)

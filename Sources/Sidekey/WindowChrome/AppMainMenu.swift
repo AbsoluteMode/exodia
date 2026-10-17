@@ -46,6 +46,6 @@ enum AppMainMenu {
     }
 
     private static var appName: String {
-        (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "Whytap"
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "Exodia"
     }
 }

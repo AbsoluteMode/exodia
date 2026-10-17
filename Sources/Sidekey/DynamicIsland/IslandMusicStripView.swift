@@ -124,13 +124,7 @@ struct IslandMusicStripView: View {
         .padding(.horizontal, IslandMusicStrip.horizontalPadding)
         .padding(.vertical, IslandMusicStrip.verticalPadding)
         .frame(width: width, height: IslandDropModeControl.musicStripHeight)
-        .background(IslandDetachedHoverPanelBackground())
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: IslandMusicStrip.cornerRadius,
-                style: .continuous
-            )
-        )
+        .islandHoverGlassSurface(cornerRadius: IslandMusicStrip.cornerRadius)
     }
 
     // MARK: - Artwork

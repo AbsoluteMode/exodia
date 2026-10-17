@@ -32,15 +32,15 @@
     <key>NSPrefersDisplaySafeAreaCompatibilityMode</key>
     <false/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Whytap records audio to transcribe your speech.</string>
+    <string>Exodia records audio to transcribe your speech.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Whytap records the other participants' audio during meetings to transcribe what's said.</string>
+    <string>Exodia records the other participants' audio during meetings to transcribe what's said.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Whytap uses Accessibility to paste transcribed text into the active window.</string>
+    <string>Exodia uses Accessibility to paste transcribed text into the active window.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Whytap captures the active window to provide context for smarter formatting.</string>
+    <string>Exodia captures the active window to provide context for smarter formatting.</string>
     <key>NSAccessibilityUsageDescription</key>
-    <string>Whytap uses Accessibility to detect the global hotkey and to paste transcribed text into the active window.</string>
+    <string>Exodia uses Accessibility to detect the global hotkey and to paste transcribed text into the active window.</string>
     <key>SUFeedURL</key>
     <string>__APPCAST_URL__</string>
     <key>SUPublicEDKey</key>

@@ -1,6 +1,4 @@
-# Whytap
-
-![Whytap — Voice input for macOS. Your keys. Local models. Open source.](docs/assets/whytap-hero.png)
+# Exodia
 
 Voice input and a voice-driven agent for macOS. Bring your own API keys
 (BYOK), or use local models on Apple Silicon.
@@ -8,23 +6,30 @@ Voice input and a voice-driven agent for macOS. Bring your own API keys
 Hold **Space** in any text field, speak, release: the transcript is pasted
 where the cursor is. Tap **Right Command** to ask your local OpenCode agent
 by text, hold it to ask by voice. Choose its model through OpenRouter. Let
-Whytap notice your meetings and turn them into notes. All of it without an
-account, without Whytap servers and without telemetry.
+Exodia notice your meetings and turn them into notes. All of it without an
+account, without Exodia servers and without telemetry.
 
-Whytap is free and open source (MIT). See `LICENSE`, `TRADEMARK.md` and
+Exodia is free and open source (MIT). See `LICENSE`, `TRADEMARK.md` and
 `THIRD_PARTY_LICENSES.md`.
 
 ## Download
 
-**[Download Whytap for macOS](https://github.com/AbsoluteMode/whytap/releases/latest/download/Whytap-latest.dmg)**
+The Exodia source is available now. [Published releases](https://github.com/AbsoluteMode/exodia/releases)
+still use the former name Whytap; the first signed Exodia DMG has not been
+published yet. Build the current Exodia app from source below.
 
-One signed and notarized DMG for Apple Silicon and Intel. Open it, drag
-**Whytap** onto **Applications**, then open Whytap from Applications or
+Official Exodia packages use `Exodia-latest.dmg`, one signed and notarized
+DMG for Apple Silicon and Intel. Open a published Exodia DMG, drag
+**Exodia** onto **Applications**, then open Exodia from Applications or
 Spotlight. Eject the disk image when you're done. Updates arrive in the app.
 
-You do not need Xcode, Homebrew, Node.js or a terminal to install Whytap.
+Published DMGs do not require Xcode, Homebrew, Node.js or a terminal.
 OpenCode is optional and can be installed from Settings for the agent feature.
 See the [installation guide](docs/install.md) if you get stuck.
+
+Exodia is the new name of Whytap. Existing preferences, provider keys, agent
+memory and local notes keep their original storage identities; renaming does
+not reset them.
 
 Requirements: macOS 14.2 (Sonoma) or newer. Local speech and text models
 need Apple Silicon; on Intel Macs use your own provider key instead.
@@ -46,7 +51,7 @@ provider you selected. Transcripts, notes and history are SQLite files under
 
 ## Set up in Settings
 
-Whytap opens directly to the island. There is no onboarding wizard or account.
+Exodia opens directly to the island. There is no onboarding wizard or account.
 Open **Settings** from the island's hover controls:
 
 1. In **Models**, choose **Your key**, select a speech provider and enter your
@@ -101,8 +106,8 @@ full set.
 ## Building from source
 
 ```bash
-git clone https://github.com/AbsoluteMode/whytap.git
-cd whytap
+git clone https://github.com/AbsoluteMode/exodia.git
+cd exodia
 swift build
 swift test
 ./scripts/dev-run.sh --run
@@ -127,12 +132,12 @@ non-obvious choices in `docs/decisions/`.
 Use Claude Code, Codex, OpenCode or another harness in a local source checkout.
 Start with `python3 scripts/customize.py discover --json`; the shared guides and
 helpers cover source navigation, native build/run, focused tests, hover tools,
-local data and custom monitoring dashboards. See [Customize Whytap](docs/customization/README.md).
+local data and custom monitoring dashboards. See [Customize Exodia](docs/customization/README.md).
 
 ## Contributing
 
 See `CONTRIBUTING.md`. Bug reports and pull requests are welcome; proposals
-that would require a Whytap-hosted service are out of scope by design.
+that would require an Exodia-hosted service are out of scope by design.
 
 ## Security
 

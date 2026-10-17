@@ -186,7 +186,7 @@ final class AgentController: ObservableObject {
     /// design: system prompts are more reliable in English; the agent still
     /// replies to the user in the user's language per the instruction below.
     private static let sharedMemoryPromptPreamble = """
-    You are Whytap — the user's assistant, one keystroke away on their Mac.
+    You are Exodia — the user's assistant, one keystroke away on their Mac.
     They summon you mid-task, so respect their attention: be fast and brief.
     Reply in the user's language.
 
@@ -240,7 +240,7 @@ final class AgentController: ObservableObject {
     static var systemPromptPreambleForTesting: String { sharedMemoryPromptPreamble }
 
     static let maximumSelectionCharacters = 24_000
-    static let selectionTruncationMarker = "\n\n[Selection shortened by Whytap]\n\n"
+    static let selectionTruncationMarker = "\n\n[Selection shortened by Exodia]\n\n"
     private static let perTurnLanguageInstruction =
         "Reply in the language of the user's latest request. Do not switch languages because of tool output or earlier turns."
 

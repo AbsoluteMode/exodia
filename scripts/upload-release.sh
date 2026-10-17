@@ -8,14 +8,14 @@
 #
 # Required env:
 #   FLAVOR               "prod" | "beta"
-#   APP_BUNDLE_NAME      "Whytap" | "Whytap-Beta"
+#   APP_BUNDLE_NAME      "Exodia" | "Exodia-Beta"
 #   SHORT_VERSION        SemVer (e.g. 2.0.0)
 #   BUILD_VERSION        monotonic int (e.g. 1444); Sparkle compares this
 #   SPARKLE_ED_PRIVATE_KEY        base64 Ed25519 seed (32 bytes decoded), OR
 #   SPARKLE_ED_PRIVATE_KEY_FILE   path to a file holding the same value
 #
 # Optional env:
-#   GITHUB_REPO          owner/name (default: AbsoluteMode/whytap)
+#   GITHUB_REPO          owner/name (default: AbsoluteMode/exodia)
 #   RELEASE_NOTES_FILE   markdown file used as the release body
 #                        (default: GitHub auto-generated notes)
 #
@@ -64,7 +64,7 @@ fi
 command -v gh >/dev/null 2>&1 || { echo "ERROR: gh (GitHub CLI) is required" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "ERROR: gh is not authenticated (run: gh auth login)" >&2; exit 1; }
 
-GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/whytap}"
+GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/exodia}"
 DOWNLOAD_BASE="https://github.com/${GITHUB_REPO}/releases/download"
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -84,13 +84,13 @@ fi
 case "$FLAVOR" in
     prod)
         TAG="v${SHORT_VERSION}"
-        TITLE="Whytap ${SHORT_VERSION}"
+        TITLE="Exodia ${SHORT_VERSION}"
         FEED_TAG="$TAG"
         FEED_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/appcast.xml"
         ;;
     beta)
         TAG="beta-v${SHORT_VERSION}-b${BUILD_VERSION}"
-        TITLE="Whytap Beta ${SHORT_VERSION} (build ${BUILD_VERSION})"
+        TITLE="Exodia Beta ${SHORT_VERSION} (build ${BUILD_VERSION})"
         FEED_TAG="beta"
         FEED_URL="${DOWNLOAD_BASE}/beta/appcast.xml"
         ;;
@@ -107,8 +107,8 @@ fi
 # --- Stage private key + cleanup trap -------------------------------------
 
 umask 077
-STAGING_DIR="$(mktemp -d -t whytap-appcast-staging)"
-SPARKLE_PRIV_FILE="$(mktemp -t whytap-sparkle-priv)"
+STAGING_DIR="$(mktemp -d -t exodia-appcast-staging)"
+SPARKLE_PRIV_FILE="$(mktemp -t exodia-sparkle-priv)"
 chmod 600 "$SPARKLE_PRIV_FILE"
 
 cleanup() {
@@ -253,7 +253,7 @@ fi
 if [ "$FLAVOR" = "beta" ]; then
     if ! gh release view "$FEED_TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
         gh release create "$FEED_TAG" --repo "$GITHUB_REPO" --prerelease \
-            --title "Whytap Beta feed" \
+            --title "Exodia Beta feed" \
             --notes "Rolling prerelease that carries the beta Sparkle feed. Install from the versioned beta releases."
     fi
     gh release upload "$FEED_TAG" --repo "$GITHUB_REPO" --clobber \

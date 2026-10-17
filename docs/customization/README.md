@@ -1,10 +1,10 @@
-# Customize Whytap with your coding agent
+# Customize Exodia with your coding agent
 
 Use a local source checkout with Claude Code, Codex, OpenCode or another coding
 harness. Each reads the same architecture, commands and contracts in `AGENTS.md`
 or `CLAUDE.md`. The helpers below do not depend on a particular agent provider.
 
-Start the harness in the Whytap checkout and give it a concrete request, for example:
+Start the harness in the Exodia checkout and give it a concrete request, for example:
 
 > Add a Monitor dashboard for my servers. Read AGENTS.md and run the customization
 > discovery command first. Reuse the existing dashboard contract, keep connection
@@ -63,7 +63,7 @@ target is `Sources/SidekeyApp/`; `Sidekey` is the internal module name.
    what still needs a real meeting, server or provider to verify.
 
 The build/run commands wrap `scripts/dev-run.sh`, which packages and signs
-`build/Whytap-Beta-dev.app`. They never install over the production application.
+`build/Exodia-Beta-dev.app`. They never install over the production application.
 The development app still has access to some existing local stores, including
 meeting notes; use injected temporary stores for automated checks. The run command
 may prompt for macOS permissions. Do not launch the app with `swift run`, reset TCC

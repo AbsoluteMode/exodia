@@ -109,7 +109,7 @@ final class OpenCodeProvider: CLIProvider {
                 return fail("workspace_error", "Couldn’t create the local OpenCode workspace.")
             }
             var args = ["run", "--format", "json", "--model", "openrouter/\(model)",
-                        "--dir", workingDir.path, "--title", "Whytap"]
+                        "--dir", workingDir.path, "--title", "Exodia"]
             if let session = resumeSessionID { args += ["--session", session] }
             if options.allowActions { args.append("--auto") }
             continuation.yield(.started(turnId: UUID().uuidString, requestId: "", sessionId: resumeSessionID ?? ""))

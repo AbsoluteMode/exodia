@@ -6,7 +6,7 @@ enum BuildFlavor: String, Codable, Equatable {
     case prod
 }
 
-/// Compile-time flavor selector. Two flavors of Whytap ship from the same
+/// Compile-time flavor selector. Two flavors of Exodia ship from the same
 /// codebase: `prod` (default) and `beta` (built with `-Xswiftc -DBETA`).
 ///
 /// Beta and prod installations are designed to coexist on the same machine
@@ -17,14 +17,14 @@ enum BuildConfig {
     static let flavor: BuildFlavor = .beta
     static let bundleID = "com.rootwise.sidekey.beta"
     static let keychainService = "com.rootwise.sidekey.beta"
-    static let appcastURL = URL(string: "https://github.com/AbsoluteMode/whytap/releases/download/beta/appcast.xml")!
-    static let landingURL = URL(string: "https://github.com/AbsoluteMode/whytap")!
+    static let appcastURL = URL(string: "https://github.com/AbsoluteMode/exodia/releases/download/beta/appcast.xml")!
+    static let landingURL = URL(string: "https://github.com/AbsoluteMode/exodia")!
     #else
     static let flavor: BuildFlavor = .prod
     static let bundleID = "com.rootwise.sidekey"
     static let keychainService = "com.rootwise.sidekey"
-    static let appcastURL = URL(string: "https://github.com/AbsoluteMode/whytap/releases/latest/download/appcast.xml")!
-    static let landingURL = URL(string: "https://github.com/AbsoluteMode/whytap")!
+    static let appcastURL = URL(string: "https://github.com/AbsoluteMode/exodia/releases/latest/download/appcast.xml")!
+    static let landingURL = URL(string: "https://github.com/AbsoluteMode/exodia")!
     #endif
 
     /// Public-facing Privacy Policy URL. `nil` hides the link entirely so no

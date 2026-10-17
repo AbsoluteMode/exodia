@@ -52,7 +52,7 @@ enum IslandDropModeControl {
     /// hint and gap. The host receives this height for click/hover routing too.
     static func controlsHoverPanelHeight(toolCount: Int) -> CGFloat {
         let rows = max(1, (toolCount + HoverLayoutStore.columns - 1) / HoverLayoutStore.columns)
-        return hoverPanelHeight + CGFloat(rows - 1) * 96
+        return hoverPanelHeight + IslandHoverToolSearch.searchBandHeight + CGFloat(rows - 1) * 96
     }
     static let modeCircleSize: CGFloat = IslandHoverPanelIconStyle.circleSize
     /// Gap between the compact island and the detached hover panel.
@@ -147,16 +147,9 @@ enum IslandDropModeControl {
     }
 }
 
-/// Hand-crafted liquid-glass styling for the detached hover panel.
-///
-/// Why hand-crafted: `NSGlassEffectView` cannot refract content BEHIND a
-/// transparent borderless window — it silently degrades to the same frosted
-/// blur as `NSVisualEffectView` (verified empirically June 2026: tint and
-/// contentView probes invisible, in-window backdrop sandwich changed
-/// nothing; matches cmux#3508 / ghostty#10170). The full liquid effect is
-/// reserved for in-window backdrops, so the panel builds the look manually:
-/// frosted blur + depth wash + top specular + edge lens + crisp rim. Bonus:
-/// identical rendering on macOS 14/15 too.
+/// Layered legacy glass styling for macOS before 26 and older build SDKs.
+/// Native hover surfaces use IslandHoverGlass on supported runtimes.
+/// WHY: .project-docs/decisions/2026-10-17-native-hover-glass.md
 enum IslandDetachedHoverPanelGlassStyle {
     /// Vertical darkening — glass reads thicker toward the bottom.
     static let depthWashTopOpacity: Double = 0.05

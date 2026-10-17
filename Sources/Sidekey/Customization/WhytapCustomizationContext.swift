@@ -5,8 +5,8 @@ import Foundation
 enum WhytapCustomizationContext {
     static var promptInstructions: String {
         """
-        Whytap customization capabilities:
-        You can help the user customize Whytap and add local monitoring dashboards.
+        Exodia customization capabilities:
+        You can help the user customize Exodia and add local monitoring dashboards.
         Monitor data directory on this Mac: \(MonitorPaths.root.path)
         Custom snapshot directory: \(MonitorPaths.dashboards.path)
         Built-in Server status configuration: \(MonitorPaths.servers.path)
@@ -43,14 +43,14 @@ enum WhytapCustomizationContext {
         merely to display measurements. Show connection failures and stale data.
         The user opens Monitor in hover and chooses the dashboard.
 
-        For source changes, locate the user's Whytap checkout and read its AGENTS.md.
+        For source changes, locate the user's Exodia checkout and read its AGENTS.md.
         Run python3 scripts/customize.py discover --json, then doctor --json for
         source entry points, contracts and local build prerequisites. The kit has
         context, scaffold-hover, scaffold-dashboard, validate-dashboard,
         install-dashboard, build, run and test commands. Source guide:
-        https://github.com/AbsoluteMode/whytap/blob/main/docs/customization/README.md
+        https://github.com/AbsoluteMode/exodia/blob/main/docs/customization/README.md
         Build/run use scripts/dev-run.sh and the beta app; never use swift run to
-        launch Whytap, replace the production app, reset permissions or delete user
+        launch Exodia, replace the production app, reset permissions or delete user
         stores as an incidental customization step. Reviews may edit temporary
         files and run tests. GitHub Actions stays disabled; validate locally.
         """

@@ -1,12 +1,20 @@
 # Build and release
 
-Whytap ships as a signed, notarized universal DMG published on GitHub
+Official Exodia builds use a signed, notarized universal DMG published on GitHub
 Releases. The same release carries the EdDSA-signed Sparkle `appcast.xml`,
 so installed copies update in-app. Everything is built on a Mac with
 `scripts/user-release.sh`; there is no CI release pipeline. Official updates
 are built and tested on the maintainer's Mac. GitHub only hosts the source
 and finished release assets; GitHub Actions is disabled to avoid runner costs.
 See the [local build policy](../.project-docs/decisions/2026-09-10-byok-and-local-builds.md).
+
+The rename changes the product and repository names. Existing published
+packages still use Whytap until the first Exodia release is cut. SwiftPM
+package metadata is `Exodia`; the library, executable product and target
+identifiers remain `Sidekey` / `SidekeyApp`. Bundle IDs, signing identity,
+Keychain services, UserDefaults keys and Application Support paths stay
+unchanged, preserving permissions and local data. Do not rename these
+compatibility identifiers without a migration.
 
 ## Local validation
 
@@ -35,7 +43,7 @@ validation or release builds.
   `SPARKLE_ED_PRIVATE_KEY_FILE`. `scripts/sparkle-keys-bootstrap.sh`
   creates a pair for a fork.
 - An authenticated GitHub CLI (`gh auth login`) with write access to the
-  release repository (`GITHUB_REPO`, default `AbsoluteMode/whytap`).
+  release repository (`GITHUB_REPO`, default `AbsoluteMode/exodia`).
 
 The official releases get these values from Doppler:
 
@@ -53,8 +61,8 @@ arguments are appended to nonempty arrays: expanding an empty array with
 
 | Flavor | Bundle id | Bundle name | Feed |
 |---|---|---|---|
-| `prod` | `com.rootwise.sidekey` | `Whytap.app` | `https://github.com/<repo>/releases/latest/download/appcast.xml` |
-| `beta` | `com.rootwise.sidekey.beta` | `Whytap-Beta.app` | `https://github.com/<repo>/releases/download/beta/appcast.xml` |
+| `prod` | `com.rootwise.sidekey` | `Exodia.app` | `https://github.com/<repo>/releases/latest/download/appcast.xml` |
+| `beta` | `com.rootwise.sidekey.beta` | `Exodia-Beta.app` | `https://github.com/<repo>/releases/download/beta/appcast.xml` |
 
 Both flavors install side by side (different bundle ids, keychain services
 and feeds). Beta is built with `-Xswiftc -DBETA`; the feed URLs are the
@@ -120,7 +128,7 @@ To publish your own builds, change all of the following together:
 4. The bundle identifier (`BuildConfig.bundleID`, `scripts/build-dmg.sh`,
    `scripts/dev-run.sh`), the app name and icon (see `TRADEMARK.md`).
 
-Without step 2 and 3 a fork would verify and install the official Whytap
+Without step 2 and 3 a fork would verify and install the official Exodia
 releases over itself.
 
 ## Development builds
@@ -129,7 +137,7 @@ releases over itself.
 ./scripts/dev-run.sh --run
 ```
 
-Builds a `Whytap-Beta-dev.app` with a stable ad-hoc signing identity so the
+Builds a `Exodia-Beta-dev.app` with a stable ad-hoc signing identity so the
 Accessibility, Microphone and System Audio grants survive rebuilds. Do not
 use `swift run` for the app: each rebuild would get a new identity and macOS
 would silently revoke the grants. Dev builds use the beta Keychain service

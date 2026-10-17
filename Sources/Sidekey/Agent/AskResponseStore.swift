@@ -268,7 +268,7 @@ final class AskResponseStore: ObservableObject {
         permissionQueue.removeAll()
         syncPendingPermissionHead()
         for prompt in pending {
-            onPermissionDecision?(prompt.id, .deny(message: "User declined in Whytap"))
+            onPermissionDecision?(prompt.id, .deny(message: "User declined in Exodia"))
         }
     }
 

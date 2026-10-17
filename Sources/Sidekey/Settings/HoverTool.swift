@@ -86,7 +86,7 @@ enum HoverToolRegistry {
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
                                  kind: .navigate(.quitRow),
-                                 description: "Quit Whytap")
+                                 description: "Quit Exodia")
         case .settings:
             return HoverToolInfo(title: "Settings", sfSymbol: "slider.horizontal.3",
                                  kind: .action,
