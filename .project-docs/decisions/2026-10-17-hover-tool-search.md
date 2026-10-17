@@ -43,3 +43,13 @@ The controls height includes the 42-point search band for rendering and hit
 testing. Settings stays pinned last; the first five saved positions retain
 their positional shortcuts. Search is a launcher for occasional tools, not an
 alternative persistence format.
+
+## Verification
+
+On 2026-10-17, the separate Exodia Beta development bundle accepted `output`
+and `output lang` in the real hover field. Return and a pointer click each
+opened the output-language picker while Output Lang was absent from the saved
+grid. Escape closed the picker without changing the selected language. Native
+NSSearchField bezel/insets keep the query clear of its search and cancel icons.
+The 180 focused hover/search tests passed; full private Control Center optical
+equality is outside this functional check.

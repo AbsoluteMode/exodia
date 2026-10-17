@@ -83,8 +83,8 @@ struct IslandHoverSearchField: NSViewRepresentable {
         field.sendsSearchStringImmediately = true
         field.sendsWholeSearchString = false
         field.focusRingType = .none
-        field.isBordered = false
-        field.drawsBackground = false
+        // Keep NSSearchField's native bezel and text insets so the query clears
+        // its magnifying-glass and cancel buttons at the compact control size.
         field.font = NSFont.systemFont(ofSize: 12)
         field.textColor = NSColor.white.withAlphaComponent(0.92)
         field.onFocusChange = onFocusChange
