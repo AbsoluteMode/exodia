@@ -74,11 +74,15 @@ not resign the key window before the result receives its owned mouse-up.
 
 For flat glass or missing hover feedback, read the current
 [native-glass and interaction decision](../../.project-docs/decisions/2026-10-17-native-hover-glass.md).
-The native path uses one Clear backdrop on an independent background shape per
+The native path uses one adaptive Regular backdrop on an independent background
+shape per
 card, with explicit foreground circular lenses and passive highlights. It does
 not wrap the foreground in glass or add nested native glass effects.
-Active visual treatment leaves focus unchanged; explicit motion respects
-Reduce Motion. Record the
-macOS version, backdrop and accessibility settings during live inspection. Do
-not infer compositor appearance from an offscreen snapshot or change the user's
-accessibility settings as an incidental fix.
+The search field and History use transparent foreground lenses, not black
+surfaces; the native search cell keeps its geometry while omitting the bezel
+paint. Active visual treatment leaves focus unchanged; explicit motion respects
+Reduce Motion. Record macOS, backdrop and accessibility settings with the visual
+evidence. Do not show test or fixture windows over the user's work; further
+checks must remain offscreen. State that offscreen output does not verify the
+external-desktop compositor, and do not change accessibility settings as an
+incidental fix.

@@ -33,7 +33,9 @@ struct IslandHoverGlassSurfaceModifier: ViewModifier {
                         // Keep the optical backdrop separate from the foreground
                         // lenses, matching the reference's independent layers.
                         shape.fill(Color.clear)
-                            .glassEffect(.clear, in: shape)
+                            // Regular retains adaptive contrast over bright
+                            // desktops when this panel becomes key for search.
+                            .glassEffect(.regular, in: shape)
                             // Active appearance only; the utility stays non-key.
                             .environment(\.appearsActive, true)
                     }
@@ -110,6 +112,28 @@ struct IslandHoverGlassControlsContainer<Content: View>: View {
 }
 
 extension View {
+    /// A foreground input lens shares its card's backdrop rather than adding
+    /// nested native glass. Its interior stays transparent while editing.
+    @ViewBuilder
+    func islandHoverInputLens(cornerRadius: CGFloat) -> some View {
+        if IslandHoverGlass.usesNativeLiquidGlass {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            self
+                .background {
+                    shape.fill(LinearGradient(
+                        colors: [.white.opacity(0.14), .white.opacity(0.055)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ))
+                    .allowsHitTesting(false)
+                }
+                .overlay {
+                    IslandHoverGlassRim(shape: shape).allowsHitTesting(false)
+                }
+        } else {
+            self
+        }
+    }
+
     func islandHoverGlassSurface(
         cornerRadius: CGFloat = IslandDropModeControl.detachedPanelCornerRadius,
         showGlass: Bool = true

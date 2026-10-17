@@ -2,7 +2,7 @@
 id: native-hover-glass-2026-10-17
 type: decision
 title: Native Apple Liquid Glass for hover surfaces
-summary: Use clear native glass with passive lens highlights, restore explicit hover feedback and preserve centered geometry and non-key pointer routing.
+summary: Use an independent Regular backdrop for bright-background contrast, transparent search and History lenses, and explicit hover feedback without changing pointer geometry.
 status: confirmed
 tags: [macos, hover, liquid-glass, swiftui, accessibility]
 canonical_for: [hover-glass-material]
@@ -13,6 +13,27 @@ sources:
     confirmed_at: 2026-10-17
   - type: user-confirmed
     reference: User feedback on 2026-10-17 reported flat gray glass, off-center buttons, missing hover feedback and unreliable clicks; the supplied LiquidButton reference requested a transparent lens with a bright edge and inner shine.
+    confirmed_at: 2026-10-17
+  - type: user-confirmed
+    reference: User feedback after the 2.2.1 publication on 2026-10-17 reported black search and History surfaces and insufficient white-foreground contrast when focused Clear glass was shown over a white background.
+    confirmed_at: 2026-10-17
+  - type: user-confirmed
+    reference: User requested on 2026-10-17 that test windows never appear over their work again; subsequent visual checks must remain offscreen.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: build/visual-reference/exodia-search-v4-query-white.png and exodia-search-v4-pattern.png, local CUA-inspected actual-field fixture screenshots on 2026-10-17; bitmaps are not committed.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-hover-panels-focused-tests.log, 109 focused tests with 0 failures for the Regular/search/History candidate.
+    confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/DynamicIsland/IslandHoverToolSearch.swift
+    confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/History/HistoryHoverView.swift
+    confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/History/HistoryHoverPreview.swift
     confirmed_at: 2026-10-17
   - type: repository
     reference: Sources/Sidekey/DynamicIsland/IslandHoverGlass.swift
@@ -61,9 +82,14 @@ clicks. Their LiquidButton reference requested a transparent lens with a bright
 edge and inner shine. These reports supersede the earlier visual and interaction
 policy; they are not a claim that every macOS backdrop renders identically.
 
+The released 2.2.1 then received production feedback: search and History still
+looked black, while focused Clear glass over a white background lost contrast
+with the white controls. The current 2.2.2 candidate addresses those surfaces;
+its actual-field v4 check is separate from the earlier v3 fixture.
+
 ## Decision
 
-On macOS 26 and later, apply one SwiftUI `glassEffect(.clear, in:)` backdrop per
+On macOS 26 and later, apply one SwiftUI `glassEffect(.regular, in:)` backdrop per
 drawer or music-strip card, on an independent transparent rounded rectangle
 inside `content.background`. Do not apply the material modifier to the whole
 foreground hierarchy: the lens gradient, rim and icon keep their independent
@@ -76,6 +102,16 @@ native backdrops on top of the parent card. The existing controls container
 remains, with explicit centered layout. Set `appearsActive=true` on the optical
 background's environment without making the utility panel key. Apple's [appearsActive documentation](https://developer.apple.com/documentation/swiftui/environmentvalues/appearsactive)
 controls preferred active styling; acquiring keyboard focus is a separate action.
+
+Regular replaces Clear for adaptive contrast over white backgrounds, including
+when search makes the panel key. Keep the independent backdrop and foreground
+rims/lenses; do not restore an opaque black surface or nested native glass.
+On macOS 26+, a custom `NSSearchFieldCell` draws its interior without the black
+bezel, preserving native geometry and button tracking. Its shared field editor
+is transparent; a foreground gradient/rim supplies the input lens. History uses
+the common drawer backdrop, translucent row/hint lenses and an independent
+preview backdrop. Existing macOS 14/15 fallback and transparent Case/Vocab/Filler
+panels are retained.
 
 Add `IslandHoverGlassRim` as a thin specular edge and inner highlight, preserving
 the native backdrop. The overlay uses `allowsHitTesting(false)` and never routes
@@ -108,6 +144,9 @@ not by an internal field-editor transition between down and up.
 
 ## Alternatives and supersession
 
+The current Regular background supersedes Clear after the production white-
+background contrast report. This is distinct from the first whole-content
+Regular treatment: the background remains separate from foreground lenses.
 The earlier same-day policy used `regular.interactive()` and restricted manual
 motion and painted rims to older macOS. An intermediate Clear variant still put
 native glass on both parent cards and child circles; the current refinement
@@ -125,7 +164,8 @@ path or flatten live glass into an offscreen bitmap.
 
 ## Verification scope
 
-The unique v3 native fixture was visually inspected through CUA on 2026-10-17.
+The earlier Clear v3 native fixture was visually inspected through CUA on
+2026-10-17, before the subsequent 2.2.1 production feedback.
 White foreground edges and translucent lenses were visible, and the one-row and
 two-row layouts were centered. A Settings click set the one-row Native counter
 to 1; Monitor and Case clicks set the cumulative two-row Native counter to 1
@@ -140,7 +180,27 @@ external desktop, complete hover/accessibility acceptance or optical equality to
 Control Center. Those checks must be reported separately; fixture results do not
 establish a public release or successful production installation.
 
-The full suite passed 2,928 tests with 8 skipped and 0 failures before the final
+The Regular/search/History v4 fixture was checked through CUA on white and
+patterned backdrops. Clicking the actual search field set `liveKey=true` and
+`searchFocused=true`. AX `setValue` to `output` updated the delegate-bound query
+and showed the native cancel button. First Escape cleared the query while the
+window stayed key; second Escape released focus and key status. The card,
+buttons and History row remained visible over both backgrounds. The 109 focused
+tests passed with 0 failures.
+
+These checks establish controlled editor appearance and delegate binding.
+Automated typeText/paste did not verify physical keypress input and caused focus
+loss, so no physical-typing claim is made. Installed production hover acceptance
+and the external-desktop compositor remain separate checks. The local screenshots
+are `exodia-search-v4-query-white.png` and `exodia-search-v4-pattern.png` under
+`build/visual-reference/`; bitmaps are not committed.
+
+The fixture was closed after inspection. At the user's explicit request,
+subsequent checks must stay offscreen and must not show test windows over their
+work. Offscreen results do not establish external-desktop optical behavior.
+
+For the earlier Clear candidate, the full suite passed 2,928 tests with 8 skipped
+and 0 failures before the final
 presentation-only move of Clear glass onto its independent background shape.
 Focused tests cover target identity, drag cancellation, viewport clipping, row
 geometry and search field-editor transitions. The final focused run passed 94

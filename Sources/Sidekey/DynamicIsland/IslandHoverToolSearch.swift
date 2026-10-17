@@ -83,8 +83,14 @@ struct IslandHoverSearchField: NSViewRepresentable {
         field.sendsSearchStringImmediately = true
         field.sendsWholeSearchString = false
         field.focusRingType = .none
-        // Keep NSSearchField's native bezel and text insets so the query clears
-        // its magnifying-glass and cancel buttons at the compact control size.
+        // Preserve native bezel geometry (text/search/cancel insets). The 26+
+        // cell omits only the opaque paint, leaving the SwiftUI glass visible.
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            field.drawsBackground = false
+            field.backgroundColor = .clear
+        }
+        #endif
         field.font = NSFont.systemFont(ofSize: 12)
         field.textColor = NSColor.white.withAlphaComponent(0.92)
         field.onFocusChange = onFocusChange
@@ -140,6 +146,16 @@ struct IslandHoverSearchField: NSViewRepresentable {
 
 @MainActor
 final class IslandHoverSearchNativeField: NSSearchField {
+    override class var cellClass: AnyClass? {
+        get {
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *) { return IslandHoverSearchGlassCell.self }
+            #endif
+            return super.cellClass
+        }
+        set { super.cellClass = newValue }
+    }
+
     var onFocusChange: (Bool) -> Void = { _ in }
     private var resignKeyObserver: NSObjectProtocol?
 
@@ -170,5 +186,21 @@ final class IslandHoverSearchNativeField: NSSearchField {
 
     deinit {
         if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
+    }
+}
+
+/// Keep NSSearchFieldCell's native layout and button tracking, but let the
+/// surrounding glass lens draw the surface instead of the dark AppKit bezel.
+@MainActor
+final class IslandHoverSearchGlassCell: NSSearchFieldCell {
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        super.drawInterior(withFrame: cellFrame, in: controlView)
+    }
+
+    override func setUpFieldEditorAttributes(_ textObj: NSText) -> NSText {
+        let editor = super.setUpFieldEditorAttributes(textObj)
+        editor.drawsBackground = false
+        editor.backgroundColor = .clear
+        return editor
     }
 }
