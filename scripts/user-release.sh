@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# user-release.sh - the Exodia release path.
+# user-release.sh - inactive legacy signed-binary pipeline.
+# Exodia now ships source; build locally with ./scripts/dev-run.sh --run.
+# Explicit legacy opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1.
+# WHY: .project-docs/decisions/2026-10-17-source-first-distribution.md
 #
 # One command: build, sign and notarize the DMG on a Mac, then publish it as
 # a GitHub Release together with the EdDSA-signed Sparkle appcast so that
@@ -36,7 +39,9 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
     cat <<'EOF2'
-user-release.sh - the Exodia release path (local build -> GitHub Releases -> Sparkle).
+Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run
+This is the inactive legacy signed-binary pipeline (DMG -> GitHub -> Sparkle).
+It requires explicit EXODIA_LEGACY_SIGNED_RELEASE=1, including for --dry-run.
 
 Usage:
   FLAVOR=prod ./scripts/user-release.sh
@@ -98,6 +103,12 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
+
+if [ "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" != "1" ]; then
+    echo "Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run" >&2
+    echo "Legacy signed releases are inactive (explicit opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1)." >&2
+    exit 2
+fi
 
 GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/exodia}"
 FLAVOR="${FLAVOR:-prod}"

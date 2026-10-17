@@ -249,8 +249,9 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 ## Commands
 
 ```bash
-# Dev: stable ad-hoc identity so TCC grants persist across rebuilds
-# (`swift run` silently invalidates them, do not use it for the app).
+# Source build: existing local Sidekey Dev identity, or ad-hoc fallback.
+# No Apple Developer account. macOS may require permissions again after rebuilding.
+# Use the packaged app, not `swift run`, for permissions and resources.
 ./scripts/dev-run.sh --run
 
 # Tests
@@ -260,19 +261,23 @@ swift test
 python3 scripts/customize.py discover --json
 python3 scripts/customize.py doctor --json
 
-# Release: build + sign + notarize + staple + GitHub Release + signed appcast.
-# Credentials come from the environment (the official builds wrap the command
-# in `doppler run --project sidekey --config dev --`). Bump VERSION first.
-FLAVOR=prod ./scripts/user-release.sh
-FLAVOR=beta ./scripts/user-release.sh
-FLAVOR=prod ./scripts/user-release.sh --dry-run
+# Explicit ad-hoc local build if no local certificate is desired
+SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 ```
 
-Build, test and package every official update locally on the maintainer's
-Mac. GitHub Actions is disabled to avoid hosted-runner costs; do not enable
-or dispatch it for validation or release builds. GitHub is used for source
-and finished release assets. Run `swift build` and `swift test` locally and
-include their results in the PR. Policy and rationale:
+Distribution is source-first. Develop, validate locally, review and publish
+source changes on GitHub; users pull source and rebuild on their own Macs.
+Apple Developer membership, Developer ID, notarization and a binary deployment
+are not completion gates for this source workflow. The old DMG/Sparkle publishing
+scripts are inactive unless explicitly opted into with
+`EXODIA_LEGACY_SIGNED_RELEASE=1`; never invoke them as the default delivery step.
+Existing installed binaries and updater compatibility remain intact. Do not
+disable Gatekeeper or other OS protections. WHY:
+`.project-docs/decisions/2026-10-17-source-first-distribution.md`.
+
+GitHub Actions is disabled to avoid hosted-runner costs; do not enable or dispatch
+it. Run appropriate local build/tests and record the results in the PR. BYOK-first
+presentation and local validation remain required:
 `.project-docs/decisions/2026-09-10-byok-and-local-builds.md`.
 
 Details and the fork checklist: `docs/build-and-release.md`.

@@ -17,10 +17,12 @@ sources:
   - type: repository
     reference: docs/build-and-release.md
     confirmed_at: 2026-09-10
-related: [../project.md]
+related: [../project.md, 2026-10-17-source-first-distribution.md]
 ---
 
 # BYOK presentation and local builds
+
+> Distribution update, 2026-10-17: [source-first Exodia](2026-10-17-source-first-distribution.md) supersedes the signed DMG delivery requirement. Runtime installation/resource checks, BYOK-first presentation and local validation remain current.
 
 ## Context
 
@@ -73,4 +75,4 @@ using GitHub Releases.
 ## Supersedes / superseded by
 
 Supersedes the initial Local-first presentation and automatic hosted CI.
-No later decision is known.
+Signed DMG delivery is superseded by [source-first Exodia](2026-10-17-source-first-distribution.md).

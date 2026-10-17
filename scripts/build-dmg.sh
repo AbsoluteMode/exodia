@@ -1,6 +1,8 @@
 #!/bin/bash
 #
 # build-dmg.sh — Build, sign, notarize, staple, and package Exodia as DMG.
+# Inactive legacy tooling; source builds use ./scripts/dev-run.sh --run.
+# WHY: .project-docs/decisions/2026-10-17-source-first-distribution.md
 #
 # Usage:
 #   FLAVOR=beta|prod \
@@ -24,6 +26,12 @@
 #     where APP_BUNDLE_NAME = Exodia (prod) or Exodia-Beta (beta).
 
 set -euo pipefail
+
+if [ "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" != "1" ]; then
+    echo "Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run" >&2
+    echo "Legacy signed releases are inactive (explicit opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1)." >&2
+    exit 2
+fi
 
 # --- Flavor parameterisation ---------------------------------------------
 

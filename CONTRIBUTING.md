@@ -22,19 +22,23 @@ Pull requests that preserve this independence from Exodia services are welcome.
 
 ## Building
 
-Requirements: macOS 14.2 or newer, Xcode with a Swift 6 toolchain
-(`swift-tools-version:6.0`, Swift 5 language mode). Local speech and LLM
-models need Apple Silicon; on Intel the app works with your own provider keys.
+Use macOS 14.2 or newer and Xcode 26 or newer with a Swift 6 toolchain
+(`swift-tools-version:6.0`, Swift 5 language mode). No Apple Developer
+account, Developer ID certificate or notarization is required. Local speech
+and LLM models need Apple Silicon; Intel Macs use provider keys.
 
 ```bash
-swift build
+git clone https://github.com/AbsoluteMode/exodia.git
+cd exodia
+./scripts/dev-run.sh --run
 swift test
-./scripts/dev-run.sh --run     # builds a dev bundle with a stable ad-hoc identity
 ```
 
-Use `dev-run.sh` rather than `swift run`: it keeps the same code-signing
-identity between builds so that the Accessibility, Microphone and System
-Audio grants you gave the dev bundle persist.
+The script creates `build/Exodia-Beta-dev.app` for testing on the same Mac.
+It uses an existing local `Sidekey Dev` signing identity or falls back to
+ad-hoc signing. Use it rather than `swift run` to preserve the app bundle
+path and identity. Ad-hoc rebuilds may require granting macOS permissions
+again. This development bundle is not a downloadable installer.
 
 ## Pull requests
 
@@ -46,8 +50,9 @@ Audio grants you gave the dev bundle persist.
 5. Maintainers squash-merge.
 
 Builds and tests run locally. GitHub Actions is disabled to avoid hosted-runner
-costs. Include the local validation result in the PR; release packaging also
-runs on the maintainer's Mac (see `docs/build-and-release.md`).
+costs. Include the local validation result in the PR. Source publication is
+the active distribution path; the old signed-DMG publishing pipeline is
+inactive optional tooling (see `docs/build-and-release.md`).
 
 By contributing you agree that your contribution is licensed under the MIT
 License of this repository. No CLA is required.

@@ -2,6 +2,8 @@
 #
 # upload-release.sh - publish a built DMG as a GitHub Release and refresh the
 # EdDSA-signed Sparkle appcast that ships as a release asset.
+# Inactive legacy tooling; source distribution does not publish an appcast.
+# WHY: .project-docs/decisions/2026-10-17-source-first-distribution.md
 #
 # Called by scripts/user-release.sh after build-dmg.sh produces:
 #   build/${APP_BUNDLE_NAME}-${SHORT_VERSION}-build${BUILD_VERSION}.dmg
@@ -35,6 +37,12 @@
 # delta updates: every item is a full DMG.
 
 set -euo pipefail
+
+if [ "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" != "1" ]; then
+    echo "Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run" >&2
+    echo "Legacy signed releases are inactive (explicit opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1)." >&2
+    exit 2
+fi
 
 required=(FLAVOR APP_BUNDLE_NAME SHORT_VERSION BUILD_VERSION)
 missing=()

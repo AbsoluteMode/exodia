@@ -14,7 +14,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/PostProcessor.swift
     confirmed_at: 2026-09-07
-related: [decisions/2026-10-17-hover-tool-search.md, decisions/2026-10-17-exodia-name.md, decisions/2026-10-17-native-hover-glass.md, decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md]
+related: [decisions/2026-10-17-source-first-distribution.md, decisions/2026-10-17-hover-tool-search.md, decisions/2026-10-17-exodia-name.md, decisions/2026-10-17-native-hover-glass.md, decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md]
 ---
 
 # Exodia
@@ -36,7 +36,9 @@ notes and a lexical source index stay local. Current scope and limits:
 
 Coding harnesses share the [source customization workflow](../docs/customization/README.md).
 
-Distribution: [public installation](decisions/2026-09-10-public-installation.md).
+Distribution: [source-first, no Apple Developer requirement](decisions/2026-10-17-source-first-distribution.md).
+The earlier [DMG installation policy](decisions/2026-09-10-public-installation.md)
+is historical; its runtime installation and resource checks remain useful.
 
 Hover appearance: [native Apple glass](decisions/2026-10-17-native-hover-glass.md), with a legacy material on older macOS versions.
 

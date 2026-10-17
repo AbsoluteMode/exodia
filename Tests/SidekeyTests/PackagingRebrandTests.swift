@@ -84,11 +84,29 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("${TEAM_ID}.${BUNDLE_ID}"))
     }
 
-    func test_readmePointsNewInstallsAtExodiaLatestDmg() throws {
-        let source = try readProjectFile("README.md")
-
-        XCTAssertTrue(source.contains("Exodia-latest.dmg"))
-        XCTAssertFalse(source.contains("Sidekey-latest.dmg"))
+    func test_legacyBinaryPipelineStopsBeforeBuildAndCredentialChecksByDefault() throws {
+        for (script, arguments) in [
+            ("scripts/user-release.sh", []),
+            ("scripts/user-release.sh", ["--dry-run"]),
+            ("scripts/build-dmg.sh", []),
+            ("scripts/upload-release.sh", [])
+        ] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            process.arguments = [try projectRoot().appendingPathComponent(script).path] + arguments
+            // An intentionally invalid flavor fails immediately if the source
+            // policy gate regresses, without reaching any network/build tools.
+            process.environment = ["PATH": "/usr/bin:/bin", "FLAVOR": "source-policy-probe"]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            try process.run()
+            process.waitUntilExit()
+            let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            XCTAssertEqual(process.terminationStatus, 2, "\(script): \(text)")
+            XCTAssertTrue(text.contains("distributed as source"), "\(script): \(text)")
+            XCTAssertTrue(text.contains("./scripts/dev-run.sh --run"), "\(script): \(text)")
+        }
     }
 
     private func readProjectFile(_ relativePath: String) throws -> String {

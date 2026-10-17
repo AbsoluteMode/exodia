@@ -72,7 +72,7 @@ Exodia — новое имя Whytap. Bundle ID, Keychain и пути локал�
 | **Voice Edit** | Единая фича работы с текстом в области курсора. Если есть выделение — работаем с выделением, иначе — со всем содержимым поля. AX читает текст, LLM правит, заменяет. Use cases: перевод ("переведи на английский" — наш USP, лучше DeepL за счёт technical vocabulary + screen context), стиль ("сделай короче"), редактирование поля ("замени X на Y", "добавь приветствие"). Edit chip появляется когда курсор в text field с содержимым, скрывается через AX observers (focus change / app switch / value clear) — без таймера. **Cmd+Z отменяет правку.** |
 | **Customizable hotkeys** | Пользователь может переназначить любой хоткей: диктовка, edit, ask mode. Дефолт `Right Option + /`, `Right Option + .` и т.п. |
 | Screenshot gating | Скриншот не всегда — только когда есть deictic words ("вот это", "там"), high-context app или low confidence по терминам |
-| Native macOS distribution | Code-signed DMG с нотаризацией (Apple Developer Team `<TEAM_ID>`). Установка drag-to-Applications, auto-update mechanism. |
+| Native macOS distribution | Открытые исходники и локальная сборка через `scripts/dev-run.sh`; Apple Developer и нотарификация не требуются. Старый DMG/Sparkle pipeline неактивен. |
 | Basic eval suite | p95 latency, correction rate, edit distance after paste |
 
 **Метрики успеха M1:**

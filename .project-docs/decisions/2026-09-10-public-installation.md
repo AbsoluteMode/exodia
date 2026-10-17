@@ -20,10 +20,12 @@ sources:
   - type: url
     reference: https://developer.apple.com/library/archive/technotes/tn2206/
     confirmed_at: 2026-09-10
-related: [../project.md]
+related: [../project.md, 2026-10-17-source-first-distribution.md]
 ---
 
 # Public installation
+
+> Distribution update, 2026-10-17: [source-first Exodia](2026-10-17-source-first-distribution.md) supersedes the signed DMG delivery requirement. Runtime installation/resource checks, BYOK-first presentation and local validation remain current.
 
 ## Context
 
@@ -89,4 +91,4 @@ on every supported macOS version or Intel hardware.
 ## Supersedes / superseded by
 
 Supersedes permissive launch from disk-image copies and warning-only handling
-of Gatekeeper rejection during packaging. No later decision is known.
+of Gatekeeper rejection during packaging. Signed DMG delivery is superseded by [source-first Exodia](2026-10-17-source-first-distribution.md).

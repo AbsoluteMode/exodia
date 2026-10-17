@@ -12,27 +12,31 @@ account, without Exodia servers and without telemetry.
 Exodia is free and open source (MIT). See `LICENSE`, `TRADEMARK.md` and
 `THIRD_PARTY_LICENSES.md`.
 
-## Download
+## Get the source
 
-The Exodia source is available now. [Published releases](https://github.com/AbsoluteMode/exodia/releases)
-still use the former name Whytap; the first signed Exodia DMG has not been
-published yet. Build the current Exodia app from source below.
+Exodia is distributed as open source. Build and run it locally on your Mac;
+an Apple Developer account, Developer ID certificate and notarization are
+not required.
 
-Official Exodia packages use `Exodia-latest.dmg`, one signed and notarized
-DMG for Apple Silicon and Intel. Open a published Exodia DMG, drag
-**Exodia** onto **Applications**, then open Exodia from Applications or
-Spotlight. Eject the disk image when you're done. Updates arrive in the app.
+```bash
+git clone https://github.com/AbsoluteMode/exodia.git
+cd exodia
+./scripts/dev-run.sh --run
+```
 
-Published DMGs do not require Xcode, Homebrew, Node.js or a terminal.
-OpenCode is optional and can be installed from Settings for the agent feature.
-See the [installation guide](docs/install.md) if you get stuck.
+This creates `build/Exodia-Beta-dev.app` for testing on the Mac that built it.
+The script uses an existing local `Sidekey Dev` signing identity when available,
+otherwise an ad-hoc signature. It does not publish an installer. See the
+[setup guide](docs/install.md) for prerequisites and permissions.
 
-Exodia is the new name of Whytap. Existing preferences, provider keys, agent
-memory and local notes keep their original storage identities; renaming does
-not reset them.
+[Earlier releases](https://github.com/AbsoluteMode/exodia/releases) contain
+historical Whytap binaries. They do not represent the current Exodia source.
+Exodia retains the original preferences, Keychain services and local data paths
+so the rename does not reset existing settings, keys, notes or agent memory.
 
-Requirements: macOS 14.2 (Sonoma) or newer. Local speech and text models
-need Apple Silicon; on Intel Macs use your own provider key instead.
+Runtime: macOS 14.2 (Sonoma) or newer. Building requires a Swift 6 toolchain
+with the macOS SDK; use Xcode 26 or newer. Local speech and text models need
+Apple Silicon; on Intel Macs use your own provider key instead.
 
 ## What runs where
 
@@ -103,25 +107,26 @@ sent to the model provider you configure when you ask the agent a question.
 Everything is remappable in **Settings, Hotkeys**. The Help window lists the
 full set.
 
-## Building from source
+## Development
+
+After making changes, validate locally:
 
 ```bash
-git clone https://github.com/AbsoluteMode/exodia.git
-cd exodia
 swift build
 swift test
 ./scripts/dev-run.sh --run
 ```
 
-Use `scripts/dev-run.sh` instead of `swift run`: it signs the dev bundle with
-a stable ad-hoc identity so the permission grants survive rebuilds. Release
-packaging (signing, notarization, Sparkle appcast, GitHub Release) is
-described in `docs/build-and-release.md`. The Metal library for MLX is
-committed (`Resources/mlx.metallib`) and pinned to the resolved `mlx-swift`
-revision; bump both together with `scripts/build-metallib.sh`.
+Use `scripts/dev-run.sh` instead of `swift run`: it creates a proper app
+bundle at a stable path and preserves the bundle identity. With the existing
+local signing identity, permission grants can survive rebuilds. An ad-hoc
+rebuild may require granting permissions again in macOS Settings.
 
-Builds, tests and release packaging run locally on the maintainer's Mac.
-GitHub hosts the source and finished releases; GitHub Actions is disabled.
+The Metal library for MLX is committed (`Resources/mlx.metallib`) and pinned
+to the resolved `mlx-swift` revision; bump both together with
+`scripts/build-metallib.sh`. See [build details](docs/build-and-release.md).
+Builds and tests run locally; GitHub Actions is disabled. Legacy signed-DMG
+and Sparkle publishing scripts remain inactive optional tooling.
 
 Architecture notes live in `CLAUDE.md`, the product spec in `docs/SPEC.md`,
 hotkey conventions in `docs/hotkey.md`, and the reasoning behind
