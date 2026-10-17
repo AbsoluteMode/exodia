@@ -126,33 +126,41 @@ Local LLM (Apple Silicon):
   (breaks first-launch Gatekeeper on Sequoia). WHY:
   docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
 
-Hover materials:
-  On macOS 26+, each drawer/music-strip card has one native SwiftUI .regular
-  backdrop on an independent transparent RoundedRectangle in content.background,
-  not a glassEffect wrapping the entire foreground. Lenses, rims and icons keep
-  their own colors. Circular controls are explicit foreground lenses: translucent
-  gradient fill, passive IslandHoverGlassRim and icon, with no child glassEffect.
-  Nested glass cannot sample its parent glass. The existing controls container
-  remains; do not add another native backdrop to its circles. The background
-  sets appearsActive=true for visual treatment in the non-key utility panel;
-  this does not acquire keyboard focus. IslandHoverGlassRim adds a thin bright
-  edge and inner shine inspired by the user's transparent-lens reference;
-  decorative overlays never participate in hit testing. The older layered
-  material remains the fallback before macOS 26. Explicit magnetic, hover and
-  pressed feedback works on both paths; Reduce Motion disables translation
-  and scaling. The earlier policy restricting these transforms and rims to
-  legacy rendering was superseded after the user's regression feedback.
-  Keep centered rows, fixed hint overlays and shared geometry: one/two-row
-  controls heights remain 187/283 pt, with separate 8 pt panel gaps. Native optics
-  were inspected in the earlier Clear v3 component fixture. Later production
-  feedback on 2.2.1 exposed white-background contrast and black search/History
-  surfaces; v3 does not validate the current Regular refinement. Controlled v4
-  checks confirmed the actual search field's focus, AX-driven query binding,
-  two-stage Escape and legibility over white/pattern backdrops. They do not
-  establish physical typing or installed production acceptance. Do not show test
-  or fixture windows over the user's work; further checks must stay offscreen,
-  with compositor limits stated explicitly. WHY:
+Hover capsules and materials:
+  IslandHoverPanelControl.swift renders a 139x64 foreground capsule with a left
+  36 pt white icon disk/blue glyph and normal-case 12 pt title plus optional 11 pt
+  current status inside. Bundled icon assets retain their own presentation.
+  HoverToolPresentation resolves state purely from mode, languages and recording:
+  Fast/Smart, input Auto/language, output Smart only/Off/language, and Recording/
+  Not recording. Stateless navigation tools have no invented status.
+  HoverLayoutStore.columns=3. Shared geometry uses 80 pt rows, 8 pt row/column gaps,
+  12 pt horizontal and 8 pt vertical insets. Drawer width=457 pt
+  (3*139+2*8+24); default six tools occupy two rows and a 267 pt host band.
+  At most four rows are visible; 13+ selected tools scroll without truncating
+  persistence. Settings stays last; first five positional hotkeys remain.
+  Compact pill and music keep their existing 310 pt layout; detached hover panels
+  and native hit zones use 457 pt. Hints overlay stable targets without moving them.
+  Each card has one native .regular backdrop in an independent background shape
+  on macOS 26+, with passive rims and foreground lenses, never child glassEffect.
+  Explicit hover/press/magnetic feedback respects Reduce Motion. Older material
+  fallback is unchanged. Do not show test windows over the user's work; use
+  offscreen checks and state compositor limits. Earlier v3/v4 fixtures predate
+  this capsule/width change. The 2.2.3 candidate passed 2,947 tests (8 skipped,
+  0 failures) and 21 offscreen layout/text renders with no visible/key windows.
+  Offscreen renders do not prove native glass, real pointer or Monitor-button
+  behavior; production acceptance remains separate. WHY:
   .project-docs/decisions/2026-10-17-native-hover-glass.md
+
+Monitor inside hover:
+  Monitor registry kind is inlinePanel and HoverSlotRouter resolves
+  .openPanel(.monitor). Capsule, catalog search and positional hotkeys all open
+  MonitorHoverPanel in the same drawer, with contentHeight 344 pt: dashboard
+  picker -> Server status or custom dashboard -> Back to picker -> Tools.
+  The view starts MonitorStore when shown and stops it on disappearance;
+  Refresh calls requestRefresh and reuses existing collectors/snapshot rendering.
+  Hover launch and the legacy openMonitor callback both request inline .monitor
+  with programmatic expansion; neither opens a window. The legacy window class
+  is retained for compatibility only. Guide: docs/customization/dashboards.md.
 
 Hover tool search and pointer routing:
   Search all tools searches the full catalog (titles, descriptions and aliases),

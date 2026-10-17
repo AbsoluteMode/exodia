@@ -2,7 +2,7 @@
 id: native-hover-glass-2026-10-17
 type: decision
 title: Native Apple Liquid Glass for hover surfaces
-summary: Use an independent Regular backdrop for bright-background contrast, transparent search and History lenses, and explicit hover feedback without changing pointer geometry.
+summary: Use three-column Control Center-style capsules with real inline status, an independent Regular backdrop and shared bounded hover geometry.
 status: confirmed
 tags: [macos, hover, liquid-glass, swiftui, accessibility]
 canonical_for: [hover-glass-material]
@@ -25,6 +25,24 @@ sources:
     confirmed_at: 2026-10-17
   - type: trace
     reference: /tmp/exodia-hover-panels-focused-tests.log, 109 focused tests with 0 failures for the Regular/search/History candidate.
+    confirmed_at: 2026-10-17
+  - type: user-confirmed
+    reference: User selected three horizontal capsules per row with icon, title and current status inside on 2026-10-17, and requested Monitor dashboards inside hover.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-capsules-final-tests.log, final 2947 tests with 8 skipped and 0 failures after the inline legacy callback and functional-test migration.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-capsule-offscreen-proof/render-manifest.json and source-manifest.json, 21 actual-component offscreen renders with no visible or key windows.
+    confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/DynamicIsland/IslandHoverPanelControl.swift
+    confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/DynamicIsland/HoverToolPresentation.swift
+    confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/Monitor/MonitorHoverPanel.swift
     confirmed_at: 2026-10-17
   - type: repository
     reference: Sources/Sidekey/DynamicIsland/IslandHoverToolSearch.swift
@@ -84,8 +102,9 @@ policy; they are not a claim that every macOS backdrop renders identically.
 
 The released 2.2.1 then received production feedback: search and History still
 looked black, while focused Clear glass over a white background lost contrast
-with the white controls. The current 2.2.2 candidate addresses those surfaces;
-its actual-field v4 check is separate from the earlier v3 fixture.
+with the white controls. The 2.2.2 refinement addressed those surfaces;
+its actual-field v4 check is separate from the earlier v3 fixture. The current
+2.2.3 candidate adds the three-column capsules and inline Monitor below.
 
 ## Decision
 
@@ -93,10 +112,12 @@ On macOS 26 and later, apply one SwiftUI `glassEffect(.regular, in:)` backdrop p
 drawer or music-strip card, on an independent transparent rounded rectangle
 inside `content.background`. Do not apply the material modifier to the whole
 foreground hierarchy: the lens gradient, rim and icon keep their independent
-colors, matching the user's separate-layer reference. The 44-point circular
-controls are foreground
-lenses made from a translucent gradient fill, `IslandHoverGlassRim` and the icon;
-they do not apply a child native glass effect. Apple's [WWDC25 session 323](https://developer.apple.com/videos/play/wwdc2025/323/)
+colors, matching the user's separate-layer reference. The current controls are
+139x64-point horizontal capsules in `IslandHoverPanelControl.swift`, with a
+36-point left icon disk, blue standard glyph, normal-case 12-point title and
+optional 11-point status inside. They are foreground gradient/rim lenses without
+a child native glass effect. `HoverToolPresentation` derives actual mode,
+language and recording status; stateless navigation tools have no status. Apple's [WWDC25 session 323](https://developer.apple.com/videos/play/wwdc2025/323/)
 explains that glass does not sample other glass. Avoid layering independent
 native backdrops on top of the parent card. The existing controls container
 remains, with explicit centered layout. Set `appearsActive=true` on the optical
@@ -126,11 +147,24 @@ native and legacy paths. Reduce Motion suppresses translation, scaling and their
 spring animations. The native material does not replace the control's explicit
 feedback contract.
 
-`IslandHoverControlsLayout` centers the complete fixed-height button in each
-row. Shortcut hints overlay its top edge and do not consume layout height.
-Shared geometry keeps one and two rows at 187 and 283 points respectively;
-ordering, row counts, positional hotkeys and separate eight-point panel gaps
-retain their existing behavior.
+`HoverLayoutStore.columns` is three. `IslandHoverControlsLayout` centers stable
+139x64-point targets in 80-point rows with eight-point spacing and 12-point
+horizontal insets. Width is 457 points (`3*139 + 2*8 + 24`). New-install defaults
+have six tools, two rows and a 267-point host band; existing selections persist.
+Only four rows are visible: the thirteenth and later tools scroll without
+removing anything from the saved layout. Settings remains last and the first
+five positional hotkeys are independent of the column count. Hints overlay the
+capsules without moving their targets. The compact pill and music keep their
+310-point layout; detached panels and native hit regions use the wider drawer.
+
+Monitor launches inline from capsules, search and positional hotkeys through
+`.openPanel(.monitor)`. `MonitorHoverPanel.contentHeight` is 344 points, with a
+dashboard picker, Server status/custom content, Refresh and Back navigation.
+It starts/stops the existing MonitorStore with view visibility, without opening
+a separate window or duplicating collectors. The standalone window remains for
+compatibility as a class only. The production legacy `openMonitor` callback
+also publishes an inline Monitor request with programmatic expansion; see
+[dashboard contracts](../../docs/customization/dashboards.md).
 
 Pointer dispatch belongs to `IslandHoverHitBridge` at `NSWindow.sendEvent`, using
 measured target NSView frames clipped to visible scroll and region bounds. An
@@ -162,7 +196,28 @@ and older toolchains. Availability guards preserve the macOS 14.2 deployment
 floor. This decision does not restore the June fixed opaque wash to the native
 path or flatten live glass into an offscreen bitmap.
 
-## Verification scope
+## 2.2.3 candidate verification
+
+The final suite passed 2,947 tests with 8 skipped and 0 failures in 42.184 seconds,
+after the legacy callback was made inline and obsolete source-pattern checks
+were replaced with functional routing, effect, spy and AX-state contracts.
+
+The offscreen proof contains 21 PNGs plus render/source manifests for the actual
+139x64 capsules and three-column 457-point grid. Its manifest records no visible
+or key windows. Six-tool and thirteen-tool text audits covered long-status
+ellipsis and layout fit without overflow. The deliberate black test backing is
+not a rendered native-glass result. Native compositor output, real pointer
+activation, keyboard focus and live Monitor-button interaction were not proved
+by these offscreen checks; production acceptance remains separate.
+
+History preview uses `leftHostReservation(compactWidth:)`: the existing
+300-point reservation plus drawer overhang (73.5 points for a 310-point pill).
+The 280-point preview and eight-point gap leave twelve points of padding. Host
+capacity and preview positioning share this API without shifting the compact
+island's right/top anchors; reserved capacity is not an extra mouse-active area.
+
+The earlier fixture results below predate this capsule/inline-Monitor change.
+No new test windows may appear over the user's work.
 
 The earlier Clear v3 native fixture was visually inspected through CUA on
 2026-10-17, before the subsequent 2.2.1 production feedback.

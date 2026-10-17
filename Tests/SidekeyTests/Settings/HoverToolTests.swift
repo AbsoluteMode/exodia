@@ -51,10 +51,10 @@ final class HoverToolTests: XCTestCase {
         XCTAssertEqual(HoverTool.settings.rawValue, "settings")
     }
 
-    func test_monitor_has_action_metadata() {
+    func test_monitor_opens_an_inline_dashboard_panel() {
         XCTAssertEqual(HoverToolRegistry.info(for: .monitor).title, "Monitor")
-        XCTAssertEqual(HoverToolRegistry.info(for: .monitor).kind, .action)
-        XCTAssertEqual(HoverSlotRouter.effect(for: .monitor), .openMonitor)
+        XCTAssertEqual(HoverToolRegistry.info(for: .monitor).kind, .inlinePanel)
+        XCTAssertEqual(HoverSlotRouter.effect(for: .monitor), .openPanel(.monitor))
     }
 
     func test_output_language_description_mentions_smart_mode() {

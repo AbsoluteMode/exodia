@@ -1,0 +1,282 @@
+import AppKit
+import SwiftUI
+
+/// One horizontal tool capsule. Motion belongs to the foreground content;
+/// the outer button and measured pointer target keep their fixed geometry.
+struct IslandHoverPanelControl: View {
+    let title: String
+    let systemImage: String
+    /// Optional bundled-PDF resource name (without `.pdf` extension).
+    /// When present, the tile renders the PDF orb directly and ignores
+    /// `systemImage`; the white background circle is suppressed.
+    let pdfResource: String?
+    /// Optional dynamic icon body. Used by Language so the same control
+    /// can show a planet in Auto mode and a selected-language flag
+    /// inside the same orb footprint.
+    var iconPresentation: IslandHoverIconPresentation? = nil
+    /// Optional current value beside the icon, below the tool title.
+    let label: String?
+    let circleSize: CGFloat
+    let accessibilityLabel: String
+    /// Retained for call-site compatibility; every capsule now centers its icon.
+    var centersIcon: Bool = false
+    /// Renders the tile faded + non-emphasised. Used by Output Language in
+    /// Fast mode, where the tile is inactive (tap shows a notice).
+    var isDimmed: Bool = false
+    /// When `true`, a small red unread dot sits on the tile's top-trailing
+    /// edge. Used by the "Notifs" tile to flag unread notifications.
+    var showsDot: Bool = false
+    /// Hide the title/status text while preserving the capsule footprint.
+    var showsLabel: Bool = true
+    let action: () -> Void
+
+    static let tileWidth: CGFloat = 139
+    static let tileHeight: CGFloat = 64
+    static let iconSize: CGFloat = 36
+    private static let horizontalPadding: CGFloat = 8
+    private static let contentSpacing: CGFloat = 8
+
+    /// Preserve the caller's title casing without forced uppercase or line breaks.
+    static func displayTitle(_ title: String) -> String {
+        title.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    @State private var hovering = false
+    @State private var pull: CGSize = .zero
+    @GestureState private var pressed = false
+    @Environment(\.islandHoverNativePressed) private var nativePressed
+    private var isPressed: Bool { pressed || nativePressed }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var statusText: String? {
+        guard let label else { return nil }
+        let status = Self.displayTitle(label)
+        return status.isEmpty || status.caseInsensitiveCompare(Self.displayTitle(title)) == .orderedSame
+            ? nil : status
+    }
+
+    var spokenAccessibilityLabel: String {
+        guard let statusText,
+              accessibilityLabel.range(of: statusText, options: [.caseInsensitive, .diacriticInsensitive]) == nil else {
+            return accessibilityLabel
+        }
+        return "\(accessibilityLabel), \(statusText)"
+    }
+
+    /// Less travel than an orb: keep the visible pill within the column gap.
+    private var visualScale: CGFloat {
+        1 + (IslandGraphiteHoverControlStyle.feedbackScale(
+            hovering: hovering, pressed: isPressed, reduceMotion: reduceMotion
+        ) - 1) * 0.5
+    }
+
+    var body: some View {
+        Button(action: action) {
+            content
+                .offset(pull)
+                .scaleEffect(visualScale)
+                .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.76), value: hovering)
+        }
+        .buttonStyle(.plain)
+            .frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .center)
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hovering = true
+                    let rawPull = IslandGraphiteHoverControlStyle.magneticPull(
+                            location: location,
+                            bounds: CGSize(width: Self.tileWidth, height: Self.tileHeight),
+                            presentation: resolvedIconPresentation
+                        )
+                    pull = reduceMotion ? .zero : CGSize(width: rawPull.width * 0.35, height: rawPull.height * 0.35)
+                case .ended:
+                    hovering = false
+                    pull = .zero
+                }
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($pressed) { value, isPressed, _ in
+                        isPressed = CGRect(x: 0, y: 0, width: Self.tileWidth, height: Self.tileHeight)
+                            .contains(value.location)
+                    }
+            )
+            .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.74), value: pull)
+            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.70), value: isPressed)
+            .animation(.easeOut(duration: 0.22), value: hovering)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spokenAccessibilityLabel)
+            .accessibilityAddTraits(.isButton)
+    }
+
+    private var content: some View {
+        HStack(spacing: Self.contentSpacing) {
+            iconDisk
+                .frame(width: Self.iconSize, height: Self.iconSize)
+
+            if showsLabel {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.displayTitle(title))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.96))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.9)
+                        .layoutPriority(1)
+                    if let statusText {
+                        Text(statusText)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.white.opacity(hovering ? 0.78 : 0.64))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.9)
+                    }
+                }
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            } else {
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(Self.horizontalPadding)
+        .frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .leading)
+        .background {
+            Capsule()
+                .fill(LinearGradient(
+                    colors: hovering
+                        ? [.white.opacity(0.18), .white.opacity(0.075)]
+                        : [.white.opacity(0.11), .white.opacity(0.035)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ))
+                .overlay { IslandHoverGlassRim(shape: Capsule(), highlighted: hovering) }
+                .shadow(color: .black.opacity(hovering ? 0.20 : 0.12), radius: hovering ? 5 : 3, x: 0, y: 2)
+                .allowsHitTesting(false)
+        }
+        .opacity(isDimmed ? 0.4 : 1)
+    }
+
+    private var iconDisk: some View {
+        ZStack {
+            if !usesBundledOrb {
+                Circle()
+                    .fill(.white.opacity(hovering ? 0.98 : 0.90))
+                    .shadow(color: .black.opacity(0.08), radius: 1, x: 0, y: 1)
+            }
+            iconView.frame(width: Self.iconSize, height: Self.iconSize)
+        }
+        .overlay(alignment: .topTrailing) {
+            if showsDot {
+                Circle()
+                    .fill(Color(red: 1, green: 0.27, blue: 0.23))
+                    .frame(width: 7, height: 7)
+                    .overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1.5))
+                    .offset(x: 1, y: -1)
+            }
+        }
+    }
+
+    private var usesBundledOrb: Bool {
+        switch resolvedIconPresentation {
+        case .pdfResource, .pdfRingedSystemImage, .pdfRingedFlag: return true
+        default: return false
+        }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        switch resolvedIconPresentation {
+        case .pdfResource(let pdfResource):
+            if let nsImage = IslandControlIcon.image(named: pdfResource) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                fallbackSystemIcon
+            }
+
+        case .systemImage(let systemImage):
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.blue)
+                .symbolRenderingMode(.monochrome)
+
+        case .flag(let flag):
+            Text(flag)
+                .font(.system(size: IslandHoverPanelIconStyle.dynamicFlagFontSize, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+
+        case .text(let text):
+            Text(text)
+                .font(.system(
+                    size: 13,
+                    weight: .semibold,
+                    design: .monospaced
+                ))
+                .tracking(0.3)
+                .foregroundStyle(Color.blue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .frame(
+                    width: Self.iconSize - 6,
+                    height: 22
+                )
+                .offset(y: IslandGraphiteHoverControlStyle.textIconOpticalYOffset)
+                .drawingGroup(opaque: false, colorMode: .linear)
+
+        case .pdfRingedSystemImage(let ringResource, let systemImage):
+            pdfRingedIcon(ringResource: ringResource) {
+                Image(systemName: systemImage)
+                    .font(.system(size: IslandHoverPanelIconStyle.ringSystemFontSize, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.94))
+            }
+
+        case .pdfRingedFlag(let ringResource, let flag):
+            pdfRingedIcon(ringResource: ringResource) {
+                Text(flag)
+                    .font(.system(size: IslandHoverPanelIconStyle.ringFlagFontSize, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+            }
+
+        case .none:
+            fallbackSystemIcon
+        }
+    }
+
+    private var resolvedIconPresentation: IslandHoverIconPresentation? {
+        iconPresentation ?? pdfResource.map(IslandHoverIconPresentation.pdfResource)
+    }
+
+    @ViewBuilder
+    private func pdfRingedIcon<Content: View>(
+        ringResource: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        ZStack {
+            if let nsImage = IslandControlIcon.image(named: ringResource) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Circle()
+                    .stroke(Color.white.opacity(0.28), lineWidth: 0.8)
+            }
+
+            content()
+                .frame(
+                    width: min(circleSize, Self.iconSize) * IslandHoverPanelIconStyle.ringContentScale,
+                    height: min(circleSize, Self.iconSize) * IslandHoverPanelIconStyle.ringContentScale
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackSystemIcon: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(Color.blue)
+            .symbolRenderingMode(.monochrome)
+    }
+}

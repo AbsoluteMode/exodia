@@ -121,6 +121,56 @@ struct IslandAgentHitZones {
     }
 }
 
+/// Matching screen/bounds-space geometry for a drawer centered under the pill.
+/// Only the drawer widens; its transition corridor and music stay pill-width.
+struct IslandHoverPanelHitZone {
+    let compactFrame: CGRect
+    let bandHeight: CGFloat
+    var panelWidth: CGFloat = IslandDropModeControl.controlsHoverPanelWidth
+    var musicStripActive = false
+
+    /// The drawer is centered on the compact pill, so a wider drawer extends
+    /// this far past either pill edge. Also used by the History preview and
+    /// SwiftUI's outer width to keep them aligned with the native host.
+    static func leftOverhang(compactWidth: CGFloat) -> CGFloat {
+        max(0, (IslandDropModeControl.controlsHoverPanelWidth - compactWidth) / 2)
+    }
+
+    /// Preserve the notification's existing 300pt slot and reserve the same
+    /// space to the left of the wider drawer. A 280pt History preview plus
+    /// its 8pt gap fits here without resizing the host when it appears.
+    static func leftHostReservation(compactWidth: CGFloat) -> CGFloat {
+        IslandFrameLayout.leftNotificationWidth + leftOverhang(compactWidth: compactWidth)
+    }
+
+    private var transitionHeight: CGFloat {
+        let requested = musicStripActive
+            ? IslandDropModeControl.musicStripTopGap + IslandDropModeControl.musicStripHeight
+                + IslandDropModeControl.musicStripBottomGap
+            : IslandDropModeControl.detachedPanelGap
+        return min(max(0, bandHeight), requested)
+    }
+
+    var transitionFrame: CGRect {
+        CGRect(x: compactFrame.minX, y: compactFrame.minY - transitionHeight,
+               width: compactFrame.width, height: transitionHeight)
+    }
+
+    var drawerFrame: CGRect {
+        CGRect(x: compactFrame.midX - panelWidth / 2,
+               y: compactFrame.minY - max(0, bandHeight),
+               width: panelWidth, height: max(0, bandHeight - transitionHeight))
+    }
+
+    var activeFrames: [CGRect] {
+        [transitionFrame, drawerFrame].filter { !$0.isEmpty }
+    }
+
+    var expandedFrame: CGRect {
+        activeFrames.reduce(compactFrame) { $0.union($1) }
+    }
+}
+
 /// Pure geometry + gating for the hover-gated Now Playing player strip's
 /// dedicated hit zone. The strip lives in the gap BETWEEN the compact pill
 /// and the hover panel (top of the hover drawer), offset DOWN from the pill
@@ -401,48 +451,22 @@ private final class ClickThroughHostingView<Content: View>: NSHostingView<Conten
             return false
         }
 
-        let activeSize = IslandPanelFramePolicy.hitTestSize(
-            compactSize: compactSize,
-            expandedSize: expandedSize,
-            acceptsExpandedHitTesting: acceptsExpandedHitTesting
-        )
-        // Island content is trailing-aligned, so its right edge is always the
-        // bounds right edge — and the window is now permanently
-        // `leftNotificationWidth` wider than the compact content (the left
-        // morph zone is always reserved). So the active hit rect must be pinned
-        // FLUSH-RIGHT in both cases, never centered: a centered rect would sit
-        // ~leftNotificationWidth/2 too far left and drop clicks on the right of
-        // the compact island (e.g. the meeting-recording Stop button).
-        //   - no notification (`leftZoneWidth == 0`): the rect is exactly the
-        //     trailing-aligned compact/expanded island content.
-        //   - notification active: extend leftward across the left zone so the
-        //     pill is clickable too.
-        // The window is now PERMANENTLY agent-sized — it always reserves
-        // `rightAgentZoneWidth` on the right, whether or not the agent flow is
-        // on screen (the allocate-and-hit-test-gate pattern). So the
-        // compact/expanded island content never sits at the bounds right edge:
-        // its right edge is UNCONDITIONALLY inset by that amount. Shift the
-        // right anchor left so the capsule (e.g. its trailing controls) stays
-        // clickable regardless of agent state. When the agent flow is idle the
-        // reserved zone is empty + transparent and the wing/answer rects above
-        // are not hittable, so nothing in it claims clicks.
+        // The compact pill keeps its own right anchor. A wider drawer is
+        // centered below it; never expand the compact menu-bar hit rectangle.
         let rightEdge = bounds.width - IslandFrameLayout.rightAgentZoneWidth
-        let originX: CGFloat
-        let width: CGFloat
+        let compactRect = CGRect(x: rightEdge - compactSize.width,
+                                 y: bounds.height - compactSize.height,
+                                 width: compactSize.width, height: compactSize.height)
+        if compactRect.contains(point) { return true }
         if leftZoneWidth > 0 {
-            originX = rightEdge - activeSize.width - leftZoneWidth
-            width = activeSize.width + leftZoneWidth
-        } else {
-            originX = rightEdge - activeSize.width
-            width = activeSize.width
+            let notificationRect = CGRect(x: compactRect.minX - leftZoneWidth, y: compactRect.minY,
+                                          width: compactSize.width + leftZoneWidth, height: compactSize.height)
+            if notificationRect.contains(point) { return true }
         }
-        let activeRect = NSRect(
-            x: originX,
-            y: bounds.height - activeSize.height,
-            width: width,
-            height: activeSize.height
-        )
-        return activeRect.contains(point)
+        guard acceptsExpandedHitTesting else { return false }
+        let hover = IslandHoverPanelHitZone(compactFrame: compactRect,
+            bandHeight: expandedSize.height - compactSize.height, musicStripActive: musicStripActive)
+        return hover.activeFrames.contains { $0.contains(point) }
     }
 }
 
@@ -455,6 +479,17 @@ enum IslandPanelFramePolicy {
         // Keep the top-level window stable; mouse routing below decides
         // whether only the compact island or the full hover panel is active.
         expandedFrame
+    }
+
+    /// Grow only the host's left edge, leaving all right/top-anchored pill,
+    /// music and agent coordinates unchanged. IslandView reserves the same
+    /// extra width inside its top-leading root; the empty area stays visual
+    /// capacity, not an additional mouse-active region.
+    static func reservingHoverPreview(in hostFrame: NSRect, compactFrame: NSRect) -> NSRect {
+        let minX = min(hostFrame.minX, compactFrame.minX
+            - IslandHoverPanelHitZone.leftHostReservation(compactWidth: compactFrame.width))
+        return NSRect(x: minX, y: hostFrame.minY, width: hostFrame.maxX - minX,
+                      height: hostFrame.height)
     }
 
     static func hitTestSize(
@@ -507,7 +542,8 @@ enum IslandPanelMouseEventPolicy {
         idleHidden: Bool,
         expanded: Bool,
         notificationActive: Bool,
-        musicStripActive: Bool
+        musicStripActive: Bool,
+        hoverFrames: [NSRect]? = nil
     ) -> [NSRect] {
         var frames: [NSRect] = []
         // Idle-hidden: the compact pill is faded to the bare notch, so its rect
@@ -515,7 +551,12 @@ enum IslandPanelMouseEventPolicy {
         // blocker set guarantees no agent / notification / music surface is up
         // while idle, so this simply drops the compact/expanded content frame.
         if !idleHidden {
-            frames.append(expanded ? expandedFrame : compactFrame)
+            if expanded, let hoverFrames {
+                frames.append(compactFrame)
+                frames.append(contentsOf: hoverFrames)
+            } else {
+                frames.append(expanded ? expandedFrame : compactFrame)
+            }
         }
         if notificationActive {
             frames.append(leftNotificationFrame)
@@ -1350,7 +1391,8 @@ final class IslandPanel: NSPanel {
                 expandedFrame: agentExpandedHostFrame,
                 acceptsExpandedHitTesting: expandedHitTesting
             )
-            return base.union(leftNotificationFrame)
+            return IslandPanelFramePolicy.reservingHoverPreview(
+                in: base.union(leftNotificationFrame), compactFrame: compactFrame)
         }
 
         /// Island hit-test region size (the compact/expanded island content +
@@ -1596,25 +1638,20 @@ final class IslandPanel: NSPanel {
         syncAgentSurfaces()
     }
 
-    /// `Layout`'s expanded sizes are built from the static default band
-    /// (`IslandDropModeControl.hoverPanelHeight`); these two helpers stretch
-    /// them downward by the current band delta. AppKit y grows up, so growing
-    /// downward means lowering `origin.y` while growing `height`.
-    private var hoverBandHeightDelta: CGFloat {
-        hoverBandHeight - IslandDropModeControl.hoverPanelHeight
+    /// Drawer width is independent of the notch-sized compact pill. The host
+    /// already reserves notification/agent space on both sides and below it.
+    private func expandedHitTestSize(layout: Layout) -> CGSize {
+        CGSize(width: IslandDropModeControl.controlsHoverPanelWidth,
+               height: layout.compactSize.height + hoverBandHeight)
     }
 
-    private func expandedHitTestSize(layout: Layout) -> CGSize {
-        var size = layout.islandHitTestSize(expandedHitTesting: true)
-        size.height += hoverBandHeightDelta
-        return size
+    private func hoverPanelHitZone(layout: Layout) -> IslandHoverPanelHitZone {
+        IslandHoverPanelHitZone(compactFrame: layout.compactFrame, bandHeight: hoverBandHeight,
+                                musicStripActive: musicStripActive)
     }
 
     private func expandedMouseFrame(layout: Layout) -> NSRect {
-        var frame = layout.expandedHostFrame
-        frame.origin.y -= hoverBandHeightDelta
-        frame.size.height += hoverBandHeightDelta
-        return frame
+        hoverPanelHitZone(layout: layout).expandedFrame
     }
 
     /// Screen-space frame of the hover-gated music strip — directly below the
@@ -1731,7 +1768,8 @@ final class IslandPanel: NSPanel {
             idleHidden: idleHidden,
             expanded: expanded,
             notificationActive: notificationActive,
-            musicStripActive: musicStripActive
+            musicStripActive: musicStripActive,
+            hoverFrames: hoverPanelHitZone(layout: layout).activeFrames
         )
 
         // Keep delivery of the mouse-up we own even after a drag leaves the

@@ -4,7 +4,10 @@
   "platform": "macOS 14.2+",
   "source_module": "Sidekey",
   "entry_document": "docs/customization/README.md",
-  "guidance": {"canonical": ".project-docs/agent-context.md", "generated": ["AGENTS.md", "CLAUDE.md"]},
+  "guidance": {
+    "canonical": ".project-docs/agent-context.md",
+    "generated": ["AGENTS.md", "CLAUDE.md"]
+  },
   "commands": {
     "discover": ["python3", "scripts/customize.py", "discover", "--json"],
     "doctor": ["python3", "scripts/customize.py", "doctor", "--json"],
@@ -30,8 +33,8 @@
   "change_kinds": {
     "hover": {
       "guide": "docs/customization/hover-tools.md",
-      "entry_points": ["Sources/Sidekey/Settings/HoverTool.swift", "Sources/Sidekey/Settings/HoverLayoutStore.swift", "Sources/Sidekey/DynamicIsland/HoverSlotRouter.swift", "Sources/Sidekey/DynamicIsland/IslandActions.swift", "Sources/Sidekey/DynamicIsland/IslandView.swift", "Sources/Sidekey/Settings/ToolboxSettingsView.swift", "Sources/Sidekey/AppDelegate.swift"],
-      "focused_test_filter": "HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests"
+      "entry_points": ["Sources/Sidekey/Settings/HoverTool.swift", "Sources/Sidekey/Settings/HoverLayoutStore.swift", "Sources/Sidekey/DynamicIsland/HoverSlotRouter.swift", "Sources/Sidekey/DynamicIsland/IslandActions.swift", "Sources/Sidekey/DynamicIsland/IslandHoverPanelControl.swift", "Sources/Sidekey/DynamicIsland/HoverToolPresentation.swift", "Sources/Sidekey/DynamicIsland/IslandView.swift", "Sources/Sidekey/Settings/ToolboxSettingsView.swift", "Sources/Sidekey/AppDelegate.swift"],
+      "focused_test_filter": "HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests"
     },
     "settings": {
       "entry_points": ["Sources/Sidekey/Settings/SettingsWindowTab.swift", "Sources/Sidekey/Settings/SettingsWindowView.swift", "Sources/Sidekey/Settings/SettingsWindowController.swift"],
@@ -53,8 +56,8 @@
     },
     "dashboard": {
       "guide": "docs/customization/dashboards.md",
-      "entry_points": ["Sources/Sidekey/Monitor/MonitorDashboard.swift", "Sources/Sidekey/Monitor/MonitorServer.swift", "Sources/Sidekey/Monitor/MonitorServerCollector.swift"],
-      "contract": "Declarative JSON snapshots, compatible with ez-monitor; passive rendering does not execute commands."
+      "entry_points": ["Sources/Sidekey/Monitor/MonitorDashboard.swift", "Sources/Sidekey/Monitor/MonitorServer.swift", "Sources/Sidekey/Monitor/MonitorServerCollector.swift", "Sources/Sidekey/Monitor/MonitorHoverPanel.swift", "Sources/Sidekey/Monitor/MonitorStore.swift", "Sources/Sidekey/DynamicIsland/HoverSlotRouter.swift"],
+      "contract": "Inline hover picker -> Server status/custom dashboard -> Back; shared MonitorStore/collectors. Declarative JSON snapshots remain passive and compatible with ez-monitor."
     }
   }
 }

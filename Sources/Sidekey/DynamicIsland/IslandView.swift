@@ -298,6 +298,8 @@ struct IslandView: View {
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .history:
             base = IslandDropModeControl.historyHoverPanelHeight
+        case .monitor:
+            base = IslandDropModeControl.detachedPanelGap + MonitorHoverPanel.contentHeight
         default:
             base = IslandDropModeControl.hoverPanelHeight
         }
@@ -401,6 +403,8 @@ struct IslandView: View {
         switch panel {
         case .history:
             return .history
+        case .monitor:
+            return .monitor
         case .vocabularyEditor:
             return .vocabularyEditor
         case .caseVault:
@@ -513,7 +517,7 @@ struct IslandView: View {
     /// curve-mismatch jitter that used to come from animating two frames on
     /// different curves.
     private var outerWidth: CGFloat {
-        compactWidth + IslandFrameLayout.leftNotificationWidth
+        compactWidth + IslandHoverPanelHitZone.leftHostReservation(compactWidth: compactWidth)
             + (agentFlow.isActive ? IslandFrameLayout.rightAgentZoneWidth : 0)
     }
 
@@ -1072,6 +1076,7 @@ struct IslandView: View {
                             mode: dropMode,
                             selectedLanguage: selectedLanguage,
                             targetLanguage: targetLanguage,
+                            meetingRecordingActive: appState.meetingRecordingActive,
                             panelMode: $hoverPanelMode,
                             hoverHitBridge: hoverHitBridge,
                             onSearchFocusChange: { focused in
@@ -1130,7 +1135,7 @@ struct IslandView: View {
                             }
                         )
                         .frame(
-                            width: compactWidth,
+                            width: IslandDropModeControl.controlsHoverPanelWidth,
                             height: activeHoverPanelHeight
                                 // Subtract the ACTUAL top gap used above (the
                                 // music-strip case uses the smaller
@@ -1152,7 +1157,7 @@ struct IslandView: View {
                             showGlass: hoverPanelMode != .history || IslandHoverGlass.usesNativeLiquidGlass
                         )
                     }
-                    .frame(width: compactWidth, height: activeHoverPanelHeight)
+                    .frame(width: IslandDropModeControl.controlsHoverPanelWidth, height: activeHoverPanelHeight)
                     // Hover trigger zone for the lower panel (gap + drawer as
                     // one hit zone) — only present once expansion has already
                     // happened. Keeps the expanded state alive while the cursor
@@ -1202,7 +1207,8 @@ struct IslandView: View {
                     assetsDirectory: actions.historyAssetsDirectory()
                 )
                 .offset(
-                    x: -(HistoryHoverPreviewPolicy.bubbleWidth + 8),
+                    x: -(HistoryHoverPreviewPolicy.bubbleWidth + 8
+                        + IslandHoverPanelHitZone.leftOverhang(compactWidth: compactWidth)),
                     y: anchor.rowFrame.minY
                 )
                 .allowsHitTesting(false)
@@ -2296,13 +2302,14 @@ enum IslandHoverPanelMode: Equatable {
     case languagePicker
     case outputLanguagePicker
     case history
+    case monitor
     case vocabularyEditor
     case fillerEditor
     case caseVault
 
     var needsKeyboardFocus: Bool {
         switch self {
-        case .languagePicker, .outputLanguagePicker, .history, .vocabularyEditor, .fillerEditor, .caseVault:
+        case .languagePicker, .outputLanguagePicker, .history, .monitor, .vocabularyEditor, .fillerEditor, .caseVault:
             return true
         case .controls:
             return false
@@ -2314,6 +2321,7 @@ private struct IslandDropModeHoverPanel: View {
     let mode: TranscriptionMode
     let selectedLanguage: AppLanguage?
     let targetLanguage: AppLanguage?
+    let meetingRecordingActive: Bool
     @Binding var panelMode: IslandHoverPanelMode
     @ObservedObject var hoverHitBridge: IslandHoverHitBridge
     let onSearchFocusChange: (Bool) -> Void
@@ -2399,6 +2407,9 @@ private struct IslandDropModeHoverPanel: View {
                     }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if panelMode == .monitor {
+                MonitorHoverPanel(onBack: { panelMode = .controls })
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if panelMode == .vocabularyEditor {
                 IslandVocabularyEditorPanel(
                     viewModel: vocabularyViewModel
@@ -2508,7 +2519,6 @@ private struct IslandDropModeHoverPanel: View {
 
     /// User-selected tools wrap into rows of five above the description strip.
     private var controls: some View {
-        let circleSize: CGFloat = 70
         return VStack(spacing: 0) {
             IslandHoverSearchField(
                 text: $searchQuery,
@@ -2528,37 +2538,40 @@ private struct IslandDropModeHoverPanel: View {
                 // between search and description. Hints overlay the top edge;
                 // they never consume height or move a row on hover.
                 IslandHoverGlassControlsContainer {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0),
+                    ScrollView(.vertical) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: IslandHoverControlsLayout.columnSpacing),
                                                  count: HoverLayoutStore.columns), spacing: IslandHoverControlsLayout.rowSpacing) {
-                        ForEach(Array(hoverStore.slots.enumerated()), id: \.offset) { offset, tool in
-                            tileView(for: tool, circleSize: circleSize)
-                            .islandHoverHitTarget(
-                                bridge: hoverHitBridge,
-                                id: IslandHoverHitTargetID(surface: .tile, tool: tool),
-                                context: hitTargetContext,
-                                action: { activateTool(tool) }
-                            )
-                            .overlay(alignment: .top) {
-                                hoverSlotHint(for: offset)
-                                    .opacity(hoveredTool == tool ? 1 : 0)
-                                    .offset(y: -IslandHoverControlsLayout.hintOffset)
-                                    .animation(.easeInOut(duration: 0.15), value: hoveredTool)
-                                    .allowsHitTesting(false)
-                            }
-                            .frame(height: IslandHoverControlsLayout.rowHeight, alignment: .center)
-                            .onHover { isHovering in
-                                if isHovering { hoveredTool = tool }
-                                else if hoveredTool == tool { hoveredTool = nil }
+                            ForEach(Array(hoverStore.slots.enumerated()), id: \.offset) { offset, tool in
+                                tileView(for: tool, circleSize: IslandHoverPanelControl.iconSize)
+                                    .islandHoverHitTarget(
+                                        bridge: hoverHitBridge,
+                                        id: IslandHoverHitTargetID(surface: .tile, tool: tool),
+                                        context: hitTargetContext,
+                                        action: { activateTool(tool) }
+                                    )
+                                    .overlay(alignment: .top) {
+                                        hoverSlotHint(for: offset)
+                                            .opacity(hoveredTool == tool ? 1 : 0)
+                                            .offset(y: -IslandHoverControlsLayout.hintOffset)
+                                            .animation(.easeInOut(duration: 0.15), value: hoveredTool)
+                                            .allowsHitTesting(false)
+                                    }
+                                    .frame(height: IslandHoverControlsLayout.rowHeight, alignment: .center)
+                                    .onHover { isHovering in
+                                        if isHovering { hoveredTool = tool }
+                                        else if hoveredTool == tool { hoveredTool = nil }
+                                    }
                             }
                         }
+                        .padding(.horizontal, IslandHoverControlsLayout.horizontalInset)
+                        .padding(.vertical, IslandHoverControlsLayout.gridVerticalInset)
                     }
-                    .padding(.vertical, IslandHoverControlsLayout.gridVerticalInset)
+                    .scrollDisabled(!IslandHoverControlsLayout.requiresScrolling(toolCount: hoverStore.slots.count))
                     .frame(height: IslandHoverControlsLayout.gridHeight(toolCount: hoverStore.slots.count))
+                    // Measure the clipped viewport, never the entire scrolling grid.
+                    .islandHoverHitRegion(bridge: hoverHitBridge, surface: .tile)
                 }
-                // The outer frame owns centering; GlassEffectContainer's
-                // intrinsic layout must not choose the grid's vertical anchor.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .islandHoverHitRegion(bridge: hoverHitBridge, surface: .tile)
 
             }
 
@@ -2657,6 +2670,7 @@ private struct IslandDropModeHoverPanel: View {
         case .openPanel(let panel):
             switch panel {
             case .history: panelMode = .history
+            case .monitor: panelMode = .monitor
             case .vocabularyEditor: panelMode = .vocabularyEditor
             case .caseVault: panelMode = .caseVault
             case .fillerEditor: panelMode = .fillerEditor
@@ -2771,150 +2785,32 @@ private struct IslandDropModeHoverPanel: View {
         }
     }
 
-    @ViewBuilder
     private func tileView(for tool: HoverTool, circleSize: CGFloat) -> some View {
+        let presentation = HoverToolPresentation.resolve(
+            tool: tool, mode: mode,
+            inputLanguage: selectedLanguage, outputLanguage: targetLanguage,
+            meetingRecordingActive: meetingRecordingActive
+        )
+        let info = HoverToolRegistry.info(for: tool)
+        return IslandHoverPanelControl(
+            title: presentation.title,
+            systemImage: tool == .dropMode ? IslandDropModeControl.systemImage(for: mode) : info.sfSymbol,
+            pdfResource: nil,
+            iconPresentation: languageIconPresentation(for: tool),
+            label: presentation.status,
+            circleSize: circleSize,
+            accessibilityLabel: presentation.title,
+            isDimmed: tool == .outputLang && mode == .fast,
+            action: { activateTool(tool) }
+        )
+        .accessibilityHint(info.description)
+    }
+
+    private func languageIconPresentation(for tool: HoverTool) -> IslandHoverIconPresentation? {
         switch tool {
-        case .dropMode:
-            IslandHoverPanelControl(
-                title: IslandDropModeControl.title,
-                systemImage: IslandDropModeControl.systemImage(for: mode),
-                pdfResource: nil,
-                label: IslandDropModeControl.hoverTileLabel(for: mode),
-                circleSize: circleSize,
-                accessibilityLabel: [IslandDropModeControl.title, IslandDropModeControl.label(for: mode)].joined(separator: ", "),
-                action: { activateTool(tool) }
-            )
-        case .clipboard:
-            IslandHoverPanelControl(
-                title: "History",
-                systemImage: "clock.arrow.circlepath",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "History",
-                centersIcon: true,
-                // The paste-target + remembered-mode capture lives on the
-                // panelMode -> .history transition (see onChange below) so the
-                // click and the ⌥N hotkey enter History through one path (D1).
-                action: { activateTool(tool) }
-            )
-        case .vocab:
-            IslandHoverPanelControl(
-                title: "Vocab",
-                systemImage: "book",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Vocab",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
-        case .caseVault:
-            IslandHoverPanelControl(
-                title: "Case",
-                systemImage: "key.horizontal",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Case",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
-        case .filler:
-            IslandHoverPanelControl(
-                title: "Filler",
-                systemImage: "scissors",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Filler",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
-        case .inputLang:
-            IslandHoverPanelControl(
-                title: IslandLanguageControl.title,
-                systemImage: IslandLanguageControl.systemImage,
-                pdfResource: nil,
-                iconPresentation: IslandLanguageControl.hoverIconPresentation(for: selectedLanguage),
-                label: IslandLanguageControl.hoverTileLabel(for: selectedLanguage),
-                circleSize: circleSize,
-                accessibilityLabel: "Choose input language",
-                action: { activateTool(tool) }
-            )
-        case .outputLang:
-            IslandHoverPanelControl(
-                title: IslandOutputLanguageControl.title,
-                systemImage: IslandLanguageControl.systemImage,
-                pdfResource: nil,
-                iconPresentation: IslandLanguageControl.hoverIconPresentation(for: targetLanguage),
-                label: IslandLanguageControl.hoverTileLabel(for: targetLanguage),
-                circleSize: circleSize,
-                accessibilityLabel: "Choose output language",
-                isDimmed: mode == .fast,
-                action: { activateTool(tool) }
-            )
-        case .hotkeys:
-            IslandHoverPanelControl(
-                title: "Hotkeys",
-                systemImage: "keyboard",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Open hotkeys settings",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
-        case .notes:
-            IslandHoverPanelControl(
-                title: "Notes",
-                systemImage: "note.text",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Open meeting notes",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
-        case .monitor:
-            IslandHoverPanelControl(
-                title: "Monitor", systemImage: "chart.xyaxis.line", pdfResource: nil,
-                label: nil, circleSize: circleSize, accessibilityLabel: "Open monitoring dashboards",
-                centersIcon: true, action: { activateTool(tool) }
-            )
-        case .meetingRecord:
-            IslandHoverPanelControl(
-                title: "Record",
-                systemImage: "record.circle",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Start or stop meeting recording",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
-        case .quit:
-            IslandHoverPanelControl(
-                title: "Quit",
-                systemImage: "rectangle.portrait.and.arrow.right",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Quit Exodia",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
-        case .settings:
-            IslandHoverPanelControl(
-                title: "Settings",
-                systemImage: "slider.horizontal.3",
-                pdfResource: nil,
-                label: nil,
-                circleSize: circleSize,
-                accessibilityLabel: "Settings",
-                centersIcon: true,
-                action: { activateTool(tool) }
-            )
+        case .inputLang: return IslandLanguageControl.hoverIconPresentation(for: selectedLanguage)
+        case .outputLang: return IslandLanguageControl.hoverIconPresentation(for: targetLanguage)
+        default: return nil
         }
     }
 }
@@ -3328,321 +3224,6 @@ private enum IslandLanguageFlagAsset {
     }
 }
 
-/// Single graphite tile inside the hover panel. It keeps the surrounding
-/// layout fixed, while the squircle itself follows the cursor a few points
-/// with a springy magnetic pull.
-struct IslandHoverPanelControl: View {
-    let title: String
-    let systemImage: String
-    /// Optional bundled-PDF resource name (without `.pdf` extension).
-    /// When present, the tile renders the PDF orb directly and ignores
-    /// `systemImage`; the white background circle is suppressed.
-    let pdfResource: String?
-    /// Optional dynamic icon body. Used by Language so the same control
-    /// can show a planet in Auto mode and a selected-language flag
-    /// inside the same orb footprint.
-    var iconPresentation: IslandHoverIconPresentation? = nil
-    /// Optional bottom label under the orb. Shown only for tiles whose
-    /// current value differs from the column header (Drop Mode → Fast/Smart,
-    /// Language → current language). For tiles where the title already
-    /// describes the tile, pass `nil` so the label slot stays blank — the
-    /// fixed-height frame keeps icons vertically aligned across the row.
-    let label: String?
-    let circleSize: CGFloat
-    let accessibilityLabel: String
-    /// When `true`, the icon is vertically centered in the area below the
-    /// title and no bottom label slot is reserved — used for tiles whose
-    /// title fully describes them (no value-label underneath). When
-    /// `false` (default), layout is unchanged: title, icon, optional
-    /// label stacked top-aligned with the original spacing.
-    var centersIcon: Bool = false
-    /// Renders the tile faded + non-emphasised. Used by Output Language in
-    /// Fast mode, where the tile is inactive (tap shows a notice).
-    var isDimmed: Bool = false
-    /// When `true`, a small red unread dot sits on the tile's top-trailing
-    /// edge. Used by the "Notifs" tile to flag unread notifications.
-    var showsDot: Bool = false
-    /// When `false`, the bottom label `Text` is omitted entirely and its
-    /// reserved height collapses. Used by the no-label icons row in the
-    /// split hover panel layout.
-    var showsLabel: Bool = true
-    let action: () -> Void
-
-    /// Layout knobs sized so the 5-slot hover row fits inside the compact
-    /// pill width while letting the visible circles read larger than the
-    /// original compact controls.
-    static let tileWidth: CGFloat = 55
-    static let tileHeight: CGFloat = 72
-    /// Fixed label slot so one-line and two-line tiles keep their orbs at the
-    /// same vertical position: tile 44 + spacing 5 + label 19 = 68. Without a
-    /// reserved slot a taller two-line label recenters the VStack and the orb
-    /// drifts up ~5pt versus one-line tiles in the same row.
-    static let labelHeight: CGFloat = 19
-
-    /// Tile label text. Multi-word titles break one word per line
-    /// ("Input Language" → "INPUT\nLANGUAGE"); single words stay on one line.
-    static func displayTitle(_ title: String) -> String {
-        title.uppercased().replacingOccurrences(of: " ", with: "\n")
-    }
-
-    @State private var hovering = false
-    @State private var pull: CGSize = .zero
-    @GestureState private var pressed = false
-    @Environment(\.islandHoverNativePressed) private var nativePressed
-    private var isPressed: Bool { pressed || nativePressed }
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Button(action: action) {
-            content
-        }
-        .buttonStyle(.plain)
-            .frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .center)
-            .contentShape(Rectangle())
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let location):
-                    hovering = true
-                    pull = reduceMotion ? .zero
-                        : IslandGraphiteHoverControlStyle.magneticPull(
-                            location: location,
-                            bounds: CGSize(width: Self.tileWidth, height: Self.tileHeight),
-                            presentation: resolvedIconPresentation
-                        )
-                case .ended:
-                    hovering = false
-                    pull = .zero
-                }
-            }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($pressed) { value, isPressed, _ in
-                        isPressed = CGRect(x: 0, y: 0, width: Self.tileWidth, height: Self.tileHeight)
-                            .contains(value.location)
-                    }
-            )
-            .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.74), value: pull)
-            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.70), value: isPressed)
-            .animation(.easeOut(duration: 0.22), value: hovering)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(.isButton)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        VStack(spacing: 5) {
-            graphiteTile
-                .frame(
-                    width: IslandGraphiteHoverControlStyle.tileSize,
-                    height: IslandGraphiteHoverControlStyle.tileSize
-                )
-                .offset(pull)
-                .scaleEffect(IslandGraphiteHoverControlStyle.feedbackScale(
-                    hovering: hovering, pressed: isPressed, reduceMotion: reduceMotion
-                ))
-                .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.76), value: hovering)
-
-            if showsLabel {
-                Text(Self.displayTitle(title))
-                    .font(.system(
-                        size: IslandGraphiteHoverControlStyle.labelFontSize,
-                        weight: .medium,
-                        design: .monospaced
-                    ))
-                    .tracking(IslandGraphiteHoverControlStyle.labelTracking)
-                    .foregroundStyle(hovering ? Color.white.opacity(0.94) : Color.white.opacity(0.50))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.54)
-                    .frame(width: Self.tileWidth, height: Self.labelHeight, alignment: .top)
-            }
-        }
-        .frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .center)
-        .opacity(isDimmed ? 0.4 : 1)
-    }
-
-    private var graphiteTile: some View {
-        circleSurface
-        .overlay(alignment: .topTrailing) {
-            if showsDot {
-                Circle()
-                    .fill(Color(red: 1.0, green: 0.27, blue: 0.23))   // iOS red (#ff453a)
-                    .frame(width: 7, height: 7)
-                    .overlay(Circle().stroke(Color.black.opacity(0.35), lineWidth: 1.5))
-                    .offset(x: 1, y: -1)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var circleSurface: some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            // One native glass backdrop per card. Nested glass cannot sample
-            // the parent glass; foreground lenses supply the reference's
-            // translucent fill and specular edge without another backdrop.
-            ZStack {
-                Circle().fill(tileFill)
-                    .overlay {
-                        IslandHoverGlassRim(shape: Circle(), highlighted: hovering)
-                            .allowsHitTesting(false)
-                    }
-                    .shadow(color: .black.opacity(hovering ? 0.22 : 0.12),
-                            radius: hovering ? 6 : 3, x: 0, y: 2)
-                iconView.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        } else {
-            legacyCircleSurface
-        }
-        #else
-        legacyCircleSurface
-        #endif
-    }
-
-    private var legacyCircleSurface: some View {
-        ZStack {
-            Circle()
-                .fill(tileFill)
-                .overlay(Circle().strokeBorder(Color.white.opacity(hovering ? 0.40 : 0.22), lineWidth: 0.75))
-                .overlay(
-                    Circle()
-                        .stroke(
-                            LinearGradient(colors: [.white.opacity(0.45), .clear],
-                                           startPoint: .top, endPoint: .center),
-                            lineWidth: 0.75
-                        )
-                        .blur(radius: 0.5)
-                )
-                .shadow(color: .black.opacity(hovering ? 0.35 : 0.22),
-                        radius: hovering ? 8 : 4, x: 0, y: hovering ? 4 : 2)
-
-            iconView.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private var tileFill: LinearGradient {
-        return LinearGradient(
-            colors: hovering
-                ? [Color.white.opacity(0.22), Color.white.opacity(0.10)]
-                : [Color.white.opacity(0.12), Color.white.opacity(0.045)],
-            startPoint: .top, endPoint: .bottom)
-    }
-
-    @ViewBuilder
-    private var iconView: some View {
-        switch resolvedIconPresentation {
-        case .pdfResource(let pdfResource):
-            if let nsImage = IslandControlIcon.image(named: pdfResource) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                fallbackSystemIcon
-            }
-
-        case .systemImage(let systemImage):
-            Image(systemName: systemImage)
-                .font(.system(size: IslandGraphiteHoverControlStyle.iconFontSize, weight: .regular))
-                .foregroundStyle(hovering ? Color.white : Color.white.opacity(0.78))
-                .symbolRenderingMode(.monochrome)
-
-        case .flag(let flag):
-            Text(flag)
-                .font(.system(size: IslandHoverPanelIconStyle.dynamicFlagFontSize, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.74)
-
-        case .text(let text):
-            Text(text)
-                .font(.system(
-                    size: IslandGraphiteHoverControlStyle.textIconFontSize,
-                    weight: .semibold,
-                    design: .monospaced
-                ))
-                .tracking(0.8)
-                .foregroundStyle(hovering ? Color.white : Color.white.opacity(0.82))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                .frame(
-                    width: IslandGraphiteHoverControlStyle.textIconFrameSize.width,
-                    height: IslandGraphiteHoverControlStyle.textIconFrameSize.height
-                )
-                .offset(y: IslandGraphiteHoverControlStyle.textIconOpticalYOffset)
-                .drawingGroup(opaque: false, colorMode: .linear)
-
-        case .pdfRingedSystemImage(let ringResource, let systemImage):
-            pdfRingedIcon(ringResource: ringResource) {
-                Image(systemName: systemImage)
-                    .font(.system(size: IslandHoverPanelIconStyle.ringSystemFontSize, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.94))
-            }
-
-        case .pdfRingedFlag(let ringResource, let flag):
-            pdfRingedIcon(ringResource: ringResource) {
-                Text(flag)
-                    .font(.system(size: IslandHoverPanelIconStyle.ringFlagFontSize, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.76)
-            }
-
-        case .none:
-            fallbackSystemIcon
-        }
-    }
-
-    private var resolvedIconPresentation: IslandHoverIconPresentation? {
-        iconPresentation ?? pdfResource.map(IslandHoverIconPresentation.pdfResource)
-    }
-
-    @ViewBuilder
-    private func pdfRingedIcon<Content: View>(
-        ringResource: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        ZStack {
-            if let nsImage = IslandControlIcon.image(named: ringResource) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                Circle()
-                    .stroke(Color.white.opacity(0.28), lineWidth: 0.8)
-            }
-
-            content()
-                .frame(
-                    width: circleSize * IslandHoverPanelIconStyle.ringContentScale,
-                    height: circleSize * IslandHoverPanelIconStyle.ringContentScale
-                )
-        }
-    }
-
-    @ViewBuilder
-    private func dynamicLanguageIcon<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        ZStack {
-            Circle()
-                .fill(Color.white.opacity(hovering ? 0.15 : 0.10))
-            Circle()
-                .stroke(
-                    Color.white.opacity(hovering ? 0.32 : 0.18),
-                    lineWidth: 0.8
-                )
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    @ViewBuilder
-    private var fallbackSystemIcon: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: IslandHoverPanelIconStyle.fallbackSystemFontSize, weight: .regular))
-            .foregroundStyle(hovering ? Color.white : Color.white.opacity(0.78))
-            .symbolRenderingMode(.monochrome)
-    }
-}
 
 struct IslandDetachedHoverPanelBackground: View {
     /// Legacy material for macOS before 26 and builds with an older SDK.

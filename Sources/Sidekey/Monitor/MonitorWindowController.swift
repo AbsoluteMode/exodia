@@ -104,22 +104,26 @@ private struct MonitorWindowView: View {
     }
 }
 
-private struct MonitorServersView: View {
+struct MonitorServersView: View {
     @ObservedObject var store: MonitorStore
+    var allowsOpeningFolder = true
+    var showsHeader = true
     private var groups: [String] { Array(Set(store.readings.map { $0.server.group })).sorted() }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { context in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Server status").font(.title2.weight(.semibold))
-                            Text("Read-only SSH metrics · refresh every \(Int(store.refreshSeconds))s while open")
-                                .font(.caption).foregroundStyle(.secondary)
+                    if showsHeader {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Server status").font(.title2.weight(.semibold))
+                                Text("Read-only SSH metrics · refresh every \(Int(store.refreshSeconds))s while open")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Refresh") { store.requestRefresh() }
                         }
-                        Spacer()
-                        Button("Refresh") { store.requestRefresh() }
                     }
                     if let error = store.serverError {
                         Text(error).foregroundStyle(.orange)
@@ -129,7 +133,13 @@ private struct MonitorServersView: View {
                             Text("No servers connected").font(.headline)
                             Text("Ask your agent to add servers.json to the Monitor folder using existing SSH aliases or credential references. Passwords do not belong in dashboard files.")
                                 .foregroundStyle(.secondary)
-                            Button("Open Monitor folder") { NSWorkspace.shared.open(store.root) }
+                            if allowsOpeningFolder {
+                                Button("Open Monitor folder") { NSWorkspace.shared.open(store.root) }
+                            } else {
+                                Text(store.root.appendingPathComponent("servers.json").path)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                            }
                         }
                         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
@@ -214,14 +224,15 @@ private struct MonitorServerCard: View {
     private func gib(_ bytes: Double) -> String { String(format: "%.1f", bytes / 1_073_741_824) }
 }
 
-private struct MonitorCustomDashboardView: View {
+struct MonitorCustomDashboardView: View {
     let dashboard: MonitorDashboard
+    var showsTitle = true
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { context in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(dashboard.title).font(.title2.weight(.semibold))
+                    if showsTitle { Text(dashboard.title).font(.title2.weight(.semibold)) }
                     if !dashboard.subtitle.isEmpty { Text(dashboard.subtitle).foregroundStyle(.secondary) }
                     Text(dashboard.freshness(at: context.date).rawValue)
                         .font(.caption.weight(.semibold))
