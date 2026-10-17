@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
-# user-release.sh - inactive legacy signed-binary pipeline.
-# Exodia now ships source; build locally with ./scripts/dev-run.sh --run.
-# Explicit legacy opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1.
-# WHY: .project-docs/decisions/2026-10-17-source-first-distribution.md
+# user-release.sh - community binary build and Sparkle release pipeline.
+# Default ad-hoc signing needs no Apple Developer account or notarization.
+# Optional Developer-ID mode: EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
-# One command: build, sign and notarize the DMG on a Mac, then publish it as
-# a GitHub Release together with the EdDSA-signed Sparkle appcast so that
+# One command: build and ad-hoc sign the DMG on a Mac, then publish it as
+# a GitHub Release with archive EdDSA signatures in the Sparkle appcast so that
 # installed copies get the in-app update. No CI runners are involved.
 #
 # WHY: docs/decisions/2026-09-04-github-releases-as-update-feed.md
@@ -16,14 +15,12 @@
 #   FLAVOR=beta ./scripts/user-release.sh
 #   FLAVOR=prod ./scripts/user-release.sh --build-only
 #   FLAVOR=prod ./scripts/user-release.sh --dry-run
+#   FLAVOR=prod ./scripts/user-release.sh --preflight-only
 #   FLAVOR=prod SHORT_VERSION=2.0.1 BUILD_VERSION=1450 \
 #     ./scripts/user-release.sh --upload-only
 #
-# Credentials come from the environment. The official releases inject them
-# with `doppler run --project sidekey --config dev -- ./scripts/user-release.sh`;
-# a fork exports them directly:
-#   TEAM_ID                      Apple Developer Team ID (Developer ID signing)
-#   ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID, ASC_API_KEY_P8   notarization
+# Publication credentials come from the environment:
+#   TEAM_ID / ASC_API_KEY_*      optional legacy Developer-ID mode only
 #   SPARKLE_ED_PRIVATE_KEY       base64 Ed25519 seed (see sparkle-keys-bootstrap.sh)
 #   GITHUB_REPO                  owner/name (default: AbsoluteMode/exodia)
 #   plus an authenticated `gh` CLI.
@@ -39,21 +36,22 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
     cat <<'EOF2'
-Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run
-This is the inactive legacy signed-binary pipeline (DMG -> GitHub -> Sparkle).
-It requires explicit EXODIA_LEGACY_SIGNED_RELEASE=1, including for --dry-run.
+Exodia community binary pipeline (ad-hoc DMG -> GitHub -> Sparkle-verified updates).
+No Apple Developer account or notarization is required by the default mode.
 
 Usage:
   FLAVOR=prod ./scripts/user-release.sh
   FLAVOR=beta ./scripts/user-release.sh
   FLAVOR=prod ./scripts/user-release.sh --build-only
   FLAVOR=prod ./scripts/user-release.sh --dry-run
+  FLAVOR=prod ./scripts/user-release.sh --preflight-only
   FLAVOR=prod SHORT_VERSION=2.0.1 BUILD_VERSION=1450 \
     ./scripts/user-release.sh --upload-only
 
-Required in the environment (or via `doppler run -- ...`):
-  TEAM_ID, ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID, ASC_API_KEY_P8,
-  SPARKLE_ED_PRIVATE_KEY, an authenticated gh CLI
+Required only for publication:
+  SPARKLE_ED_PRIVATE_KEY or SPARKLE_ED_PRIVATE_KEY_FILE, an authenticated gh CLI
+Optional legacy mode EXODIA_LEGACY_SIGNED_RELEASE=1 additionally requires:
+  TEAM_ID, ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID, ASC_API_KEY_P8
 
 Optional:
   GITHUB_REPO         default: AbsoluteMode/exodia
@@ -79,6 +77,12 @@ need_cmd() {
 BUILD_STEP=1
 UPLOAD_STEP=1
 DRY_RUN=0
+PREFLIGHT_ONLY=0
+LEGACY_SIGNED_RELEASE="${EXODIA_LEGACY_SIGNED_RELEASE:-0}"
+case "${LEGACY_SIGNED_RELEASE}" in
+    0|1) ;;
+    *) die "EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" ;;
+esac
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -93,6 +97,9 @@ while [ "$#" -gt 0 ]; do
         --dry-run)
             DRY_RUN=1
             ;;
+        --preflight-only)
+            PREFLIGHT_ONLY=1
+            ;;
         --help|-h)
             usage
             exit 0
@@ -103,12 +110,6 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
-
-if [ "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" != "1" ]; then
-    echo "Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run" >&2
-    echo "Legacy signed releases are inactive (explicit opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1)." >&2
-    exit 2
-fi
 
 GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/exodia}"
 FLAVOR="${FLAVOR:-prod}"
@@ -129,6 +130,10 @@ case "$FLAVOR" in
         die "invalid FLAVOR='${FLAVOR}' (expected prod or beta)"
         ;;
 esac
+
+if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
+    exec /bin/bash "${PROJECT_DIR}/scripts/build-dmg.sh" --preflight-only
+fi
 
 [ -x /usr/bin/python3 ] || die "missing /usr/bin/python3"
 if [ "$DRY_RUN" -eq 0 ] && [ "$UPLOAD_STEP" -eq 1 ]; then
@@ -264,6 +269,11 @@ export GITHUB_REPO
 echo "User release (local build -> GitHub Releases -> Sparkle)"
 echo "Repository: ${GITHUB_REPO}"
 echo "Flavor: ${FLAVOR}"
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    echo "Distribution: Developer ID + notarization (explicit legacy mode)"
+else
+    echo "Distribution: community (ad-hoc, no Apple notarization)"
+fi
 echo "Short version: ${SHORT_VERSION}"
 echo "Build version: ${BUILD_VERSION}"
 if [ -n "$remote_build_version" ]; then
@@ -279,7 +289,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 missing=()
-if [ "$BUILD_STEP" -eq 1 ]; then
+if [ "$BUILD_STEP" -eq 1 ] && [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     for var in TEAM_ID ASC_API_KEY_ID ASC_API_KEY_ISSUER_ID ASC_API_KEY_P8; do
         [ -n "${!var:-}" ] || missing+=("$var")
     done

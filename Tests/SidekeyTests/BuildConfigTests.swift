@@ -24,4 +24,12 @@ final class BuildConfigTests: XCTestCase {
         XCTAssertEqual(BuildConfig.appcastURL.scheme, "https")
         XCTAssertEqual(BuildConfig.landingURL.scheme, "https")
     }
+
+    func testSourceBuildsCannotReceivePackagedUpdates() {
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: "9999", displayVersion: "0.0.0-dev"))
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: "9999", displayVersion: "2.2.0"))
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: "2300", displayVersion: "2.3.0-dev"))
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: nil, displayVersion: nil))
+        XCTAssertTrue(BuildConfig.allowsPackagedUpdates(buildVersion: "2200", displayVersion: "2.2.0"))
+    }
 }

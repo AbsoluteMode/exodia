@@ -12,31 +12,29 @@ account, without Exodia servers and without telemetry.
 Exodia is free and open source (MIT). See `LICENSE`, `TRADEMARK.md` and
 `THIRD_PARTY_LICENSES.md`.
 
-## Get the source
+## Install and update
 
-Exodia is distributed as open source. Build and run it locally on your Mac;
-an Apple Developer account, Developer ID certificate and notarization are
-not required.
+Ready-made macOS builds are the main installation path. Download an Exodia DMG
+from [GitHub Releases](https://github.com/AbsoluteMode/exodia/releases), drag
+**Exodia** into **Applications**, then open it. You do not need Xcode or an Apple
+Developer account to use the app.
 
-```bash
-git clone https://github.com/AbsoluteMode/exodia.git
-cd exodia
-./scripts/dev-run.sh --run
-```
+Choose the `Exodia-latest.dmg` asset from an Exodia release. Whytap-named assets
+are historical builds. If no Exodia asset is listed yet, use the source-build
+instructions under [Development](#development).
 
-This creates `build/Exodia-Beta-dev.app` for testing on the Mac that built it.
-The script uses an existing local `Sidekey Dev` signing identity when available,
-otherwise an ad-hoc signature. It does not publish an installer. See the
-[setup guide](docs/install.md) for prerequisites and permissions.
+Community builds use ad-hoc code signing, without Apple notarization. macOS may
+warn on the first download; see [installation and permissions](docs/install.md).
+Updates use the existing island **Update** button and verify the archive with
+Exodia's Sparkle Ed25519 key, which is independent of Apple signing. An update
+will not restart the app during a meeting recording, dictation or agent task;
+finish the activity, then choose **Restart** or **Later**.
 
-[Earlier releases](https://github.com/AbsoluteMode/exodia/releases) contain
-historical Whytap binaries. They do not represent the current Exodia source.
-Exodia retains the original preferences, Keychain services and local data paths
-so the rename does not reset existing settings, keys, notes or agent memory.
+Runtime: macOS 14.2 (Sonoma) or newer. Local speech and text models need Apple
+Silicon; Intel Macs can use their own provider keys. Exodia keeps the original
+storage identities so the rename preserves settings, keys, notes and agent memory.
 
-Runtime: macOS 14.2 (Sonoma) or newer. Building requires a Swift 6 toolchain
-with the macOS SDK; use Xcode 26 or newer. Local speech and text models need
-Apple Silicon; on Intel Macs use your own provider key instead.
+Source and custom builds remain available; see [Development](#development).
 
 ## What runs where
 
@@ -109,9 +107,12 @@ full set.
 
 ## Development
 
-After making changes, validate locally:
+To customize Exodia, use a local checkout, Xcode 26 or newer and its Swift 6
+macOS toolchain:
 
 ```bash
+git clone https://github.com/AbsoluteMode/exodia.git
+cd exodia
 swift build
 swift test
 ./scripts/dev-run.sh --run
@@ -125,8 +126,11 @@ rebuild may require granting permissions again in macOS Settings.
 The Metal library for MLX is committed (`Resources/mlx.metallib`) and pinned
 to the resolved `mlx-swift` revision; bump both together with
 `scripts/build-metallib.sh`. See [build details](docs/build-and-release.md).
-Builds and tests run locally; GitHub Actions is disabled. Legacy signed-DMG
-and Sparkle publishing scripts remain inactive optional tooling.
+Builds and tests run locally; GitHub Actions is disabled. Ready-made releases
+use the community DMG and signed Sparkle archive pipeline; no Apple Developer
+account is required. Development builds use version `0.0.0-dev` / build `9999`
+and do not accept binary-feed updates over your custom build. Update the source
+with your agent, preserve your changes and rebuild instead.
 
 Architecture notes live in `CLAUDE.md`, the product spec in `docs/SPEC.md`,
 hotkey conventions in `docs/hotkey.md`, and the reasoning behind

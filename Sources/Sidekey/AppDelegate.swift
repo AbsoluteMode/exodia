@@ -241,7 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is a dependency-free singleton (`private init() {}`), so reading it
     /// during `AppDelegate.init` is safe.
     private let updateController: UpdateController = {
-        let controller = UpdateController(appState: AppState.shared)
+        let controller = UpdateController(
+            appState: AppState.shared,
+            updatesEnabled: BuildConfig.allowsPackagedUpdates
+        )
         AppState.shared.updateController = controller
         return controller
     }()

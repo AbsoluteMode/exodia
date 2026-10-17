@@ -1827,7 +1827,10 @@ private struct IslandWrapRow: View {
                         stage: pillStage,
                         hoverExpanded: showsUpdateActions,
                         onDownload: { updateAvailable.startDownload() },
-                        onSkip: { updateAvailable.skip() }
+                        onSkip: { updateAvailable.skip() },
+                        onInstall: { updateAvailable.install() },
+                        onLater: { updateAvailable.dismiss() },
+                        restartDeferralReason: updateAvailable.restartDeferralReason
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 }

@@ -6,9 +6,9 @@ Pull requests that preserve this independence from Exodia services are welcome.
 
 ## Ground rules
 
-- No Exodia-owned servers, accounts or telemetry. Network calls are allowed
-  only towards services the user configured with their own keys, model
-  downloads, and the Sparkle update feed. `Tests/SidekeyTests/CloudRemovalTests.swift`
+- No Exodia-owned servers, accounts or telemetry. Network calls are limited
+  to user-configured providers, monitoring sources and credential stores,
+  model/OpenCode downloads and the Sparkle update feed. `Tests/SidekeyTests/CloudRemovalTests.swift`
   enforces this at build time.
 - Privacy in logs: never interpolate transcripts, prompts, replies or API keys
   into `os_log`. `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
@@ -38,7 +38,10 @@ The script creates `build/Exodia-Beta-dev.app` for testing on the same Mac.
 It uses an existing local `Sidekey Dev` signing identity or falls back to
 ad-hoc signing. Use it rather than `swift run` to preserve the app bundle
 path and identity. Ad-hoc rebuilds may require granting macOS permissions
-again. This development bundle is not a downloadable installer.
+again. This development bundle is separate from ready-made releases and uses
+`0.0.0-dev` / build `9999`, so the binary feed does not overwrite local
+customizations. Update your source with the agent, preserve local changes and
+rebuild with the same script.
 
 ## Pull requests
 
@@ -50,9 +53,11 @@ again. This development bundle is not a downloadable installer.
 5. Maintainers squash-merge.
 
 Builds and tests run locally. GitHub Actions is disabled to avoid hosted-runner
-costs. Include the local validation result in the PR. Source publication is
-the active distribution path; the old signed-DMG publishing pipeline is
-inactive optional tooling (see `docs/build-and-release.md`).
+costs. Include the local validation result in the PR. Ready-made community
+builds and in-app updates are the main distribution path; source customization
+remains supported. The default release pipeline uses ad-hoc code signing and
+Exodia's Sparkle archive signatures, without an Apple Developer account
+(see `docs/build-and-release.md`).
 
 By contributing you agree that your contribution is licensed under the MIT
 License of this repository. No CLA is required.

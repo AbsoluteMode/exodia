@@ -13,6 +13,19 @@ enum BuildFlavor: String, Codable, Equatable {
 /// without conflict — different bundle identifiers, different keychain
 /// services, different appcast feeds. All facets must change together.
 enum BuildConfig {
+    /// Source-customized dev bundles must never be replaced by a packaged release.
+    static var allowsPackagedUpdates: Bool {
+        allowsPackagedUpdates(
+            buildVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+            displayVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        )
+    }
+
+    static func allowsPackagedUpdates(buildVersion: String?, displayVersion: String?) -> Bool {
+        guard let buildVersion, !buildVersion.isEmpty else { return false }
+        return buildVersion != "9999" && !(displayVersion?.lowercased().contains("-dev") ?? false)
+    }
+
     #if BETA
     static let flavor: BuildFlavor = .beta
     static let bundleID = "com.rootwise.sidekey.beta"

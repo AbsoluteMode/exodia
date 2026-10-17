@@ -1,25 +1,24 @@
 #!/bin/bash
 #
-# build-dmg.sh — Build, sign, notarize, staple, and package Exodia as DMG.
-# Inactive legacy tooling; source builds use ./scripts/dev-run.sh --run.
-# WHY: .project-docs/decisions/2026-10-17-source-first-distribution.md
+# build-dmg.sh — Build a universal community Exodia DMG.
+# Default: ad-hoc signing; no Apple Developer account or notarization.
+# Developer-ID/notarization is available only with EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
 # Usage:
 #   FLAVOR=beta|prod \
-#   SHORT_VERSION=0.2.0 \
+#   SHORT_VERSION=2.1.0 \
 #   BUILD_VERSION=42 \
-#     doppler run --project sidekey --config dev -- ./scripts/build-dmg.sh
+#     ./scripts/build-dmg.sh
 #
 # Env (all optional with defaults):
 #   FLAVOR         beta|prod   (default: prod)
-#   SHORT_VERSION  SemVer       (default: 0.2.0)
+#   SHORT_VERSION  SemVer       (default: VERSION file)
 #   BUILD_VERSION  monotonic    (default: 1; user-release picks next live build)
 #                  integer
 #
-# Requires:
-#   - Apple Developer ID Application certificate in Keychain
-#     (Xcode -> Settings -> Accounts -> Manage Certificates -> + Developer ID Application)
-#   - Doppler env: ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID, ASC_API_KEY_P8
+# Community requirements: local Swift/Xcode macOS 26 SDK and build resources.
+# Optional legacy mode additionally needs TEAM_ID and ASC_API_KEY_* credentials.
+# --preflight-only validates the selected build path without building or publishing.
 #
 # Outputs:
 #   - build/${APP_BUNDLE_NAME}-${SHORT_VERSION}-build${BUILD_VERSION}.dmg
@@ -27,20 +26,34 @@
 
 set -euo pipefail
 
-if [ "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" != "1" ]; then
-    echo "Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run" >&2
-    echo "Legacy signed releases are inactive (explicit opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1)." >&2
-    exit 2
-fi
+LEGACY_SIGNED_RELEASE="${EXODIA_LEGACY_SIGNED_RELEASE:-0}"
+case "${LEGACY_SIGNED_RELEASE}" in
+    0) DISTRIBUTION_MODE="community"; SIGNING_IDENTITY="-"; SIGNING_TIMESTAMP_ARGS=(--timestamp=none) ;;
+    1) DISTRIBUTION_MODE="developer-id"; SIGNING_TIMESTAMP_ARGS=(--timestamp) ;;
+    *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 2 ;;
+esac
+PREFLIGHT_ONLY=0
+for argument in "$@"; do
+    case "${argument}" in
+        --preflight-only) PREFLIGHT_ONLY=1 ;;
+        *) echo "ERROR: unknown argument: ${argument}" >&2; exit 2 ;;
+    esac
+done
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # --- Flavor parameterisation ---------------------------------------------
 
 FLAVOR="${FLAVOR:-prod}"
-SHORT_VERSION="${SHORT_VERSION:-0.2.0}"
+SHORT_VERSION="${SHORT_VERSION:-$(tr -d '\n\r ' < "${PROJECT_DIR}/VERSION")}"
 BUILD_VERSION="${BUILD_VERSION:-1}"
 
-if ! [[ "$BUILD_VERSION" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: BUILD_VERSION must be an integer (got: '${BUILD_VERSION}')" >&2
+if ! [[ "$SHORT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+    echo "ERROR: SHORT_VERSION must be a semantic version" >&2
+    exit 1
+fi
+
+if ! [[ "$BUILD_VERSION" =~ ^[0-9]+$ ]] || [ "$BUILD_VERSION" -le 0 ]; then
+    echo "ERROR: BUILD_VERSION must be a positive integer (got: '${BUILD_VERSION}')" >&2
     exit 1
 fi
 
@@ -75,10 +88,10 @@ case "$FLAVOR" in
         ;;
 esac
 
-TEAM_ID="${TEAM_ID:?set TEAM_ID to your Apple Developer Team ID (Developer ID Application certificate)}"
-SIGNING_IDENTITY="${TEAM_ID}"
-
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    TEAM_ID="${TEAM_ID:?set TEAM_ID for the explicitly selected Developer ID release}"
+    SIGNING_IDENTITY="${TEAM_ID}"
+fi
 # BUILD_DIR points at the staged universal executable produced below. The
 # release build intentionally avoids `swift build --arch arm64 --arch x86_64`:
 # that multi-arch invocation switches SwiftPM to the Xcode build backend, which
@@ -156,7 +169,7 @@ fi
 # validation here: it asserts the lib exists, is a valid MetalLib, AND is
 # version-locked to the current Package.resolved mlx-swift revision (via the
 # committed .revision sidecar). The version lock is the safety net — an MLX bump
-# that forgets to regenerate the metallib would otherwise build/sign/notarize a
+# that forgets to regenerate the metallib would otherwise package a
 # DMG whose GPU kernels mismatch the runtime and crash on the first local-LLM op.
 # Same hard-fail philosophy as the BlockNote / Sparkle pre-flight checks above.
 if ! bash "${PROJECT_DIR}/scripts/build-metallib.sh" --check; then
@@ -176,9 +189,11 @@ if ! [[ "${SPARKLE_PUBLIC_ED_KEY}" =~ ^[A-Za-z0-9+/=]{43,44}$ ]]; then
     exit 1
 fi
 
-if ! xcrun notarytool --version >/dev/null 2>&1; then
-    echo "ERROR: xcrun notarytool not available. Install Xcode 13+ (or Command Line Tools)." >&2
-    exit 1
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    if ! xcrun notarytool --version >/dev/null 2>&1; then
+        echo "ERROR: xcrun notarytool is required only for the selected legacy release." >&2
+        exit 1
+    fi
 fi
 
 # --- Toolchain guard: require the macOS 26 (Tahoe) SDK -------------------
@@ -200,27 +215,41 @@ if ! [[ "${SDK_MAJOR}" =~ ^[0-9]+$ ]] || [ "${SDK_MAJOR}" -lt 26 ]; then
     exit 1
 fi
 
-if ! security find-identity -v -p codesigning | grep -qE "Developer ID Application:.*\(${TEAM_ID}\)"; then
-    echo "ERROR: Developer ID cert not found in Keychain." >&2
-    echo "Install via Xcode -> Settings -> Accounts -> Manage Certificates -> + Developer ID Application." >&2
-    exit 1
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    if ! security find-identity -v -p codesigning | grep -qE "Developer ID Application:.*\(${TEAM_ID}\)"; then
+        echo "ERROR: Developer ID cert not found in Keychain." >&2
+        echo "Install via Xcode -> Settings -> Accounts -> Manage Certificates -> + Developer ID Application." >&2
+        exit 1
+    fi
+
+    missing_env=()
+    [ -z "${ASC_API_KEY_ID:-}" ]        && missing_env+=("ASC_API_KEY_ID")
+    [ -z "${ASC_API_KEY_ISSUER_ID:-}" ] && missing_env+=("ASC_API_KEY_ISSUER_ID")
+    [ -z "${ASC_API_KEY_P8:-}" ]        && missing_env+=("ASC_API_KEY_P8")
+    if [ ${#missing_env[@]} -gt 0 ]; then
+        echo "ERROR: missing required env vars: ${missing_env[*]}" >&2
+        echo "Run via 'doppler run --project sidekey --config dev -- ./scripts/build-dmg.sh'" >&2
+        exit 1
+    fi
+
 fi
 
-missing_env=()
-[ -z "${ASC_API_KEY_ID:-}" ]        && missing_env+=("ASC_API_KEY_ID")
-[ -z "${ASC_API_KEY_ISSUER_ID:-}" ] && missing_env+=("ASC_API_KEY_ISSUER_ID")
-[ -z "${ASC_API_KEY_P8:-}" ]        && missing_env+=("ASC_API_KEY_P8")
-if [ ${#missing_env[@]} -gt 0 ]; then
-    echo "ERROR: missing required env vars: ${missing_env[*]}" >&2
-    echo "Run via 'doppler run --project sidekey --config dev -- ./scripts/build-dmg.sh'" >&2
-    exit 1
+if [ "${PREFLIGHT_ONLY}" -eq 1 ]; then
+    /usr/bin/python3 - "${DISTRIBUTION_MODE}" "${BUNDLE_ID}" "${SHORT_VERSION}" "${BUILD_VERSION}" <<'PYJSON'
+import json, sys
+mode, bundle_id, version, build = sys.argv[1:]
+print(json.dumps({"distribution": mode, "bundle_id": bundle_id,
+    "version": version, "build": int(build), "architectures": ["arm64", "x86_64"],
+    "requires_apple_developer": mode == "developer-id",
+    "requires_notarization": mode == "developer-id"}))
+PYJSON
+    exit 0
 fi
 
 # --- Secrets staging (private umask, mktemp, trap cleanup) ----------------
 
-ORIGINAL_UMASK="$(umask)"
-umask 077
-ASC_KEY_DIR="$(mktemp -d -t sidekey-asc)"
+ASC_KEY_DIR=""
+ASC_KEY_PATH=""
 
 cleanup() {
     if [ -n "${ASC_KEY_DIR:-}" ] && [ -d "${ASC_KEY_DIR}" ]; then
@@ -241,9 +270,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-ASC_KEY_PATH="${ASC_KEY_DIR}/AuthKey.p8"
-printf '%s' "${ASC_API_KEY_P8}" > "${ASC_KEY_PATH}"
-umask "${ORIGINAL_UMASK}"
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    ORIGINAL_UMASK="$(umask)"
+    umask 077
+    ASC_KEY_DIR="$(mktemp -d -t sidekey-asc)"
+    ASC_KEY_PATH="${ASC_KEY_DIR}/AuthKey.p8"
+    printf '%s' "${ASC_API_KEY_P8}" > "${ASC_KEY_PATH}"
+    umask "${ORIGINAL_UMASK}"
+fi
 
 # --- Build ---------------------------------------------------------------
 
@@ -403,6 +437,8 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     -e "s|__APPCAST_URL__|${APPCAST_URL}|g" \
     -e "s|__SPARKLE_PUBLIC_ED_KEY__|${SPARKLE_PUBLIC_ED_KEY}|g" \
     "${INFO_PLIST_TEMPLATE}" > "${APP_BUNDLE}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ExodiaDistribution string ${DISTRIBUTION_MODE}" \
+    "${APP_BUNDLE}/Contents/Info.plist"
 
 if [ -f "${PROJECT_DIR}/Resources/AppIcon.icns" ]; then
     cp "${PROJECT_DIR}/Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
@@ -592,14 +628,14 @@ if [ -d "${SPARKLE_BUNDLE}/XPCServices/Installer.xpc" ]; then
     codesign --force \
         --sign "${SIGNING_IDENTITY}" \
         --options runtime \
-        --timestamp \
+        "${SIGNING_TIMESTAMP_ARGS[@]}" \
         "${SPARKLE_BUNDLE}/XPCServices/Installer.xpc"
 fi
 if [ -d "${SPARKLE_BUNDLE}/XPCServices/Downloader.xpc" ]; then
     codesign --force \
         --sign "${SIGNING_IDENTITY}" \
         --options runtime \
-        --timestamp \
+        "${SIGNING_TIMESTAMP_ARGS[@]}" \
         --preserve-metadata=entitlements \
         "${SPARKLE_BUNDLE}/XPCServices/Downloader.xpc"
 fi
@@ -609,7 +645,7 @@ if [ -f "${SPARKLE_BUNDLE}/Autoupdate" ]; then
     codesign --force \
         --sign "${SIGNING_IDENTITY}" \
         --options runtime \
-        --timestamp \
+        "${SIGNING_TIMESTAMP_ARGS[@]}" \
         "${SPARKLE_BUNDLE}/Autoupdate"
 fi
 
@@ -618,7 +654,7 @@ if [ -d "${SPARKLE_BUNDLE}/Updater.app" ]; then
     codesign --force \
         --sign "${SIGNING_IDENTITY}" \
         --options runtime \
-        --timestamp \
+        "${SIGNING_TIMESTAMP_ARGS[@]}" \
         "${SPARKLE_BUNDLE}/Updater.app"
 fi
 
@@ -626,7 +662,7 @@ echo "▶ Code signing Sparkle.framework..."
 codesign --force \
     --sign "${SIGNING_IDENTITY}" \
     --options runtime \
-    --timestamp \
+    "${SIGNING_TIMESTAMP_ARGS[@]}" \
     "${SPARKLE_BUNDLE}"
 
 # Sign the MediaRemote adapter framework before the app sign (deepest-first,
@@ -639,7 +675,7 @@ echo "▶ Code signing MediaRemoteAdapter.framework..."
 codesign --force \
     --sign "${SIGNING_IDENTITY}" \
     --options runtime \
-    --timestamp \
+    "${SIGNING_TIMESTAMP_ARGS[@]}" \
     "${APP_BUNDLE}/Contents/Frameworks/MediaRemoteAdapter.framework"
 
 # NB: the MLX metallib is intentionally NOT signed here. It ships as a sealed
@@ -657,7 +693,7 @@ codesign \
     --sign "${SIGNING_IDENTITY}" \
     --entitlements "${ENTITLEMENTS}" \
     --options runtime \
-    --timestamp \
+    "${SIGNING_TIMESTAMP_ARGS[@]}" \
     "${APP_BUNDLE}"
 
 echo "▶ Verifying signature..."
@@ -666,8 +702,10 @@ otool -L "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" | grep -i sparkle || 
     echo "ERROR: app binary does not link against Sparkle.framework" >&2
     exit 1
 }
-spctl --assess --type exec --verbose "${APP_BUNDLE}" 2>&1 || \
-    echo "  (warning: spctl assess returned non-zero — expected before notarize/staple)"
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    spctl --assess --type exec --verbose "${APP_BUNDLE}" 2>&1 || \
+        echo "  (warning: spctl assess returned non-zero — expected before notarize/staple)"
+fi
 
 # Static smoke: verify rpath chain without launching the app.
 # A runtime DYLD check (DYLD_PRINT_LIBRARIES on a launched binary) requires
@@ -733,47 +771,52 @@ echo "  ok: directories are +rx, files are +r, executables are +x"
 echo "▶ Re-verifying signature after permission normalization..."
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 
-# --- Notarize app bundle ------------------------------------------------
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    # --- Notarize app bundle ------------------------------------------------
 
-echo "▶ Zipping app bundle for notarization submission..."
-rm -f "${APP_ZIP}"
-ditto -c -k --keepParent "${APP_BUNDLE}" "${APP_ZIP}"
+    echo "▶ Zipping app bundle for notarization submission..."
+    rm -f "${APP_ZIP}"
+    ditto -c -k --keepParent "${APP_BUNDLE}" "${APP_ZIP}"
 
-echo "▶ Submitting app bundle to Apple notarization (this may take a few minutes)..."
-# --timeout 1200 (= 20 min) hard-caps the --wait poll. When Apple's notary
-# queue stalls (observed May 2026: 18–30 h waits), notarytool exits non-zero
-# at 20 min instead of leaving a local release attempt stuck indefinitely.
-# On a healthy queue this submission finishes in well under 5 min, so the cap
-# is never hit during normal operation. The submission continues server-side
-# even after timeout; the next local release attempt will re-submit and
-# usually succeed.
-if ! xcrun notarytool submit "${APP_ZIP}" \
-        --key "${ASC_KEY_PATH}" \
-        --key-id "${ASC_API_KEY_ID}" \
-        --issuer "${ASC_API_KEY_ISSUER_ID}" \
-        --wait \
-        --timeout 1200; then
-    echo "ERROR: notarytool submit failed for app bundle." >&2
-    echo "Inspect log via:" >&2
-    echo "  xcrun notarytool history --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}'" >&2
-    echo "  xcrun notarytool log <submission-id> --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}' --output-format json" >&2
-    exit 1
-fi
+    echo "▶ Submitting app bundle to Apple notarization (this may take a few minutes)..."
+    # --timeout 1200 (= 20 min) hard-caps the --wait poll. When Apple's notary
+    # queue stalls (observed May 2026: 18–30 h waits), notarytool exits non-zero
+    # at 20 min instead of leaving a local release attempt stuck indefinitely.
+    # On a healthy queue this submission finishes in well under 5 min, so the cap
+    # is never hit during normal operation. The submission continues server-side
+    # even after timeout; the next local release attempt will re-submit and
+    # usually succeed.
+    if ! xcrun notarytool submit "${APP_ZIP}" \
+            --key "${ASC_KEY_PATH}" \
+            --key-id "${ASC_API_KEY_ID}" \
+            --issuer "${ASC_API_KEY_ISSUER_ID}" \
+            --wait \
+            --timeout 1200; then
+        echo "ERROR: notarytool submit failed for app bundle." >&2
+        echo "Inspect log via:" >&2
+        echo "  xcrun notarytool history --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}'" >&2
+        echo "  xcrun notarytool log <submission-id> --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}' --output-format json" >&2
+        exit 1
+    fi
 
-echo "▶ Stapling notarization ticket to app bundle..."
-xcrun stapler staple "${APP_BUNDLE}"
-xcrun stapler validate "${APP_BUNDLE}"
+    echo "▶ Stapling notarization ticket to app bundle..."
+    xcrun stapler staple "${APP_BUNDLE}"
+    xcrun stapler validate "${APP_BUNDLE}"
 
-# Verify Gatekeeper acceptance of stapled app bundle
-if ! spctl --assess --type execute --verbose=2 "${APP_BUNDLE}"; then
-    echo "ERROR: Gatekeeper rejected the notarized app; refusing to package it." >&2
-    exit 1
-fi
+    # Verify Gatekeeper acceptance of stapled app bundle
+    if ! spctl --assess --type execute --verbose=2 "${APP_BUNDLE}"; then
+        echo "ERROR: Gatekeeper rejected the notarized app; refusing to package it." >&2
+        exit 1
+    fi
 
-# macOS 14+ checks distribution-specific problems that spctl can miss, such
-# as external library search paths left behind by the developer toolchain.
-if command -v syspolicy_check >/dev/null 2>&1; then
-    syspolicy_check distribution "${APP_BUNDLE}"
+    # macOS 14+ checks distribution-specific problems that spctl can miss, such
+    # as external library search paths left behind by the developer toolchain.
+    if command -v syspolicy_check >/dev/null 2>&1; then
+        syspolicy_check distribution "${APP_BUNDLE}"
+    fi
+
+else
+    echo "▶ Community build: Apple notarization and stapling are not used."
 fi
 
 # Load the shipped executable and frameworks without initializing user state.
@@ -986,36 +1029,40 @@ echo "▶ Code signing DMG..."
 codesign \
     --force \
     --sign "${SIGNING_IDENTITY}" \
-    --timestamp \
+    "${SIGNING_TIMESTAMP_ARGS[@]}" \
     --identifier "${BUNDLE_ID}.dmg" \
     "${DMG_PATH}"
 
-# --- Notarize DMG -------------------------------------------------------
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    # --- Notarize DMG -------------------------------------------------------
 
-echo "▶ Submitting DMG to Apple notarization..."
-# --timeout 1200: same rationale as the app-bundle submission above. See
-# comment there for full context on why the cap matters.
-if ! xcrun notarytool submit "${DMG_PATH}" \
-        --key "${ASC_KEY_PATH}" \
-        --key-id "${ASC_API_KEY_ID}" \
-        --issuer "${ASC_API_KEY_ISSUER_ID}" \
-        --wait \
-        --timeout 1200; then
-    echo "ERROR: notarytool submit failed for DMG." >&2
-    echo "Inspect log via:" >&2
-    echo "  xcrun notarytool history --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}'" >&2
-    echo "  xcrun notarytool log <submission-id> --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}' --output-format json" >&2
-    exit 1
+    echo "▶ Submitting DMG to Apple notarization..."
+    # --timeout 1200: same rationale as the app-bundle submission above. See
+    # comment there for full context on why the cap matters.
+    if ! xcrun notarytool submit "${DMG_PATH}" \
+            --key "${ASC_KEY_PATH}" \
+            --key-id "${ASC_API_KEY_ID}" \
+            --issuer "${ASC_API_KEY_ISSUER_ID}" \
+            --wait \
+            --timeout 1200; then
+        echo "ERROR: notarytool submit failed for DMG." >&2
+        echo "Inspect log via:" >&2
+        echo "  xcrun notarytool history --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}'" >&2
+        echo "  xcrun notarytool log <submission-id> --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}' --output-format json" >&2
+        exit 1
+    fi
+
+    echo "▶ Stapling notarization ticket to DMG..."
+    xcrun stapler staple "${DMG_PATH}"
+    xcrun stapler validate "${DMG_PATH}"
+
 fi
-
-echo "▶ Stapling notarization ticket to DMG..."
-xcrun stapler staple "${DMG_PATH}"
-xcrun stapler validate "${DMG_PATH}"
 
 # --- Final ---------------------------------------------------------------
 
 echo ""
-echo "✓ Signed + notarized DMG: ${DMG_PATH}"
-echo ""
-echo "Verify Gatekeeper acceptance:"
-echo "  spctl --assess --type install ${DMG_PATH}"
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    echo "✓ Developer-ID signed + notarized DMG: ${DMG_PATH}"
+else
+    echo "✓ Community DMG (ad-hoc signed, not Apple-notarized): ${DMG_PATH}"
+fi

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
 # upload-release.sh - publish a built DMG as a GitHub Release and refresh the
-# EdDSA-signed Sparkle appcast that ships as a release asset.
-# Inactive legacy tooling; source distribution does not publish an appcast.
-# WHY: .project-docs/decisions/2026-10-17-source-first-distribution.md
+# Sparkle appcast with Ed25519-signed archives, shipped as a release asset.
+# Community updates use Sparkle Ed25519 signatures independently of Apple signing.
 #
 # Called by scripts/user-release.sh after build-dmg.sh produces:
 #   build/${APP_BUNDLE_NAME}-${SHORT_VERSION}-build${BUILD_VERSION}.dmg
@@ -37,12 +36,6 @@
 # delta updates: every item is a full DMG.
 
 set -euo pipefail
-
-if [ "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" != "1" ]; then
-    echo "Exodia is distributed as source. Build locally: ./scripts/dev-run.sh --run" >&2
-    echo "Legacy signed releases are inactive (explicit opt-in: EXODIA_LEGACY_SIGNED_RELEASE=1)." >&2
-    exit 2
-fi
 
 required=(FLAVOR APP_BUNDLE_NAME SHORT_VERSION BUILD_VERSION)
 missing=()
@@ -104,11 +97,26 @@ case "$FLAVOR" in
         ;;
 esac
 
+# Versioned asset URLs are immutable. Never overwrite an existing release,
+# including a draft from a failed attempt; inspect it explicitly before retrying.
+if gh release view "$TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1 \
+   || gh api "repos/${GITHUB_REPO}/git/ref/tags/${TAG}" --silent >/dev/null 2>&1; then
+    echo "ERROR: version tag ${TAG} already exists; refusing to overwrite its assets." >&2
+    echo "Inspect the existing release/tag manually, then use a new version for publication." >&2
+    exit 1
+fi
+
 # --- Locate Sparkle's generate_appcast ------------------------------------
 
 GENERATE_APPCAST_BIN="$(find "${PROJECT_DIR}/.build" -name 'generate_appcast' -type f -perm -u+x | head -1)"
 if [ -z "$GENERATE_APPCAST_BIN" ]; then
     echo "ERROR: generate_appcast not found in .build/ (build-dmg.sh builds Sparkle artifacts)" >&2
+    exit 1
+fi
+
+SIGN_UPDATE_BIN="${GENERATE_APPCAST_BIN%/*}/sign_update"
+if [ ! -x "${SIGN_UPDATE_BIN}" ]; then
+    echo "ERROR: Sparkle sign_update is required to verify the generated archive signature." >&2
     exit 1
 fi
 
@@ -178,20 +186,34 @@ tree.write(appcast_path, encoding="utf-8", xml_declaration=True)
 PY
 }
 
-appcast_has_build() {
-    /usr/bin/python3 - "$1" "$2" <<'PY'
+validate_signed_appcast_item() {
+    /usr/bin/python3 - "$1" "$2" "$3" "$4" <<'PYXML'
+import base64
+from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
 
+appcast, build, archive, expected_url = sys.argv[1:]
 sparkle_ns = "http://www.andymatuschak.org/xml-namespaces/sparkle"
-root = ET.parse(sys.argv[1]).getroot()
-builds = [
-    (node.text or "").strip()
-    for node in root.findall(f"./channel/item/{{{sparkle_ns}}}version")
-]
-print(f"items: {len(builds)}")
-raise SystemExit(0 if sys.argv[2] in builds else 1)
-PY
+root = ET.parse(appcast).getroot()
+items = [item for item in root.findall("./channel/item")
+         if (item.findtext(f"{{{sparkle_ns}}}version") or "").strip() == build]
+if len(items) != 1:
+    raise SystemExit("expected exactly one appcast item for the new build")
+enclosure = items[0].find("enclosure")
+if enclosure is None:
+    raise SystemExit("update item has no archive enclosure")
+try:
+    signature = base64.b64decode(enclosure.get(f"{{{sparkle_ns}}}edSignature", ""), validate=True)
+    length = int(enclosure.get("length", "0"))
+except (ValueError, TypeError):
+    raise SystemExit("update item has invalid Ed25519 signature metadata")
+if len(signature) != 64 or length != Path(archive).stat().st_size:
+    raise SystemExit("update archive requires an Ed25519 signature and matching length")
+if enclosure.get("url") != expected_url:
+    raise SystemExit("update archive URL does not match its immutable release asset")
+print("Signed update enclosure and archive length validated")
+PYXML
 }
 
 # --- 1. Stage the new DMG next to the previous appcast --------------------
@@ -207,9 +229,9 @@ else
         || echo "No rolling beta release yet; starting a fresh feed."
 fi
 
-# --- 2. Generate the signed appcast ---------------------------------------
+# --- 2. Generate the appcast with signed archives -------------------------
 
-echo "Generating EdDSA-signed appcast.xml..."
+echo "Generating appcast.xml with Ed25519-signed archives..."
 "$GENERATE_APPCAST_BIN" \
     --download-url-prefix "${DOWNLOAD_BASE}/${TAG}/" \
     --maximum-deltas 0 \
@@ -221,52 +243,93 @@ if [ ! -f "${STAGING_DIR}/appcast.xml" ]; then
     exit 1
 fi
 normalize_appcast_minimum_system_version "${STAGING_DIR}/appcast.xml"
-if ! appcast_has_build "${STAGING_DIR}/appcast.xml" "$BUILD_VERSION"; then
-    echo "ERROR: appcast.xml does not contain build ${BUILD_VERSION}." >&2
+if ! validate_signed_appcast_item "${STAGING_DIR}/appcast.xml" "$BUILD_VERSION" \
+        "${STAGING_DIR}/${DMG_FILENAME}" "${DOWNLOAD_BASE}/${TAG}/${DMG_FILENAME}"; then
+    echo "ERROR: appcast.xml has no valid signed update for build ${BUILD_VERSION}; refusing publication." >&2
     exit 1
 fi
 
+archive_signature="$(/usr/bin/python3 - "${STAGING_DIR}/appcast.xml" "$BUILD_VERSION" <<'PYSIGNATURE'
+import sys
+import xml.etree.ElementTree as ET
+ns = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+for item in ET.parse(sys.argv[1]).getroot().findall("./channel/item"):
+    if (item.findtext(f"{{{ns}}}version") or "").strip() == sys.argv[2]:
+        print(item.find("enclosure").get(f"{{{ns}}}edSignature"))
+        break
+PYSIGNATURE
+)"
+"${SIGN_UPDATE_BIN}" --verify --ed-key-file "$SPARKLE_PRIV_FILE" \
+    "${STAGING_DIR}/${DMG_FILENAME}" "${archive_signature}"
+
 cp "${STAGING_DIR}/${DMG_FILENAME}" "${STAGING_DIR}/${LATEST_FILENAME}"
 
-# --- 3. Create (or refresh) the GitHub Release ----------------------------
+# --- 3. Stage a new draft, verify uploaded bytes, then publish last ----------
 
+SOURCE_SHA="$(git -C "$PROJECT_DIR" rev-parse --verify 'HEAD^{commit}')"
+if ! [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: could not resolve the exact source commit for the release tag." >&2
+    exit 1
+fi
 notes_args=(--generate-notes)
 if [ -n "${RELEASE_NOTES_FILE:-}" ]; then
     notes_args=(--notes-file "$RELEASE_NOTES_FILE")
 fi
 
-if gh release view "$TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
-    echo "Release ${TAG} exists; replacing its assets..."
-    gh release upload "$TAG" --repo "$GITHUB_REPO" --clobber \
-        "${STAGING_DIR}/${DMG_FILENAME}" \
-        "${STAGING_DIR}/${LATEST_FILENAME}" \
-        "${STAGING_DIR}/appcast.xml"
+# Keep arrays nonempty for the macOS Bash 3.2 + set -u contract.
+create_args=(--draft --target "$SOURCE_SHA" --title "$TITLE" "${notes_args[@]}")
+if [ "$FLAVOR" = "beta" ]; then
+    create_args+=(--prerelease)
+fi
+echo "Creating draft ${TAG} from source ${SOURCE_SHA}..."
+gh release create "$TAG" --repo "$GITHUB_REPO" "${create_args[@]}"
+# No --clobber: even a concurrent publisher cannot replace versioned bytes.
+gh release upload "$TAG" --repo "$GITHUB_REPO" \
+    "${STAGING_DIR}/${DMG_FILENAME}" \
+    "${STAGING_DIR}/${LATEST_FILENAME}" \
+    "${STAGING_DIR}/appcast.xml"
+
+VERIFY_DIR="$(mktemp -d "${STAGING_DIR}/verify.XXXXXX")"
+gh release download "$TAG" --repo "$GITHUB_REPO" --dir "$VERIFY_DIR" \
+    --pattern "$DMG_FILENAME" --pattern "$LATEST_FILENAME" --pattern appcast.xml
+/usr/bin/python3 - "$STAGING_DIR" "$VERIFY_DIR" "$DMG_FILENAME" "$LATEST_FILENAME" <<'PYVERIFY'
+import hashlib
+from pathlib import Path
+import sys
+
+def digest(path):
+    result = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            result.update(block)
+    return result.digest()
+
+staging, downloaded = map(Path, sys.argv[1:3])
+for name in [sys.argv[3], sys.argv[4], "appcast.xml"]:
+    expected, actual = staging / name, downloaded / name
+    if not actual.is_file() or actual.stat().st_size != expected.stat().st_size or digest(actual) != digest(expected):
+        raise SystemExit("uploaded release asset bytes do not match; leaving the release as a draft")
+print("Uploaded archive, alias and appcast SHA256/length verified")
+PYVERIFY
+
+if [ "$FLAVOR" = "prod" ]; then
+    gh release edit "$TAG" --repo "$GITHUB_REPO" --draft=false --latest
 else
-    echo "Creating release ${TAG}..."
-    # macOS Bash 3.2 treats an empty array as unset under set -u.
-    # Keep the argument array nonempty for both release channels.
-    create_args=(--title "$TITLE" "${notes_args[@]}")
-    if [ "$FLAVOR" = "beta" ]; then
-        create_args+=(--prerelease)
-    fi
-    gh release create "$TAG" --repo "$GITHUB_REPO" \
-        "${create_args[@]}" \
-        "${STAGING_DIR}/${DMG_FILENAME}" \
-        "${STAGING_DIR}/${LATEST_FILENAME}" \
-        "${STAGING_DIR}/appcast.xml"
+    gh release edit "$TAG" --repo "$GITHUB_REPO" --draft=false --latest=false
 fi
 
-# --- 4. Beta: refresh the rolling feed release -----------------------------
+# --- 4. Beta: update the mutable alias first and the rolling feed LAST -------
 
 if [ "$FLAVOR" = "beta" ]; then
     if ! gh release view "$FEED_TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
         gh release create "$FEED_TAG" --repo "$GITHUB_REPO" --prerelease \
-            --title "Exodia Beta feed" \
+            --target "$SOURCE_SHA" --title "Exodia Beta feed" \
             --notes "Rolling prerelease that carries the beta Sparkle feed. Install from the versioned beta releases."
     fi
     gh release upload "$FEED_TAG" --repo "$GITHUB_REPO" --clobber \
-        "${STAGING_DIR}/appcast.xml" \
         "${STAGING_DIR}/${LATEST_FILENAME}"
+    gh release upload "$FEED_TAG" --repo "$GITHUB_REPO" --clobber \
+        "${STAGING_DIR}/appcast.xml"
 fi
 
 echo ""

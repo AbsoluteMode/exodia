@@ -170,11 +170,18 @@ Island idle-hide:
 Update flow (download-on-action):
   SPUUpdater (hourly, automaticallyDownloadsUpdates = FALSE) + custom
   IslandUpdateUserDriver: no Sparkle windows, everything in the island.
-  Scheduled check -> "Update" pill -> hover: Download | Later -> download
+  Scheduled check -> "Update" pill -> hover: Download | Skip -> download
   with a CALayer spinner (IslandUpdateSpinner; SwiftUI .repeatForever would
-  freeze during main-thread stalls) -> auto install + relaunch -> "Updated"
+  freeze during main-thread stalls) -> install + relaunch only while idle -> "Updated"
   indicator for 5s on the next launch (JustUpdatedIndicator, one-shot
-  marker). Feed = GitHub Releases (`BuildConfig.appcastURL`). WHY:
+  marker). A meeting recording, dictation or agent activity defers installation
+  into Ready with Restart / Later; returning to idle alone never restarts it.
+  Restored downloads also need explicit Restart. A final Sparkle delegate guard
+  rechecks activity before installation. Feed = GitHub Releases (`BuildConfig.appcastURL`).
+  Community archives use our independent Sparkle Ed25519 signature and ad-hoc
+  app code signing, without Apple Developer/notarization. Source dev builds
+  (9999 / -dev) do not start the binary updater. WHY:
+  .project-docs/decisions/2026-10-17-community-updates.md,
   docs/decisions/2026-06-17-update-download-on-action.md,
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
@@ -263,17 +270,28 @@ python3 scripts/customize.py doctor --json
 
 # Explicit ad-hoc local build if no local certificate is desired
 SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
+
+# Community binary: local universal build, no Apple Developer
+FLAVOR=prod ./scripts/user-release.sh --preflight-only
+FLAVOR=prod ./scripts/user-release.sh --build-only
+# Publishing also needs the project's Sparkle signing key and GitHub access
+FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
 
-Distribution is source-first. Develop, validate locally, review and publish
-source changes on GitHub; users pull source and rebuild on their own Macs.
-Apple Developer membership, Developer ID, notarization and a binary deployment
-are not completion gates for this source workflow. The old DMG/Sparkle publishing
-scripts are inactive unless explicitly opted into with
-`EXODIA_LEGACY_SIGNED_RELEASE=1`; never invoke them as the default delivery step.
-Existing installed binaries and updater compatibility remain intact. Do not
-disable Gatekeeper or other OS protections. WHY:
-`.project-docs/decisions/2026-10-17-source-first-distribution.md`.
+Exodia stays open source and uses ready-made community builds for normal installs
+and updates. The default DMG/Sparkle pipeline builds/signs locally without Apple
+Developer membership, Developer ID or notarization; publishing requires our
+independent Sparkle Ed25519 signing key and GitHub access. Keep archive signature
+verification and app integrity checks. The former Apple-signed mode remains
+optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
+other OS protections. First downloads may require user approval and macOS
+permissions can require regranting. WHY:
+`.project-docs/decisions/2026-10-17-community-updates.md`.
+
+Source users still pull and rebuild locally for their own customizations. Dev
+9999/-dev bundles opt out of packaged updates so a binary cannot overwrite their
+modified app. Earlier Whytap installs can use a different feed and need a manual
+first Exodia installation; changing the new GitHub feed cannot migrate that copy.
 
 GitHub Actions is disabled to avoid hosted-runner costs; do not enable or dispatch
 it. Run appropriate local build/tests and record the results in the PR. BYOK-first
@@ -325,7 +343,7 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 4. **Sparkle never shows a window.** Scheduled checks only show the island
    pill; nothing downloads before the user clicks; one-button install +
    relaunch; "Later" hides the pill for the session; no background
-   install-on-quit; no manual "Check for Updates" menu (there is no status
+  install-on-quit; no manual "Check for Updates" menu (there is no status
    bar item at all).
 5. **Drop is remappable but hold Space by default.** Record a combo or bare
    Space in Settings -> Hotkeys (Raycast-style release-to-commit recorder).

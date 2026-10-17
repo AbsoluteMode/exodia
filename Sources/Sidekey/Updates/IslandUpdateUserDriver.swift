@@ -41,6 +41,7 @@ final class IslandUpdateUserDriver: NSObject, SPUUserDriver {
     // MARK: - Internal entry points (testable; primitives only)
 
     func handleUpdateFound(reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        readyReply = nil
         updateFoundReply = reply
         expectedLength = 0
         receivedLength = 0
@@ -49,13 +50,26 @@ final class IslandUpdateUserDriver: NSObject, SPUUserDriver {
 
     /// Fires the held `updateFound` reply with `.install`, starting the download
     /// immediately. Called by `UpdateController` when the user clicks the pill.
-    func invokeDownload() { updateFoundReply?(.install) }
+    func invokeDownload() {
+        let reply = updateFoundReply
+        updateFoundReply = nil
+        reply?(.install)
+    }
 
     /// Invoked by the host when the user clicks ✕ ("Skip this version") in the
     /// island. Replies `.skip` to the held `showUpdateFound` reply — Sparkle
     /// records this build as skipped and stops re-prompting for it, while
     /// FUTURE versions still surface normally.
-    func invokeSkip() { updateFoundReply?(.skip) }
+    func invokeSkip() {
+        let reply = updateFoundReply
+        updateFoundReply = nil
+        reply?(.skip)
+    }
+
+    func discardPendingReplies() {
+        updateFoundReply = nil
+        readyReply = nil
+    }
 
     func handleDownloadExpectedLength(_ length: UInt64) {
         expectedLength = length
@@ -105,6 +119,7 @@ final class IslandUpdateUserDriver: NSObject, SPUUserDriver {
         _ error: Error,
         acknowledgement: @escaping () -> Void
     ) {
+        discardPendingReplies()
         onStage(.cleared)
         acknowledgement()
     }
@@ -129,7 +144,19 @@ final class IslandUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     /// Invoked by the host when the user clicks «Restart» in the island.
-    func invokeInstall() { readyReply?(.install) }
+    func invokeInstall() {
+        let reply = readyReply
+        readyReply = nil
+        reply?(.install)
+    }
+
+    /// Cancel this installation without skipping the version in future checks.
+    /// At the Ready stage, `.dismiss` can still install on quit; `.skip` cancels it.
+    func invokeLater() {
+        let reply = readyReply
+        readyReply = nil
+        reply?(.skip)
+    }
 
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
         handleReadyToInstall(reply: reply)
@@ -150,6 +177,7 @@ final class IslandUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     func dismissUpdateInstallation() {
+        discardPendingReplies()
         onStage(.cleared)
     }
 }

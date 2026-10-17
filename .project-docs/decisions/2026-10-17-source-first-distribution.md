@@ -20,10 +20,12 @@ sources:
   - type: repository
     reference: docs/install.md
     confirmed_at: 2026-10-17
-related: [../project.md, 2026-09-10-public-installation.md, 2026-09-10-byok-and-local-builds.md]
+related: [2026-10-17-community-updates.md, ../project.md, 2026-09-10-public-installation.md, 2026-09-10-byok-and-local-builds.md]
 ---
 
 # Source-first distribution
+
+> Later on 2026-10-17, the user selected [ready-made community updates](2026-10-17-community-updates.md) as the main path. This supersedes source-only distribution and inactive binary tooling below. No Apple Developer dependency and optional source customization remain current.
 
 Exodia's delivery target is its public source repository and a working local
 build, not a notarized installer. Users clone or pull the repository and run

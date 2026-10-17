@@ -11,8 +11,7 @@ import XCTest
 ///     ugly in the ~70pt right band). No hover-expanded actions because the
 ///     user has nothing to act on while Sparkle is fetching the bits. The same
 ///     visual covers the brief auto-install phase.
-///   - `.readyToInstall` — present only as a transient internal tag; the host
-///     auto-installs and never surfaces a user-actionable restart step.
+///   - `.readyToInstall` — explicit Restart / Later after a deferred download.
 ///
 /// Rendering correctness (icons, monospaced label, etc.) is verified in the
 /// manual smoke checklist; tests target wiring and label/affordance contracts.
@@ -130,7 +129,7 @@ final class IslandUpdateAvailablePillTests: XCTestCase {
 
     // MARK: - .readyToInstall stage label and affordances
 
-    func test_readyToInstall_primaryLabel_contains_version() {
+    func test_readyToInstall_primaryLabel_is_Ready() {
         let pill = IslandUpdateAvailablePill(
             displayVersion: "1.9.3",
             stage: .readyToInstall,
@@ -138,12 +137,10 @@ final class IslandUpdateAvailablePillTests: XCTestCase {
             onDownload: {},
             onSkip: {}
         )
-        XCTAssertTrue(pill.primaryLabel.contains("1.9.3"))
+        XCTAssertEqual(pill.primaryLabel, "Ready")
     }
 
-    func test_readyToInstall_doesNotShowRestartAffordance_evenWhenHoverExpanded() {
-        // Install is automatic — the pill never offers a user-actionable
-        // restart, even if the host ever forwarded a readyToInstall tag.
+    func test_readyToInstall_showsRestartAffordance_whenHoverExpanded() {
         let pill = IslandUpdateAvailablePill(
             displayVersion: "1.9.3",
             stage: .readyToInstall,
@@ -151,7 +148,7 @@ final class IslandUpdateAvailablePillTests: XCTestCase {
             onDownload: {},
             onSkip: {}
         )
-        XCTAssertFalse(pill.showsRestartAffordance)
+        XCTAssertTrue(pill.showsRestartAffordance)
     }
 
     func test_readyToInstall_doesNotShowDownloadAffordance() {
@@ -163,6 +160,22 @@ final class IslandUpdateAvailablePillTests: XCTestCase {
             onSkip: {}
         )
         XCTAssertFalse(pill.showsDownloadAffordance)
+    }
+
+    func test_readyToInstall_restartAndLaterHaveDistinctCallbacks() {
+        var installs = 0
+        var laters = 0
+        let pill = IslandUpdateAvailablePill(
+            displayVersion: "2.2.0", stage: .readyToInstall, hoverExpanded: true,
+            onDownload: { XCTFail("Do not download again") }, onSkip: { XCTFail("Later is not Skip") },
+            onInstall: { installs += 1 }, onLater: { laters += 1 },
+            restartDeferralReason: "Finish recording before restarting."
+        )
+        pill.onInstall()
+        pill.onLater()
+        XCTAssertEqual(installs, 1)
+        XCTAssertEqual(laters, 1)
+        XCTAssertEqual(pill.restartDeferralReason, "Finish recording before restarting.")
     }
 
     // MARK: - Init sanity

@@ -45,12 +45,14 @@
     <string>__APPCAST_URL__</string>
     <key>SUPublicEDKey</key>
     <string>__SPARKLE_PUBLIC_ED_KEY__</string>
+    <!-- Verify our community archive signature before parsing its contents. -->
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
     <!--
         ATS (App Transport Security) exception. Allows plain HTTP only to
         local-network hostnames: `localhost`, `*.local` (mDNS), loopback IPs,
-        and unqualified hostnames. Production and beta backend traffic uses
-        HTTPS public hosts through `BuildConfig.backendURL`; this exception is
-        retained for local development overrides and test harnesses.
+        and unqualified hostnames. The public update feed uses HTTPS; this
+        exception supports local provider endpoints and test harnesses.
     -->
     <key>NSAppTransportSecurity</key>
     <dict>
