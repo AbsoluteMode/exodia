@@ -3,7 +3,7 @@
 #
 # Outputs Resources/dmg-background.png at 1320x880 (2x retina; rendered behind
 # a Finder window sized 660x440 logical via the AppleScript layout in
-# build-dmg.sh). Finder places the Whytap.app icon at logical (180, 220) and
+# build-dmg.sh). Finder places the Exodia.app icon at logical (180, 220) and
 # the /Applications symlink at logical (480, 220) on top of this image; we
 # render the dark editorial canvas behind them.
 #
@@ -36,7 +36,7 @@ HEIGHT = LOGICAL_H * SCALE
 BG_TOP = (0x15, 0x15, 0x1C)
 BG_BOTTOM = (0x0E, 0x0E, 0x14)
 
-# Accent (Whytap violet) for the two radial glows.
+# Accent (Exodia violet) for the two radial glows.
 ACCENT = (0x8B, 0x5C, 0xF6)
 
 # Text colours — match css var(--ink) at ~0.55 opacity for muted bits and
@@ -311,7 +311,7 @@ def main() -> int:
     )
     img.alpha_composite(bottom_glow)
 
-    # 3. Header — `Welcome to` (italic, muted) above `Whytap.` headline.
+    # 3. Header — `Welcome to` (italic, muted) above `Exodia.` headline.
     marquee_font = font_instrument_italic(16 * SCALE)
     marquee_text = "Welcome to"
     mw, _ = text_size(marquee_font, marquee_text)
@@ -325,12 +325,12 @@ def main() -> int:
         opacity=0.55,
     )
 
-    # `Why` in regular, `tap.` in italic — same two-style title as dmg.jsx.
+    # `Ex` in regular, `odia.` in italic — same two-style title as dmg.jsx.
     title_size = 44 * SCALE
     title_regular = font_instrument_regular(title_size)
     title_italic = font_instrument_italic(title_size)
-    part_a = "Why"
-    part_b = "tap."
+    part_a = "Ex"
+    part_b = "odia."
     aw, ah = text_size(title_regular, part_a)
     bw, _ = text_size(title_italic, part_b)
     title_total_w = aw + bw
@@ -395,7 +395,7 @@ def main() -> int:
 
     # 5. Footer hint — uppercase tracked label, with a tiny dot on each side.
     hint_font = font_sans(int(11.5 * SCALE))
-    hint_text = "DRAG  WHYTAP  TO  APPLICATIONS"
+    hint_text = "DRAG  EXODIA  TO  APPLICATIONS"
     hw, hh = text_size(hint_font, hint_text)
     hint_y = HEIGHT - 26 * SCALE - hh
 

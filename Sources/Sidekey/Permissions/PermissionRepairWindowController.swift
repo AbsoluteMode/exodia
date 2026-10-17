@@ -8,11 +8,11 @@ import SwiftUI
 /// auto-closes once all required permissions are granted.
 @MainActor
 final class PermissionRepairWindowController: NSWindowController, NSWindowDelegate {
-    private let viewModel: OnboardingPermissionsViewModel
+    private let viewModel: PermissionsSettingsViewModel
     private var pollTimer: Timer?
 
     init(onComplete: @escaping () -> Void) {
-        let viewModel = OnboardingPermissionsViewModel(onComplete: onComplete, autoComplete: true)
+        let viewModel = PermissionsSettingsViewModel(onComplete: onComplete, autoComplete: true)
         self.viewModel = viewModel
 
         let hosting = NSHostingController(
@@ -25,7 +25,7 @@ final class PermissionRepairWindowController: NSWindowController, NSWindowDelega
             backing: .buffered,
             defer: false
         )
-        window.title = "Whytap"
+        window.title = "Exodia"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false

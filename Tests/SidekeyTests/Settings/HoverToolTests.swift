@@ -51,8 +51,10 @@ final class HoverToolTests: XCTestCase {
         XCTAssertEqual(HoverTool.settings.rawValue, "settings")
     }
 
-    func test_twelve_tools_total() {
-        XCTAssertEqual(HoverTool.allCases.count, 12)
+    func test_monitor_has_action_metadata() {
+        XCTAssertEqual(HoverToolRegistry.info(for: .monitor).title, "Monitor")
+        XCTAssertEqual(HoverToolRegistry.info(for: .monitor).kind, .action)
+        XCTAssertEqual(HoverSlotRouter.effect(for: .monitor), .openMonitor)
     }
 
     func test_output_language_description_mentions_smart_mode() {

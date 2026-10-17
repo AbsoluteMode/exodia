@@ -44,6 +44,7 @@ final class AgentController: ObservableObject {
     private let snapshotProvider: () -> FocusSnapshot?
     private let resolveProvider: @MainActor () -> (any CLIProvider)?
     private let resolveRunOptions: @MainActor (CLIProviderID) -> AgentRunOptions
+    private let resolveProjectContext: @MainActor (String) -> AgentProjectContext?
     /// The provider that drove the most-recently-started turn. Set at the
     /// top of `continueSubmit`; nil between turns.
     private var activeTurnProvider: (any CLIProvider)?
@@ -51,6 +52,7 @@ final class AgentController: ObservableObject {
     /// lets each CLI use its own native resume / auto-compact state without
     /// leaking one provider's thread id into the other.
     private let agentSessionStore: any AgentSessionStoring
+    private var activeTurnSessionStore: (any AgentSessionStoring)?
     private let audioTranscriber: any AgentAudioTranscribing
     private let voiceSessionFactory: @MainActor () -> any AgentVoiceSessioning
     private let chatStackStore: ChatStackStore?
@@ -125,6 +127,7 @@ final class AgentController: ObservableObject {
     /// standalone for existing tests.
     private var onGoogleTextSubmit: (String) -> Void = { _ in }
     private var consumeTask: Task<Void, Never>?
+    private var consumeGeneration = UUID()
     private var voiceSession: (any AgentVoiceSessioning)?
     /// The in-flight realtime voice session, set once the session factory
     /// resolves. `handleHoldEnd` calls `stop()` on it (finalize → transcript);
@@ -183,7 +186,7 @@ final class AgentController: ObservableObject {
     /// design: system prompts are more reliable in English; the agent still
     /// replies to the user in the user's language per the instruction below.
     private static let sharedMemoryPromptPreamble = """
-    You are Whytap — the user's assistant, one keystroke away on their Mac.
+    You are Exodia — the user's assistant, one keystroke away on their Mac.
     They summon you mid-task, so respect their attention: be fast and brief.
     Reply in the user's language.
 
@@ -237,7 +240,7 @@ final class AgentController: ObservableObject {
     static var systemPromptPreambleForTesting: String { sharedMemoryPromptPreamble }
 
     static let maximumSelectionCharacters = 24_000
-    static let selectionTruncationMarker = "\n\n[Selection shortened by Whytap]\n\n"
+    static let selectionTruncationMarker = "\n\n[Selection shortened by Exodia]\n\n"
     private static let perTurnLanguageInstruction =
         "Reply in the language of the user's latest request. Do not switch languages because of tool output or earlier turns."
 
@@ -246,6 +249,7 @@ final class AgentController: ObservableObject {
         snapshotProvider: @escaping () -> FocusSnapshot? = FocusSnapshot.capture,
         resolveProvider: @escaping @MainActor () -> (any CLIProvider)? = { ClaudeCodeProvider() },
         resolveRunOptions: @escaping @MainActor (CLIProviderID) -> AgentRunOptions = { AgentSettingsStore.shared.options(for: $0) },
+        resolveProjectContext: @escaping @MainActor (String) -> AgentProjectContext? = { _ in nil },
         agentSessionStore: (any AgentSessionStoring)? = nil,
         audioTranscriber: (any AgentAudioTranscribing)? = nil,
         voiceSessionFactory: (@MainActor () -> any AgentVoiceSessioning)? = nil,
@@ -269,6 +273,7 @@ final class AgentController: ObservableObject {
         self.snapshotProvider = snapshotProvider
         self.resolveProvider = resolveProvider
         self.resolveRunOptions = resolveRunOptions
+        self.resolveProjectContext = resolveProjectContext
         self.agentSessionStore = agentSessionStore ?? AgentSessionStore.shared
         self.audioTranscriber = audioTranscriber ?? LocalAgentAudioTranscriber()
         self.voiceSessionFactory = voiceSessionFactory ?? {
@@ -408,8 +413,7 @@ final class AgentController: ObservableObject {
         hotkeyPreferencesCancellable?.cancel()
         hotkeyPreferencesCancellable = nil
         gestureMonitor.stop()
-        consumeTask?.cancel()
-        consumeTask = nil
+        invalidateCurrentStream()
         voiceSession?.cancel()
         voiceSession = nil
         teardownRealtimeVoiceSession()
@@ -926,10 +930,12 @@ final class AgentController: ObservableObject {
     /// prepended only when `includePreamble` is true — the first turn of a
     /// fresh session. On resume it is already in the CLI's history, so callers
     /// pass `false` and the prompt is just the optional selection plus query.
-    private func buildPrompt(query: String, snapshot: FocusSnapshot, includePreamble: Bool) -> String {
+    private func buildPrompt(query: String, snapshot: FocusSnapshot, includePreamble: Bool,
+                             projectContext: AgentProjectContext? = nil) -> String {
         var parts: [String] = []
         if includePreamble {
             parts.append(Self.sharedMemoryPromptPreamble)
+            parts.append(WhytapCustomizationContext.promptInstructions)
         }
         if let selection = snapshot.selectionText, !selection.isEmpty {
             parts.append("Selected text:\n\(Self.selectionForPrompt(selection))")
@@ -938,6 +944,7 @@ final class AgentController: ObservableObject {
         // resumed. Repeat this one small language rule every turn so tool
         // output or older conversation context cannot make the answer drift.
         parts.append(Self.perTurnLanguageInstruction)
+        if let projectContext { parts.append(projectContext.promptEvidence) }
         parts.append(query)
         return parts.joined(separator: "\n\n")
     }
@@ -974,17 +981,40 @@ final class AgentController: ObservableObject {
         islandAgentFlow?.querySubmitted(text)
 
         activeTurnProvider = provider
-        let options = resolveRunOptions(provider.id)
+        var options = resolveRunOptions(provider.id)
+        let projectContext = resolveProjectContext(text)
+        options.projectContext = projectContext
+        let sessionStore: any AgentSessionStoring
+        if let projectContext {
+            do {
+                let dir = try AgentDaemonWorkingDirectory.ensure(projectID: projectContext.projectID)
+                options.workingDirectory = dir
+                options.sessionScope = projectContext.projectID.uuidString
+                sessionStore = AgentSessionStore(fileURL: dir.appendingPathComponent(AgentSessionStore.fileName))
+            } catch {
+                responseStore.markErrorBlock(StateErrorBlock(title: "Project workspace unavailable",
+                    subtitle: "Local storage", message: "Couldn’t open this project’s local agent workspace.",
+                    code: "project_workspace_unavailable", retryable: true))
+                markActiveRowError(message: "Project workspace unavailable")
+                finalizeActiveRow()
+                setAgentPhase(.idle)
+                return
+            }
+        } else {
+            sessionStore = agentSessionStore
+        }
+        activeTurnSessionStore = sessionStore
         // Resume id drives both the CLI resume AND whether to send the
         // behavioural preamble: nil means a fresh session (first turn) that has
         // never seen it, so prepend; non-nil means the preamble is already in
         // the CLI's history and must not be repeated. Computed before
         // buildPrompt so the two stay in lock step.
-        let resumeSessionID = agentSessionStore.sessionID(for: provider.id)
+        let resumeSessionID = sessionStore.sessionID(for: provider.id)
         let prompt = buildPrompt(
             query: text,
             snapshot: snapshot,
-            includePreamble: resumeSessionID == nil
+            includePreamble: resumeSessionID == nil,
+            projectContext: projectContext
         )
         consume(provider.run(prompt: prompt, resumeSessionID: resumeSessionID, options: options))
     }
@@ -996,7 +1026,7 @@ final class AgentController: ObservableObject {
         responseStore.markErrorBlock(StateErrorBlock(
             title: "No agent connected",
             subtitle: "Connect in Settings",
-            message: "Connect Claude Code or Codex in Settings to use the agent.",
+            message: "Connect OpenCode with your OpenRouter key in Settings → Agents.",
             code: "not_connected",
             retryable: false
         ))
@@ -1312,8 +1342,7 @@ final class AgentController: ObservableObject {
     }
 
     private func handleCancel() {
-        consumeTask?.cancel()
-        consumeTask = nil
+        invalidateCurrentStream()
         voiceSession?.cancel()
         voiceSession = nil
         teardownRealtimeVoiceSession()
@@ -1364,7 +1393,7 @@ final class AgentController: ObservableObject {
     }
 
     private func beginSubmit(snapshot: FocusSnapshot) {
-        consumeTask?.cancel()
+        invalidateCurrentStream()
         currentSnapshot = snapshot
         snapshotStore.snapshot = snapshot
         responseStore.reset()
@@ -1373,9 +1402,12 @@ final class AgentController: ObservableObject {
     }
 
     private func consume(_ stream: AsyncStream<AgentSSEEvent>) {
-        consumeTask?.cancel()
+        invalidateCurrentStream()
+        let generation = consumeGeneration
+        let provider = activeTurnProvider
+        let sessionStore = activeTurnSessionStore ?? agentSessionStore
         consumeTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.consumeGeneration == generation, !Task.isCancelled else { return }
             await responseStore.consume(
                 stream,
                 onFirstBlock: {
@@ -1394,15 +1426,16 @@ final class AgentController: ObservableObject {
                     // the panel and the history row — it never leaves the app.
                 },
                 onCompletionEvent: {
+                    guard self.consumeGeneration == generation, !Task.isCancelled else { return }
                     if AppState.shared.agentPhase == .executing {
                         self.setAgentPhase(.idle)
                     }
                     // Persist the CLI session id for native resume / auto-compact
                     // continuity on the next turn. Nil means "keep the previous
                     // known id" because some error paths do not restate it.
-                    if let provider = self.activeTurnProvider,
+                    if let provider,
                        let sessionID = provider.lastSessionID {
-                        self.agentSessionStore.setSessionID(sessionID, for: provider.id)
+                        sessionStore.setSessionID(sessionID, for: provider.id)
                     }
                     self.finalizeActiveRow()
                 },
@@ -1418,9 +1451,18 @@ final class AgentController: ObservableObject {
                     // real id (instead of the placeholder `"pending"` from
                     // eager start).
                     self.activeTurnId = turnId
+                },
+                isCurrentStream: { [weak self] in
+                    self?.consumeGeneration == generation
                 }
             )
         }
+    }
+
+    private func invalidateCurrentStream() {
+        consumeGeneration = UUID()
+        consumeTask?.cancel()
+        consumeTask = nil
     }
 
     private func showTranscriptionError(_ error: Error) {

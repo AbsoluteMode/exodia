@@ -1,5 +1,10 @@
 # Now Playing в Dynamic Island: полировка виджета (прогресс, зазор, стекло, отступы, hover)
 
+> Update 2026-10-17: the glass-material choice below is superseded on macOS 26+
+> by [native hover glass](../../.project-docs/decisions/2026-10-17-native-hover-glass.md).
+> The fixed material remains the older-system fallback; music spacing and
+> playback behavior described here remain in effect.
+
 ## Контекст
 
 Коллега добавил Now Playing music в Dynamic Island ([#330](https://github.com/rootwise-team/sidekey/pull/330)). При ручном тестировании всплыла серия проблем виджета:

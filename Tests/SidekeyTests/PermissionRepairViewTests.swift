@@ -17,8 +17,8 @@ final class PermissionRepairViewTests: XCTestCase {
         let source = try repairViewSource()
 
         XCTAssertTrue(
-            source.contains(".background(OnboardingTheme.bg"),
-            "PermissionRepairView must paint an opaque OnboardingTheme.bg fill; without it the transparent SidekeyWindowChrome window renders invisible."
+            source.contains(".background(Color("),
+            "PermissionRepairView must paint an opaque background fill; without it the transparent SidekeyWindowChrome window renders invisible."
         )
     }
 

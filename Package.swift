@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Sidekey",
+    name: "Exodia",
     // macOS 14.2 (Sonoma) is the deployment floor — matches
     // `LSMinimumSystemVersion` in `Resources/Info.plist.template`. 14.2
     // (not 14.0) because Meeting Notes' system-audio capture uses the
@@ -65,32 +65,11 @@ let package = Package(
             ],
             path: "Sources/Sidekey"
         ),
-        // The binary users install as Whytap.
+        // The binary users install as Exodia.
         .executableTarget(
             name: "SidekeyApp",
             dependencies: ["Sidekey"],
             path: "Sources/SidekeyApp"
-        ),
-        // Standalone preview app for iterating on onboarding screens
-        // without touching the main Sidekey bundle. Shares the SwiftUI
-        // view sources via symlinks (`OnboardingTheme`,
-        // `OnboardingWelcomeScreen`, `OnboardingOrbController`,
-        // `VoiceOrbView`, `HotkeyHintView`, `KeycapView`) and supplies
-        // trivial stubs for the two audio-pipeline singletons that
-        // `VoiceOrbView.displayEnergy` reads (`NoiseFloorEstimator`,
-        // `AudioEnergyFollower`). No FluidAudio / Sparkle dependencies —
-        // runs as a small foreground SwiftUI window.
-        .executableTarget(
-            name: "OnboardingPreview",
-            path: "Sources/OnboardingPreview",
-            resources: [
-                .copy("Fonts"),
-                .copy("Audio"),
-                .copy("UsefulLinkIcons")
-            ],
-            // Lets symlinked screens load bundled brand assets from
-            // `Bundle.module` (preview) vs `Bundle.main` (the Sidekey app).
-            swiftSettings: [.define("ONBOARDING_PREVIEW")]
         ),
         .testTarget(
             name: "SidekeyTests",

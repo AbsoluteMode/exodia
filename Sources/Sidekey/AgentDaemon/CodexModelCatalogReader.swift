@@ -90,7 +90,7 @@ struct CodexModelCatalogReader: Sendable {
             try input.fileHandleForWriting.write(contentsOf: data)
         }
         try send(["id": 0, "method": "initialize", "params": [
-            "clientInfo": ["name": "whytap", "title": "Whytap", "version": "1.0"]
+            "clientInfo": ["name": "exodia", "title": "Exodia", "version": "1.0"]
         ]])
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         var pendingID = 0, receivedBytes = 0

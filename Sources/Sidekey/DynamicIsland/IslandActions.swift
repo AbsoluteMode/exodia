@@ -67,6 +67,8 @@ struct IslandActions {
     /// Open Settings with the Notes tab selected. There is no dedicated
     /// hotkey today.
     var openMeetings: () -> Void
+    /// Open the local monitoring dashboard chooser.
+    var openMonitor: () -> Void = {}
     /// Open Settings on its default tab.
     var openSettings: () -> Void
     /// Open the Help / Hotkeys window

@@ -10,28 +10,24 @@ import Sparkle
 /// The flow is the download-on-action path enabled by
 /// `automaticallyDownloadsUpdates = false` on `SPUUpdater`:
 ///
-///   1. Sparkle discovers an update during a scheduled check (hourly + beacon-
-///      triggered on release) → host publishes a `PendingUpdate` with
+///   1. Sparkle discovers an update during an hourly scheduled check → host
+///      publishes a `PendingUpdate` with
 ///      `stage == .available(download:)`. The pill shows «Update»; NO download
 ///      starts yet.
 ///   2. User clicks «Update» → `download()` fires the held `updateFound` reply
-///      directly with `.install` via `driver.invokeDownload()`. Scheduled checks
-///      run hourly + a beacon triggers within ~5 min of each release, so the
-///      held item is current at click time. Bytes arrive → pill transitions to
+///      directly with `.install` via `driver.invokeDownload()` using the held
+///      appcast item. Bytes arrive → pill transitions to
 ///      `.downloading(fractionCompleted:)`.
-///   3. Download finishes → `DriverStage.readyToInstall` →
-///      `applyDriverStage` AUTO-INVOKES `driver.invokeInstall()` (one-button
-///      update: download + install + relaunch from a single ↓ click). The pill
-///      stays in the downloading/installing visual during the brief install —
-///      there is NO user-actionable [Restart now] step. This is safe (not a
-///      surprise restart) because the download was user-initiated.
+///   3. Download finishes → install and relaunch only if the app is idle and
+///      this session's user requested the download. Otherwise publish Ready
+///      with Restart / Later actions. Returning to idle never triggers a restart.
 ///
 /// The `.available` pill also exposes ✕ "Skip this version" (`skip` closure →
 /// `driver.invokeSkip()`), which tells Sparkle to skip THIS build; future
 /// versions still prompt.
 ///
-/// `Equatable` compares marketing version, Sparkle build, and stage tag
-/// only so SwiftUI re-render diffing stays stable across closure captures.
+/// `Equatable` compares version, build, stage tag and deferral explanation
+/// so SwiftUI diffing stays stable across closure captures.
 struct PendingUpdate: Equatable {
 
     /// Visual stage carried by the pill. Implementation closures live on
@@ -47,12 +43,8 @@ struct PendingUpdate: Equatable {
         /// finishes (the pill keeps the downloading visual — no separate
         /// install step is surfaced).
         case downloading(fractionCompleted: Double)
-        /// Retained for stage identity only. With one-button update the host
-        /// AUTO-installs when the driver reports readyToInstall
-        /// (`applyDriverStage` calls `driver.invokeInstall()` directly) and
-        /// never publishes this case, so the `install` closure is normally
-        /// unused. Kept so callers that switch on `Stage` stay exhaustive and
-        /// `PendingUpdate.install()` remains type-safe.
+        /// Download verified by Sparkle; install waits for a safe explicit retry
+        /// when the app was busy, or when a previous session downloaded it.
         case readyToInstall(install: () -> Void)
 
         static func == (lhs: Stage, rhs: Stage) -> Bool {
@@ -91,6 +83,9 @@ struct PendingUpdate: Equatable {
     /// `.available` pill.
     let skip: () -> Void
 
+    /// Explains why a downloaded update needs an explicit restart later.
+    var restartDeferralReason: String? = nil
+
     /// Convenience that hands the captured install block back to the
     /// caller for `.readyToInstall`, or no-ops for other stages. The
     /// SwiftUI layer always calls this — the type system already prevents
@@ -110,13 +105,14 @@ struct PendingUpdate: Equatable {
     /// `displayVersion`, `buildVersion`, `dismiss`, and `skip`. Used by
     /// `UpdateController.applyDriverStage(_:)` to transition the pill
     /// state as Sparkle progresses through download.
-    func with(stage newStage: Stage) -> PendingUpdate {
+    func with(stage newStage: Stage, restartDeferralReason: String? = nil) -> PendingUpdate {
         PendingUpdate(
             displayVersion: displayVersion,
             buildVersion: buildVersion,
             stage: newStage,
             dismiss: dismiss,
-            skip: skip
+            skip: skip,
+            restartDeferralReason: restartDeferralReason
         )
     }
 
@@ -124,6 +120,7 @@ struct PendingUpdate: Equatable {
         lhs.displayVersion == rhs.displayVersion
             && lhs.buildVersion == rhs.buildVersion
             && lhs.stage == rhs.stage
+            && lhs.restartDeferralReason == rhs.restartDeferralReason
     }
 }
 
@@ -144,15 +141,12 @@ struct PendingUpdate: Equatable {
 ///
 /// 2. **User clicks «Update»** → `download()` closure calls `downloadAction()`
 ///    → `driver.invokeDownload()` → fires the held `updateFound` reply with
-///    `.install`. Sparkle begins downloading immediately. Scheduled checks run
-///    hourly + a beacon triggers within ~5 min of each release, so the held
-///    item is current at click time.
+///    `.install`. Sparkle begins downloading the held appcast item immediately.
 ///
-/// 3. **Driver emits `.readyToInstall`** → `applyDriverStage` AUTO-invokes
-///    `driver.invokeInstall()` (one-button update: a single ↓ click downloads,
-///    installs, and relaunches). The pill keeps the downloading/installing
-///    visual; no user-actionable restart step is surfaced. Safe because the
-///    download was user-initiated (`automaticallyDownloadsUpdates = false`).
+/// 3. **Driver emits `.readyToInstall`** → install only while idle and only
+///    after this session's user-requested download. Busy work or a resumed
+///    download leaves a Ready pill with explicit Restart / Later actions.
+///    A later idle transition alone never restarts the app.
 ///
 /// 4. **`updater(_:failedToDownloadUpdate:error:)`** — download failed; host
 ///    clears the pill. The next scheduled tick will retry.
@@ -183,10 +177,9 @@ final class UpdateController: NSObject, ObservableObject {
     /// counter to verify the trigger fires.
     private var downloadAction: () -> Void = {}
 
-    /// Injectable override for the auto-install trigger. In production this
-    /// calls `driver.invokeInstall()` (Sparkle installs + relaunches). Fired
-    /// automatically by `applyDriverStage(.readyToInstall)` — one-button
-    /// update, no second click. In tests it is replaced with a counter.
+    /// Injectable install trigger. Production calls `driver.invokeInstall()`
+    /// only after the activity guard, either at download completion or on an
+    /// explicit Restart click. Tests replace it with a counter.
     private var installAction: () -> Void = {}
 
     /// Injectable override for the ✕ "Skip this version" trigger. In production
@@ -194,12 +187,18 @@ final class UpdateController: NSObject, ObservableObject {
     /// tests it is replaced with a counter to verify the trigger fires.
     private var skipAction: () -> Void = {}
 
+    /// Each discovery owns its closures. Captured actions from an old pill must
+    /// not download, dismiss or install a newer update, even if its build repeats.
+    private var pendingGeneration = UUID()
+    private var downloadRequested = false
+    private var installRequested = false
+
     /// In-memory dismissed-build flag. Cleared on every process restart by
     /// design. NOT persisted to UserDefaults so a Later click never silently
     /// suppresses the update forever — the next launch always re-evaluates.
     private(set) var dismissedBuildVersionString: String?
 
-    /// Persists the build/version we are about to auto-install so the NEW
+    /// Persists the build/version we are about to install so the NEW
     /// binary can show a post-relaunch "Updated" indicator (variant A). Only
     /// its `persistPendingInstall` is used here; the launch-time `checkAndShow`
     /// runs from `AppDelegate` against the same UserDefaults marker.
@@ -264,8 +263,7 @@ final class UpdateController: NSObject, ObservableObject {
         // discovery fires immediately. The default fires the held updateFound
         // reply directly with .install — the pill click starts the download
         // immediately using the appcast item Sparkle already discovered.
-        // Scheduled checks run hourly + a beacon triggers within ~5 min of
-        // each release, so the held item is current at click time.
+        // Hourly checks discover updates without starting their download.
         // WHY: docs/decisions/2026-06-19-update-direct-install.md
         if let downloadAction {
             self.downloadAction = downloadAction
@@ -275,7 +273,7 @@ final class UpdateController: NSObject, ObservableObject {
             }
         }
 
-        // Auto-install + skip triggers. Defaults route to the driver's held
+        // Install + skip triggers. Defaults route to the driver's held
         // replies; tests inject counters. invokeInstall() fires the held
         // readyToInstall reply (install + relaunch); invokeSkip() fires the
         // held updateFound reply with .skip (Sparkle records the skipped build).
@@ -359,7 +357,12 @@ final class UpdateController: NSObject, ObservableObject {
             build ?? "<none>",
             "user_skip"
         )
+        let wasReady: Bool
+        if case .readyToInstall = appState?.updateAvailable?.stage { wasReady = true }
+        else { wasReady = false }
         appState?.updateAvailable = nil
+        invalidatePendingActions()
+        if wasReady { driver.invokeLater() }
     }
 
     // MARK: - Internal entry points
@@ -397,12 +400,31 @@ final class UpdateController: NSObject, ObservableObject {
             return
         }
 
+        invalidatePendingActions()
+        let generation = pendingGeneration
         appState?.updateAvailable = PendingUpdate(
             displayVersion: version,
             buildVersion: build,
-            stage: .available(download: { [weak self] in self?.downloadAction() }),
-            dismiss: { [weak self] in self?.dismissPendingUpdate() },
-            skip: { [weak self] in self?.skipAction() }
+            stage: .available(download: { [weak self] in
+                guard let self, self.isCurrent(build: build, generation: generation),
+                      case .available = self.appState?.updateAvailable?.stage,
+                      !self.downloadRequested else { return }
+                self.downloadRequested = true
+                self.downloadAction()
+            }),
+            dismiss: { [weak self] in
+                guard let self, self.isCurrent(build: build, generation: generation) else { return }
+                self.dismissPendingUpdate()
+            },
+            skip: { [weak self] in
+                guard let self, self.isCurrent(build: build, generation: generation),
+                      case .available = self.appState?.updateAvailable?.stage,
+                      !self.downloadRequested else { return }
+                self.skipAction()
+                if self.isCurrent(build: build, generation: generation) {
+                    self.dismissPendingUpdate()
+                }
+            }
         )
         os_log(
             "pendingUpdate.set stage=%{public}@ version=%{public}@ build=%{public}@",
@@ -424,32 +446,81 @@ final class UpdateController: NSObject, ObservableObject {
             // Discovery already set .available via handleDiscovered; no-op.
             break
         case .downloading(let fraction):
+            guard !installRequested else { return }
+            if case .readyToInstall = current.stage { return }
             appState?.updateAvailable = current.with(
                 stage: .downloading(fractionCompleted: fraction)
             )
         case .readyToInstall:
-            // One-button update: the download was user-initiated (↓ click), so
-            // installing + relaunching automatically here is not a surprise
-            // restart. We auto-invoke install instead of surfacing a second
-            // [Restart now] click. The pill stays in the downloading visual
-            // (no stage change) through the brief install; .installing/.cleared
-            // continue to be handled below.
-            //
-            // Record the version we are about to apply BEFORE relaunching so
-            // the next launch (new binary) can show a post-relaunch "Updated"
-            // indicator (variant A). Persist first — installAction() may
-            // terminate the app immediately.
-            justUpdatedIndicator.persistPendingInstall(
-                buildVersion: current.buildVersion,
-                displayVersion: current.displayVersion
-            )
-            installAction()
+            guard !installRequested else { return }
+            // Once deferred, duplicate driver callbacks must not turn a later
+            // idle transition into an automatic restart.
+            if case .readyToInstall = current.stage { return }
+            if downloadRequested, restartDeferralReason == nil {
+                installCurrentUpdate(current, generation: pendingGeneration)
+            } else {
+                publishReadyUpdate(current)
+            }
         case .installing:
             // Keep the downloading/installing visual during the brief install.
             break
         case .cleared:
             appState?.updateAvailable = nil
+            invalidatePendingActions()
         }
+    }
+
+    private var restartDeferralReason: String? {
+        guard let appState else { return "Restart when your current activity is finished." }
+        if appState.meetingRecordingActive || appState.isMeetingRecording {
+            return "Ready. Finish the meeting recording, then choose Restart."
+        }
+        if appState.phase != .idle {
+            return "Ready. Finish dictation, then choose Restart."
+        }
+        if appState.agentPhase != .idle {
+            return "Ready. Finish the agent activity, then choose Restart."
+        }
+        return nil
+    }
+
+    private func publishReadyUpdate(_ current: PendingUpdate) {
+        let generation = pendingGeneration
+        appState?.updateAvailable = current.with(
+            stage: .readyToInstall(install: { [weak self] in
+                guard let self, self.isCurrent(build: current.buildVersion, generation: generation),
+                      case .readyToInstall = self.appState?.updateAvailable?.stage else { return }
+                self.installCurrentUpdate(current, generation: generation)
+            }),
+            restartDeferralReason: restartDeferralReason ?? "Ready. Choose Restart to apply the update."
+        )
+    }
+
+    private func installCurrentUpdate(_ current: PendingUpdate, generation: UUID) {
+        guard isCurrent(build: current.buildVersion, generation: generation), !installRequested else { return }
+        guard restartDeferralReason == nil else {
+            publishReadyUpdate(current)
+            return
+        }
+        installRequested = true
+        appState?.updateAvailable = current.with(stage: .downloading(fractionCompleted: 1))
+        // Persist before Sparkle can terminate the app. A failed or deferred
+        // restart must never claim an update has already installed.
+        justUpdatedIndicator.persistPendingInstall(
+            buildVersion: current.buildVersion,
+            displayVersion: current.displayVersion
+        )
+        installAction()
+    }
+
+    private func isCurrent(build: String, generation: UUID) -> Bool {
+        pendingGeneration == generation && appState?.updateAvailable?.buildVersion == build
+    }
+
+    private func invalidatePendingActions() {
+        pendingGeneration = UUID()
+        downloadRequested = false
+        installRequested = false
     }
 
     /// Internal entry point for a download failure. Clears the pill so it
@@ -467,6 +538,8 @@ final class UpdateController: NSObject, ObservableObject {
         // failure for an older build must not wipe a newer pending pill.
         if appState?.updateAvailable?.buildVersion == update.versionString {
             appState?.updateAvailable = nil
+            invalidatePendingActions()
+            driver.discardPendingReplies()
         }
     }
 
@@ -524,6 +597,13 @@ final class UpdateController: NSObject, ObservableObject {
 // MARK: - SPUUpdaterDelegate
 
 extension UpdateController: SPUUpdaterDelegate {
+
+    /// Sparkle checks this immediately before installation. If work started
+    /// after our Ready check, abort this attempt instead of terminating it;
+    /// the normal scheduled discovery can retry the downloaded update later.
+    nonisolated func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool {
+        MainActor.assumeIsolated { self.restartDeferralReason == nil }
+    }
 
     /// Sparkle has discovered a valid update. With
     /// `automaticallyDownloadsUpdates = false` the download has NOT started

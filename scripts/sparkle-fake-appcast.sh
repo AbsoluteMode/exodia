@@ -2,11 +2,11 @@
 #
 # sparkle-fake-appcast.sh — Local smoke-test helper for Sparkle update flow.
 #
-# Purpose: validate that an installed Whytap-Beta.app build can detect,
+# Purpose: validate that an installed Exodia-Beta.app build can detect,
 # verify, and apply an EdDSA-signed update — without publishing a GitHub Release. Build
 # a DMG with a higher CFBundleVersion than the installed app, point the
 # installed app at http://localhost:8000/appcast.xml, run this script, and
-# then click "Check for Updates…" in Whytap's menu bar.
+# then click "Check for Updates…" in Exodia's menu bar.
 #
 # What it does:
 #   1. Validates that an EdDSA-signed DMG exists in build/.
@@ -20,10 +20,10 @@
 #   ./scripts/sparkle-fake-appcast.sh    # serves on :8000 until Ctrl-C
 #
 # Hint:
-#   - Patch the installed Whytap-Beta.app to point its SUFeedURL at
+#   - Patch the installed Exodia-Beta.app to point its SUFeedURL at
 #     http://localhost:8000/appcast.xml so Sparkle picks up this fake feed:
 #       /usr/libexec/PlistBuddy -c "Set :SUFeedURL http://localhost:8000/appcast.xml" \
-#         "/Applications/Whytap-Beta.app/Contents/Info.plist"
+#         "/Applications/Exodia-Beta.app/Contents/Info.plist"
 #     (Re-sign the app afterwards or expect Gatekeeper warnings.)
 #   - Use a SHORT_VERSION higher than the installed app's CFBundleShortVersionString
 #     and a BUILD_VERSION higher than its CFBundleVersion for Sparkle to offer
@@ -38,8 +38,8 @@ APP_BUNDLE_NAME="${APP_BUNDLE_NAME:-}"
 
 if [ -z "${APP_BUNDLE_NAME}" ]; then
     case "${FLAVOR}" in
-        beta) APP_BUNDLE_NAME="Whytap-Beta" ;;
-        prod) APP_BUNDLE_NAME="Whytap" ;;
+        beta) APP_BUNDLE_NAME="Exodia-Beta" ;;
+        prod) APP_BUNDLE_NAME="Exodia" ;;
         *)
             echo "ERROR: invalid FLAVOR='${FLAVOR}' (expected beta|prod)" >&2
             exit 1
@@ -85,7 +85,7 @@ echo "✓ Appcast staged at ${STAGING_DIR}/appcast.xml"
 echo ""
 echo "Serving http://localhost:${PORT}/ — Ctrl-C to stop."
 echo "Patch installed app's SUFeedURL to http://localhost:${PORT}/appcast.xml,"
-echo "then click 'Check for Updates…' in the Whytap menu bar."
+echo "then click 'Check for Updates…' in the Exodia menu bar."
 echo ""
 
 cd "${STAGING_DIR}"

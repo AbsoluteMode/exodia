@@ -8,8 +8,8 @@ import Sparkle
 /// scheduled discovery surfaces as `.available` (pill shows «Update») WITHOUT
 /// starting a download. When the user clicks «Update», the controller fires the
 /// held `updateFound` reply directly with `.install` via `driver.invokeDownload()`.
-/// Bytes arrive, then `applyDriverStage(.readyToInstall)` auto-installs —
-/// a single ↓ click drives the entire download + install + relaunch sequence.
+/// At download completion, idle user-requested updates install immediately;
+/// busy work and resumed downloads require an explicit safe Restart click.
 ///
 /// The full flow exercised here:
 ///
@@ -18,8 +18,8 @@ import Sparkle
 ///      → `PendingUpdate(stage: .available)` (pill shows «Update», no download).
 ///   2. User clicks → `startDownload()` → `driver.invokeDownload()` →
 ///      held reply fires `.install` → Sparkle begins downloading immediately.
-///   3. `applyDriverStage(.readyToInstall)` auto-installs, keeping the
-///      one-button update flow.
+///   3. `applyDriverStage(.readyToInstall)` installs while idle, or publishes
+///      Ready with Restart / Later when activity must finish first.
 ///
 /// `SPUUserUpdateState.init` is `NS_UNAVAILABLE`, so we exercise the host-side
 /// entry points (`handleDiscovered(version:build:)` and `applyDriverStage(_:)`)
@@ -31,11 +31,17 @@ final class UpdateControllerTests: XCTestCase {
         super.setUp()
         AppState.shared.updateAvailable = nil
         AppState.shared.updateController = nil
+        AppState.shared.phase = .idle
+        AppState.shared.agentPhase = .idle
+        AppState.shared.clearMeetingRecordingState()
     }
 
     override func tearDown() {
         AppState.shared.updateAvailable = nil
         AppState.shared.updateController = nil
+        AppState.shared.phase = .idle
+        AppState.shared.agentPhase = .idle
+        AppState.shared.clearMeetingRecordingState()
         super.tearDown()
     }
 
@@ -158,26 +164,120 @@ final class UpdateControllerTests: XCTestCase {
         XCTAssertEqual(AppState.shared.updateAvailable?.buildVersion, "9901")
     }
 
-    func test_applyDriverStage_readyToInstall_autoInvokesInstall_withoutUserActionableStage() {
-        // One-button update: the download was user-initiated (click ↓), so the
-        // moment Sparkle reports readyToInstall we install + relaunch with no
-        // second click. There is NO user-actionable .readyToInstall stage.
+    func test_readyToInstall_autoInstallsOnlyAfterUserRequestedDownloadWhileIdle() {
         var installs = 0
         let controller = UpdateController(
             appState: AppState.shared,
             installAction: { installs += 1 }
         )
         controller.handleDiscovered(version: "9.9.9", build: "9901")
+        AppState.shared.updateAvailable?.startDownload()
         controller.applyDriverStage(.downloading(fractionCompleted: 1.0))
 
         controller.applyDriverStage(.readyToInstall)
 
-        XCTAssertEqual(installs, 1, "readyToInstall must auto-invoke install (driver.invokeInstall)")
-        // The pill must NOT flip to a user-actionable readyToInstall step; it
-        // stays in the downloading/installing visual during the brief install.
+        XCTAssertEqual(installs, 1)
         if case .readyToInstall = AppState.shared.updateAvailable?.stage {
-            XCTFail("Stage must NOT become user-actionable .readyToInstall — install is automatic.")
+            XCTFail("An idle user-requested download can keep the one-click flow.")
         }
+        controller.applyDriverStage(.readyToInstall)
+        XCTAssertEqual(installs, 1, "Duplicate completion must not restart twice.")
+    }
+
+    func test_readyUpdateResumedFromEarlierSessionRequiresExplicitRestart() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        controller.applyDriverStage(.readyToInstall)
+        XCTAssertEqual(installs, 0, "Launching with a downloaded update must not restart the app.")
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 1)
+    }
+
+    func test_meetingIncludingPausedRecordingDefersUntilExplicitIdleRestart() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        AppState.shared.updateAvailable?.startDownload()
+        AppState.shared.updateMeetingRecordingState(audioLevel: 0, duration: 12, paused: true)
+        controller.applyDriverStage(.readyToInstall)
+        XCTAssertEqual(installs, 0)
+        XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("meeting") == true)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 0, "Restart clicks must also respect a paused meeting.")
+        AppState.shared.clearMeetingRecordingState()
+        controller.applyDriverStage(.readyToInstall)
+        XCTAssertEqual(installs, 0, "A duplicate Ready callback after becoming idle is not authorization.")
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 1)
+    }
+
+    func test_dictationAndAgentActivitiesBlockBothReadyAndRestart() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        AppState.shared.updateAvailable?.startDownload()
+        AppState.shared.phase = .transcribing
+        controller.applyDriverStage(.readyToInstall)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 0)
+        XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("dictation") == true)
+        AppState.shared.phase = .idle
+        AppState.shared.agentPhase = .executing
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 0)
+        XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("agent") == true)
+        AppState.shared.agentPhase = .idle
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 1)
+    }
+
+    func test_sparkleFinalRelaunchGuardRejectsActivityStartedAfterReadyCheck() {
+        let controller = UpdateController(appState: .shared, updatesEnabled: false)
+        XCTAssertTrue(controller.updaterShouldRelaunchApplication(controller.updater))
+        AppState.shared.phase = .recording
+        XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
+        AppState.shared.phase = .idle
+        AppState.shared.agentPhase = .textInputActive
+        XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
+    }
+
+    func test_deferredLaterCancelsInstallationAndOldRestartCannotInstall() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        var replied: SPUUserUpdateChoice?
+        controller.driver.handleReadyToInstall(reply: { replied = $0 })
+        let old = AppState.shared.updateAvailable
+        old?.dismiss()
+        XCTAssertNil(AppState.shared.updateAvailable)
+        XCTAssertEqual(replied, .skip, "At Ready, Later must cancel installation rather than arm install-on-quit.")
+        old?.install()
+        XCTAssertEqual(installs, 0)
+        controller.handleDiscovered(version: "2.3", build: "2300")
+        XCTAssertEqual(AppState.shared.updateAvailable?.buildVersion, "2300")
+    }
+
+    func test_oldPillActionsCannotAffectNewDiscoveryEvenIfBuildRepeats() {
+        var downloads = 0
+        var installs = 0
+        var skips = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false,
+            downloadAction: { downloads += 1 }, installAction: { installs += 1 }, skipAction: { skips += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        let oldAvailable = AppState.shared.updateAvailable
+        controller.applyDriverStage(.readyToInstall)
+        let oldReady = AppState.shared.updateAvailable
+        controller.applyDriverStage(.cleared)
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        oldAvailable?.startDownload()
+        oldAvailable?.skip()
+        oldReady?.install()
+        oldReady?.dismiss()
+        XCTAssertEqual(downloads, 0)
+        XCTAssertEqual(installs, 0)
+        XCTAssertEqual(skips, 0)
+        XCTAssertEqual(AppState.shared.updateAvailable?.buildVersion, "2200")
     }
 
     func test_applyDriverStage_cleared_removesUpdateAvailable() {

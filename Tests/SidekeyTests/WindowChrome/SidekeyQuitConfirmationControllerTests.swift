@@ -10,8 +10,8 @@ final class SidekeyQuitConfirmationControllerTests: XCTestCase {
             .appendingPathComponent("SidekeyQuitConfirmationController.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
-        XCTAssertTrue(source.contains("SidekeyAuroraWindow(title: \"Quit Whytap\")"))
-        XCTAssertTrue(source.contains("Are you sure you want to quit Whytap?"))
+        XCTAssertTrue(source.contains("SidekeyAuroraWindow(title: \"Quit Exodia\")"))
+        XCTAssertTrue(source.contains("Are you sure you want to quit Exodia?"))
         XCTAssertTrue(source.contains("ConfirmQuitButtonStyle"))
         XCTAssertTrue(source.contains("Cancel"))
         XCTAssertFalse(source.contains("NSAlert"))

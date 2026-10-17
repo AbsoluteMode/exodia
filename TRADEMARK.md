@@ -1,10 +1,10 @@
 # Trademarks
 
-The Whytap source code is available under the MIT License (see `LICENSE`).
+The Exodia source code is available under the MIT License (see `LICENSE`).
 The license covers the code. It does not grant rights to the project's
 names and visual identity:
 
-- the names "Whytap" and "Sidekey";
+- the name "Exodia" and the historical names "Whytap" and "Sidekey";
 - the application icon (`Resources/AppIcon.icns`) and the island artwork
   sources under `svg v2/`;
 - the `com.rootwise.sidekey` bundle identifier family and the

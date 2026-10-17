@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "product": "Exodia",
+  "platform": "macOS 14.2+",
+  "source_module": "Sidekey",
+  "entry_document": "docs/customization/README.md",
+  "guidance": {"canonical": ".project-docs/agent-context.md", "generated": ["AGENTS.md", "CLAUDE.md"]},
+  "commands": {
+    "discover": ["python3", "scripts/customize.py", "discover", "--json"],
+    "doctor": ["python3", "scripts/customize.py", "doctor", "--json"],
+    "build": ["python3", "scripts/customize.py", "build"],
+    "run": ["python3", "scripts/customize.py", "run"],
+    "test": ["python3", "scripts/customize.py", "test"],
+    "sync_guidance": ["python3", "scripts/customize.py", "sync-guidance", "--check"],
+    "context": ["python3", "scripts/customize.py", "context", "<topic>"],
+    "scaffold_hover": ["python3", "scripts/customize.py", "scaffold-hover", "--id", "<toolId>", "--title", "<title>"],
+    "scaffold_dashboard": ["python3", "scripts/customize.py", "scaffold-dashboard", "--id", "<dashboard-id>", "--title", "<title>"],
+    "validate_dashboard": ["python3", "scripts/customize.py", "validate-dashboard", "<snapshot.json>"],
+    "install_dashboard": ["python3", "scripts/customize.py", "install-dashboard", "<snapshot.json>", "--flavor", "beta"]
+  },
+  "contracts": [
+    "No Exodia account, hosted backend, plans or telemetry.",
+    "Provider keys belong in macOS Keychain, never source, arguments or logs.",
+    "Launch development builds with scripts/dev-run.sh, never swift run.",
+    "Build and test locally; GitHub Actions is disabled.",
+    "Preserve persisted identifiers and existing user data.",
+    "The local agent may edit files and run tests when the user requests implementation or review.",
+    "Scaffold commands create drafts; they do not change the running app."
+  ],
+  "change_kinds": {
+    "hover": {
+      "guide": "docs/customization/hover-tools.md",
+      "entry_points": ["Sources/Sidekey/Settings/HoverTool.swift", "Sources/Sidekey/Settings/HoverLayoutStore.swift", "Sources/Sidekey/DynamicIsland/HoverSlotRouter.swift", "Sources/Sidekey/DynamicIsland/IslandActions.swift", "Sources/Sidekey/DynamicIsland/IslandView.swift", "Sources/Sidekey/Settings/ToolboxSettingsView.swift", "Sources/Sidekey/AppDelegate.swift"],
+      "focused_test_filter": "HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests"
+    },
+    "settings": {
+      "entry_points": ["Sources/Sidekey/Settings/SettingsWindowTab.swift", "Sources/Sidekey/Settings/SettingsWindowView.swift", "Sources/Sidekey/Settings/SettingsWindowController.swift"],
+      "focused_test_filter": "SettingsWindowTabTests|SettingsWindowTabModelsTests"
+    },
+    "data": {
+      "guide": "docs/customization/local-data.md",
+      "entry_points": ["Sources/Sidekey/Auth/KeychainStore.swift", "Sources/Sidekey/Auth/CredentialMigration.swift", "Sources/Sidekey/History/SQLiteHistoryStore.swift", "Sources/Sidekey/Meetings/MeetingsStore.swift", "Sources/Sidekey/Case/CaseVaultStore.swift", "Sources/Sidekey/Settings/VocabularyCache.swift"],
+      "focused_test_filter": "CloudRemovalTests|LocalPathLoggingInvariantTests|KeychainStoreTests"
+    },
+    "knowledge": {
+      "guide": "docs/customization/local-data.md",
+      "entry_points": ["Sources/Sidekey/Knowledge/ProjectKnowledgeStore.swift", "Sources/Sidekey/Settings/ProjectsSettingsView.swift"],
+      "focused_test_filter": "ProjectKnowledgeStoreTests"
+    },
+    "agent": {
+      "entry_points": ["Sources/Sidekey/Agent/AgentController.swift", "Sources/Sidekey/AgentDaemon/OpenCodeProvider.swift", "Sources/Sidekey/AgentDaemon/OpenCodeEnvironment.swift", "Sources/Sidekey/AgentDaemon/OpenCodeInstaller.swift", "Sources/Sidekey/Settings/AgentModeView.swift", "Sources/Sidekey/Customization/WhytapCustomizationContext.swift"],
+      "contract": "OpenCode plus user-selected OpenRouter model; Keychain key in child environment; per-project local memory and sessions; actions allowed by default."
+    },
+    "dashboard": {
+      "guide": "docs/customization/dashboards.md",
+      "entry_points": ["Sources/Sidekey/Monitor/MonitorDashboard.swift", "Sources/Sidekey/Monitor/MonitorServer.swift", "Sources/Sidekey/Monitor/MonitorServerCollector.swift"],
+      "contract": "Declarative JSON snapshots, compatible with ez-monitor; passive rendering does not execute commands."
+    }
+  }
+}

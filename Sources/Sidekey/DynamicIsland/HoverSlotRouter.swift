@@ -45,6 +45,7 @@ enum HoverSlotEffect: Equatable {
     case openHotkeys
     case openNotes
     case toggleMeetingRecord
+    case openMonitor
     case quit
     case openPanel(HoverInlinePanel)
 
@@ -56,7 +57,7 @@ enum HoverSlotEffect: Equatable {
         case .openPanel:
             return true
         case .toggleDropMode, .openSettings, .openHotkeys, .openNotes,
-             .toggleMeetingRecord, .quit:
+             .toggleMeetingRecord, .openMonitor, .quit:
             return false
         }
     }
@@ -82,6 +83,8 @@ enum HoverSlotEffect: Equatable {
             actions.openMeetings()
         case .toggleMeetingRecord:
             actions.toggleMeetingRecord()
+        case .openMonitor:
+            actions.openMonitor()
         case .quit:
             actions.quitApplication()
         case .openPanel:
@@ -112,6 +115,8 @@ enum HoverSlotRouter {
             return .openNotes
         case .meetingRecord:
             return .toggleMeetingRecord
+        case .monitor:
+            return .openMonitor
         case .quit:
             return .quit
         case .vocab:

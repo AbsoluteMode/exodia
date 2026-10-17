@@ -1,1 +1,0 @@
-../Sidekey/Settings/MacUI/MacSettingsTheme.swift

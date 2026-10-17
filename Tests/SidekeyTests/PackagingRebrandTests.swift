@@ -1,29 +1,29 @@
 import XCTest
 
 final class PackagingRebrandTests: XCTestCase {
-    func test_buildDmgUsesWhytapBundleNamesButKeepsStableIdentity() throws {
+    func test_buildDmgUsesExodiaBundleNamesButKeepsStableIdentity() throws {
         let source = try readProjectFile("scripts/build-dmg.sh")
 
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"BUNDLE_ID="com.rootwise.sidekey.beta""#))
         XCTAssertTrue(source.contains(#"BUNDLE_ID="com.rootwise.sidekey""#))
 
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey-Beta""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey""#))
     }
 
-    func test_userReleaseScriptUsesWhytapArtifactNames() throws {
+    func test_userReleaseScriptUsesExodiaArtifactNames() throws {
         // The release artifact names used to be passed by the GitHub Actions
         // workflow (.github/workflows/release.yml). That CI build is gone —
         // releases are cut locally via scripts/user-release.sh, which now owns
         // the flavor → APP_BUNDLE_NAME mapping. The rebrand invariant
-        // (artifacts are "Whytap", never "Sidekey") lives there now.
+        // (artifacts are "Exodia", never "Sidekey") lives there now.
         let source = try readProjectFile("scripts/user-release.sh")
 
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey-Beta""#))
     }
@@ -43,12 +43,12 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("updates.whytap.ai"))
     }
 
-    func test_devRunUsesWhytapDevBundleAndCleansOldSidekeyBundles() throws {
+    func test_devRunUsesExodiaDevBundleAndCleansOldSidekeyBundles() throws {
         let source = try readProjectFile("scripts/dev-run.sh")
 
         XCTAssertTrue(source.contains(#"APP_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta-dev.app""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta-dev.app""#))
         XCTAssertTrue(source.contains("build/Sidekey-Beta-dev.app"))
     }
 
@@ -84,11 +84,209 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("${TEAM_ID}.${BUNDLE_ID}"))
     }
 
-    func test_readmePointsNewInstallsAtWhytapLatestDmg() throws {
-        let source = try readProjectFile("README.md")
+    func test_communityPreflightDoesNotRequireAppleCredentials() throws {
+        for script in ["scripts/build-dmg.sh", "scripts/user-release.sh"] {
+            let result = try runScript(try projectRoot().appendingPathComponent(script),
+                arguments: ["--preflight-only"],
+                environment: ["PATH": "/usr/bin:/bin", "FLAVOR": "prod", "BUILD_VERSION": "42"])
+            XCTAssertEqual(result.status, 0, result.output)
+            let lastLine = try XCTUnwrap(result.output.split(separator: "\n").last)
+            let data = Data(lastLine.utf8)
+            let plan = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(plan["distribution"] as? String, "community")
+            XCTAssertEqual(plan["requires_apple_developer"] as? Bool, false)
+            XCTAssertEqual(plan["requires_notarization"] as? Bool, false)
+            XCTAssertEqual(plan["architectures"] as? [String], ["arm64", "x86_64"])
+            XCTAssertEqual(plan["bundle_id"] as? String, "com.rootwise.sidekey")
+        }
+    }
 
-        XCTAssertTrue(source.contains("Whytap-latest.dmg"))
-        XCTAssertFalse(source.contains("Sidekey-latest.dmg"))
+    func test_communityBuildReachesCompilerWithoutAppleTools() throws {
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let tools = temporary.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+        let marker = temporary.appendingPathComponent("calls.txt")
+        let root = try projectRoot()
+        for relative in ["scripts/build-dmg.sh", "scripts/build-metallib.sh", "VERSION", "Package.resolved",
+                         "Resources/Info.plist.template", "Resources/sparkle-public-ed-key.txt",
+                         "Resources/blocknote/index.html", "Resources/mlx.metallib", "Resources/mlx.metallib.revision"] {
+            let destination = temporary.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: root.appendingPathComponent(relative), to: destination)
+        }
+        try executable(at: tools.appendingPathComponent("swift"), contents: #"""
+        #!/bin/bash
+        echo compiler >> "$PROBE_MARKER"
+        exit 64
+        """#)
+        try executable(at: tools.appendingPathComponent("security"), contents: #"""
+        #!/bin/bash
+        echo unexpected-apple >> "$PROBE_MARKER"
+        exit 71
+        """#)
+        try executable(at: tools.appendingPathComponent("xcrun"), contents: #"""
+        #!/bin/bash
+        if [ "$*" = "--sdk macosx --show-sdk-version" ]; then
+            echo 26.4
+            exit 0
+        fi
+        echo unexpected-apple >> "$PROBE_MARKER"
+        exit 71
+        """#)
+        try prepareProvenanceFixture(temporary)
+        let result = try runScript(temporary.appendingPathComponent("scripts/build-dmg.sh"),
+            environment: ["PATH": tools.path + ":/usr/bin:/bin", "PROBE_MARKER": marker.path,
+                          "BUILD_VERSION": "42", "FLAVOR": "prod"])
+        XCTAssertEqual(result.status, 64, result.output)
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "compiler\n")
+    }
+
+    func test_developerIDPathRequiresExplicitLegacyOptIn() throws {
+        let result = try runScript(try projectRoot().appendingPathComponent("scripts/build-dmg.sh"),
+            arguments: ["--preflight-only"], environment: ["PATH": "/usr/bin:/bin",
+                "EXODIA_LEGACY_SIGNED_RELEASE": "1", "BUILD_VERSION": "42"])
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.output.contains("TEAM_ID"), result.output)
+    }
+
+    func test_publicationRejectsUnsignedAppcastBeforeUploading() throws {
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for directory in ["scripts", "Resources", "build", "bin", ".build/mock"] {
+            try FileManager.default.createDirectory(at: temporary.appendingPathComponent(directory),
+                withIntermediateDirectories: true)
+        }
+        let root = try projectRoot()
+        try FileManager.default.copyItem(at: root.appendingPathComponent("scripts/upload-release.sh"),
+            to: temporary.appendingPathComponent("scripts/upload-release.sh"))
+        try FileManager.default.copyItem(at: root.appendingPathComponent("Resources/Info.plist.template"),
+            to: temporary.appendingPathComponent("Resources/Info.plist.template"))
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Exodia-9.9.9-build42.dmg"))
+        let marker = temporary.appendingPathComponent("publication-attempt.txt")
+        try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
+        #!/bin/bash
+        if [ "$1 $2" = "auth status" ]; then exit 0; fi
+        if [ "$1 $2" = "release download" ]; then exit 1; fi
+        if [ "$1 $2" = "release view" ] || [ "$1" = "api" ]; then exit 1; fi
+        echo unexpected-upload > "$PROBE_MARKER"
+        exit 74
+        """#)
+        try executable(at: temporary.appendingPathComponent(".build/mock/generate_appcast"), contents: #"""
+        #!/bin/bash
+        for staging in "$@"; do :; done
+        cat > "$staging/appcast.xml" <<'XML'
+        <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>
+        <sparkle:version>42</sparkle:version><sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
+        <enclosure length="4" url="https://github.com/AbsoluteMode/exodia/releases/download/v9.9.9/Exodia-9.9.9-build42.dmg" />
+        </item></channel></rss>
+        XML
+        """#)
+        try executable(at: temporary.appendingPathComponent(".build/mock/sign_update"), contents: #"""
+        #!/bin/bash
+        echo unexpected-verification > "$PROBE_MARKER"
+        exit 75
+        """#)
+        try prepareProvenanceFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg")
+        let result = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+            environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
+                "BUILD_VERSION": "42", "PROBE_MARKER": marker.path,
+                "SPARKLE_ED_PRIVATE_KEY": Data(repeating: 0, count: 32).base64EncodedString()])
+        XCTAssertNotEqual(result.status, 0, result.output)
+        XCTAssertTrue(result.output.contains("refusing publication"), result.output)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), result.output)
+    }
+
+    func test_publicationRefusesExistingVersionBeforeKeysOrUpload() throws {
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for directory in ["scripts", "Resources", "build", "bin"] {
+            try FileManager.default.createDirectory(at: temporary.appendingPathComponent(directory),
+                withIntermediateDirectories: true)
+        }
+        let root = try projectRoot()
+        for relative in ["scripts/upload-release.sh", "Resources/Info.plist.template"] {
+            try FileManager.default.copyItem(at: root.appendingPathComponent(relative),
+                to: temporary.appendingPathComponent(relative))
+        }
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Exodia-9.9.9-build42.dmg"))
+        let marker = temporary.appendingPathComponent("publication-attempt.txt")
+        try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
+        #!/bin/bash
+        if [ "$1 $2" = "auth status" ] || [ "$1 $2" = "release view" ]; then exit 0; fi
+        echo unexpected-upload > "$PROBE_MARKER"
+        exit 74
+        """#)
+        try prepareProvenanceFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg")
+        let result = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+            environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
+                "BUILD_VERSION": "42", "PROBE_MARKER": marker.path])
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.output.contains("already exists; refusing to overwrite"), result.output)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), result.output)
+    }
+
+    private func runScript(_ script: URL, arguments: [String] = [],
+                           environment: [String: String]) throws -> (status: Int32, output: String) {
+        try runTool(URL(fileURLWithPath: "/bin/bash"), arguments: [script.path] + arguments,
+                    environment: environment)
+    }
+
+    private func runTool(_ executable: URL, arguments: [String],
+                         environment: [String: String]) throws -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.environment = environment
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        process.waitUntilExit()
+        return (process.terminationStatus,
+                String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+    }
+
+    private func prepareProvenanceFixture(_ directory: URL, archiveName: String? = nil) throws {
+        let helper = directory.appendingPathComponent("scripts/release-provenance.py")
+        try FileManager.default.copyItem(at: try projectRoot().appendingPathComponent("scripts/release-provenance.py"),
+            to: helper)
+        try "build/\n.build/\n".write(to: directory.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        let environment = ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
+        for arguments in [["init", "-q"], ["config", "user.name", "Release Fixture"],
+                          ["config", "user.email", "fixture@example.invalid"],
+                          ["config", "commit.gpgsign", "false"], ["config", "core.hooksPath", "/dev/null"],
+                          ["config", "core.fsmonitor", "false"], ["add", "."], ["commit", "-qm", "fixture"]] {
+            let result = try runTool(URL(fileURLWithPath: "/usr/bin/git"),
+                arguments: ["-C", directory.path] + arguments, environment: environment)
+            XCTAssertEqual(result.status, 0, result.output)
+        }
+        if let archiveName {
+            let captured = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+                arguments: [helper.path, "capture", "--project-root", directory.path], environment: environment)
+            XCTAssertEqual(captured.status, 0, captured.output)
+            let result = try runTool(URL(fileURLWithPath: "/usr/bin/python3"), arguments: [helper.path, "seal",
+                "--project-root", directory.path, "--source-sha", captured.output.trimmingCharacters(in: .whitespacesAndNewlines),
+                "--archive", directory.appendingPathComponent("build/" + archiveName).path,
+                "--version", "9.9.9", "--build", "42", "--flavor", "prod", "--distribution", "community"],
+                environment: environment)
+            XCTAssertEqual(result.status, 0, result.output)
+        }
+    }
+
+    private func temporaryDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ExodiaPackagingTests-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private func executable(at path: URL, contents: String) throws {
+        try (contents + "\n").write(to: path, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path.path)
     }
 
     private func readProjectFile(_ relativePath: String) throws -> String {

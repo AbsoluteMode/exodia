@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct SettingsPermissionsView: View {
-    @ObservedObject var viewModel: OnboardingPermissionsViewModel
+    @ObservedObject var viewModel: PermissionsSettingsViewModel
 
     var body: some View {
         ScrollView {

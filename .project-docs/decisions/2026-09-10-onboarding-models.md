@@ -3,7 +3,7 @@ id: onboarding-models-2026-09-10
 type: decision
 title: Configure provider keys directly in onboarding
 summary: Add speech and optional Smart setup before the first dictation, sharing the existing Settings implementation.
-status: confirmed
+status: stale
 tags: [onboarding, byok, keychain, models, local]
 canonical_for: [onboarding-model-setup]
 verified_at: 2026-09-10
@@ -11,16 +11,20 @@ sources:
   - type: user-confirmed
     reference: User request in the 2026-09-10 Whytap task to add API-key entry directly to onboarding.
     confirmed_at: 2026-09-10
-  - type: repository
-    reference: Sources/Sidekey/Onboarding/OnboardingModelsScreen.swift
+  - type: commit
+    reference: d6ce4339:Sources/Sidekey/Onboarding/OnboardingModelsScreen.swift
     confirmed_at: 2026-09-10
   - type: repository
     reference: Sources/Sidekey/Settings/SettingsModelsViewModel.swift
     confirmed_at: 2026-09-10
-related: [../project.md]
+related: [../project.md, 2026-10-17-local-workspace.md]
 ---
 
 # Provider setup in onboarding
+
+Historical decision: superseded by [direct launch and local workspace](2026-10-17-local-workspace.md).
+The onboarding implementation was removed on 2026-10-17; model setup now lives
+in Settings.
 
 ## Context
 
@@ -78,5 +82,4 @@ Keychain failures are also surfaced when saving through Settings.
 
 ## Supersedes / superseded by
 
-Supersedes the direct Permissions-to-Try-Drop transition. No later decision
-is known.
+Superseded by [local workspace and direct launch](2026-10-17-local-workspace.md).

@@ -15,8 +15,18 @@ final class AgentProviderStoreTests: XCTestCase {
     func testPersistsAcrossInstances() {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
-        AgentProviderStore(defaults: defaults).markConnected(.claude)
-        XCTAssertEqual(AgentProviderStore(defaults: defaults).activeProvider, .claude)
+        AgentProviderStore(defaults: defaults).markConnected(.opencode)
+        XCTAssertEqual(AgentProviderStore(defaults: defaults).activeProvider, .opencode)
+    }
+
+    func testLegacyConnectionRequiresExplicitOpenCodeSetup() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+        defaults.set("claude", forKey: "agent.activeProvider")
+        let store = AgentProviderStore(defaults: defaults)
+        XCTAssertNil(store.activeProvider)
+        XCTAssertTrue(store.legacyConnectionNeedsSetup)
+        XCTAssertNil(defaults.string(forKey: "agent.activeProvider"))
     }
 
     func testConnectingAlsoRecordsThePick() {

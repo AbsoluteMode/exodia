@@ -7,7 +7,7 @@ import UserNotifications
 /// new one each time.
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
-    private let permissionsViewModel: OnboardingPermissionsViewModel
+    private let permissionsViewModel: PermissionsSettingsViewModel
     private let modelsViewModel: SettingsModelsViewModel
     private let selection = SettingsWindowSelection()
     private let agentModeViewModel: AgentModeViewModel
@@ -34,7 +34,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         screenshotProtectionChanged: @escaping (Bool) -> Void = { _ in },
         notesControllerProvider: @escaping () -> MeetingsContentController? = { nil }
     ) {
-        let permissionsViewModel = OnboardingPermissionsViewModel(onComplete: {}, autoComplete: false)
+        let permissionsViewModel = PermissionsSettingsViewModel(onComplete: {}, autoComplete: false)
         let modelsViewModel = SettingsModelsViewModel()
         self.permissionsViewModel = permissionsViewModel
         self.modelsViewModel = modelsViewModel
@@ -50,6 +50,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                     return await ClaudeCodeProvider().probe()
                 case .codex:
                     return await CodexProvider().probe()
+                case .opencode:
+                    return await OpenCodeProvider().probe()
                 }
             },
             notify: { notice in
@@ -66,7 +68,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Whytap Settings"
+        window.title = "Exodia Settings"
         // Keep the controller as the source of truth — destroying the
         // window on close would invalidate the `@ObservedObject` binding
         // and force a fresh fetch on every reopen.
@@ -165,6 +167,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         switch id {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
+        case .opencode: return "OpenCode"
         }
     }
 
@@ -174,6 +177,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return "Install Claude Code, sign in, then press Connect again. See docs.claude.com/claude-code."
         case .codex:
             return "Install Codex, run `codex login`, then press Connect again. See developers.openai.com/codex."
+        case .opencode:
+            return "Install OpenCode in Settings → Agents, then connect your OpenRouter key."
         }
     }
 
@@ -183,6 +188,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return "Open a terminal, run `claude`, log in, then press Connect again."
         case .codex:
             return "Open a terminal, run `codex login`, sign in, then press Connect again."
+        case .opencode:
+            return "Save your OpenRouter API key in Settings → Agents, then press Connect."
         }
     }
 
@@ -226,7 +233,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             selection.ensureNotesController()?.refreshOnShow()
         case .agentMode:
             break
-        case .toolbox:
+        case .toolbox, .projects:
             break
         case .other:
             break

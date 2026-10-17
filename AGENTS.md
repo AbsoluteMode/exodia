@@ -1,11 +1,14 @@
-# whytap
+# Exodia
 
 Native macOS client (Swift + SwiftUI + AppKit, SwiftPM). BYOK first, with
 optional local models; free, MIT. Two hotkeys: hold Space in an editable
-field -> voice -> paste; Right Command tap (text) / hold (voice) -> the user's local agent CLI (Claude Code
-or Codex) -> rendered answer in the island. No account, no Whytap servers,
-no telemetry. The user-facing name is Whytap; the module and most internal
-identifiers are still `Sidekey`.
+field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
+OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Exodia servers,
+no telemetry. The user-facing name is Exodia (formerly Whytap); the module and most internal
+identifiers are still `Sidekey`. The public source repository is
+`https://github.com/AbsoluteMode/exodia`. Preserve legacy bundle IDs, Keychain
+services and Application Support paths so existing settings and permissions
+survive the rename. WHY: .project-docs/decisions/2026-10-17-exodia-name.md
 
 ## Architecture
 
@@ -57,28 +60,32 @@ Voice flow (Drop / dictation):
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
 
-Codex model controls:
-  CodexModelCatalogReader -> short-lived app-server (initialize -> model/list).
-  The CLI registry supplies models, reasoning levels and Fast/service tiers.
-  AgentSettingsStore resolves saved/config/default model and validates controls;
-  Settings and execution use the same options. No GPT-5.5 pin or model-name
-  speed exception. Normal explicitly overrides Fast from the CLI config.
-  Discovery refreshes at startup/Agents open/manual refresh, keeps last good
-  data on failure, and never creates a thread or submits a prompt. Prefer the
-  CLI in ChatGPT.app, then Codex.app and standalone locations. WHY:
-  docs/decisions/2026-09-07-codex-model-registry.md
-
-Agent flow (local CLI):
+Agent flow (OpenCode + OpenRouter):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop
-       -> the user's agent CLI (Connect Claude Code / Codex in
-          Settings -> Agents or in onboarding, Skills -> Agent; runs on the
-          user's machine with the user's subscription)
-       -> permission-bridge prompts -> streamed render in the island
-  Active agent = `agent.activeProvider` (UserDefaults), written ONLY by an
-  explicit Connect confirmed by the provider's `probe()`. The chooser's
-  preference (`agent.preferredProvider`) is stored separately and never read
-  by dispatch. WHY: docs/decisions/2026-08-02-onboarding-connect-is-probe-backed.md
+       -> OpenCodeProvider -> opencode run --format json --model
+          openrouter/<selected-model> --dir <local workspace>, prompt on stdin
+       -> complete text/tool events rendered progressively in the island
+  Settings -> Agents installs an app-managed OpenCode binary from its official
+  GitHub release after SHA-256 digest verification, or locates an existing CLI.
+  The user chooses an exact OpenRouter model ID or one from the live catalog,
+  enters their key, then Save & connect checks the local version and free
+  OpenRouter key endpoint. Connecting does not submit a model request.
+  The key shares the existing OpenRouter Keychain store and enters only the
+  child process environment, never a credential JSON file or argv. The runtime
+  enables only OpenRouter, disables sharing/default plugins/automatic updates
+  and excludes inherited provider credential/config environment variables.
+  Actions are allowed by default so the agent can edit and run tests; the user
+  can turn them off in Settings. This is an action policy, not a filesystem
+  sandbox. No provider fallback or automatic model substitution.
+  AgentDaemonWorkingDirectory uses neutral agent/ or sibling
+  project-agents/<UUID>/ under Application Support/whytap. Each project has its
+  own AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
+  AgentController adds selected project evidence to each turn and uses scoped
+  resume IDs. Evidence is untrusted content, never executable instructions.
+  WhytapCustomizationContext.promptInstructions exposes resolved local Monitor
+  paths, dashboard/collector contracts and source-kit discovery to the runtime
+  agent, so creating a dashboard does not require finding the source checkout.
 
 Meeting Notes:
   Always-on detector (mic activity + CoreAudio system audio + FluidAudio
@@ -99,7 +106,7 @@ Meeting Notes:
   Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
   enable-prompt. Auto-end when the system mic is released for 3s (not before
-  the 30s startup grace); an auto-ended recording waits 3 minutes as
+  the 30s startup grace); an auto-ended recording waits 45 seconds as
   pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
   resuming is always the user's decision. WHY:
   docs/decisions/2026-07-29-reconnect-always-asks.md
@@ -118,6 +125,28 @@ Local LLM (Apple Silicon):
   put it directly into `Contents/MacOS/` and never sign it separately
   (breaks first-launch Gatekeeper on Sequoia). WHY:
   docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
+
+Hover materials:
+  IslandHoverGlass applies native SwiftUI Liquid Glass to drawer and music-strip
+  content on macOS26+, with regular.interactive circles in a shared glass
+  container. The earlier dark wash/specular/rims and magnetic/pressed transforms
+  are legacy fallback only. Keep adaptive backdrop tint, existing geometry and
+  separate8pt gaps; don't flatten native glass into a bitmap/drawingGroup or
+  add an opaque hosting layer. Compiler/runtime guards preserve older builds
+  and macOS14.2+ support. WHY:
+  .project-docs/decisions/2026-10-17-native-hover-glass.md
+
+Hover tool search:
+  The controls drawer has a Search all tools field above the saved tool grid.
+  IslandHoverToolSearch searches the full catalog (titles, descriptions and
+  aliases), including tools not pinned in Toolbox. Search activation shares
+  HoverSlotRouter with tile activation and never changes the saved layout.
+  Click the field to acquire keyboard focus; ordinary hover leaves the user's
+  app focused. Up/Down select, Return activates, Escape clears the query and
+  then releases focus. A 42pt search band participates in the shared AppKit
+  hit-zone height; focus and programmatic expansion keep it interactive.
+  Output language retains its Smart-mode requirement. WHY:
+  .project-docs/decisions/2026-10-17-hover-tool-search.md
 
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference
@@ -141,11 +170,24 @@ Island idle-hide:
 Update flow (download-on-action):
   SPUUpdater (hourly, automaticallyDownloadsUpdates = FALSE) + custom
   IslandUpdateUserDriver: no Sparkle windows, everything in the island.
-  Scheduled check -> "Update" pill -> hover: Download | Later -> download
+  Scheduled check -> "Update" pill -> hover: Download | Skip -> download
   with a CALayer spinner (IslandUpdateSpinner; SwiftUI .repeatForever would
-  freeze during main-thread stalls) -> auto install + relaunch -> "Updated"
-  indicator for 5s on the next launch (JustUpdatedIndicator, one-shot
-  marker). Feed = GitHub Releases (`BuildConfig.appcastURL`). WHY:
+  freeze during main-thread stalls) -> requested install + relaunch while idle
+  -> "Updated" indicator for 5s on the next launch (JustUpdatedIndicator,
+  one-shot marker). A meeting recording, dictation or agent activity defers the
+  app-initiated relaunch into Ready with Restart / Later; returning to idle alone
+  never restarts it. Ready-stage Later replies .skip, cancelling the current
+  installation without permanently skipping the version. The user approved
+  applying a prepared, already downloaded update on ordinary application quit,
+  unless Later cancelled it. Restored downloads use the same Ready actions and
+  ordinary-quit policy. This does not guarantee behavior after force quit,
+  crashes, process kills or power loss. A final Sparkle delegate guard rechecks
+  activity before an app-initiated relaunch. Feed = GitHub Releases
+  (`BuildConfig.appcastURL`).
+  Community archives use our independent Sparkle Ed25519 signature and ad-hoc
+  app code signing, without Apple Developer/notarization. Source dev builds
+  (9999 / -dev) do not start the binary updater. WHY:
+  .project-docs/decisions/2026-10-17-community-updates.md,
   docs/decisions/2026-06-17-update-download-on-action.md,
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
@@ -155,20 +197,33 @@ user-facing setup instructions. Preserve saved processing routes; changing
 presentation order does not switch where existing users send audio or text.
 WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md
 
-First run: no sign-in. `OnboardingRouter` sends a newcomer through the tour
-(permissions -> Models -> Try Drop -> Skills -> Helpers), a returning user only to the
-permission-repair screen. Drop with the local level selected but no model
-downloaded opens Settings -> Models (download button / key field) instead
-of idling silently. Settings opens on the Models tab; "Screenshot
-protection" lives in Settings -> Other (default off) and also shields the
-island window.
+First run: no sign-in and no onboarding wizard. Launch and reopen show the
+island immediately. Configure provider keys and optional local models in
+Settings -> Models, the agent in Settings -> Agents, and permissions in
+Settings -> Permissions. A feature can request the permission it needs when
+invoked. Drop with a local model selected but not downloaded opens
+Settings -> Models. Settings opens on Models; screenshot protection is in
+Other (default off). The former tour, resume state, preview target and
+voice demos were removed. WHY:
+.project-docs/decisions/2026-10-17-local-workspace.md
 
-Models onboarding embeds the existing Settings forms: speech first, optional
-Smart processing second, with Your key before Local. Save & continue validates
-and persists through SettingsModelsViewModel; a failed probe or Keychain write
-keeps the current step visible. Skipping speech setup goes to Skills; skipping
-Smart goes to Try Drop. The models resume step does not arm the try runtime.
-WHY: .project-docs/decisions/2026-09-10-onboarding-models.md
+Project knowledge: Settings -> Projects registers a user-selected folder and
+manual notes. ProjectKnowledgeStore keeps a local catalog and SQLite FTS5
+index, with explicit reindexing and path/line citations. Hidden files,
+symlinks, build directories and common credential filenames are excluded;
+indexing is bounded to 5,000 files and 32 MB of text. It does not scan the
+home directory automatically or use semantic embeddings. Retrieval requires
+an explicitly selected project. Matching excerpts and notes become context
+for that project's agent request and may go to its configured API provider.
+This is a knowledge foundation, not live meeting-question detection.
+
+Customization: any local coding harness can use the same source checkout.
+Run `python3 scripts/customize.py discover --json` for commands, change
+contracts and source entry points; `doctor --json` checks build prerequisites.
+Build/run use the canonical dev bundle script; hover and dashboard scaffolds
+are drafts. Guide: docs/customization/README.md. Update the capability map
+when moving its source entry points. Do not publish private monitoring
+configuration, project contents or credentials with the source.
 
 Installation: SidekeyAppMain checks InstallationGuard before constructing the
 app delegate. A read-only or AppTranslocation copy shows Finder installation
@@ -178,9 +233,7 @@ without starting the app runtime. User guide: `docs/install.md`. Policy:
 `.project-docs/decisions/2026-09-10-public-installation.md`.
 
 Targets: library `Sidekey` (all app code) + thin executable `SidekeyApp`
-(product `Sidekey`, `SidekeyAppMain.run()`), `OnboardingPreview` (a small
-window that iterates on onboarding screens through symlinked sources) and
-`SidekeyTests`. Flavors: `prod` (default) and `beta` (`-DBETA`: separate
+(product `Sidekey`, `SidekeyAppMain.run()`) and `SidekeyTests`. Flavors: `prod` (default) and `beta` (`-DBETA`: separate
 bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 
 ## Permissions
@@ -209,29 +262,55 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 ## Commands
 
 ```bash
-# Dev: stable ad-hoc identity so TCC grants persist across rebuilds
-# (`swift run` silently invalidates them, do not use it for the app).
+# Source build: existing local Sidekey Dev identity, or ad-hoc fallback.
+# No Apple Developer account. macOS may require permissions again after rebuilding.
+# Use the packaged app, not `swift run`, for permissions and resources.
 ./scripts/dev-run.sh --run
 
 # Tests
 swift test
 
-# Onboarding screens preview
-./scripts/onboarding-preview.sh
+# Harness-neutral change discovery and environment check
+python3 scripts/customize.py discover --json
+python3 scripts/customize.py doctor --json
 
-# Release: build + sign + notarize + staple + GitHub Release + signed appcast.
-# Credentials come from the environment (the official builds wrap the command
-# in `doppler run --project sidekey --config dev --`). Bump VERSION first.
-FLAVOR=prod ./scripts/user-release.sh
-FLAVOR=beta ./scripts/user-release.sh
-FLAVOR=prod ./scripts/user-release.sh --dry-run
+# Explicit ad-hoc local build if no local certificate is desired
+SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
+
+# Community binary: local universal build, no Apple Developer
+FLAVOR=prod ./scripts/user-release.sh --preflight-only
+# Commit relevant build inputs before the build; retain the adjacent DMG manifest
+FLAVOR=prod ./scripts/user-release.sh --build-only
+# Publishing also needs the project's Sparkle signing key and GitHub access
+FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
 
-Build, test and package every official update locally on the maintainer's
-Mac. GitHub Actions is disabled to avoid hosted-runner costs; do not enable
-or dispatch it for validation or release builds. GitHub is used for source
-and finished release assets. Run `swift build` and `swift test` locally and
-include their results in the PR. Policy and rationale:
+Exodia stays open source and uses ready-made community builds for normal installs
+and updates. The default DMG/Sparkle pipeline builds/signs locally without Apple
+Developer membership, Developer ID or notarization; publishing requires our
+independent Sparkle Ed25519 signing key and GitHub access. Keep archive signature
+verification and app integrity checks. The former Apple-signed mode remains
+optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
+other OS protections. First downloads may require user approval and macOS
+permissions can require regranting. WHY:
+`.project-docs/decisions/2026-10-17-community-updates.md`.
+
+Release provenance is required: commit and clean Sources, Resources, Package.swift,
+Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
+seal archive SHA-256/size, version, build and flavor in `<DMG>.manifest.json`.
+Upload-only requires the adjacent manifest. Reject missing/inconsistent
+provenance, changed HEAD or archive bytes before signing-key access/uploads, and
+target the release at the verified manifest's build commit. Rebuild after changing
+HEAD; do not relabel an old archive. Candidate validation remains a release gate.
+
+Source users still pull and rebuild locally for their own customizations. Dev
+9999/-dev bundles opt out of packaged updates so a binary cannot overwrite their
+modified app. Earlier Whytap installs can use a different feed and need a manual
+first Exodia installation; changing the new GitHub feed cannot migrate that copy.
+
+GitHub Actions is disabled to avoid hosted-runner costs; do not enable or dispatch
+it. Run appropriate local build/tests and record the results in the PR. BYOK-first
+presentation and local validation remain required:
 `.project-docs/decisions/2026-09-10-byok-and-local-builds.md`.
 
 Details and the fork checklist: `docs/build-and-release.md`.
@@ -241,6 +320,7 @@ Details and the fork checklist: `docs/build-and-release.md`.
 Everything lives in the repository: `CLAUDE.md` (architecture, commands,
 invariants), `README.md` (user-facing), `docs/SPEC.md` (product spec),
 `docs/hotkey.md`, `docs/privacy.md`, `docs/build-and-release.md`,
+`docs/customization/` (coding harness workflow and capability contracts),
 `docs/decisions/` (why), `docs/specs/` and `docs/plans/` (history).
 
 After a change, update the matching place: architecture / components /
@@ -260,11 +340,12 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 
 ## Invariants
 
-1. **No Whytap-owned services.** The app never contacts a Whytap backend,
+1. **No Exodia-owned services.** The app never contacts an Exodia backend,
    has no account and sends no telemetry. Network traffic is limited to
-   model downloads from Hugging Face, the provider the user configured with
-   their own key, the local agent CLI's own traffic, `google.com` opened in
-   the browser, and the Sparkle feed on GitHub Releases.
+   model downloads from Hugging Face, providers and monitoring sources the
+   user configured (including their credential store), OpenCode's own provider
+   traffic, its official GitHub release download, `google.com` opened in the
+   browser, and the Sparkle feed on GitHub Releases.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
    Whytap hostname or removed cloud symbol under `Sources/`.
 2. **Keys and content never leave through logs.** BYOK keys live only in the
@@ -275,10 +356,13 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    (`LocalModelSupport.isAppleSilicon`); Intel users get BYOK / custom
    endpoints. There is no paid gate anywhere.
 4. **Sparkle never shows a window.** Scheduled checks only show the island
-   pill; nothing downloads before the user clicks; one-button install +
-   relaunch; "Later" hides the pill for the session; no background
-   install-on-quit; no manual "Check for Updates" menu (there is no status
-   bar item at all).
+   pill; nothing downloads before the user clicks. Requested downloads may
+   install and relaunch while idle. Active meeting recording, dictation or
+   agent work defers app-initiated relaunch; becoming idle alone does not restart
+   it. Ready-stage "Later" cancels the current installation via .skip. A prepared
+   download may apply on ordinary user-initiated app quit unless cancelled.
+   Do not promise installation after arbitrary process termination. No manual
+   "Check for Updates" menu or status bar item.
 5. **Drop is remappable but hold Space by default.** Record a combo or bare
    Space in Settings -> Hotkeys (Raycast-style release-to-commit recorder).
    Space is hold-only; combos support hold or toggle; hold Drop goes through

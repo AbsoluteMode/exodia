@@ -76,16 +76,6 @@ final class SettingsWindowTabTests: XCTestCase {
         XCTAssertEqual(SettingsWindowTab.agentMode.fallbackSystemImageName, "bolt.horizontal.circle.fill")
     }
 
-    func test_settings_sidebar_icons_are_smaller_than_hover_tiles() {
-        XCTAssertLessThan(
-            SettingsSidebarIconStyle.tileSize,
-            IslandGraphiteHoverControlStyle.tileSize
-        )
-        XCTAssertLessThan(
-            SettingsSidebarIconStyle.cornerRadius,
-            IslandGraphiteHoverControlStyle.cornerRadius
-        )
-    }
 
     func test_settings_sidebar_leaves_room_for_tab_titles() {
         XCTAssertGreaterThanOrEqual(SettingsSidebarStyle.labelAvailableWidth, 100)

@@ -1,141 +1,144 @@
-# Build and release
+# Local builds and community releases
 
-Whytap ships as a signed, notarized universal DMG published on GitHub
-Releases. The same release carries the EdDSA-signed Sparkle `appcast.xml`,
-so installed copies update in-app. Everything is built on a Mac with
-`scripts/user-release.sh`; there is no CI release pipeline. Official updates
-are built and tested on the maintainer's Mac. GitHub only hosts the source
-and finished release assets; GitHub Actions is disabled to avoid runner costs.
-See the [local build policy](../.project-docs/decisions/2026-09-10-byok-and-local-builds.md).
+Most users install a ready-made Exodia DMG and update through the island's
+**Update** button. Source builds remain available for customization. Both the
+development build and default community release pipeline work without an Apple
+Developer account, Developer ID certificate, notarization or App Store Connect key.
 
-## Local validation
+In [Releases](https://github.com/AbsoluteMode/exodia/releases), Exodia community
+builds use Exodia-named assets. Earlier Whytap assets are historical; when no
+Exodia package is listed, use a local source build until one is published.
 
-Run these on the Mac before merging or packaging an update:
+## Build and run a customization
+
+Use macOS 14.2 or newer and Xcode 26 or newer with its command-line tools:
+
+```bash
+git clone https://github.com/AbsoluteMode/exodia.git
+cd exodia
+swift build
+swift test
+./scripts/dev-run.sh --run
+```
+
+The script builds `build/Exodia-Beta-dev.app` at a stable path with the beta
+bundle identity. It uses an existing local `Sidekey Dev` signing identity or
+falls back to ad-hoc signing. Do not launch the main app with `swift run`.
+Ad-hoc rebuilds may require granting macOS permissions again.
+
+Development version `0.0.0-dev` / build `9999` keeps published binary updates
+from replacing the custom app. Update the checkout with your coding agent,
+preserve local changes, validate and rerun the script. Production users receive
+ready-made updates without rebuilding source.
+
+## Validate locally
 
 ```bash
 swift build
 swift test
+python3 scripts/customize.py doctor --json
+FLAVOR=prod ./scripts/build-dmg.sh --preflight-only
 ```
 
-Record the result in the pull request. Do not dispatch GitHub workflows for
-validation or release builds.
+The packaging preflight is offline: it checks resources, the selected toolchain
+and distribution mode without building, downloading or publishing. Community
+packaging requires the macOS 26 SDK, committed BlockNote assets, Sparkle public
+key and the MLX metallib matching `Package.resolved`.
 
-## Prerequisites
+`Resources/mlx.metallib` and its `.revision` sidecar are version-locked to
+`mlx-swift`. Regenerate both with `scripts/build-metallib.sh` when updating MLX.
+The metallib remains a sealed resource with a relative symlink from
+`Contents/MacOS/`; see [the metallib decision](decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md).
 
-- Xcode 26 or newer (the app compiles against the macOS 26 SDK;
-  `scripts/build-dmg.sh` refuses older SDKs). Deployment floor stays
-  macOS 14.2.
-- A Developer ID Application certificate in the login keychain, and its
-  Team ID exported as `TEAM_ID`.
-- An App Store Connect API key for `notarytool`: `ASC_API_KEY_ID`,
-  `ASC_API_KEY_ISSUER_ID`, `ASC_API_KEY_P8` (the `.p8` contents).
-- A Sparkle Ed25519 key pair. The public key lives in
-  `Resources/sparkle-public-ed-key.txt` and is baked into `Info.plist`; the
-  private key is provided as `SPARKLE_ED_PRIVATE_KEY` (base64 seed) or
-  `SPARKLE_ED_PRIVATE_KEY_FILE`. `scripts/sparkle-keys-bootstrap.sh`
-  creates a pair for a fork.
-- An authenticated GitHub CLI (`gh auth login`) with write access to the
-  release repository (`GITHUB_REPO`, default `AbsoluteMode/whytap`).
+Build, test and package on the maintainer's Mac. Record local verification in the
+PR. GitHub hosts source and finished release assets; GitHub Actions stays disabled.
+Scripts support the Bash 3.2 shipped with macOS; avoid empty-array expansion under
+`set -u`.
 
-The official releases get these values from Doppler:
+## Publish a community release
+
+Bump `VERSION` and commit the release inputs before building. `Sources/`,
+`Resources/`, `Package.swift`, `Package.resolved`, `VERSION` and `scripts/` must
+be clean. The normal commands are:
 
 ```bash
-doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh
+FLAVOR=prod ./scripts/user-release.sh --dry-run
+FLAVOR=prod ./scripts/user-release.sh --build-only
+FLAVOR=prod ./scripts/user-release.sh
 ```
 
-A fork exports them in the shell instead. No value is ever committed.
+`--dry-run` reads the live feed and installed build to calculate versions, but
+does not build or upload. It is not the offline preflight. `--build-only` creates
+the universal arm64/x86_64 app and DMG without publishing. The default full command
+builds and publishes to GitHub Releases, including Sparkle's appcast with
+cryptographic signatures for the update archives. The XML feed itself is not
+signed; HTTPS protects its transport and Sparkle verifies each archive before
+extraction.
+The script chooses a build number newer than the live feed and installed copy;
+set `BUILD_VERSION` explicitly for a first release when neither exists.
 
-The release scripts support the Bash 3.2 shipped with macOS. Optional command
-arguments are appended to nonempty arrays: expanding an empty array with
-`set -u` fails in Bash 3.2 even when that array was explicitly initialized.
+### Release provenance contract
 
-## Flavors
+Every upload must be bound to the commit used for its build. The release helper
+`scripts/release-provenance.py` must capture the build-time HEAD and clean input
+state, then seal the completed DMG's SHA-256 and size together with its version,
+build, flavor, distribution mode, bundle ID and architectures. Its subcommands
+are `capture`, `seal` and `verify`; the build and upload scripts call them.
+Keep the adjacent `<DMG>.manifest.json` with the archive;
+`--upload-only` requires both files from the same build.
 
-| Flavor | Bundle id | Bundle name | Feed |
-|---|---|---|---|
-| `prod` | `com.rootwise.sidekey` | `Whytap.app` | `https://github.com/<repo>/releases/latest/download/appcast.xml` |
-| `beta` | `com.rootwise.sidekey.beta` | `Whytap-Beta.app` | `https://github.com/<repo>/releases/download/beta/appcast.xml` |
+The publication gate must reject a missing or inconsistent manifest, changed
+source commit or changed archive bytes before loading signing keys or uploading.
+The GitHub release must target the verified manifest's build commit, rather
+than whichever HEAD happens to be current during upload. Do not reuse a DMG
+after changing HEAD, relabel an old archive or edit a manifest to make it pass;
+commit the intended inputs and rebuild. These are pipeline requirements;
+candidate-specific verification remains part of release acceptance.
 
-Both flavors install side by side (different bundle ids, keychain services
-and feeds). Beta is built with `-Xswiftc -DBETA`; the feed URLs are the
-`appcastURL` constants in `Sources/Sidekey/BuildConfig.swift` and the
-`APPCAST_URL` variables in `scripts/build-dmg.sh`.
+For CLI packaging without a live Finder layout session, set
+`EXODIA_DMG_HEADLESS=1`. It skips only cosmetic Finder layout; packaging and
+verification remain the same. The default keeps the Finder layout step.
 
-## Versions
+Default community mode signs ad hoc and skips Apple notarization. Publication
+still requires authenticated GitHub release access and Exodia's Sparkle Ed25519
+private key through `SPARKLE_ED_PRIVATE_KEY` or `SPARKLE_ED_PRIVATE_KEY_FILE`.
+Keep its matching public key in `Resources/sparkle-public-ed-key.txt`. Never
+commit or print the private key. `upload-release.sh` verifies the generated
+archive signature before upload.
 
-- `VERSION` at the repository root is the marketing version
-  (`CFBundleShortVersionString`). Bump it by hand before a release.
-- The build number (`CFBundleVersion`) is what Sparkle compares. The release
-  script infers it as `max(live appcast build, installed build) + 1`, so it
-  stays monotonic across machines. Override with `BUILD_VERSION=` when the
-  feed is unreachable.
+Sparkle signatures authenticate update archives using Exodia's own key. They
+are independent of Apple code signing and do not make a community download
+Apple-notarized. First-download Gatekeeper warnings and permission regrants after
+ad-hoc updates remain possible; see [installation](install.md).
 
-## Releasing
+`EXODIA_LEGACY_SIGNED_RELEASE=1` explicitly selects the optional Developer ID and
+notarization path. Only that mode requires `TEAM_ID`, a Developer ID certificate
+and `ASC_API_KEY_ID`, `ASC_API_KEY_ISSUER_ID`, `ASC_API_KEY_P8`. It is not the default
+Exodia delivery path.
 
-```bash
-FLAVOR=prod ./scripts/user-release.sh              # build, sign, notarize, publish
-FLAVOR=beta ./scripts/user-release.sh              # same for the beta channel
-FLAVOR=prod ./scripts/user-release.sh --dry-run    # show the versions, do nothing
-FLAVOR=prod ./scripts/user-release.sh --build-only # DMG in build/, no publish
-FLAVOR=prod SHORT_VERSION=2.0.1 BUILD_VERSION=1450 ./scripts/user-release.sh --upload-only
-```
+## Channels and updates
 
-`user-release.sh` runs two scripts:
+| Flavor | Bundle ID | App | Sparkle feed |
+| --- | --- | --- | --- |
+| `prod` | `com.rootwise.sidekey` | `Exodia.app` | `https://github.com/AbsoluteMode/exodia/releases/latest/download/appcast.xml` |
+| `beta` | `com.rootwise.sidekey.beta` | `Exodia-Beta.app` | `https://github.com/AbsoluteMode/exodia/releases/download/beta/appcast.xml` |
 
-1. `scripts/build-dmg.sh` builds the release binary for arm64 and x86_64,
-   merges them with `lipo`, assembles the `.app` (Info.plist from
-   `Resources/Info.plist.template`, fonts, `mlx.metallib` as a sealed
-   resource with the `Contents/MacOS` symlink), signs with the Developer ID,
-   notarizes with `notarytool`, staples the ticket, requires Gatekeeper
-   acceptance and a successful `--installation-check`, and produces
-   `build/<Bundle>-<version>-build<build>.dmg`.
-2. `scripts/upload-release.sh` downloads the current `appcast.xml` from the
-   feed, adds the new DMG with Sparkle's `generate_appcast` (signed with the
-   private key, no deltas), normalizes `sparkle:minimumSystemVersion` to the
-   deployment floor, and creates the GitHub Release `v<version>` with three
-   assets: the versioned DMG, a `<Bundle>-latest.dmg` copy for a stable
-   download link, and `appcast.xml`. For `beta` the release is a prerelease
-   tagged `beta-v<version>-b<build>`, and a rolling prerelease tagged `beta`
-   receives the fresh `appcast.xml` and latest alias.
+Production tags are `v<version>` and include the versioned DMG,
+`Exodia-latest.dmg` and `appcast.xml`. Beta releases are prereleases with a rolling
+`beta` feed. Every update is a complete archive, verified by Sparkle before
+installation.
 
-Sparkle enclosure URLs point at each release's own tag, so older releases
-keep working after new ones are published. Re-running the upload for an
-existing tag replaces the assets.
+Scheduled discovery shows **Update** in the island; downloading requires the
+user's action. An idle app installs and relaunches after the requested download.
+Busy meeting recording, dictation or agent activity defers app-initiated relaunch.
+Returning to idle does not restart the app automatically. A prepared download may
+apply on ordinary user quit; **Restart** applies it once work is finished, while
+ready-stage **Later** cancels this installation with `.skip` without permanently
+skipping the version. No installation guarantee applies to force quit, crashes,
+process kills or power loss. The updater behavior is defined in
+`Sources/Sidekey/Updates/UpdateController.swift` and `IslandUpdateUserDriver.swift`.
 
-## Update behaviour in the app
-
-Scheduled checks run hourly and never show Sparkle windows: the custom
-`IslandUpdateUserDriver` shows an "Update" pill in the Dynamic Island,
-downloads only when the user clicks, then installs and relaunches. See
-`docs/decisions/2026-06-17-update-download-on-action.md`.
-
-## Forks
-
-To publish your own builds, change all of the following together:
-
-1. `TEAM_ID`, your Developer ID certificate and notarization key.
-2. `Resources/sparkle-public-ed-key.txt` and the matching private key
-   (`scripts/sparkle-keys-bootstrap.sh`).
-3. `GITHUB_REPO` and the `appcastURL` / `APPCAST_URL` constants.
-4. The bundle identifier (`BuildConfig.bundleID`, `scripts/build-dmg.sh`,
-   `scripts/dev-run.sh`), the app name and icon (see `TRADEMARK.md`).
-
-Without step 2 and 3 a fork would verify and install the official Whytap
-releases over itself.
-
-## Development builds
-
-```bash
-./scripts/dev-run.sh --run
-```
-
-Builds a `Whytap-Beta-dev.app` with a stable ad-hoc signing identity so the
-Accessibility, Microphone and System Audio grants survive rebuilds. Do not
-use `swift run` for the app: each rebuild would get a new identity and macOS
-would silently revoke the grants.
-
-`Resources/mlx.metallib` is version-locked to the resolved `mlx-swift`
-revision (`Resources/mlx.metallib.revision`). When bumping MLX, rebuild it
-with `scripts/build-metallib.sh` in the same change; see
-`docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md`
-for why it must stay a sealed resource.
+The package is named Exodia, while Swift targets, bundle IDs, Keychain services,
+UserDefaults keys and data directories retain compatibility names. Keep these
+stable to preserve user data. A separate fork must choose its own identities,
+Sparkle key pair and update feed; see [trademarks](../TRADEMARK.md).

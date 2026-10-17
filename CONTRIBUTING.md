@@ -1,14 +1,14 @@
-# Contributing to Whytap
+# Contributing to Exodia
 
-Thanks for helping. Whytap is a native macOS app (Swift, SwiftUI, AppKit,
+Thanks for helping. Exodia is a native macOS app (Swift, SwiftUI, AppKit,
 SwiftPM). Users bring their own provider keys or choose local models.
-Pull requests that preserve this independence from Whytap services are welcome.
+Pull requests that preserve this independence from Exodia services are welcome.
 
 ## Ground rules
 
-- No Whytap-owned servers, accounts or telemetry. Network calls are allowed
-  only towards services the user configured with their own keys, model
-  downloads, and the Sparkle update feed. `Tests/SidekeyTests/CloudRemovalTests.swift`
+- No Exodia-owned servers, accounts or telemetry. Network calls are limited
+  to user-configured providers, monitoring sources and credential stores,
+  model/OpenCode downloads and the Sparkle update feed. `Tests/SidekeyTests/CloudRemovalTests.swift`
   enforces this at build time.
 - Privacy in logs: never interpolate transcripts, prompts, replies or API keys
   into `os_log`. `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
@@ -22,19 +22,26 @@ Pull requests that preserve this independence from Whytap services are welcome.
 
 ## Building
 
-Requirements: macOS 14.2 or newer, Xcode with a Swift 6 toolchain
-(`swift-tools-version:6.0`, Swift 5 language mode). Local speech and LLM
-models need Apple Silicon; on Intel the app works with your own provider keys.
+Use macOS 14.2 or newer and Xcode 26 or newer with a Swift 6 toolchain
+(`swift-tools-version:6.0`, Swift 5 language mode). No Apple Developer
+account, Developer ID certificate or notarization is required. Local speech
+and LLM models need Apple Silicon; Intel Macs use provider keys.
 
 ```bash
-swift build
+git clone https://github.com/AbsoluteMode/exodia.git
+cd exodia
+./scripts/dev-run.sh --run
 swift test
-./scripts/dev-run.sh --run     # builds a dev bundle with a stable ad-hoc identity
 ```
 
-Use `dev-run.sh` rather than `swift run`: it keeps the same code-signing
-identity between builds so that the Accessibility, Microphone and System
-Audio grants you gave the dev bundle persist.
+The script creates `build/Exodia-Beta-dev.app` for testing on the same Mac.
+It uses an existing local `Sidekey Dev` signing identity or falls back to
+ad-hoc signing. Use it rather than `swift run` to preserve the app bundle
+path and identity. Ad-hoc rebuilds may require granting macOS permissions
+again. This development bundle is separate from ready-made releases and uses
+`0.0.0-dev` / build `9999`, so the binary feed does not overwrite local
+customizations. Update your source with the agent, preserve local changes and
+rebuild with the same script.
 
 ## Pull requests
 
@@ -46,8 +53,11 @@ Audio grants you gave the dev bundle persist.
 5. Maintainers squash-merge.
 
 Builds and tests run locally. GitHub Actions is disabled to avoid hosted-runner
-costs. Include the local validation result in the PR; release packaging also
-runs on the maintainer's Mac (see `docs/build-and-release.md`).
+costs. Include the local validation result in the PR. Ready-made community
+builds and in-app updates are the main distribution path; source customization
+remains supported. The default release pipeline uses ad-hoc code signing and
+Exodia's Sparkle archive signatures, without an Apple Developer account
+(see `docs/build-and-release.md`).
 
 By contributing you agree that your contribution is licensed under the MIT
 License of this repository. No CLA is required.
@@ -55,5 +65,5 @@ License of this repository. No CLA is required.
 ## Reporting bugs
 
 Use the issue templates. Include the macOS version, the Mac model (Apple
-Silicon or Intel), the Whytap version from Settings, and which speech / LLM
+Silicon or Intel), the Exodia version from Settings, and which speech / LLM
 route you use (your own key, custom endpoint, local model).

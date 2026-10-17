@@ -39,20 +39,6 @@ final class IslandAgentFlowStore: ObservableObject {
     @Published private(set) var activityLabel: String = ""
     private(set) var recordingProviderBrand: TranscriptionProviderBrand?
 
-    /// When true, the island never opens its own answer panel. Set while the
-    /// onboarding Try-Agent step owns the answer surface (`OnboardingAgentLiveAnswer`
-    /// renders the agent's reply in the onboarding card instead) so the island
-    /// up top does not duplicate the same answer. Toggling it on closes any
-    /// panel already on screen.
-    var answerPanelSuppressed = false {
-        didSet {
-            guard answerPanelSuppressed, answerPanelVisible else { return }
-            answerPanelVisible = false
-            queryText = ""
-            recompute()
-        }
-    }
-
     /// The submitted query text shown in the answer panel's query row.
     @Published private(set) var queryText: String = ""
 
@@ -302,7 +288,7 @@ final class IslandAgentFlowStore: ObservableObject {
 
     /// Re-reads the response store (also wired to objectWillChange).
     func refreshFromResponseStore() {
-        if !answerPanelSuppressed, responseStore.pendingPermission != nil || hasAnswerContent {
+        if responseStore.pendingPermission != nil || hasAnswerContent {
             // Answer panel opens once and stays until the cycle ends. A
             // turn-terminating event (`done` / `error`) drives the controller
             // to `.idle` synchronously, so the deferred refresh that carries

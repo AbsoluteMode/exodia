@@ -1,12 +1,12 @@
 ---
 id: whytap-project
 type: project
-title: Whytap desktop application
-summary: Native macOS voice input, meeting notes and local CLI agent integration.
+title: Exodia desktop application
+summary: Native macOS voice input, meeting notes, local project knowledge and a customizable local agent workspace.
 status: confirmed
 tags: [macos, swift, dictation, meetings, agent]
 canonical_for: [project-overview]
-verified_at: 2026-09-10
+verified_at: 2026-10-17
 sources:
   - type: repository
     reference: README.md
@@ -14,12 +14,12 @@ sources:
   - type: repository
     reference: Sources/Sidekey/PostProcessor.swift
     confirmed_at: 2026-09-07
-related: [decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md]
+related: [decisions/2026-10-17-community-updates.md, decisions/2026-10-17-source-first-distribution.md, decisions/2026-10-17-hover-tool-search.md, decisions/2026-10-17-exodia-name.md, decisions/2026-10-17-native-hover-glass.md, decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md]
 ---
 
-# Whytap
+# Exodia
 
-Whytap provides native macOS dictation, meeting notes, and integration with
+Exodia (formerly Whytap) provides native macOS dictation, meeting notes, and integration with
 local agent CLIs. The product presents the user's provider keys (BYOK) first, followed by
 on-device models. Architecture and build instructions live in `agent-context.md` and
 `../docs/build-and-release.md`.
@@ -30,6 +30,20 @@ New reasoning-policy and finalization behavior is recorded in
 
 Build and publication policy: [local builds](decisions/2026-09-10-byok-and-local-builds.md).
 
-First-run setup: [keys and models in onboarding](decisions/2026-09-10-onboarding-models.md).
+Launch opens the island directly; setup lives in Settings. Project folders,
+notes and a lexical source index stay local. Current scope and limits:
+[local workspace and direct launch](decisions/2026-10-17-local-workspace.md).
 
-Distribution: [public installation](decisions/2026-09-10-public-installation.md).
+Coding harnesses share the [source customization workflow](../docs/customization/README.md).
+
+Distribution: [community binaries and updates without Apple Developer](decisions/2026-10-17-community-updates.md), with source builds retained for customizations.
+The earlier [Apple-notarized DMG policy](decisions/2026-09-10-public-installation.md)
+is historical; runtime installation and resource checks remain current.
+
+Hover appearance: [native Apple glass](decisions/2026-10-17-native-hover-glass.md), with a legacy material on older macOS versions.
+
+Public source: [AbsoluteMode/exodia](https://github.com/AbsoluteMode/exodia).
+Naming and storage compatibility: [Exodia rename](decisions/2026-10-17-exodia-name.md).
+
+Hover search launches any catalog tool without adding it to the user's saved
+buttons: [tool search](decisions/2026-10-17-hover-tool-search.md).

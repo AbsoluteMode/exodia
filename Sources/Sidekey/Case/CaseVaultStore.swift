@@ -31,12 +31,21 @@ struct CaseVaultStore {
         self.fileManager = fileManager
     }
 
+    /// One vault per flavor. The key lives under the flavor's Keychain
+    /// service, so a beta/dev build sharing the prod file could only ever see
+    /// it as unreadable, and resetting it there wiped the prod vault.
+    /// WHY: docs/decisions/2026-10-08-case-vault-never-lost.md
     static var defaultFileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
         return base
-            .appendingPathComponent("com.rootwise.sidekey", isDirectory: true)
+            .appendingPathComponent(BuildConfig.bundleID, isDirectory: true)
             .appendingPathComponent("case-vault.json.enc", isDirectory: false)
+    }
+
+    /// The vault as it was before the latest save.
+    var backupFileURL: URL {
+        fileURL.deletingLastPathComponent().appendingPathComponent(fileURL.lastPathComponent + ".bak")
     }
 
     func load(using key: SymmetricKey) throws -> CaseVaultPayload {
@@ -104,17 +113,32 @@ struct CaseVaultStore {
             tag: sealed.tag.base64EncodedString()
         )
         let envelopeData = try JSONEncoder.caseVault.encode(envelope)
+        // A failed backup must not block the save itself.
+        try? keepBackupOfCurrentVault()
         try envelopeData.write(to: fileURL, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: fileURL.path)
     }
 
-    /// Remove the encrypted vault file. Used by the recovery path when the file
-    /// can't be decrypted with the current key (rotated/lost key, corrupt file):
-    /// deleting it lets the next unlock start a fresh empty vault. No-op if the
-    /// file is already absent.
+    /// Move a vault that can't be decrypted with the current key (rotated or
+    /// lost key, another build's key, corrupt file) aside, so the next unlock
+    /// starts a fresh empty vault while the old file stays next to it in case
+    /// its key turns up again. No-op if the file is already absent.
     func reset() throws {
         guard fileManager.fileExists(atPath: fileURL.path) else { return }
-        try fileManager.removeItem(at: fileURL)
+        let stamp = Int(Date().timeIntervalSince1970)
+        let suffix = UUID().uuidString.prefix(8)
+        let aside = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("\(fileURL.lastPathComponent).unreadable-\(stamp)-\(suffix)")
+        try fileManager.moveItem(at: fileURL, to: aside)
+    }
+
+    private func keepBackupOfCurrentVault() throws {
+        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+        if fileManager.fileExists(atPath: backupFileURL.path) {
+            try fileManager.removeItem(at: backupFileURL)
+        }
+        try fileManager.copyItem(at: fileURL, to: backupFileURL)
+        try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: backupFileURL.path)
     }
 
     private func associatedData() -> Data {

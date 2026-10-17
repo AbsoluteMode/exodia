@@ -3,6 +3,7 @@ import Foundation
 enum CLIProviderID: String, Codable, CaseIterable {
     case claude
     case codex
+    case opencode
 }
 
 /// Result of a Connect probe.

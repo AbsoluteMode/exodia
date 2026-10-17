@@ -1,6 +1,6 @@
 # Hotkey display standard
 
-Single source of truth for how Whytap renders hotkey hints in its UI.
+Single source of truth for how Exodia renders hotkey hints in its UI.
 
 ## Component
 
@@ -32,7 +32,7 @@ Modifier glyphs and their VoiceOver pronunciations live on
   `HotkeyGlyph.shift` (⇧), `HotkeyGlyph.control` (⌃). Never the
   word `"Option"` / `"Command"` etc. as the cap label.
 - **Side disambiguation lives INSIDE the keycap.** When a hotkey is
-  wired to a specific physical side of a modifier key (e.g. Whytap's
+  wired to a specific physical side of a modifier key (e.g. Exodia's
   Agent uses Right Command only), use
   `KeycapContent.prefixedGlyph(prefix: "right", glyph: HotkeyGlyph.command, ...)`
   to bake the qualifier in front of the glyph inside the SAME cap

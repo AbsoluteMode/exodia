@@ -110,4 +110,41 @@ final class IslandUpdateUserDriverTests: XCTestCase {
         XCTAssertEqual(response?.automaticUpdateChecks, true)
         XCTAssertEqual(response?.sendSystemProfile, false)
     }
+
+    func test_downloadAndInstallRepliesAreOneShot() {
+        let driver = IslandUpdateUserDriver(onStage: { _ in })
+        var downloads = 0
+        var installs = 0
+        driver.handleUpdateFound(reply: { _ in downloads += 1 })
+        driver.invokeDownload()
+        driver.invokeDownload()
+        driver.invokeSkip()
+        driver.handleReadyToInstall(reply: { _ in installs += 1 })
+        driver.invokeInstall()
+        driver.invokeInstall()
+        driver.invokeLater()
+        XCTAssertEqual(downloads, 1)
+        XCTAssertEqual(installs, 1)
+    }
+
+    func test_laterCancelsReadyInstallationWithoutInstallOnQuit() {
+        let driver = IslandUpdateUserDriver(onStage: { _ in })
+        var replies: [SPUUserUpdateChoice] = []
+        driver.handleReadyToInstall(reply: { replies.append($0) })
+        driver.invokeLater()
+        driver.invokeInstall()
+        XCTAssertEqual(replies, [.skip], "At Ready, Skip cancels installation without permanently skipping the version.")
+    }
+
+    func test_newDiscoveryAndErrorInvalidateOldReadyReply() {
+        let driver = IslandUpdateUserDriver(onStage: { _ in })
+        var installs = 0
+        driver.handleReadyToInstall(reply: { _ in installs += 1 })
+        driver.handleUpdateFound(reply: { _ in })
+        driver.invokeInstall()
+        driver.handleReadyToInstall(reply: { _ in installs += 1 })
+        driver.showUpdaterError(NSError(domain: "test", code: 1), acknowledgement: {})
+        driver.invokeInstall()
+        XCTAssertEqual(installs, 0)
+    }
 }

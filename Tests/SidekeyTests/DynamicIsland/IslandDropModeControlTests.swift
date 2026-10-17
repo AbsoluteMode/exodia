@@ -3,6 +3,16 @@ import XCTest
 
 final class IslandDropModeControlTests: XCTestCase {
 
+    func test_controls_height_wraps_at_five_tools_and_grows_for_every_row() {
+        let single = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 1)
+        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelHeight(toolCount: 5), single)
+        let twoRows = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 6)
+        XCTAssertGreaterThan(twoRows, single)
+        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelHeight(toolCount: 10), twoRows)
+        let threeRows = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 13)
+        XCTAssertEqual(threeRows - twoRows, twoRows - single)
+    }
+
     func test_smartModeUsesSparklesPresentation() {
         XCTAssertEqual(IslandDropModeControl.title, "Drop Mode")
         XCTAssertEqual(IslandDropModeControl.label(for: .smart), "Smart")
@@ -189,10 +199,12 @@ final class IslandDropModeControlTests: XCTestCase {
         // paste-target + remembered-mode capture used to live in this tile
         // closure; the configurable-hotkeys feature moved it onto the
         // `panelMode -> .history` transition so the ⌥N Hover-slot hotkey enters
-        // History through the SAME capture path as a click (D1). The tile now
-        // only flips the mode.
+        // History through the SAME capture path as a click (D1). Tile and
+        // search both use the shared tool activation resolver.
         let historyTile = String(source[historyStart.lowerBound..<nextTileStart.lowerBound])
-        XCTAssertTrue(historyTile.contains("panelMode = .history"))
+        XCTAssertTrue(historyTile.contains("action: { activateTool(tool) }"))
+        XCTAssertEqual(HoverSlotRouter.effect(for: .clipboard), .openPanel(.history))
+        XCTAssertTrue(source.contains("case .history: panelMode = .history"))
         XCTAssertFalse(historyTile.contains("action: {}"))
 
         // Capture lives on the shared panelMode transition, reachable by both
@@ -233,13 +245,13 @@ final class IslandDropModeControlTests: XCTestCase {
         XCTAssertTrue(source.contains("systemImage: \"note.text\""))
         XCTAssertTrue(source.contains("onOpenNotes()"))
         XCTAssertTrue(source.contains("title: \"Quit\""))
-        XCTAssertTrue(source.contains("accessibilityLabel: \"Quit Whytap\""))
+        XCTAssertTrue(source.contains("accessibilityLabel: \"Quit Exodia\""))
         XCTAssertTrue(source.contains("onQuit()"))
         XCTAssertFalse(source.contains("title: \"Exit\""))
         XCTAssertTrue(source.contains("static let tileWidth: CGFloat = 55"))
         XCTAssertTrue(source.contains("static let tileHeight: CGFloat = 72"))
         XCTAssertTrue(source.contains(".frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .center)"))
-        XCTAssertTrue(source.contains("private static let tileSpacing: CGFloat = 2"))
+        XCTAssertTrue(source.contains("count: HoverLayoutStore.columns"))
         XCTAssertTrue(controlSource.contains("static let compactCircleSize: CGFloat = 34"))
     }
 

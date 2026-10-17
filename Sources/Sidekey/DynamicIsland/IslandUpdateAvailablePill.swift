@@ -17,6 +17,7 @@ enum IslandUpdateAvailablePillStyle {
     /// stage). Skips THIS build in Sparkle; future versions still prompt.
     /// Replaces the old "Later" dismiss — `xmark` keeps the same icon family.
     static let skipActionSystemImage = "xmark"
+    static let restartActionSystemImage = "arrow.clockwise"
     static let actionSpacing: CGFloat = 5
     static let actionButtonSize: CGFloat = 24
     static let actionIconFrameSize: CGFloat = 12
@@ -39,10 +40,7 @@ enum IslandUpdateAvailablePillStage: Equatable {
     /// Download (and the brief auto-install that follows) in progress.
     /// Compact-only, ICON-ONLY (no text); no hover actions.
     case downloading
-    /// Download complete. With one-button update the host auto-installs and
-    /// relaunches, so this tag is normally never forwarded to the pill; it
-    /// is kept only so the stage mapping in `IslandView` stays exhaustive.
-    /// No user-actionable restart UI.
+    /// Download complete; restart was deferred or restored from an earlier session.
     case readyToInstall
 }
 
@@ -56,8 +54,7 @@ enum IslandUpdateAvailablePillStage: Equatable {
 ///     ugly in the ~70pt right band). Covers the download AND the brief
 ///     auto-install that follows. Hover-expanded layout shows the same
 ///     compact body because the user has nothing to act on.
-///   - `.readyToInstall` — normally never reached: the host auto-installs +
-///     relaunches (one-button update). No user-actionable restart UI.
+///   - `.readyToInstall` — Ready label, with Restart / Later on hover.
 ///
 /// Callbacks are stored as plain closures so they can be invoked
 /// directly from `IslandUpdateAvailablePillTests` without ViewInspector.
@@ -72,14 +69,12 @@ struct IslandUpdateAvailablePill: View {
     let stage: IslandUpdateAvailablePillStage
 
     /// Driven from the Dynamic Island's hover-expanded state. Honoured
-    /// only for `.available` (shows [Update ↓] [✕ Skip this version]).
-    /// `.downloading` always renders the compact body to keep the UI calm
-    /// while bytes are in flight, and `.readyToInstall` auto-installs.
+    /// for `.available` and `.readyToInstall`. Downloads have no actions.
     let hoverExpanded: Bool
 
     /// Invoked when the user taps the download affordance in
     /// `.available` stage. Wiring should call `PendingUpdate.startDownload()`.
-    /// This single tap downloads, installs, and relaunches (one-button update).
+    /// A single tap also installs and relaunches if the app stays idle.
     let onDownload: () -> Void
 
     /// Invoked when the user taps ✕ ("Skip this version") in `.available`
@@ -87,6 +82,10 @@ struct IslandUpdateAvailablePill: View {
     /// `driver.invokeSkip()` so Sparkle records THIS build as skipped and
     /// stops re-prompting for it; future versions still surface.
     let onSkip: () -> Void
+
+    var onInstall: () -> Void = {}
+    var onLater: () -> Void = {}
+    var restartDeferralReason: String? = nil
 
     // MARK: - Testable computed properties
 
@@ -97,7 +96,7 @@ struct IslandUpdateAvailablePill: View {
         switch stage {
         case .available: "Update"
         case .downloading: ""
-        case .readyToInstall: "v\(displayVersion)"
+        case .readyToInstall: "Ready"
         }
     }
 
@@ -107,15 +106,15 @@ struct IslandUpdateAvailablePill: View {
     }
 
     /// Whether the hover-expanded layout should show a restart affordance.
-    /// Always `false` — one-button update auto-installs, so there is no
-    /// user-actionable restart step. Retained as a regression guard.
     var showsRestartAffordance: Bool {
-        false
+        hoverExpanded && stage == .readyToInstall
     }
 
     var body: some View {
         if showsDownloadAffordance {
             expandedDownloadBody
+        } else if showsRestartAffordance {
+            expandedRestartBody
         } else {
             compactBody
         }
@@ -147,6 +146,8 @@ struct IslandUpdateAvailablePill: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(compactAccessibilityLabel)
+        .accessibilityHint(restartDeferralReason ?? "")
+        .help(restartDeferralReason ?? compactAccessibilityLabel)
     }
 
     private var compactIcon: String {
@@ -172,9 +173,8 @@ struct IslandUpdateAvailablePill: View {
     }
 
     /// Hover-expanded layout for `.available` — [Update ↓] [✕ Skip this
-    /// version]. The single ↓ tap downloads + auto-installs + relaunches;
-    /// ✕ skips THIS build (future versions still prompt). There is no
-    /// `.readyToInstall` hover layout anymore — install is automatic.
+    /// version]. Installation after download is immediate only while idle.
+    /// ✕ skips THIS build (future versions still prompt).
     private var expandedDownloadBody: some View {
         HStack(spacing: IslandUpdateAvailablePillStyle.actionSpacing) {
             IslandUpdatePillAction(
@@ -195,6 +195,26 @@ struct IslandUpdateAvailablePill: View {
             )
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private var expandedRestartBody: some View {
+        HStack(spacing: IslandUpdateAvailablePillStyle.actionSpacing) {
+            IslandUpdatePillAction(
+                label: "Restart to update",
+                systemImage: IslandUpdateAvailablePillStyle.restartActionSystemImage,
+                role: .primary,
+                action: onInstall
+            )
+            .help(restartDeferralReason ?? "Restart to apply the downloaded update")
+            IslandUpdatePillAction(
+                label: "Later",
+                systemImage: IslandUpdateAvailablePillStyle.skipActionSystemImage,
+                role: .secondary,
+                action: onLater
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityHint(restartDeferralReason ?? "")
     }
 }
 

@@ -131,6 +131,48 @@ final class CaseVaultStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.load(using: SymmetricKey(size: .bits256)))
     }
 
+    // MARK: - Never lose the vault
+
+    /// A vault the current key can't open (another build's key) used to be
+    /// deleted by Reset. It is now set aside, byte for byte.
+    func test_reset_keeps_the_unreadable_vault_next_to_the_new_one() throws {
+        let store = CaseVaultStore(fileURL: root.appendingPathComponent("case-vault.json.enc"))
+        try store.save(CaseVaultPayload(), using: SymmetricKey(size: .bits256))
+        let original = try Data(contentsOf: store.fileURL)
+
+        try store.reset()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.fileURL.path))
+        let kept = try FileManager.default.contentsOfDirectory(atPath: root.path)
+            .filter { $0.hasPrefix("case-vault.json.enc.unreadable-") }
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(kept[0])), original)
+    }
+
+    func test_save_keeps_the_previous_vault_as_backup() throws {
+        let store = CaseVaultStore(fileURL: root.appendingPathComponent("case-vault.json.enc"))
+        let key = SymmetricKey(size: .bits256)
+        let secretID = UUID()
+        let first = CaseVaultPayload(
+            secrets: [CaseSecret(id: secretID, name: "GITHUB_TOKEN", groupID: nil, copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())],
+            values: [CaseSecretValue(secretID: secretID, value: "ghp-value")],
+            groups: []
+        )
+        try store.save(first, using: key)
+        try store.save(CaseVaultPayload(), using: key)
+
+        let backup = CaseVaultStore(fileURL: store.backupFileURL)
+        XCTAssertEqual(try backup.load(using: key), first)
+        XCTAssertEqual(try store.load(using: key), CaseVaultPayload())
+    }
+
+    func test_default_vault_lives_under_the_flavor_bundle_id() {
+        XCTAssertEqual(
+            CaseVaultStore.defaultFileURL.deletingLastPathComponent().lastPathComponent,
+            BuildConfig.bundleID
+        )
+    }
+
     func test_saved_directory_uses_private_permissions() throws {
         let store = CaseVaultStore(fileURL: root.appendingPathComponent("case-vault.json.enc"))
         try store.save(CaseVaultPayload(), using: SymmetricKey(size: .bits256))

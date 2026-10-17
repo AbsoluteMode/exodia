@@ -1,6 +1,6 @@
 # Third-party software and assets
 
-Whytap is distributed under the MIT License (`LICENSE`). The application
+Exodia is distributed under the MIT License (`LICENSE`). The application
 bundle also contains, or is built with, the following third-party work.
 Each component keeps its own license; the full texts ship inside the
 resolved packages (`.build/checkouts/<package>/LICENSE`) and, for vendored
@@ -38,7 +38,7 @@ files, next to the files themselves.
 
 ## Models downloaded at runtime
 
-Whytap does not bundle model weights. On first use it downloads, with your
+Exodia does not bundle model weights. On first use it downloads, with your
 consent, from Hugging Face:
 
 - Parakeet TDT v3 Core ML conversion published by FluidInference (CC-BY-4.0
@@ -60,3 +60,16 @@ Check the model cards on Hugging Face for the exact terms of each model.
 `Resources/UsefulLinkIcons/` holds logos of third-party products used to
 label those products inside the app. They remain the trademarks of their
 owners and are not licensed under the MIT License. See `TRADEMARK.md`.
+
+## Agent and dashboard integrations
+
+- OpenCode is downloaded from the official
+  [anomalyco/opencode releases](https://github.com/anomalyco/opencode/releases)
+  only after an explicit installation action, or discovered from the user's
+  existing installation. Its source is MIT-licensed; it is not bundled in the
+  Exodia source or application. See the
+  [OpenCode license](https://github.com/anomalyco/opencode/blob/dev/LICENSE).
+- Monitor's passive dashboard format is compatible with
+  [AbsoluteMode/easy-monitoring](https://github.com/AbsoluteMode/easy-monitoring).
+  Copyright (c) 2026 AbsoluteMode; MIT. The original notice is retained in
+  [docs/licenses/ez-monitor-MIT.txt](docs/licenses/ez-monitor-MIT.txt).

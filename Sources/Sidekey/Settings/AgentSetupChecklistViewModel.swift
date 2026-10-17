@@ -54,8 +54,7 @@ struct AgentSetupProbes {
 
 /// Polls the four setup checks while the checklist is visible, so statuses go
 /// green by themselves within a couple of seconds after the user installs
-/// something in Terminal. Mirrors `RealOnboardingPermissionsSurface`'s
-/// timer-poll shape, with one difference dictated by the heavier checks
+/// something in Terminal. Uses a timer-poll shape; the heavier checks
 /// (process spawns instead of TCC reads): cycles run async, off the main
 /// actor, and are serialized — a tick that lands mid-cycle is skipped, so
 /// spawns never pile up.

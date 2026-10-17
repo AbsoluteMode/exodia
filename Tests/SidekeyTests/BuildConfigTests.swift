@@ -9,11 +9,11 @@ final class BuildConfigTests: XCTestCase {
         #if BETA
         XCTAssertEqual(BuildConfig.flavor, .beta)
         XCTAssertEqual(BuildConfig.bundleID, "com.rootwise.sidekey.beta")
-        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/whytap/releases/download/beta/appcast.xml")
+        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/exodia/releases/download/beta/appcast.xml")
         #else
         XCTAssertEqual(BuildConfig.flavor, .prod)
         XCTAssertEqual(BuildConfig.bundleID, "com.rootwise.sidekey")
-        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/whytap/releases/latest/download/appcast.xml")
+        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/exodia/releases/latest/download/appcast.xml")
         #endif
         // The keychain service mirrors the bundle ID so flavors never share
         // secrets in the user's login keychain.
@@ -23,5 +23,13 @@ final class BuildConfigTests: XCTestCase {
     func testAppcastAndLandingURLsAreHTTPS() {
         XCTAssertEqual(BuildConfig.appcastURL.scheme, "https")
         XCTAssertEqual(BuildConfig.landingURL.scheme, "https")
+    }
+
+    func testSourceBuildsCannotReceivePackagedUpdates() {
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: "9999", displayVersion: "0.0.0-dev"))
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: "9999", displayVersion: "2.2.0"))
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: "2300", displayVersion: "2.3.0-dev"))
+        XCTAssertFalse(BuildConfig.allowsPackagedUpdates(buildVersion: nil, displayVersion: nil))
+        XCTAssertTrue(BuildConfig.allowsPackagedUpdates(buildVersion: "2200", displayVersion: "2.2.0"))
     }
 }

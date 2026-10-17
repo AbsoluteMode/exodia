@@ -49,6 +49,20 @@ enum AgentDaemonWorkingDirectory {
         return dir
     }
 
+    /// A sibling of the neutral agent directory: ancestor instruction lookup
+    /// must never load another client's memory.
+    static func ensure(projectID: UUID, appSupportDirectory: URL? = nil,
+                       fileManager: FileManager = .default) throws -> URL {
+        let base = appSupportDirectory ?? fileManager.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("whytap/project-agents", isDirectory: true)
+            .appendingPathComponent(projectID.uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true,
+                                        attributes: [.posixPermissions: 0o700])
+        try ensureMemory(in: dir, fileManager: fileManager)
+        return dir
+    }
+
     /// Brings the working directory to its target shape — exactly one real
     /// `AGENTS.md`, no aliases — from any prior on-disk state. Idempotent:
     /// safe to call repeatedly, never destroys user bytes.

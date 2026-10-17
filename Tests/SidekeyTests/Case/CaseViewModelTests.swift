@@ -204,7 +204,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset to start over."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
         XCTAssertTrue(vm.rows.isEmpty)
     }
 
@@ -217,7 +217,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset to start over."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
     }
 
     func test_unlock_newer_schema_vault_enters_needs_newer_app_not_needs_reset() async {
@@ -333,7 +333,7 @@ final class CaseViewModelTests: XCTestCase {
         )
         let vm = env.makeViewModel()
         await XCTAssertAsyncThrows(try await vm.unlock())
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset to start over."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
 
         vm.armResetVault()
         try vm.resetVault()

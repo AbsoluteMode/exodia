@@ -27,12 +27,11 @@ protocol TokenStore {
     func delete() throws
 }
 
-/// File-backed credential storage used exclusively in dev builds
-/// (DEBUG + SIDEKEY_FILE_TOKEN_STORE, set by `scripts/dev-run.sh`).
+/// Legacy file-backed credential storage retained for migration and isolated tests
+/// (DEBUG + explicitly supplied SIDEKEY_FILE_TOKEN_STORE).
 ///
-/// This avoids macOS "wants to access your keychain" prompts and
-/// entitlement issues when running unsigned dev builds. Release, beta,
-/// and plain DEBUG test builds use the real login keychain instead.
+/// Normal dev, release, beta and DEBUG test builds use the login Keychain.
+/// This backend is only selected by an explicit nonstandard test build flag.
 struct FileTokenStore: TokenStore {
     let service: String
     let account: String
@@ -111,9 +110,8 @@ struct FileTokenStore: TokenStore {
 /// vault key. The type name is kept for API stability across the app.
 ///
 /// Release, beta, and plain DEBUG test builds use the real `SecItem*`
-/// login keychain path. Local dev app bundles pass `SIDEKEY_FILE_TOKEN_STORE`
-/// (set by `scripts/dev-run.sh`) so dev runs use a no-prompt file-backed
-/// path without disturbing the developer's own keychain entries.
+/// login keychain path, including stable-identity local dev app bundles.
+/// The legacy file backend remains available only for explicit isolated tests.
 ///
 /// Beta and prod flavors use different `kSecAttrService` values
 /// (`com.rootwise.sidekey` vs `com.rootwise.sidekey.beta`) so their
@@ -139,8 +137,8 @@ struct KeychainStore: TokenStore {
     }
 
     /// Which storage is active for the current build flags. The file store
-    /// lives ONLY in dev runs (DEBUG + SIDEKEY_FILE_TOKEN_STORE); release,
-    /// beta and plain tests always use the login keychain.
+    /// requires DEBUG + an explicit SIDEKEY_FILE_TOKEN_STORE override; normal
+    /// dev, release, beta and plain tests always use the login keychain.
     var activeBackend: StorageBackend {
         #if DEBUG && SIDEKEY_FILE_TOKEN_STORE
         return .file

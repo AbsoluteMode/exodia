@@ -118,7 +118,7 @@ final class CaseViewModel: ObservableObject {
     private static let maxValueBytes = 16 * 1024
     private static let maxGroupNameCharacters = 48
     private static let sanitizedUnlockFailureMessage = "Unable to unlock Case"
-    private static let needsResetMessage = "Couldn't unlock this Case. Reset to start over."
+    private static let needsResetMessage = "Couldn't unlock this Case. Reset starts a new one and keeps the old file."
     private static let needsNewerAppMessage = "Update the app to open this Case."
     private static let unlockReason = "Unlock Case"
 
@@ -243,8 +243,9 @@ final class CaseViewModel: ObservableObject {
         isResetArmed = false
     }
 
-    /// Discard an unreadable vault so the next unlock starts a fresh empty one.
-    /// Only the (undecryptable) data is dropped; the key seam is reused.
+    /// Set an unreadable vault aside so the next unlock starts a fresh empty
+    /// one. The old file is kept next to it, never deleted; the key seam is
+    /// reused.
     /// Requires a prior `armResetVault()` call — throws `resetNotArmed` otherwise,
     /// preventing accidental single-click destruction.
     func resetVault() throws {

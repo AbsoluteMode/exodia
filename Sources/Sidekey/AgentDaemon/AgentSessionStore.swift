@@ -22,6 +22,8 @@ final class AgentSessionStore: AgentSessionStoring {
         var claudeUpdatedAt: Date?
         var codex: String?
         var codexUpdatedAt: Date?
+        var opencode: String?
+        var opencodeUpdatedAt: Date?
     }
 
     private let fileURL: URL
@@ -43,6 +45,8 @@ final class AgentSessionStore: AgentSessionStoring {
             stored = (snapshot.claude, snapshot.claudeUpdatedAt)
         case .codex:
             stored = (snapshot.codex, snapshot.codexUpdatedAt)
+        case .opencode:
+            stored = (snapshot.opencode, snapshot.opencodeUpdatedAt)
         }
         guard let id = stored.id else { return nil }
         // No timestamp (legacy sessions.json) means unknown age — do not resume.
@@ -61,6 +65,9 @@ final class AgentSessionStore: AgentSessionStoring {
         case .codex:
             snapshot.codex = normalized
             snapshot.codexUpdatedAt = updatedAt
+        case .opencode:
+            snapshot.opencode = normalized
+            snapshot.opencodeUpdatedAt = updatedAt
         }
         persist()
     }

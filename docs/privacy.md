@@ -1,6 +1,6 @@
 # Privacy
 
-Whytap has no accounts, no Whytap-operated servers and no telemetry. This
+Exodia has no accounts, no Exodia-operated servers and no telemetry. This
 document lists every way data can leave the Mac, so that "fully local" is a
 verifiable claim rather than a slogan.
 
@@ -19,18 +19,34 @@ verifiable claim rather than a slogan.
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
   enforces that for the local pipelines.
 
+Project folders are indexed only after you select them in Settings → Projects.
+The catalog, notes and SQLite text index stay in the app’s local Application
+Support directory. Search is lexical and requires explicit reindexing. The
+selected project’s notes and matching source excerpts are included in that
+project’s agent requests and can therefore reach OpenRouter and its provider.
+Each project has a separate agent workspace and session store. Hidden files,
+symlinks, build folders and common credential filenames are excluded from the
+index; this is not a complete secret detector. Do not add secrets to notes.
+
+Monitor dashboard snapshots and server connection references also stay locally.
+The app runs a fixed read-only Linux metrics collector through SSH; dashboards
+cannot embed commands or executable HTML. UT/Sferyx configuration belongs to
+the user’s local files and is absent from the source repository.
+
 ## What can leave the device, and only when you choose it
 
 | Route | Where data goes | When |
 |---|---|---|
 | Local models (Parakeet, FluidAudio diarization, MLX Qwen3) | nowhere; a one-time download from Hugging Face fetches the weights | Apple Silicon, after you click Download |
 | Your key (OpenAI, Deepgram, Soniox, ElevenLabs, OpenRouter, self-hosted OpenAI-compatible endpoint) | the provider you selected, authenticated with your key | while the selected route is in use |
-| Agent (Claude Code / Codex CLI) | the CLI you installed talks to its own provider under your own subscription | when you press the agent hotkey |
+| Agent (OpenCode) | OpenRouter and the selected model provider, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
+| OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
+| Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
 | Sparkle updates | GitHub Releases (`appcast.xml` and the DMG) | hourly check, download only on your click |
 
 Each provider has its own data-use terms; check them before pasting a key.
-Several providers train on API traffic unless you opt out in their dashboard.
+Data-use policies depend on the selected provider and its account settings.
 
 ## Permissions
 

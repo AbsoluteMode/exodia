@@ -19,6 +19,17 @@ final class IslandFrameLayoutTests: XCTestCase {
 
     // MARK: - Sizing constants
 
+    func test_custom_tools_height_preserves_music_and_inline_panel_sizes() {
+        let controls = IslandView.hoverPanelHeight(for: .controls, musicActive: false, toolCount: 13)
+        let music = IslandView.hoverPanelHeight(for: .controls, musicActive: true, toolCount: 13)
+        XCTAssertEqual(music - controls,
+                       IslandDropModeControl.musicStripHeight + IslandDropModeControl.musicStripBottomGap)
+        XCTAssertEqual(IslandView.hoverPanelHeight(for: .history, musicActive: false, toolCount: 13),
+                       IslandDropModeControl.historyHoverPanelHeight)
+        XCTAssertEqual(IslandView.hoverPanelHeight(for: .languagePicker, musicActive: false, toolCount: 13),
+                       IslandDropModeControl.hoverPanelHeight)
+    }
+
     func test_leftSideWidth_isTunablePositiveConstant() {
         // Side-panel widths are the primary visual knobs Maxim should
         // tune by hand. These broad assertions catch broken values; the

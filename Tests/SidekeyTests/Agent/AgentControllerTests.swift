@@ -228,7 +228,7 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { agentClient.calls.count == 1 }
 
         let prompt = try XCTUnwrap(agentClient.calls.first?.prompt)
-        XCTAssertTrue(prompt.hasPrefix("You are Whytap"), "Preamble must lead the prompt; got: \(prompt.prefix(40))")
+        XCTAssertTrue(prompt.hasPrefix("You are Exodia"), "Preamble must lead the prompt; got: \(prompt.prefix(40))")
         XCTAssertTrue(prompt.contains("AGENTS.md in your working directory is your memory"))
         XCTAssertTrue(prompt.contains("Lead with the answer in your first sentence"))
         XCTAssertTrue(prompt.contains("useful.actions"))
@@ -258,9 +258,9 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { agentClient.calls.count == 1 }
 
         let prompt = try XCTUnwrap(agentClient.calls.first?.prompt)
-        XCTAssertFalse(prompt.contains("You are Whytap"), "Resume turns must not repeat the preamble; got: \(prompt.prefix(40))")
+        XCTAssertFalse(prompt.contains("You are Exodia"), "Resume turns must not repeat the preamble; got: \(prompt.prefix(40))")
         XCTAssertFalse(prompt.contains("AGENTS.md in your working directory is your memory"))
-        XCTAssertFalse(prompt.contains("You are Whytap"))
+        XCTAssertFalse(prompt.contains("You are Exodia"))
         XCTAssertTrue(prompt.contains("Reply in the language of the user's latest request"))
         XCTAssertTrue(prompt.hasSuffix("снова привет"))
         // The resume id is the stored one, confirming this turn is a resume.
@@ -286,7 +286,7 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { agentClient.calls.count == 1 }
 
         let prompt = try XCTUnwrap(agentClient.calls.first?.prompt)
-        XCTAssertFalse(prompt.contains("You are Whytap"))
+        XCTAssertFalse(prompt.contains("You are Exodia"))
         XCTAssertTrue(prompt.contains("Selected text:\nhighlighted code"))
         XCTAssertTrue(prompt.hasSuffix("explain"))
     }
@@ -295,7 +295,7 @@ final class AgentControllerTests: XCTestCase {
         // Guard: a future edit must not silently drop a whole block of the
         // preamble. Pin one marker per section.
         let preamble = AgentController.systemPromptPreambleForTesting
-        XCTAssertTrue(preamble.contains("You are Whytap"))
+        XCTAssertTrue(preamble.contains("You are Exodia"))
         // ANSWERING — anti-preamble rule.
         XCTAssertTrue(preamble.contains("Lead with the answer in your first sentence"))
         // TOOLS — gating on freshness.
@@ -344,6 +344,98 @@ final class AgentControllerTests: XCTestCase {
         await waitUntil { sessionStore.sessionID(for: .claude) == "new-claude-session" }
 
         XCTAssertEqual(provider.calls.first?.resumeSessionID, "old-claude-session")
+    }
+
+    func testProjectEvidenceAndSessionsStayIsolatedAcrossProjectSwitches() async throws {
+        let snapshot = makeSnapshot()
+        let first = AgentProjectContext(projectID: UUID(), displayName: "First client",
+            sourceExcerpts: "first-schema.sql:8 allowed: draft, done")
+        let second = AgentProjectContext(projectID: UUID(), displayName: "Second client",
+            sourceExcerpts: "second-schema.sql:12 allowed: open, closed")
+        var selected = first
+        let firstDirectory = try AgentDaemonWorkingDirectory.ensure(projectID: first.projectID)
+        let secondDirectory = try AgentDaemonWorkingDirectory.ensure(projectID: second.projectID)
+        tempPaths.append(contentsOf: [firstDirectory, secondDirectory])
+        let neutral = InMemoryAgentSessionStore()
+        neutral.setSessionID("neutral-session", for: .opencode)
+        let firstProvider = SessionRecordingCLIProvider(id: .opencode, lastSessionID: "first-session")
+        let secondProvider = SessionRecordingCLIProvider(id: .opencode, lastSessionID: "second-session")
+        let controller = AgentController(
+            gestureMonitor: MockRightCmdGestureMonitor(), snapshotProvider: { snapshot },
+            resolveProvider: { selected.projectID == first.projectID ? firstProvider : secondProvider },
+            resolveProjectContext: { _ in selected }, agentSessionStore: neutral, agentEnabled: { true })
+
+        controller.submitTextQuery("first question", snapshot: snapshot)
+        await waitUntil {
+            AgentSessionStore(fileURL: firstDirectory.appendingPathComponent("sessions.json"))
+                .sessionID(for: .opencode) == "first-session"
+        }
+        XCTAssertNil(firstProvider.calls.first?.resumeSessionID)
+        XCTAssertTrue(firstProvider.calls.first?.prompt.contains("first-schema.sql:8") == true)
+        XCTAssertTrue(firstProvider.calls.first?.prompt.contains("Exodia customization capabilities") == true)
+
+        selected = second
+        controller.submitTextQuery("second question", snapshot: snapshot)
+        await waitUntil {
+            AgentSessionStore(fileURL: secondDirectory.appendingPathComponent("sessions.json"))
+                .sessionID(for: .opencode) == "second-session"
+        }
+        XCTAssertNil(secondProvider.calls.first?.resumeSessionID)
+        XCTAssertTrue(secondProvider.calls.first?.prompt.contains("second-schema.sql:12") == true)
+        XCTAssertFalse(secondProvider.calls.first?.prompt.contains("first-schema.sql:8") == true)
+
+        selected = AgentProjectContext(projectID: first.projectID, displayName: first.displayName,
+            sourceExcerpts: "first-schema.sql:9 revised source")
+        controller.submitTextQuery("follow-up", snapshot: snapshot)
+        await waitUntil { firstProvider.calls.count == 2 }
+        XCTAssertEqual(firstProvider.calls.last?.resumeSessionID, "first-session")
+        XCTAssertTrue(firstProvider.calls.last?.prompt.contains("first-schema.sql:9 revised source") == true)
+        XCTAssertFalse(firstProvider.calls.last?.prompt.contains("Exodia customization capabilities") == true)
+        XCTAssertEqual(neutral.sessionID(for: .opencode), "neutral-session")
+    }
+
+    func testCancelledProjectLateEventsCannotChangeNewProjectAnswerOrSession() async throws {
+        let snapshot = makeSnapshot()
+        let first = AgentProjectContext(projectID: UUID(), displayName: "First", sourceExcerpts: "first.sql:1")
+        let second = AgentProjectContext(projectID: UUID(), displayName: "Second", sourceExcerpts: "second.sql:1")
+        var selected = first
+        let firstDirectory = try AgentDaemonWorkingDirectory.ensure(projectID: first.projectID)
+        let secondDirectory = try AgentDaemonWorkingDirectory.ensure(projectID: second.projectID)
+        tempPaths.append(contentsOf: [firstDirectory, secondDirectory])
+        let firstSessions = AgentSessionStore(fileURL: firstDirectory.appendingPathComponent("sessions.json"))
+        firstSessions.setSessionID("first-original", for: .opencode)
+        let firstProvider = ManualCLIProvider(id: .opencode)
+        let secondProvider = ManualCLIProvider(id: .opencode)
+        let response = AskResponseStore()
+        let controller = AgentController(
+            gestureMonitor: MockRightCmdGestureMonitor(), snapshotProvider: { snapshot },
+            resolveProvider: { selected.projectID == first.projectID ? firstProvider : secondProvider },
+            resolveProjectContext: { _ in selected }, responseStore: response, agentEnabled: { true })
+        defer { controller.stop() }
+
+        controller.submitTextQuery("first", snapshot: snapshot)
+        await Task.yield()
+        firstProvider.lastSessionID = "first-late"
+        firstProvider.continuations[0].yield(.summaryDelta(text: "Previous client secret"))
+        firstProvider.continuations[0].yield(.done(sources: []))
+        // Switch in the same main-actor turn, before the queued first response
+        // can resume. The previous provider deliberately keeps yielding.
+        selected = second
+        controller.submitTextQuery("second", snapshot: snapshot)
+        firstProvider.continuations[0].yield(.error(code: "old", message: "Previous client error", retryable: false))
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertEqual(response.streamingText, "")
+        XCTAssertNil(response.errorCode)
+        XCTAssertEqual(AppState.shared.agentPhase, .executing)
+        XCTAssertNil(AgentSessionStore(fileURL: secondDirectory.appendingPathComponent("sessions.json")).sessionID(for: .opencode))
+
+        secondProvider.lastSessionID = "second-session"
+        secondProvider.continuations[0].yield(.finalAnswer(text: "Second client answer"))
+        secondProvider.continuations[0].yield(.done(sources: []))
+        await waitUntil { response.streamCompleted }
+        XCTAssertEqual(response.streamingText, "Second client answer")
+        XCTAssertEqual(AgentSessionStore(fileURL: secondDirectory.appendingPathComponent("sessions.json")).sessionID(for: .opencode), "second-session")
+        XCTAssertEqual(AgentSessionStore(fileURL: firstDirectory.appendingPathComponent("sessions.json")).sessionID(for: .opencode), "first-original")
     }
 
     func testSubmitWithNoConnectedProviderShowsNotConnectedAndDoesNotRun() async {
@@ -1903,12 +1995,14 @@ private final class MockCLIProvider: CLIProvider {
 
 /// Manual CLIProvider that lets tests drive the stream by yielding events.
 private final class ManualCLIProvider: CLIProvider {
-    let id: CLIProviderID = .claude
+    let id: CLIProviderID
     let displayName = "Manual Claude"
     let installURL = URL(string: "https://example.com")!
-    let lastSessionID: String? = nil
+    var lastSessionID: String?
     private(set) var calls: [(prompt: String, resumeSessionID: String?)] = []
     private(set) var continuations: [AsyncStream<AgentSSEEvent>.Continuation] = []
+
+    init(id: CLIProviderID = .claude) { self.id = id }
 
     func discoverBinary() -> URL? { URL(fileURLWithPath: "/mock/claude") }
     func probe() async -> ConnectOutcome { .connected(sessionID: nil) }

@@ -317,12 +317,11 @@ struct HotkeysSettingsView: View {
     /// come from the LIVE tool occupying that slot (`hoverLayout.slots[i]` via
     /// `HoverToolRegistry`), so a Toolbox reorder re-labels the row (D1). The
     /// shortcut (key) is editable like every other row. The TOOL is not changed
-    /// here — Toolbox owns tool placement, and position 5
-    /// (`HoverLayoutStore.lockSlotIndex`) is permanently `.settings` (D2), so
-    /// the locked row carries an explicit "Fixed to Settings" hint.
+    /// here — Toolbox owns tool placement. Empty positions retain editable
+    /// bindings without indexing past the user's current tool count.
     @ViewBuilder
     private var hoverSlotSection: some View {
-        ForEach(0..<HoverLayoutStore.slotCount, id: \.self) { offset in
+        ForEach(0..<HoverLayoutStore.shortcutSlotCount, id: \.self) { offset in
             hoverSlotRow(position: offset)
         }
     }
@@ -330,15 +329,20 @@ struct HotkeysSettingsView: View {
     @ViewBuilder
     private func hoverSlotRow(position offset: Int) -> some View {
         let target = Self.hoverSlotTargets[offset]
-        let tool = hoverLayout.slots[offset]
-        let info = HoverToolRegistry.info(for: tool)
-        let isLocked = offset == HoverLayoutStore.lockSlotIndex
-        let baseDetail = isLocked
-            ? "Activates \(info.title) (fixed to this slot). The key is editable."
-            : "Open the Hover and activate \(info.title)."
+        let tool = hoverLayout.slots.indices.contains(offset) ? hoverLayout.slots[offset] : nil
+        let info = tool.map { HoverToolRegistry.info(for: $0) }
+        let isLocked = tool == .settings
+        let baseDetail: String = {
+            guard let info else {
+                return "This position is empty. Add a tool in Toolbox to activate it."
+            }
+            return isLocked
+                ? "Activates \(info.title) (pinned at the end of your hover). The key is editable."
+                : "Open the Hover and activate \(info.title)."
+        }()
         HotkeySettingRow(
-            iconName: info.sfSymbol,
-            title: "Hover \(info.title)",
+            iconName: info?.sfSymbol ?? "square.dashed",
+            title: info.map { "Hover \($0.title)" } ?? "Hover slot \(offset + 1)",
             detail: Self.rowDetail(base: baseDetail, for: draft.hoverSlotShortcuts[offset]),
             gesture: .tap,
             allowsGestureSwitch: false,
@@ -668,9 +672,9 @@ struct HotkeysSettingsView: View {
         case usefulLinksPrevious
         case agentClose
         // Positional Hover-slot shortcuts (ROO-210), index-aligned with
-        // `HotkeyConfiguration.hoverSlotShortcuts` (slot 1 … slot 5). Slot 5 is
-        // the locked Settings slot (D2): its key is editable here, its tool is
-        // fixed in `HoverLayoutStore`.
+        // `HotkeyConfiguration.hoverSlotShortcuts` (slot 1 … slot 5). The
+        // Settings tool stays last in Toolbox; each position's key is
+        // editable here without changing tool placement.
         case hoverSlot1
         case hoverSlot2
         case hoverSlot3

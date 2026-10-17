@@ -895,7 +895,7 @@ final class MeetingsCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(result.map(\.text), ["Hello", "Reconnected after 1m 34s", "Back"])
         XCTAssertEqual(result[1].start, 10)
-        XCTAssertEqual(result[1].speaker, "Whytap")
+        XCTAssertEqual(result[1].speaker, "Exodia")
     }
 
     func test_detector_to_pill_wiring() async {

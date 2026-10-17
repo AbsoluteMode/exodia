@@ -3,6 +3,24 @@ import XCTest
 
 @MainActor
 final class AskResponseStoreTests: XCTestCase {
+    func testGenerationGuardRejectsBufferedEventsWithoutRelyingOnCancellation() async {
+        let store = AskResponseStore()
+        var generation = 1
+        var completions = 0
+        await store.consume(stream([
+            .voiceTranscript(text: "switch now"),
+            .summaryDelta(text: "Previous client secret"),
+            .error(code: "old_error", message: "Previous client error", retryable: false),
+            .done(sources: [])
+        ]), onCompletionEvent: { completions += 1 },
+            onVoiceTranscript: { _ in generation = 2 },
+            isCurrentStream: { generation == 1 })
+        XCTAssertEqual(store.streamingText, "")
+        XCTAssertNil(store.errorCode)
+        XCTAssertFalse(store.streamCompleted)
+        XCTAssertEqual(completions, 0)
+    }
+
     func testConsumeAppendsSummaryBlocksAndSources() async throws {
         let store = AskResponseStore()
         let block = UIBlock.textAnswer(TextAnswerBlock(title: "Answer", body: "Body"))

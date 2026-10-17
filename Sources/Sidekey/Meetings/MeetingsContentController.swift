@@ -356,7 +356,7 @@ final class MeetingsContentController: NSViewController {
             }
             return "Processing failed, but this meeting will not open an older note."
         case .ready:
-            return "The meeting is ready, but its local note is missing. Reopen Whytap to restore it."
+            return "The meeting is ready, but its local note is missing. Reopen Exodia to restore it."
         }
     }
 }

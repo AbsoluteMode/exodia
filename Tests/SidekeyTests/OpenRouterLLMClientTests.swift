@@ -53,7 +53,7 @@ final class OpenRouterLLMClientTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer or-key")
             XCTAssertEqual(request.value(forHTTPHeaderField: "HTTP-Referer"), BuildConfig.landingURL.absoluteString)
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "Whytap")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "Exodia")
             let body = try XCTUnwrap(StubURLProtocol.capturedBodies.last)
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
             XCTAssertEqual(json["model"] as? String, "openrouter/auto")
