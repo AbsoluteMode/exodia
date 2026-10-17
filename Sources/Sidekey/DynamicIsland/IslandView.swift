@@ -153,6 +153,7 @@ struct IslandView: View {
     /// stays non-key so clicks do not steal focus; the search field is
     /// the one hover state that needs keyboard input.
     let onKeyboardFocusRequest: (Bool) -> Void
+    @ObservedObject private var hoverHitBridge: IslandHoverHitBridge
 
     /// Reports the hover band height for the current panel mode so
     /// `IslandPanel` can grow its hit-test band when a tall inline panel
@@ -195,6 +196,7 @@ struct IslandView: View {
         appState: AppState? = nil,
         onHoverChange: @escaping (Bool) -> Void = { _ in },
         onKeyboardFocusRequest: @escaping (Bool) -> Void = { _ in },
+        hoverHitBridge: IslandHoverHitBridge? = nil,
         onHoverPanelBandHeightChange: @escaping (CGFloat) -> Void = { _ in },
         onAgentAnswerHeightChange: @escaping (CGFloat) -> Void = { _ in },
         actions: IslandActions? = nil,
@@ -213,6 +215,7 @@ struct IslandView: View {
         self.actions = resolvedActions
         self.onHoverChange = onHoverChange
         self.onKeyboardFocusRequest = onKeyboardFocusRequest
+        self._hoverHitBridge = ObservedObject(wrappedValue: hoverHitBridge ?? IslandHoverHitBridge())
         self.onHoverPanelBandHeightChange = onHoverPanelBandHeightChange
         self.onAgentAnswerHeightChange = onAgentAnswerHeightChange
         self.cancelAgentFlow = cancelAgentFlow
@@ -1070,6 +1073,7 @@ struct IslandView: View {
                             selectedLanguage: selectedLanguage,
                             targetLanguage: targetLanguage,
                             panelMode: $hoverPanelMode,
+                            hoverHitBridge: hoverHitBridge,
                             onSearchFocusChange: { focused in
                                 hoverSearchFocused = focused
                                 onKeyboardFocusRequest(
@@ -1238,6 +1242,7 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: hoverPanelMode) { _, newValue in
+            hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
             onHoverPanelBandHeightChange(
                 Self.hoverPanelHeight(
                     for: newValue,
@@ -1283,6 +1288,7 @@ struct IslandView: View {
             )
         }
         .onChange(of: isHoverExpanded) { _, expanded in
+            hoverHitBridge.setEnabled(expanded && hoverPanelMode == .controls)
             // The AppKit hit band follows keyboard-held search and inline tools too.
             onHoverChange(expanded)
             if !expanded {
@@ -2307,6 +2313,7 @@ private struct IslandDropModeHoverPanel: View {
     let selectedLanguage: AppLanguage?
     let targetLanguage: AppLanguage?
     @Binding var panelMode: IslandHoverPanelMode
+    @ObservedObject var hoverHitBridge: IslandHoverHitBridge
     let onSearchFocusChange: (Bool) -> Void
     let onSearchWillActivate: (HoverTool) -> Void
     @ObservedObject var hoverStore: HoverLayoutStore
@@ -2455,9 +2462,20 @@ private struct IslandDropModeHoverPanel: View {
             .easeOut(duration: 0.18).delay(0.16),
             value: contentsVisible
         )
-        .onAppear { contentsVisible = true }
-        .onDisappear { setSearchFocus(false) }
+        .onAppear {
+            contentsVisible = true
+            hoverHitBridge.setSurface(IslandHoverToolSearch.isFiltering(searchQuery) ? .result : .tile)
+            hoverHitBridge.setContext(hitTargetContext)
+        }
+        .onDisappear {
+            hoverHitBridge.setEnabled(false)
+            setSearchFocus(false)
+        }
+        .onChange(of: hoverStore.slots) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
+        .onChange(of: mode) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
         .onChange(of: searchQuery) { _, _ in
+            hoverHitBridge.setSurface(IslandHoverToolSearch.isFiltering(searchQuery) ? .result : .tile)
+            hoverHitBridge.setContext(hitTargetContext)
             selectedSearchIndex = 0
             hoveredTool = nil
         }
@@ -2502,39 +2520,48 @@ private struct IslandDropModeHoverPanel: View {
             if IslandHoverToolSearch.isFiltering(searchQuery) {
                 searchResults
             } else {
-                // Tiles with labels — fills space above divider. The positional
-                // ⌥N hint sits ABOVE the tile, gated by hover: opacity(1) only for
-                // the tile under the cursor, opacity(0) for all others. Hidden via
-                // opacity — NOT conditional removal — so the layout slot above every
-                // tile stays reserved and tiles never jump vertically when the cursor
-                // moves between them. The fade uses the same hoveredTool value and
-                // easeInOut(0.15s) that drives the description strip below.
+                // Every row centers the complete button in the free region
+                // between search and description. Hints overlay the top edge;
+                // they never consume height or move a row on hover.
                 IslandHoverGlassControlsContainer {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0),
-                                                 count: HoverLayoutStore.columns), spacing: 8) {
+                                                 count: HoverLayoutStore.columns), spacing: IslandHoverControlsLayout.rowSpacing) {
                         ForEach(Array(hoverStore.slots.enumerated()), id: \.offset) { offset, tool in
-                            VStack(spacing: 1) {
+                            tileView(for: tool, circleSize: circleSize)
+                            .islandHoverHitTarget(
+                                bridge: hoverHitBridge,
+                                id: IslandHoverHitTargetID(surface: .tile, tool: tool),
+                                context: hitTargetContext,
+                                action: { activateTool(tool) }
+                            )
+                            .overlay(alignment: .top) {
                                 hoverSlotHint(for: offset)
                                     .opacity(hoveredTool == tool ? 1 : 0)
+                                    .offset(y: -IslandHoverControlsLayout.hintOffset)
                                     .animation(.easeInOut(duration: 0.15), value: hoveredTool)
-                                tileView(for: tool, circleSize: circleSize)
+                                    .allowsHitTesting(false)
                             }
+                            .frame(height: IslandHoverControlsLayout.rowHeight, alignment: .center)
                             .onHover { isHovering in
                                 if isHovering { hoveredTool = tool }
                                 else if hoveredTool == tool { hoveredTool = nil }
                             }
                         }
                     }
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.vertical, IslandHoverControlsLayout.gridVerticalInset)
+                    .frame(height: IslandHoverControlsLayout.gridHeight(toolCount: hoverStore.slots.count))
                 }
+                // The outer frame owns centering; GlassEffectContainer's
+                // intrinsic layout must not choose the grid's vertical anchor.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .islandHoverHitRegion(bridge: hoverHitBridge, surface: .tile)
 
             }
 
             // Divider
             Rectangle()
                 .fill(Color.white.opacity(0.10))
-                .frame(height: 1)
+                .frame(height: IslandHoverControlsLayout.dividerHeight)
 
             // Description strip
             HStack(spacing: 0) {
@@ -2558,8 +2585,12 @@ private struct IslandDropModeHoverPanel: View {
                     .padding(.trailing, 8)
                 Spacer()
             }
-            .frame(height: 32)
+            .frame(height: IslandHoverControlsLayout.descriptionHeight)
         }
+    }
+
+    private var hitTargetContext: String {
+        "\(searchQuery)|\(mode)|" + hoverStore.slots.map(\.rawValue).joined(separator: ",")
     }
 
     private var searchMatches: [HoverTool] { IslandHoverToolSearch.results(for: searchQuery) }
@@ -2605,6 +2636,12 @@ private struct IslandDropModeHoverPanel: View {
     }
 
     private func activateTool(_ tool: HoverTool) {
+        // A tile can be clicked while an empty search field owns the key window.
+        // End text entry only after the activation has captured its tool.
+        if searchFocused {
+            onSearchWillActivate(tool)
+            setSearchFocus(false)
+        }
         switch HoverSlotRouter.effect(for: tool) {
         case .toggleDropMode: onToggle()
         case .openSettings: onOpenSettings()
@@ -2668,11 +2705,20 @@ private struct IslandDropModeHoverPanel: View {
                                 .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
                                 .background(
                                     RoundedRectangle(cornerRadius: 9)
-                                        .fill(.white.opacity(selectedSearchIndex == index ? 0.13 : 0))
+                                        .fill(.white.opacity(
+                                            hoverHitBridge.pressedID == IslandHoverHitTargetID(surface: .result, tool: tool)
+                                                ? 0.24 : (selectedSearchIndex == index ? 0.13 : 0)
+                                        ))
                                 )
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .islandHoverHitTarget(
+                                bridge: hoverHitBridge,
+                                id: IslandHoverHitTargetID(surface: .result, tool: tool),
+                                context: hitTargetContext,
+                                action: { activateSearchTool(tool) }
+                            )
                             .accessibilityLabel(info.title)
                             .accessibilityHint(info.description)
                             .id(index)
@@ -2692,14 +2738,15 @@ private struct IslandDropModeHoverPanel: View {
             .onChange(of: searchQuery) { _, _ in scroll.scrollTo(0, anchor: .top) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .islandHoverHitRegion(bridge: hoverHitBridge, surface: .result)
     }
 
     /// Bare positional keycap overline for the Hover-slot shortcut at `offset`
     /// (0-based), sitting ABOVE the tile. Visible only when the cursor hovers
     /// over this tile — the callsite gates visibility via `opacity(hoveredTool
     /// == tool ? 1 : 0)` with `easeInOut(0.15s)`, matching the description
-    /// strip animation. Hidden via opacity (not conditional removal) so the
-    /// layout slot stays reserved and tiles never jump vertically on hover.
+    /// strip animation. It overlays the tile without affecting row layout,
+    /// so its presence and opacity never move the button vertically.
     /// Sourced from the LIVE `hotkeys.configuration` so it shows the current
     /// binding (default ⌥1..⌥5) and updates after a Save (D1, динамика).
     /// Built through the shared `HotkeyHintView` per `docs/hotkey.md` (glyphs
@@ -3336,7 +3383,10 @@ struct IslandHoverPanelControl: View {
 
     @State private var hovering = false
     @State private var pull: CGSize = .zero
-    @State private var pressed = false
+    @GestureState private var pressed = false
+    @Environment(\.islandHoverNativePressed) private var nativePressed
+    private var isPressed: Bool { pressed || nativePressed }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -3349,7 +3399,7 @@ struct IslandHoverPanelControl: View {
                 switch phase {
                 case .active(let location):
                     hovering = true
-                    pull = IslandHoverGlass.usesNativeLiquidGlass ? .zero
+                    pull = reduceMotion ? .zero
                         : IslandGraphiteHoverControlStyle.magneticPull(
                             location: location,
                             bounds: CGSize(width: Self.tileWidth, height: Self.tileHeight),
@@ -3360,12 +3410,15 @@ struct IslandHoverPanelControl: View {
                     pull = .zero
                 }
             }
-            .modifier(IslandHoverPressEventsModifier(
-                onPress: { pressed = true },
-                onRelease: { pressed = false }
-            ))
-            .animation(IslandHoverGlass.usesNativeLiquidGlass ? nil : .spring(response: 0.34, dampingFraction: 0.74), value: pull)
-            .animation(IslandHoverGlass.usesNativeLiquidGlass ? nil : .spring(response: 0.22, dampingFraction: 0.70), value: pressed)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($pressed) { value, isPressed, _ in
+                        isPressed = CGRect(x: 0, y: 0, width: Self.tileWidth, height: Self.tileHeight)
+                            .contains(value.location)
+                    }
+            )
+            .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.74), value: pull)
+            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.70), value: isPressed)
             .animation(.easeOut(duration: 0.22), value: hovering)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
@@ -3380,8 +3433,11 @@ struct IslandHoverPanelControl: View {
                     width: IslandGraphiteHoverControlStyle.tileSize,
                     height: IslandGraphiteHoverControlStyle.tileSize
                 )
-                .offset(IslandHoverGlass.usesNativeLiquidGlass ? .zero : pull)
-                .scaleEffect(IslandHoverGlass.usesNativeLiquidGlass ? 1 : (pressed ? 0.94 : 1))
+                .offset(pull)
+                .scaleEffect(IslandGraphiteHoverControlStyle.feedbackScale(
+                    hovering: hovering, pressed: isPressed, reduceMotion: reduceMotion
+                ))
+                .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.76), value: hovering)
 
             if showsLabel {
                 Text(Self.displayTitle(title))
@@ -3419,10 +3475,19 @@ struct IslandHoverPanelControl: View {
     private var circleSurface: some View {
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
-            iconView
-                .frame(width: IslandGraphiteHoverControlStyle.tileSize,
-                       height: IslandGraphiteHoverControlStyle.tileSize)
-                .glassEffect(.regular.interactive(), in: .circle)
+            // One native glass backdrop per card. Nested glass cannot sample
+            // the parent glass; foreground lenses supply the reference's
+            // translucent fill and specular edge without another backdrop.
+            ZStack {
+                Circle().fill(tileFill)
+                    .overlay {
+                        IslandHoverGlassRim(shape: Circle(), highlighted: hovering)
+                            .allowsHitTesting(false)
+                    }
+                    .shadow(color: .black.opacity(hovering ? 0.22 : 0.12),
+                            radius: hovering ? 6 : 3, x: 0, y: 2)
+                iconView.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         } else {
             legacyCircleSurface
         }
@@ -3572,19 +3637,6 @@ struct IslandHoverPanelControl: View {
             .font(.system(size: IslandHoverPanelIconStyle.fallbackSystemFontSize, weight: .regular))
             .foregroundStyle(hovering ? Color.white : Color.white.opacity(0.78))
             .symbolRenderingMode(.monochrome)
-    }
-}
-
-private struct IslandHoverPressEventsModifier: ViewModifier {
-    let onPress: () -> Void
-    let onRelease: () -> Void
-
-    func body(content: Content) -> some View {
-        content.simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in onPress() }
-                .onEnded { _ in onRelease() }
-        )
     }
 }
 

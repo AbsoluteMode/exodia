@@ -27,6 +27,12 @@ enum IslandGraphiteHoverControlStyle {
     static let textIconOpticalYOffset: CGFloat = -0.5
     static let textIconUsesOffscreenRendering = true
 
+    static func feedbackScale(hovering: Bool, pressed: Bool, reduceMotion: Bool = false) -> CGFloat {
+        guard !reduceMotion else { return 1 }
+        if pressed { return 0.94 }
+        return hovering ? 1.035 : 1
+    }
+
     static func magneticPull(location: CGPoint, bounds: CGSize) -> CGSize {
         guard bounds.width > 0, bounds.height > 0 else { return .zero }
 
@@ -40,6 +46,24 @@ enum IslandGraphiteHoverControlStyle {
     }
 }
 
+/// The fixed button stays centered in each row. Shortcut hints are overlaid
+/// above it, so hidden hints and the second row cannot shift the button.
+enum IslandHoverControlsLayout {
+    static let rowVerticalInset: CGFloat = 8
+    static let gridVerticalInset: CGFloat = 8
+    static let rowSpacing: CGFloat = 8
+    static let descriptionHeight: CGFloat = 32
+    static let dividerHeight: CGFloat = 1
+    static var rowHeight: CGFloat { IslandHoverPanelControl.tileHeight + rowVerticalInset * 2 }
+    static var rowStride: CGFloat { rowHeight + rowSpacing }
+    static var hintOffset: CGFloat { KeycapView.tinySize + 1 }
+
+    static func gridHeight(toolCount: Int) -> CGFloat {
+        let rows = max(1, (toolCount + HoverLayoutStore.columns - 1) / HoverLayoutStore.columns)
+        return rowHeight + CGFloat(rows - 1) * rowStride + gridVerticalInset * 2
+    }
+}
+
 enum IslandDropModeControl {
     static let title = "Drop Mode"
     /// Hover panel height. Sized to accommodate the language-picker
@@ -48,11 +72,11 @@ enum IslandDropModeControl {
     /// Minimum: edgeInset(5) + chipH(20) + startY(48) + 3*minimumStride(72) = 145.
     static let hoverPanelHeight: CGFloat = 145
 
-    /// Match the existing one-row size; each extra row needs a tile, shortcut
-    /// hint and gap. The host receives this height for click/hover routing too.
+    /// Derive the host hit band from the same row geometry used by the view.
     static func controlsHoverPanelHeight(toolCount: Int) -> CGFloat {
-        let rows = max(1, (toolCount + HoverLayoutStore.columns - 1) / HoverLayoutStore.columns)
-        return hoverPanelHeight + IslandHoverToolSearch.searchBandHeight + CGFloat(rows - 1) * 96
+        detachedPanelGap + IslandHoverToolSearch.searchBandHeight
+            + IslandHoverControlsLayout.gridHeight(toolCount: toolCount)
+            + IslandHoverControlsLayout.dividerHeight + IslandHoverControlsLayout.descriptionHeight
     }
     static let modeCircleSize: CGFloat = IslandHoverPanelIconStyle.circleSize
     /// Gap between the compact island and the detached hover panel.

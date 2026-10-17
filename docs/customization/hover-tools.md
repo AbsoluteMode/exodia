@@ -19,6 +19,7 @@ All paths below start at `Sources/Sidekey/`.
 | Tool to activation effect, inline panel requests | `DynamicIsland/HoverSlotRouter.swift` |
 | Action closures and preview defaults | `DynamicIsland/IslandActions.swift` |
 | Native controls, inline views and hover height | `DynamicIsland/IslandView.swift`, `IslandDropModeControl.swift` |
+| Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `IslandPanel.swift` |
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
 | Drag/drop catalog and selected layout | `Settings/ToolboxSettingsView.swift` |
 | App services and hotkey dispatch | `AppDelegate.swift` (`onHoverSlotActivated`) |
@@ -39,7 +40,9 @@ All paths below start at `Sources/Sidekey/`.
    cause the same effect. Search results must not mutate the saved layout.
 5. Keep `HoverLayoutStore.columns` and the shared height calculation aligned. A
    new row must resize the AppKit panel and its hit region, not just the SwiftUI
-   contents. Do not fill the user's layout with defaults after a removal.
+   contents. `IslandHoverControlsLayout` centers fixed-height buttons; shortcut
+   hints overlay the top edge without moving them. Do not fill the user's layout
+   with defaults after a removal.
 6. Preserve Settings as the final selected tool. A new tool belongs in the catalog;
    adding it does not authorize replacing the user's existing selections.
 
@@ -50,7 +53,7 @@ change and rebuild it with the canonical development script.
 ## Checks
 
 ```bash
-python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests'
+python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests'
 python3 scripts/customize.py run
 ```
 
@@ -60,3 +63,22 @@ click in the extra rows reaches the tool and that the panel collapses correctly.
 Search for an unpinned Output Lang, verify keyboard and pointer activation,
 clear with Escape, and check that clicking outside releases text focus. Ordinary
 hover must not take focus from another app.
+
+## Diagnose hover regressions
+
+For a lost or misplaced click, inspect the measured target and viewport in
+`IslandHoverHitBridge`, rather than adding a mouse-catching overlay. Down and up
+must refer to the same unchanged control; dragging out, changing context or
+closing the panel cancels activation. Internal search editing transitions must
+not resign the key window before the result receives its owned mouse-up.
+
+For flat glass or missing hover feedback, read the current
+[native-glass and interaction decision](../../.project-docs/decisions/2026-10-17-native-hover-glass.md).
+The native path uses one Clear backdrop on an independent background shape per
+card, with explicit foreground circular lenses and passive highlights. It does
+not wrap the foreground in glass or add nested native glass effects.
+Active visual treatment leaves focus unchanged; explicit motion respects
+Reduce Motion. Record the
+macOS version, backdrop and accessibility settings during live inspection. Do
+not infer compositor appearance from an offscreen snapshot or change the user's
+accessibility settings as an incidental fix.
