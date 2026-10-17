@@ -3,18 +3,54 @@ import XCTest
 
 final class IslandDropModeControlTests: XCTestCase {
 
-    func test_controls_height_wraps_at_five_tools_and_grows_for_every_row() {
-        let single = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 1)
-        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelHeight(toolCount: 5), single)
-        let twoRows = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 6)
-        XCTAssertGreaterThan(twoRows, single)
-        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelHeight(toolCount: 10), twoRows)
-        let threeRows = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 13)
-        XCTAssertEqual(threeRows - twoRows, twoRows - single)
+    func test_capsuleControlHeightWrapsAtThreeToolsAndCapsAtFourVisibleRows() {
+        let expectedBands: [(tools: Int, rows: Int, height: CGFloat)] = [
+            (0, 1, 179), (1, 1, 179), (2, 1, 179), (3, 1, 179),
+            (4, 2, 267), (5, 2, 267), (6, 2, 267),
+            (7, 3, 355), (8, 3, 355), (9, 3, 355),
+            (10, 4, 443), (12, 4, 443), (13, 5, 443)
+        ]
+        for expected in expectedBands {
+            XCTAssertEqual(IslandHoverControlsLayout.rowCount(toolCount: expected.tools), expected.rows)
+            XCTAssertEqual(IslandHoverControlsLayout.visibleRowCount(toolCount: expected.tools), min(4, expected.rows))
+            XCTAssertEqual(IslandDropModeControl.controlsHoverPanelHeight(toolCount: expected.tools),
+                           expected.height, accuracy: 0.001, "Tool count: \(expected.tools)")
+        }
+    }
+
+    func test_capsuleGridRetainsOverflowRowsBeyondItsVisibleCapacity() {
+        XCTAssertFalse(IslandHoverControlsLayout.requiresScrolling(toolCount: 12))
+        XCTAssertTrue(IslandHoverControlsLayout.requiresScrolling(toolCount: 13))
+        XCTAssertEqual(IslandHoverControlsLayout.gridHeight(toolCount: 13), 360, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.contentHeight(toolCount: 13), 448, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.contentHeight(toolCount: 13)
+            - IslandHoverControlsLayout.gridHeight(toolCount: 13),
+                       IslandHoverControlsLayout.rowStride, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.rowCount(toolCount: Int.max), (Int.max - 1) / 3 + 1)
+    }
+
+    func test_capsulesStayCenteredWithRoomForShortcutHints() {
+        XCTAssertEqual(IslandHoverPanelControl.tileWidth, 139, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverPanelControl.tileHeight, 64, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.rowHeight, 80, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.rowStride, 88, accuracy: 0.001)
+        let capsuleTop = (IslandHoverControlsLayout.rowHeight - IslandHoverPanelControl.tileHeight) / 2
+        let capsuleBottom = capsuleTop + IslandHoverPanelControl.tileHeight
+        XCTAssertEqual(capsuleTop, 8, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.rowHeight - capsuleBottom, capsuleTop, accuracy: 0.001)
+        let fallbackPanelWidth = IslandFrameLayout.leftSideWidth + IslandFrameLayout.syntheticNotchWidth
+            + IslandFrameLayout.rightSideWidth
+        let requiredWidth = IslandHoverPanelControl.tileWidth * CGFloat(HoverLayoutStore.columns)
+            + IslandHoverControlsLayout.columnSpacing * CGFloat(HoverLayoutStore.columns - 1)
+            + IslandHoverControlsLayout.horizontalInset * 2
+        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelWidth, 457, accuracy: 0.001)
+        XCTAssertEqual(requiredWidth, IslandDropModeControl.controlsHoverPanelWidth, accuracy: 0.001)
+        XCTAssertGreaterThan(requiredWidth, fallbackPanelWidth,
+                             "The detached drawer must widen independently of the compact pill.")
     }
 
     func test_controlsGridFillsSpaceBetweenSearchAndDescriptionForEveryRowCount() {
-        for count in [1, 5, 6, 10, 13] {
+        for count in [0, 1, 2, 3, 4, 6, 8, 9, 13] {
             let availableGridHeight = IslandDropModeControl.controlsHoverPanelHeight(toolCount: count)
                 - IslandDropModeControl.detachedPanelGap
                 - IslandHoverToolSearch.searchBandHeight
@@ -105,9 +141,8 @@ final class IslandDropModeControlTests: XCTestCase {
     }
 
     func test_hoverPanelLivesBelowCompactIsland() {
-        // After the 2-row × 4-column refactor the panel doubled in
-        // height; bounds are loosened accordingly but the lower bound
-        // (must clear the compact pill height) still holds.
+        // Inline language/case panels retain their separate compact band;
+        // the scrollable controls use controlsHoverPanelHeight(toolCount:).
         XCTAssertGreaterThan(IslandDropModeControl.hoverPanelHeight, 90)
         XCTAssertLessThan(IslandDropModeControl.hoverPanelHeight, 210)
         XCTAssertGreaterThan(
@@ -216,83 +251,87 @@ final class IslandDropModeControlTests: XCTestCase {
         XCTAssertLessThan(abs(pull.height), IslandGraphiteHoverControlStyle.magnetStrength)
     }
 
-    func test_historyHoverTileRoutesToHistoryPanel() throws {
-        let root = try projectRoot()
-        let sourceURL = root
-            .appendingPathComponent("Sources")
-            .appendingPathComponent("Sidekey")
-            .appendingPathComponent("DynamicIsland")
-            .appendingPathComponent("IslandView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    func test_historyHoverTileRoutesToHistoryPanel() {
+        let info = HoverToolRegistry.info(for: .clipboard)
+        XCTAssertEqual(info.title, "History")
+        XCTAssertEqual(info.kind, .inlinePanel)
+        XCTAssertEqual(info.sfSymbol, "clock.arrow.circlepath")
 
-        XCTAssertTrue(source.contains("let onOpenHistory: () -> HistoryStripMode"))
-        XCTAssertTrue(source.contains("onOpenHistory: actions.openHistory"))
+        let effect = HoverSlotRouter.effect(for: .clipboard)
+        XCTAssertEqual(effect, .openPanel(.history))
+        XCTAssertTrue(effect.requiresExpansion)
+        XCTAssertTrue(IslandHoverPanelMode.history.needsKeyboardFocus,
+                      "History must accept keyboard selection and Enter-to-paste.")
 
-        guard
-            let historyStart = source.range(of: "title: \"History\""),
-            let nextTileStart = source.range(of: "title: \"Vocab\"", range: historyStart.upperBound..<source.endIndex)
-        else {
-            return XCTFail("Could not find History/Vocab hover tiles in IslandView.swift")
-        }
-
-        // The History tile routes into the `.history` panel mode. The
-        // paste-target + remembered-mode capture used to live in this tile
-        // closure; the configurable-hotkeys feature moved it onto the
-        // `panelMode -> .history` transition so the ⌥N Hover-slot hotkey enters
-        // History through the SAME capture path as a click (D1). Tile and
-        // search both use the shared tool activation resolver.
-        let historyTile = String(source[historyStart.lowerBound..<nextTileStart.lowerBound])
-        XCTAssertTrue(historyTile.contains("action: { activateTool(tool) }"))
-        XCTAssertEqual(HoverSlotRouter.effect(for: .clipboard), .openPanel(.history))
-        XCTAssertTrue(source.contains("case .history: panelMode = .history"))
-        XCTAssertFalse(historyTile.contains("action: {}"))
-
-        // Capture lives on the shared panelMode transition, reachable by both
-        // the click and the hotkey path.
-        XCTAssertTrue(source.contains("if newMode == .history"))
-        XCTAssertTrue(source.contains("historyMode = onOpenHistory()"))
-        XCTAssertTrue(source.contains("historyTargetAppName = historyPasteTargetName()"))
+        let presentation = HoverToolPresentation.resolve(tool: .clipboard, mode: .smart,
+            inputLanguage: nil, outputLanguage: nil, meetingRecordingActive: false)
+        XCTAssertEqual(presentation.title, "History")
+        XCTAssertNil(presentation.status)
+        // The shared panel-mode transition's paste-target capture is covered
+        // separately by IslandHoverPanelControlTests, for click and hotkey entry.
     }
 
-    func test_hoverPanelMatchesProductionFiveSlotGrid() throws {
-        let root = try projectRoot()
-        let sourceURL = root
-            .appendingPathComponent("Sources")
-            .appendingPathComponent("Sidekey")
-            .appendingPathComponent("DynamicIsland")
-            .appendingPathComponent("IslandView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let controlSourceURL = root
-            .appendingPathComponent("Sources")
-            .appendingPathComponent("Sidekey")
-            .appendingPathComponent("DynamicIsland")
-            .appendingPathComponent("IslandDropModeControl.swift")
-        let controlSource = try String(contentsOf: controlSourceURL, encoding: .utf8)
+    @MainActor
+    func test_hoverToolsPreserveExistingActionsAndAccessibility() {
+        let expected: [(tool: HoverTool, title: String, effect: HoverSlotEffect)] = [
+            (.dropMode, "Drop Mode", .toggleDropMode),
+            (.clipboard, "History", .openPanel(.history)),
+            (.vocab, "Vocab", .openPanel(.vocabularyEditor)),
+            (.caseVault, "Case", .openPanel(.caseVault)),
+            (.filler, "Filler", .openPanel(.fillerEditor)),
+            (.inputLang, "Input Lang", .openPanel(.inputLanguagePicker)),
+            (.outputLang, "Output Lang", .openPanel(.outputLanguagePicker)),
+            (.hotkeys, "Hotkeys", .openHotkeys),
+            (.notes, "Notes", .openNotes),
+            (.meetingRecord, "Record", .toggleMeetingRecord),
+            (.monitor, "Monitor", .openPanel(.monitor)),
+            (.quit, "Quit", .quit),
+            (.settings, "Settings", .openSettings)
+        ]
+        XCTAssertEqual(Set(expected.map(\.tool)), Set(HoverTool.allCases))
+        for entry in expected {
+            XCTAssertEqual(HoverToolRegistry.info(for: entry.tool).title, entry.title)
+            XCTAssertEqual(HoverSlotRouter.effect(for: entry.tool), entry.effect)
+        }
 
-        XCTAssertTrue(source.contains("title: \"Case\""))
-        XCTAssertTrue(source.contains("systemImage: \"key.horizontal\""))
-        XCTAssertTrue(source.contains("panelMode = .caseVault"))
-        XCTAssertTrue(source.contains("title: \"Hotkeys\""))
-        XCTAssertTrue(source.contains("systemImage: \"keyboard\""))
-        // The Hotkeys/Notes/Quit tile actions are wrapped to also emit an
-        // island_control_click before invoking the original handler (Analytics
-        // Batch 2, M4); assert the handler is still invoked from the action.
-        XCTAssertTrue(source.contains("onOpenHotkeys()"))
-        XCTAssertTrue(source.contains("title: \"Filler\""))
-        XCTAssertTrue(source.contains("title: IslandLanguageControl.title"))
-        XCTAssertTrue(source.contains("title: IslandOutputLanguageControl.title"))
-        XCTAssertTrue(source.contains("title: \"Notes\""))
-        XCTAssertTrue(source.contains("systemImage: \"note.text\""))
-        XCTAssertTrue(source.contains("onOpenNotes()"))
-        XCTAssertTrue(source.contains("title: \"Quit\""))
-        XCTAssertTrue(source.contains("accessibilityLabel: \"Quit Exodia\""))
-        XCTAssertTrue(source.contains("onQuit()"))
-        XCTAssertFalse(source.contains("title: \"Exit\""))
-        XCTAssertTrue(source.contains("static let tileWidth: CGFloat = 55"))
-        XCTAssertTrue(source.contains("static let tileHeight: CGFloat = 72"))
-        XCTAssertTrue(source.contains(".frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .center)"))
-        XCTAssertTrue(source.contains("count: HoverLayoutStore.columns"))
-        XCTAssertTrue(controlSource.contains("static let compactCircleSize: CGFloat = 34"))
+        var invoked: [String] = []
+        var actions = IslandActions.noOp
+        actions.openHotkeys = { invoked.append("hotkeys") }
+        actions.openMeetings = { invoked.append("notes") }
+        actions.toggleMeetingRecord = { invoked.append("record") }
+        actions.quitApplication = { invoked.append("quit") }
+        actions.openSettings = { invoked.append("settings") }
+        for tool in [HoverTool.hotkeys, .notes, .meetingRecord, .quit, .settings] {
+            HoverSlotRouter.effect(for: tool).invoke(on: actions)
+        }
+        XCTAssertEqual(invoked, ["hotkeys", "notes", "record", "quit", "settings"])
+
+        let russian = AppLanguage(code: "ru", displayName: "Русский", englishName: "Russian")
+        func capsule(_ tool: HoverTool, mode: TranscriptionMode = .smart,
+                     input: AppLanguage? = nil, output: AppLanguage? = nil,
+                     recording: Bool = false) -> IslandHoverPanelControl {
+            let info = HoverToolRegistry.info(for: tool)
+            let presentation = HoverToolPresentation.resolve(tool: tool, mode: mode,
+                inputLanguage: input, outputLanguage: output, meetingRecordingActive: recording)
+            return IslandHoverPanelControl(title: presentation.title, systemImage: info.sfSymbol,
+                pdfResource: nil, label: presentation.status,
+                circleSize: IslandHoverPanelIconStyle.circleSize,
+                accessibilityLabel: presentation.title, action: {})
+        }
+        for tool in [HoverTool.clipboard, .vocab, .caseVault, .hotkeys, .filler, .notes, .monitor, .quit, .settings] {
+            XCTAssertEqual(capsule(tool).spokenAccessibilityLabel, HoverToolRegistry.info(for: tool).title)
+        }
+        XCTAssertEqual(capsule(.meetingRecord).spokenAccessibilityLabel, "Record, Not recording")
+        XCTAssertEqual(capsule(.meetingRecord, recording: true).spokenAccessibilityLabel, "Record, Recording")
+        XCTAssertEqual(HoverToolRegistry.info(for: .quit).description, "Quit Exodia")
+        XCTAssertEqual(capsule(.dropMode, mode: .fast).spokenAccessibilityLabel, "Drop Mode, Fast")
+        XCTAssertEqual(capsule(.dropMode, mode: .smart).spokenAccessibilityLabel, "Drop Mode, Smart")
+        XCTAssertEqual(capsule(.inputLang).spokenAccessibilityLabel, "Input Lang, Auto")
+        XCTAssertEqual(capsule(.inputLang, input: russian).spokenAccessibilityLabel, "Input Lang, Русский")
+        XCTAssertEqual(capsule(.outputLang).spokenAccessibilityLabel, "Output Lang, Off")
+        XCTAssertEqual(capsule(.outputLang, output: russian).spokenAccessibilityLabel, "Output Lang, Русский")
+        XCTAssertEqual(capsule(.outputLang, mode: .fast, output: russian).spokenAccessibilityLabel,
+                       "Output Lang, Smart only")
     }
 
     func test_languageTextBadgeKeepsMagneticPullButUsesStableRendering() {

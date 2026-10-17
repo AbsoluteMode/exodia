@@ -1,12 +1,15 @@
 # Add or change a hover tool
 
 The user chooses any number of tools in **Settings, Toolbox**. Selected tools wrap
-into rows of five. Settings stays last and cannot be removed. The editor always
+into rows of three 139x64-point capsules. Each shows an icon and title inside,
+with a current status when the tool has state. Settings stays last and cannot
+be removed. The editor always
 shows an add target; the live hover grid shows the selected tools. The search
 field above it searches the full catalog and launches a tool without pinning it.
-Positions one
-through five have configurable positional hotkeys. Tools in later positions are
-accessible by pointer.
+The drawer is 457 points wide, with at most four visible rows; the thirteenth
+and later selections scroll without being removed. New-install defaults have six
+tools and two rows; existing selections persist. Positions one through five have
+configurable positional hotkeys, independent of the column count.
 
 ## Source map
 
@@ -18,8 +21,10 @@ All paths below start at `Sources/Sidekey/`.
 | User selection, reorder, insertion, removal and column count | `Settings/HoverLayoutStore.swift` |
 | Tool to activation effect, inline panel requests | `DynamicIsland/HoverSlotRouter.swift` |
 | Action closures and preview defaults | `DynamicIsland/IslandActions.swift` |
-| Native controls, inline views and hover height | `DynamicIsland/IslandView.swift`, `IslandDropModeControl.swift` |
-| Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `IslandPanel.swift` |
+| Capsule icon/title/status and explicit feedback | `DynamicIsland/IslandHoverPanelControl.swift`, `DynamicIsland/HoverToolPresentation.swift` |
+| Inline views, shared three-column geometry and bounded scrolling | `DynamicIsland/IslandView.swift`, `DynamicIsland/IslandDropModeControl.swift` |
+| Inline monitoring, picker and refresh lifecycle | `Monitor/MonitorHoverPanel.swift`, `Monitor/MonitorStore.swift` |
+| Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `DynamicIsland/IslandPanel.swift` |
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
 | Drag/drop catalog and selected layout | `Settings/ToolboxSettingsView.swift` |
 | App services and hotkey dispatch | `AppDelegate.swift` (`onHoverSlotActivated`) |
@@ -41,10 +46,15 @@ All paths below start at `Sources/Sidekey/`.
 5. Keep `HoverLayoutStore.columns` and the shared height calculation aligned. A
    new row must resize the AppKit panel and its hit region, not just the SwiftUI
    contents. `IslandHoverControlsLayout` centers fixed-height buttons; shortcut
-   hints overlay the top edge without moving them. Do not fill the user's layout
-   with defaults after a removal.
+   hints overlay the top edge without moving them. Keep native hit zones in sync
+   with the 457-point drawer while compact pill/music stay 310 points. Preserve
+   scroll content beyond four visible rows; do not fill or truncate saved layouts.
 6. Preserve Settings as the final selected tool. A new tool belongs in the catalog;
    adding it does not authorize replacing the user's existing selections.
+7. Use `HoverToolPresentation` for real mode/language/recording status, not a
+   store read inside the control or an invented Enabled status for navigation.
+   Monitor is `.inlinePanel` / `.openPanel(.monitor)` for every hover launcher;
+   keep its dashboard picker and Back flow inside the drawer.
 
 `scaffold-hover` creates an isolated view and checklist, not a registered feature.
 The native app has no executable plugin loader. Integrate the requested source
@@ -53,13 +63,16 @@ change and rebuild it with the canonical development script.
 ## Checks
 
 ```bash
-python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests'
-python3 scripts/customize.py run
+python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests|MonitorDashboardTests'
+python3 scripts/customize.py build
 ```
 
 Inspect one row and multiple rows, add/reorder/remove, Settings locking, relaunch
 persistence and keyboard activation of the first five positions. Verify that a
-click in the extra rows reaches the tool and that the panel collapses correctly.
+scrolling preserves and reaches tool 13+, the larger drawer matches its native
+hit region, and the compact pill/music dimensions are unchanged. Check pure
+status updates and Monitor picker -> dashboard -> Back in the same drawer.
+Use offscreen checks; do not open GUI test windows over the user's work.
 Search for an unpinned Output Lang, verify keyboard and pointer activation,
 clear with Escape, and check that clicking outside releases text focus. Ordinary
 hover must not take focus from another app.
@@ -76,7 +89,7 @@ For flat glass or missing hover feedback, read the current
 [native-glass and interaction decision](../../.project-docs/decisions/2026-10-17-native-hover-glass.md).
 The native path uses one adaptive Regular backdrop on an independent background
 shape per
-card, with explicit foreground circular lenses and passive highlights. It does
+card, with foreground capsules and passive highlights. It does
 not wrap the foreground in glass or add nested native glass effects.
 The search field and History use transparent foreground lenses, not black
 surfaces; the native search cell keeps its geometry while omitting the bezel

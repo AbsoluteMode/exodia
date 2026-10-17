@@ -3,14 +3,15 @@ import XCTest
 
 @MainActor
 final class IslandTileTitleTests: XCTestCase {
-    func test_multi_word_title_breaks_per_word() {
-        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Input Language"), "INPUT\nLANGUAGE")
-        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Drop Mode"), "DROP\nMODE")
-        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Output Language"), "OUTPUT\nLANGUAGE")
+    func testMultiwordCapsuleTitlesPreserveSpacesWithoutForcedLineBreaks() {
+        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Input Language"), "Input Language")
+        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Drop Mode"), "Drop Mode")
+        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Output Language"), "Output Language")
     }
 
-    func test_single_word_title_stays_one_line() {
-        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Hotkeys"), "HOTKEYS")
-        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Filler"), "FILLER")
+    func testCapsuleTitlesPreserveTheirOriginalCase() {
+        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Hotkeys"), "Hotkeys")
+        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Filler"), "Filler")
+        XCTAssertEqual(IslandHoverPanelControl.displayTitle("Case"), "Case")
     }
 }

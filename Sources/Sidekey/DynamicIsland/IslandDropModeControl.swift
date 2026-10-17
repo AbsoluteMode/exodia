@@ -46,21 +46,48 @@ enum IslandGraphiteHoverControlStyle {
     }
 }
 
-/// The fixed button stays centered in each row. Shortcut hints are overlaid
-/// above it, so hidden hints and the second row cannot shift the button.
+/// Capsule targets stay vertically centered in each row. The grid viewport
+/// shows at most four rows; additional selected tools remain in scroll content.
+/// Shortcut hints overlay the row without changing the capsule's resting center.
 enum IslandHoverControlsLayout {
     static let rowVerticalInset: CGFloat = 8
     static let gridVerticalInset: CGFloat = 8
     static let rowSpacing: CGFloat = 8
+    static let horizontalInset: CGFloat = 12
+    static let columnSpacing: CGFloat = 8
+    static let maxVisibleRows = 4
     static let descriptionHeight: CGFloat = 32
     static let dividerHeight: CGFloat = 1
     static var rowHeight: CGFloat { IslandHoverPanelControl.tileHeight + rowVerticalInset * 2 }
     static var rowStride: CGFloat { rowHeight + rowSpacing }
     static var hintOffset: CGFloat { KeycapView.tinySize + 1 }
 
+    /// Keep one row for the Settings-only/empty transient state. Subtracting
+    /// before division also avoids overflowing when the supplied count is large.
+    static func rowCount(toolCount: Int) -> Int {
+        (max(1, toolCount) - 1) / HoverLayoutStore.columns + 1
+    }
+
+    static func visibleRowCount(toolCount: Int) -> Int {
+        min(maxVisibleRows, rowCount(toolCount: toolCount))
+    }
+
+    static func requiresScrolling(toolCount: Int) -> Bool {
+        rowCount(toolCount: toolCount) > maxVisibleRows
+    }
+
+    /// Full content height; the ScrollView must retain every selected tool.
+    static func contentHeight(toolCount: Int) -> CGFloat {
+        height(rows: rowCount(toolCount: toolCount))
+    }
+
+    /// Visible grid height used by both the SwiftUI viewport and AppKit hit band.
     static func gridHeight(toolCount: Int) -> CGFloat {
-        let rows = max(1, (toolCount + HoverLayoutStore.columns - 1) / HoverLayoutStore.columns)
-        return rowHeight + CGFloat(rows - 1) * rowStride + gridVerticalInset * 2
+        height(rows: visibleRowCount(toolCount: toolCount))
+    }
+
+    private static func height(rows: Int) -> CGFloat {
+        rowHeight + CGFloat(rows - 1) * rowStride + gridVerticalInset * 2
     }
 }
 
@@ -71,6 +98,14 @@ enum IslandDropModeControl {
     /// grid centres itself within this space.
     /// Minimum: edgeInset(5) + chipH(20) + startY(48) + 3*minimumStride(72) = 145.
     static let hoverPanelHeight: CGFloat = 145
+
+    /// All detached hover panels share this width while the compact pill keeps
+    /// its notch-derived width. Music remains compact-width above the drawer.
+    static var controlsHoverPanelWidth: CGFloat {
+        CGFloat(HoverLayoutStore.columns) * IslandHoverPanelControl.tileWidth
+            + CGFloat(HoverLayoutStore.columns - 1) * IslandHoverControlsLayout.columnSpacing
+            + IslandHoverControlsLayout.horizontalInset * 2
+    }
 
     /// Derive the host hit band from the same row geometry used by the view.
     static func controlsHoverPanelHeight(toolCount: Int) -> CGFloat {

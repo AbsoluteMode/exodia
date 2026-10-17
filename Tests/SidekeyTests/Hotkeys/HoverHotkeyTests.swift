@@ -180,6 +180,17 @@ final class HoverHotkeyTests: XCTestCase {
         XCTAssertEqual(HoverSlotRouter.effect(for: .clipboard), .openPanel(.history))
     }
 
+    func test_monitor_slot_expands_inline_without_opening_a_standalone_window() {
+        var windowOpenCount = 0
+        var actions = IslandActions.noOp
+        actions.openMonitor = { windowOpenCount += 1 }
+        let effect = HoverSlotRouter.effect(for: .monitor)
+        XCTAssertEqual(effect, .openPanel(.monitor))
+        XCTAssertTrue(effect.requiresExpansion)
+        effect.invoke(on: actions)
+        XCTAssertEqual(windowOpenCount, 0)
+    }
+
     func test_inline_panel_effects_require_expansion_action_effects_do_not() {
         // .action/.navigate effects can run without the drawer open (they open
         // windows / toggle state); .openPanel effects only make sense expanded.

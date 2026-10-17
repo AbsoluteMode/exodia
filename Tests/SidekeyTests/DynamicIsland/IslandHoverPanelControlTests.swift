@@ -15,7 +15,7 @@ final class IslandHoverPanelControlTests: XCTestCase {
 
     func test_hoverPanelControlsUseOriginalButtonActionPath() throws {
         let source = try Self.source(
-            "Sources/Sidekey/DynamicIsland/IslandView.swift"
+            "Sources/Sidekey/DynamicIsland/IslandHoverPanelControl.swift"
         )
         let controlSource = try XCTUnwrap(
             Self.structBody(named: "IslandHoverPanelControl", in: source)
@@ -116,7 +116,7 @@ final class IslandHoverPanelControlTests: XCTestCase {
 
         XCTAssertTrue(source.contains("case caseVault"))
         XCTAssertTrue(source.contains("IslandCaseVaultPanel("))
-        XCTAssertTrue(source.contains("title: \"Case\""))
+        XCTAssertTrue(source.contains("HoverToolPresentation.resolve("))
         XCTAssertTrue(source.contains("panelMode = .caseVault"))
     }
 

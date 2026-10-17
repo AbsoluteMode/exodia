@@ -40,7 +40,10 @@ Distribution: [community binaries and updates without Apple Developer](decisions
 The earlier [Apple-notarized DMG policy](decisions/2026-09-10-public-installation.md)
 is historical; runtime installation and resource checks remain current.
 
-Hover appearance: [native Apple glass](decisions/2026-10-17-native-hover-glass.md), with a legacy material on older macOS versions.
+Hover uses [three-column native-glass capsules](decisions/2026-10-17-native-hover-glass.md),
+with current status inside each control and a legacy material on older macOS.
+Monitor opens its dashboard picker inside the same hover drawer; see
+[dashboard contracts](../docs/customization/dashboards.md).
 
 Public source: [AbsoluteMode/exodia](https://github.com/AbsoluteMode/exodia).
 Naming and storage compatibility: [Exodia rename](decisions/2026-10-17-exodia-name.md).

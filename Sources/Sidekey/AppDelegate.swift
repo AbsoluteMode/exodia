@@ -946,7 +946,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openMeetings: { [weak self] in
                 self?.openMeetingsWindowFromIsland()
             },
-            openMonitor: { MonitorWindowController.shared.show() },
+            openMonitor: { [weak self] in
+                guard let self else { return }
+                self.registerIslandHotkeyActivity()
+                AppState.shared.programmaticHoverExpansion = true
+                self.hoverPanelRequestToken += 1
+                AppState.shared.programmaticHoverPanelRequest = HoverPanelRequest(
+                    panel: .monitor, token: self.hoverPanelRequestToken
+                )
+            },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .models)
             },

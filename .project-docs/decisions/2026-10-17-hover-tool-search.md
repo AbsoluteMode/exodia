@@ -23,7 +23,8 @@ related: [../project.md, 2026-10-17-native-hover-glass.md]
 # Hover catalog search
 
 The controls drawer places a search field above the user's selected tools.
-An empty query shows the saved grid. A nonempty query searches the full catalog
+An empty query shows the saved three-column capsule grid, with at most four
+visible rows and scrolling for additional selected tools. A nonempty query searches the full catalog
 by title, description and English/Russian aliases, prioritizing title matches.
 Results replace the grid area and can scroll; the drawer keeps its current
 height. A query with no matches shows an empty-state message.
@@ -31,6 +32,8 @@ height. A query with no matches shows an empty-state message.
 Choosing a result invokes the same tool effect as its tile and does not add,
 remove or reorder saved tools. In particular, Output Lang remains discoverable
 when absent from the saved grid and retains the existing Smart-mode requirement.
+Monitor results open the inline dashboard picker in the same hover drawer, just
+like its capsule and positional hotkey; they do not launch a separate window.
 
 Clicking the search field explicitly acquires keyboard focus. Merely hovering
 does not take focus from the user's app. Up/Down navigate results, Return opens
@@ -72,3 +75,10 @@ SwiftUI fallback activation while remaining non-key. See the precise checks and
 limits in [the hover-glass decision](2026-10-17-native-hover-glass.md). This does
 not repeat full search or hover acceptance in the installed production app; the
 earlier search check and the component fixture cover different verification scopes.
+
+The 2.2.3 capsule/inline-Monitor candidate passed 2,947 tests (8 skipped, 0
+failures), with 21 offscreen layout/text renders. These do not prove native
+pointer, physical keyboard input or real Monitor-button interaction. Earlier
+narrow-grid fixtures cover a different layout; production acceptance stays
+separate. Use offscreen checks only, without displaying test windows over the
+user's work.

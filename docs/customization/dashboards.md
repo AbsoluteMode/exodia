@@ -5,6 +5,25 @@ ez-monitor. A collector obtains real measurements and replaces the snapshot;
 the renderer only displays data. Snapshot content cannot execute a shell command,
 install software or grant access to a server.
 
+## Open Monitor in hover
+
+Select Monitor from the hover capsule, catalog search or its positional hotkey.
+All three use `.openPanel(.monitor)` and show `MonitorHoverPanel` in the same
+457-point drawer, with 344-point content height. Choose **Server status** or a
+custom dashboard; **Back** returns to the picker, then **Tools** returns to the
+capsules. Refresh uses the existing store. The panel starts polling when shown
+and stops it on disappearance, reusing `MonitorStore` and the existing collectors.
+No hover launch opens a separate window; the legacy `openMonitor` callback also
+requests the inline panel. The old standalone window class is retained only for
+compatibility.
+
+The inline view does not change snapshot validation, collector permissions or
+private storage. The 2.2.3 candidate passed 2,947 tests (8 skipped, 0 failures)
+and offscreen layout/text checks; actual native-pointer and Monitor-button
+interaction was not tested live. Earlier standalone-window verification does
+not prove the inline route. Production acceptance stays separate. Do not show
+GUI test windows over the user's work; use offscreen checks.
+
 Generate a disconnected starting point:
 
 ```bash

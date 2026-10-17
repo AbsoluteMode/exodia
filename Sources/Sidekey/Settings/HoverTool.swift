@@ -81,7 +81,7 @@ enum HoverToolRegistry {
             return HoverToolInfo(title: "Record", sfSymbol: "record.circle", kind: .action,
                                  description: "Start or stop a meeting recording")
         case .monitor:
-            return HoverToolInfo(title: "Monitor", sfSymbol: "waveform.path.ecg", kind: .action,
+            return HoverToolInfo(title: "Monitor", sfSymbol: "waveform.path.ecg", kind: .inlinePanel,
                                  description: "Open server status and custom dashboards")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
