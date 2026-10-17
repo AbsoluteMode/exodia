@@ -1148,7 +1148,9 @@ struct IslandView: View {
                                         + IslandDropModeControl.musicStripBottomGap
                                     : 0)
                         )
-                        .islandHoverGlassSurface(showGlass: hoverPanelMode != .history)
+                        .islandHoverGlassSurface(
+                            showGlass: hoverPanelMode != .history || IslandHoverGlass.usesNativeLiquidGlass
+                        )
                     }
                     .frame(width: compactWidth, height: activeHoverPanelHeight)
                     // Hover trigger zone for the lower panel (gap + drawer as
@@ -2514,6 +2516,8 @@ private struct IslandDropModeHoverPanel: View {
                 onCommand: handleSearchCommand
             )
             .frame(height: IslandHoverToolSearch.fieldHeight)
+            .padding(.horizontal, IslandHoverGlass.usesNativeLiquidGlass ? 8 : 0)
+            .islandHoverInputLens(cornerRadius: IslandHoverToolSearch.fieldHeight / 2)
             .padding(.horizontal, 10)
             .padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
 

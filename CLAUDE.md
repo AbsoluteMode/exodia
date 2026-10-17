@@ -127,7 +127,7 @@ Local LLM (Apple Silicon):
   docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
 
 Hover materials:
-  On macOS 26+, each drawer/music-strip card has one native SwiftUI .clear
+  On macOS 26+, each drawer/music-strip card has one native SwiftUI .regular
   backdrop on an independent transparent RoundedRectangle in content.background,
   not a glassEffect wrapping the entire foreground. Lenses, rims and icons keep
   their own colors. Circular controls are explicit foreground lenses: translucent
@@ -144,10 +144,14 @@ Hover materials:
   legacy rendering was superseded after the user's regression feedback.
   Keep centered rows, fixed hint overlays and shared geometry: one/two-row
   controls heights remain 187/283 pt, with separate 8 pt panel gaps. Native optics
-  were inspected in the unique native v3 component fixture, including centered
-  one/two rows and non-key pointer activation without duplicate fallback. That
-  fixture does not establish installed production-app/external-desktop hover
-  acceptance; report those checks separately. WHY:
+  were inspected in the earlier Clear v3 component fixture. Later production
+  feedback on 2.2.1 exposed white-background contrast and black search/History
+  surfaces; v3 does not validate the current Regular refinement. Controlled v4
+  checks confirmed the actual search field's focus, AX-driven query binding,
+  two-stage Escape and legibility over white/pattern backdrops. They do not
+  establish physical typing or installed production acceptance. Do not show test
+  or fixture windows over the user's work; further checks must stay offscreen,
+  with compositor limits stated explicitly. WHY:
   .project-docs/decisions/2026-10-17-native-hover-glass.md
 
 Hover tool search and pointer routing:
@@ -155,6 +159,12 @@ Hover tool search and pointer routing:
   including tools not pinned in Toolbox. Activation shares HoverSlotRouter and
   never changes the saved layout. Only clicking the field acquires keyboard
   focus; ordinary hover and active visual treatment leave the user's app focused.
+  On macOS 26+, NSSearchField uses a custom cell drawInterior without the black
+  bezel, keeping native text/search/cancel geometry; its field editor is clear.
+  A translucent input lens/rim supplies the foreground surface without child
+  native glass. History shares the drawer's Regular backdrop, uses translucent
+  rows/hints and a separate preview backdrop. macOS 14/15 fallback is unchanged;
+  Case/Vocab/Filler retain their existing transparent panels.
   Internal endEditing does not resign the key window between button down/up;
   captured activation or actual window resignation releases text-entry focus.
   Up/Down select, Return activates, Escape clears the query then releases focus.

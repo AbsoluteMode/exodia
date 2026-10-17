@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Sidekey
 
@@ -32,6 +33,52 @@ final class IslandHoverToolSearchTests: XCTestCase {
         XCTAssertEqual(IslandHoverToolSearch.nextSelection(current: 2, direction: 1, count: 3), 0)
         XCTAssertEqual(IslandHoverToolSearch.nextSelection(current: 0, direction: 1, count: 1), 0)
         XCTAssertNil(IslandHoverToolSearch.nextSelection(current: 0, direction: 1, count: 0))
+    }
+
+    @MainActor
+    func testGlassSearchCellPreservesNativeTextAndButtonInsets() throws {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            let native = NSSearchField(frame: .zero)
+            let transparent = IslandHoverSearchNativeField(frame: .zero)
+            for field in [native, transparent] {
+                field.font = NSFont.systemFont(ofSize: 12)
+                field.stringValue = "output language"
+            }
+            let nativeCell = try XCTUnwrap(native.cell as? NSSearchFieldCell)
+            let glassCell = try XCTUnwrap(transparent.cell as? IslandHoverSearchGlassCell)
+            XCTAssertEqual(transparent.isBezeled, native.isBezeled)
+            for width in [CGFloat(150), 320, 500] {
+                let bounds = CGRect(x: 0, y: 0, width: width, height: IslandHoverToolSearch.fieldHeight)
+                // Native search/cancel button geometry also reads the actual
+                // control bounds, not only the rect passed to the cell method.
+                for field in [native, transparent] {
+                    field.frame = bounds
+                    field.layoutSubtreeIfNeeded()
+                }
+                XCTAssertEqual(glassCell.searchTextRect(forBounds: bounds), nativeCell.searchTextRect(forBounds: bounds))
+                XCTAssertEqual(glassCell.searchButtonRect(forBounds: bounds), nativeCell.searchButtonRect(forBounds: bounds))
+                XCTAssertEqual(glassCell.cancelButtonRect(forBounds: bounds), nativeCell.cancelButtonRect(forBounds: bounds))
+            }
+            return
+        }
+        #endif
+        throw XCTSkip("Native transparent search cell is used on macOS 26+")
+    }
+
+    @MainActor
+    func testGlassSearchEditorStaysTransparentOnRepeatedEditingEntry() {
+        let cell = IslandHoverSearchGlassCell(textCell: "output")
+        let editor = NSTextView(frame: CGRect(x: 0, y: 0, width: 300, height: 30))
+        for _ in 0..<2 {
+            // Simulate a shared field editor arriving with another field's paint.
+            editor.drawsBackground = true
+            editor.backgroundColor = .black
+            let configured = cell.setUpFieldEditorAttributes(editor)
+            XCTAssertTrue(configured === editor)
+            XCTAssertFalse(editor.drawsBackground)
+            XCTAssertEqual(editor.backgroundColor.alphaComponent, 0)
+        }
     }
 
     @MainActor

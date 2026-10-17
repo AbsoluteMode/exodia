@@ -72,7 +72,7 @@ struct HistoryHoverPreviewAnchor: Equatable {
     let rowFrame: CGRect
 }
 
-/// Non-interactive dark bubble shown to the LEFT of the hover panel while a
+/// Non-interactive preview shown to the LEFT of the hover panel while a
 /// row with overflowing / visual content is hovered.
 struct HistoryHoverPreviewBubble: View {
     let card: HistoryStripCard
@@ -81,16 +81,22 @@ struct HistoryHoverPreviewBubble: View {
     let assetsDirectory: URL?
 
     var body: some View {
-        content
-            .padding(HistoryHoverPreviewPolicy.contentPadding)
-            .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Color.black.opacity(0.46))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
-                    )
-            )
+        if IslandHoverGlass.usesNativeLiquidGlass {
+            content
+                .padding(HistoryHoverPreviewPolicy.contentPadding)
+                .islandHoverGlassSurface(cornerRadius: 11)
+        } else {
+            content
+                .padding(HistoryHoverPreviewPolicy.contentPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(Color.black.opacity(0.46))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                        )
+                )
+        }
     }
 
     @ViewBuilder

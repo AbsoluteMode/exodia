@@ -26,8 +26,8 @@ enum HistoryHoverContent {
 }
 
 enum HistoryHoverVisualStyle {
-    // The History panel deliberately has no shared slab behind its rows. Keep
-    // each row opaque enough that wallpaper text cannot show through it.
+    // Legacy rows have no shared optical backdrop. Preserve their readable
+    // dark fill on older macOS; native panels use foreground lenses instead.
     static let rowIdleOpacity = 0.82
     static let rowHoverOpacity = 0.90
     static let hintOpacity = 0.82
@@ -256,14 +256,18 @@ struct HistoryHoverView: View {
             .minimumScaleFactor(0.7)
             .frame(maxWidth: .infinity)
             .frame(height: Self.hintHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black.opacity(HistoryHoverVisualStyle.hintOpacity))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                    )
-            )
+            .background {
+                if IslandHoverGlass.usesNativeLiquidGlass {
+                    historyForegroundLens(cornerRadius: 10, isHovered: false)
+                } else {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.black.opacity(HistoryHoverVisualStyle.hintOpacity))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                        )
+                }
+            }
     }
 
     private func title(for mode: HistoryStripMode) -> String {
@@ -316,18 +320,32 @@ private struct HistoryHoverRow: View {
     }
 }
 
+@ViewBuilder
 private func rowBackground(isHovered: Bool) -> some View {
-    // Dark standalone cards: the panel itself has no glass backdrop, so each
-    // row carries its own dark surface — translucent white washes out over
-    // light wallpapers.
-    RoundedRectangle(cornerRadius: 11, style: .continuous)
-        .fill(Color.black.opacity(
-            isHovered
-                ? HistoryHoverVisualStyle.rowHoverOpacity
-                : HistoryHoverVisualStyle.rowIdleOpacity
-        ))
-        .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(Color.white.opacity(isHovered ? 0.22 : 0.12), lineWidth: 0.5)
-        )
+    if IslandHoverGlass.usesNativeLiquidGlass {
+        historyForegroundLens(cornerRadius: 11, isHovered: isHovered)
+    } else {
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .fill(Color.black.opacity(
+                isHovered
+                    ? HistoryHoverVisualStyle.rowHoverOpacity
+                    : HistoryHoverVisualStyle.rowIdleOpacity
+            ))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.white.opacity(isHovered ? 0.22 : 0.12), lineWidth: 0.5)
+            )
+    }
+}
+
+/// The drawer owns one native optical backdrop. Rows remain translucent
+/// foreground lenses so they neither cover it nor stack another glass effect.
+private func historyForegroundLens(cornerRadius: CGFloat, isHovered: Bool) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    return shape
+        .fill(Color.white.opacity(isHovered ? 0.16 : 0.06))
+        .overlay {
+            IslandHoverGlassRim(shape: shape, highlighted: isHovered)
+        }
+        .allowsHitTesting(false)
 }
