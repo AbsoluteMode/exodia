@@ -2,7 +2,7 @@
 id: native-hover-glass-2026-10-17
 type: decision
 title: Native Apple Liquid Glass for hover surfaces
-summary: Use adaptive native glass for the hover drawer and controls on macOS 26, retaining the earlier material on older systems.
+summary: Use clear native glass with passive lens highlights, restore explicit hover feedback and preserve centered geometry and non-key pointer routing.
 status: confirmed
 tags: [macos, hover, liquid-glass, swiftui, accessibility]
 canonical_for: [hover-glass-material]
@@ -11,55 +11,145 @@ sources:
   - type: user-confirmed
     reference: User request on 2026-10-17 to delegate Apple Liquid Glass hover styling to the Argon agent, with a Control Center reference image.
     confirmed_at: 2026-10-17
+  - type: user-confirmed
+    reference: User feedback on 2026-10-17 reported flat gray glass, off-center buttons, missing hover feedback and unreliable clicks; the supplied LiquidButton reference requested a transparent lens with a bright edge and inner shine.
+    confirmed_at: 2026-10-17
   - type: repository
     reference: Sources/Sidekey/DynamicIsland/IslandHoverGlass.swift
     confirmed_at: 2026-10-17
   - type: repository
     reference: Sources/Sidekey/DynamicIsland/IslandView.swift
     confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/DynamicIsland/IslandHoverHitBridge.swift
+    confirmed_at: 2026-10-17
+  - type: repository
+    reference: Sources/Sidekey/DynamicIsland/IslandDropModeControl.swift
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: build/visual-reference/exodia-hover-lenses-v3.png, local native fixture screenshot inspected on 2026-10-17; the bitmap is not committed.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-hover-fix-full-tests.log, 2928 tests with 8 skipped and 0 failures before the final presentation-only background modifier.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-hover-v3-focused-tests.log, 94 focused tests with 0 failures after the final background modifier.
+    confirmed_at: 2026-10-17
+  - type: url
+    reference: https://developer.apple.com/videos/play/wwdc2025/323/
+    confirmed_at: 2026-10-17
+  - type: url
+    reference: https://developer.apple.com/documentation/swiftui/environmentvalues/appearsactive
+    confirmed_at: 2026-10-17
+  - type: url
+    reference: https://github.com/i-am-logger/macos-liquid-glass/blob/ccf01c88648400562c55a1366151f6f0c8b6f663/examples/common/mod.rs#L654-L671
+    confirmed_at: 2026-10-17
   - type: url
     reference: https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views
     confirmed_at: 2026-10-17
-related: [../project.md]
+related: [../project.md, 2026-10-17-hover-tool-search.md]
 ---
 
 # Native hover glass
 
+## Context
+
+The first native-glass change used Regular material and delegated pointer
+feedback to the native interactive effect. The user subsequently reported flat
+gray glass, buttons displaced from the center, lost hover feedback and unreliable
+clicks. Their LiquidButton reference requested a transparent lens with a bright
+edge and inner shine. These reports supersede the earlier visual and interaction
+policy; they are not a claim that every macOS backdrop renders identically.
+
 ## Decision
 
-On macOS 26 and later, apply SwiftUI `glassEffect(.regular, in:)` to the actual
-hover drawer content and the separate music-strip content. Circular controls use
-`regular.interactive()` at their existing 44-point footprint, within a shared
-`GlassEffectContainer`. Do not cover the native material with the earlier dark
-wash, specular ellipse or hand-painted rims. Foreground labels and tool actions
-remain part of the existing hover view.
+On macOS 26 and later, apply one SwiftUI `glassEffect(.clear, in:)` backdrop per
+drawer or music-strip card, on an independent transparent rounded rectangle
+inside `content.background`. Do not apply the material modifier to the whole
+foreground hierarchy: the lens gradient, rim and icon keep their independent
+colors, matching the user's separate-layer reference. The 44-point circular
+controls are foreground
+lenses made from a translucent gradient fill, `IslandHoverGlassRim` and the icon;
+they do not apply a child native glass effect. Apple's [WWDC25 session 323](https://developer.apple.com/videos/play/wwdc2025/323/)
+explains that glass does not sample other glass. Avoid layering independent
+native backdrops on top of the parent card. The existing controls container
+remains, with explicit centered layout. Set `appearsActive=true` on the optical
+background's environment without making the utility panel key. Apple's [appearsActive documentation](https://developer.apple.com/documentation/swiftui/environmentvalues/appearsactive)
+controls preferred active styling; acquiring keyboard focus is a separate action.
 
-The native path uses system pointer/press responses. The earlier magnetic
-translation and manual pressed scaling remain only on the legacy path. Tool
-ordering, row counts, panel heights, positional shortcuts and the history
-panel's transparent presentation retain their existing behavior.
+Add `IslandHoverGlassRim` as a thin specular edge and inner highlight, preserving
+the native backdrop. The overlay uses `allowsHitTesting(false)` and never routes
+a click. This is an original native implementation guided by the user's visual
+reference; no third-party source was copied or dependency added. The
+[pinned MIT upstream example](https://github.com/i-am-logger/macos-liquid-glass/blob/ccf01c88648400562c55a1366151f6f0c8b6f663/examples/common/mod.rs#L654-L671)
+selects Clear rather than Regular and describes its own observed opacity
+contrast. It is a reference, not proof of Exodia's visual result.
 
-Builds with an older Swift toolchain, or runtimes before macOS 26, retain the
-layered material. Native APIs have compiler and runtime availability guards;
-the application deployment floor stays at macOS 14.2.
+Restore explicit magnetic movement and hover/pressed scale feedback on both the
+native and legacy paths. Reduce Motion suppresses translation, scaling and their
+spring animations. The native material does not replace the control's explicit
+feedback contract.
 
-## Rationale and supersession
+`IslandHoverControlsLayout` centers the complete fixed-height button in each
+row. Shortcut hints overlay its top edge and do not consume layout height.
+Shared geometry keeps one and two rows at 187 and 283 points respectively;
+ordering, row counts, positional hotkeys and separate eight-point panel gaps
+retain their existing behavior.
 
-The June decision in `docs/decisions/2026-06-16-island-music-progress-and-gap.md`
-preferred a fixed wash to keep differently positioned surfaces the same color,
-and described an older build SDK without native glass symbols. The current
-SDK supports these symbols, and the user's explicit choice is the native Apple
-appearance. Backdrop-dependent color differences between separate surfaces are
-therefore accepted. The existing separate cards and eight-point gaps stay.
+Pointer dispatch belongs to `IslandHoverHitBridge` at `NSWindow.sendEvent`, using
+measured target NSView frames clipped to visible scroll and region bounds. An
+activation requires mouse-down and mouse-up on the same unchanged control.
+Leaving a captured target cancels activation even if the pointer returns.
+Context/geometry changes and Escape also cancel it while retaining ownership of
+the eventual mouse-up. Hiding the panel discards the pending sequence without
+activation. Geometry reporters never intercept clicks themselves.
+Search focus is released by captured activation or actual window resignation,
+not by an internal field-editor transition between down and up.
 
-The target is Apple's public native material, not a claimed pixel-identical
-reimplementation of private Control Center rendering. Native optical effects
-require the window compositor; an offscreen bitmap of a hosting view alone does
-not verify their appearance. Use live native previews for visual inspection and
-focused geometry/action tests for functional regressions.
+## Alternatives and supersession
+
+The earlier same-day policy used `regular.interactive()` and restricted manual
+motion and painted rims to older macOS. An intermediate Clear variant still put
+native glass on both parent cards and child circles; the current refinement
+replaces those child effects with foreground lenses. These earlier approaches
+are superseded by the user's regression feedback and transparent-lens reference.
+The prior requirement to apply native glass to the actual foreground content
+for integrated vibrancy is also superseded: the optical backdrop is independent
+of the foreground lenses and their colors. Merely increasing blur or making the
+window key would not address the requested feedback and non-activating behavior.
+
+The older layered material remains the fallback for runtimes before macOS 26
+and older toolchains. Availability guards preserve the macOS 14.2 deployment
+floor. This decision does not restore the June fixed opaque wash to the native
+path or flatten live glass into an offscreen bitmap.
+
+## Verification scope
+
+The unique v3 native fixture was visually inspected through CUA on 2026-10-17.
+White foreground edges and translucent lenses were visible, and the one-row and
+two-row layouts were centered. A Settings click set the one-row Native counter
+to 1; Monitor and Case clicks set the cumulative two-row Native counter to 1
+and then 2. Each click activated once, SwiftUI fallback stayed 0, and the utility
+remained non-key (`liveKey=false`). The local
+screenshot is `build/visual-reference/exodia-hover-lenses-v3.png`; the bitmap is
+not committed.
+
+This verifies the component fixture over its controlled checkerboard backdrop.
+It does not establish installed production-app behavior, sampling of the user's
+external desktop, complete hover/accessibility acceptance or optical equality to
+Control Center. Those checks must be reported separately; fixture results do not
+establish a public release or successful production installation.
+
+The full suite passed 2,928 tests with 8 skipped and 0 failures before the final
+presentation-only move of Clear glass onto its independent background shape.
+Focused tests cover target identity, drag cancellation, viewport clipping, row
+geometry and search field-editor transitions. The final focused run passed 94
+tests with 0 failures after that last modifier; the earlier full run is not
+presented as a rerun after it.
 
 ## Sources
 
-The dated user request, current source files and official Apple API guide in the
-frontmatter establish this decision. The Argon worker authored the native
-surface/container adapter; the calling agent integrated it and owns validation.
+The dated user requests and feedback, current native source files, Apple's
+public API documentation and the pinned MIT example establish the decision.
+The upstream reference explains the material choice; Exodia's own implementation
+and live inspection determine its behavior.

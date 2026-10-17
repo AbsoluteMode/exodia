@@ -13,6 +13,46 @@ final class IslandDropModeControlTests: XCTestCase {
         XCTAssertEqual(threeRows - twoRows, twoRows - single)
     }
 
+    func test_controlsGridFillsSpaceBetweenSearchAndDescriptionForEveryRowCount() {
+        for count in [1, 5, 6, 10, 13] {
+            let availableGridHeight = IslandDropModeControl.controlsHoverPanelHeight(toolCount: count)
+                - IslandDropModeControl.detachedPanelGap
+                - IslandHoverToolSearch.searchBandHeight
+                - IslandHoverControlsLayout.descriptionHeight
+                - IslandHoverControlsLayout.dividerHeight
+            XCTAssertEqual(availableGridHeight, IslandHoverControlsLayout.gridHeight(toolCount: count), accuracy: 0.001)
+        }
+        XCTAssertEqual(
+            IslandHoverControlsLayout.rowHeight - IslandHoverPanelControl.tileHeight,
+            IslandHoverControlsLayout.rowVerticalInset * 2,
+            accuracy: 0.001,
+            "Shortcut hints must not consume asymmetric space above a button."
+        )
+    }
+
+    func test_hoverAndPressFeedbackAreVisibleAndRespectReducedMotion() {
+        let rest = IslandGraphiteHoverControlStyle.feedbackScale(hovering: false, pressed: false)
+        let hover = IslandGraphiteHoverControlStyle.feedbackScale(hovering: true, pressed: false)
+        let press = IslandGraphiteHoverControlStyle.feedbackScale(hovering: true, pressed: true)
+        XCTAssertEqual(rest, 1)
+        XCTAssertGreaterThan(hover, rest)
+        XCTAssertLessThan(press, rest)
+        XCTAssertEqual(
+            IslandGraphiteHoverControlStyle.feedbackScale(hovering: true, pressed: true, reduceMotion: true), rest
+        )
+    }
+
+    func test_magneticFeedbackKeepsRestingCenterAndClampsAtFixedButtonBounds() {
+        let size = CGSize(width: IslandHoverPanelControl.tileWidth, height: IslandHoverPanelControl.tileHeight)
+        XCTAssertEqual(
+            IslandGraphiteHoverControlStyle.magneticPull(location: CGPoint(x: size.width / 2, y: size.height / 2), bounds: size),
+            .zero
+        )
+        let outside = IslandGraphiteHoverControlStyle.magneticPull(location: CGPoint(x: -1000, y: 1000), bounds: size)
+        XCTAssertEqual(outside.width, -IslandGraphiteHoverControlStyle.magnetStrength)
+        XCTAssertEqual(outside.height, IslandGraphiteHoverControlStyle.magnetStrength)
+    }
+
     func test_smartModeUsesSparklesPresentation() {
         XCTAssertEqual(IslandDropModeControl.title, "Drop Mode")
         XCTAssertEqual(IslandDropModeControl.label(for: .smart), "Smart")

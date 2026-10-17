@@ -127,26 +127,48 @@ Local LLM (Apple Silicon):
   docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
 
 Hover materials:
-  IslandHoverGlass applies native SwiftUI Liquid Glass to drawer and music-strip
-  content on macOS26+, with regular.interactive circles in a shared glass
-  container. The earlier dark wash/specular/rims and magnetic/pressed transforms
-  are legacy fallback only. Keep adaptive backdrop tint, existing geometry and
-  separate8pt gaps; don't flatten native glass into a bitmap/drawingGroup or
-  add an opaque hosting layer. Compiler/runtime guards preserve older builds
-  and macOS14.2+ support. WHY:
+  On macOS 26+, each drawer/music-strip card has one native SwiftUI .clear
+  backdrop on an independent transparent RoundedRectangle in content.background,
+  not a glassEffect wrapping the entire foreground. Lenses, rims and icons keep
+  their own colors. Circular controls are explicit foreground lenses: translucent
+  gradient fill, passive IslandHoverGlassRim and icon, with no child glassEffect.
+  Nested glass cannot sample its parent glass. The existing controls container
+  remains; do not add another native backdrop to its circles. The background
+  sets appearsActive=true for visual treatment in the non-key utility panel;
+  this does not acquire keyboard focus. IslandHoverGlassRim adds a thin bright
+  edge and inner shine inspired by the user's transparent-lens reference;
+  decorative overlays never participate in hit testing. The older layered
+  material remains the fallback before macOS 26. Explicit magnetic, hover and
+  pressed feedback works on both paths; Reduce Motion disables translation
+  and scaling. The earlier policy restricting these transforms and rims to
+  legacy rendering was superseded after the user's regression feedback.
+  Keep centered rows, fixed hint overlays and shared geometry: one/two-row
+  controls heights remain 187/283 pt, with separate 8 pt panel gaps. Native optics
+  were inspected in the unique native v3 component fixture, including centered
+  one/two rows and non-key pointer activation without duplicate fallback. That
+  fixture does not establish installed production-app/external-desktop hover
+  acceptance; report those checks separately. WHY:
   .project-docs/decisions/2026-10-17-native-hover-glass.md
 
-Hover tool search:
-  The controls drawer has a Search all tools field above the saved tool grid.
-  IslandHoverToolSearch searches the full catalog (titles, descriptions and
-  aliases), including tools not pinned in Toolbox. Search activation shares
-  HoverSlotRouter with tile activation and never changes the saved layout.
-  Click the field to acquire keyboard focus; ordinary hover leaves the user's
-  app focused. Up/Down select, Return activates, Escape clears the query and
-  then releases focus. A 42pt search band participates in the shared AppKit
-  hit-zone height; focus and programmatic expansion keep it interactive.
-  Output language retains its Smart-mode requirement. WHY:
-  .project-docs/decisions/2026-10-17-hover-tool-search.md
+Hover tool search and pointer routing:
+  Search all tools searches the full catalog (titles, descriptions and aliases),
+  including tools not pinned in Toolbox. Activation shares HoverSlotRouter and
+  never changes the saved layout. Only clicking the field acquires keyboard
+  focus; ordinary hover and active visual treatment leave the user's app focused.
+  Internal endEditing does not resign the key window between button down/up;
+  captured activation or actual window resignation releases text-entry focus.
+  Up/Down select, Return activates, Escape clears the query then releases focus.
+  IslandHoverHitBridge measures target NSView frames at event time and clips
+  results to their visible scroll viewport. NSWindow down/up must target the
+  same unchanged control; drag-out, context/layout change, Escape and panel
+  closure cancel activation. Drag/context/Escape cancellation keeps ownership
+  of the eventual mouse-up; hiding the panel discards the sequence.
+  Geometry reporters and decorative overlays never catch clicks themselves.
+  The 42 pt search band and fixed overlaid shortcut hints participate in shared
+  layout; hints do not shift buttons. Output language retains its Smart-mode
+  requirement. WHY:
+  .project-docs/decisions/2026-10-17-hover-tool-search.md,
+  .project-docs/decisions/2026-10-17-native-hover-glass.md
 
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference

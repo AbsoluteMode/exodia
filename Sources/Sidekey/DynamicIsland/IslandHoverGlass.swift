@@ -12,10 +12,9 @@ enum IslandHoverGlass {
     }
 }
 
-/// Applies a detached hover surface to the actual panel content so native
-/// Liquid Glass on macOS 26+ integrates foreground vibrancy and edge
-/// refraction directly on the content view hierarchy, while macOS 14/15
-/// retain the layered `IslandDetachedHoverPanelBackground` fallback.
+/// Applies a native macOS 26+ optical backdrop separately from foreground
+/// lenses and icons, preserving their colors. Earlier systems retain the
+/// layered `IslandDetachedHoverPanelBackground` fallback.
 struct IslandHoverGlassSurfaceModifier: ViewModifier {
     var cornerRadius: CGFloat = IslandDropModeControl.detachedPanelCornerRadius
     var showGlass: Bool = true
@@ -30,10 +29,18 @@ struct IslandHoverGlassSurfaceModifier: ViewModifier {
             #if compiler(>=6.2)
             if #available(macOS 26.0, *) {
                 content
-                    .glassEffect(
-                        .regular,
-                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    )
+                    .background {
+                        // Keep the optical backdrop separate from the foreground
+                        // lenses, matching the reference's independent layers.
+                        shape.fill(Color.clear)
+                            .glassEffect(.clear, in: shape)
+                            // Active appearance only; the utility stays non-key.
+                            .environment(\.appearsActive, true)
+                    }
+                    .overlay {
+                        IslandHoverGlassRim(shape: shape)
+                            .allowsHitTesting(false)
+                    }
             } else {
                 legacySurface(content: content, shape: shape)
             }
@@ -50,10 +57,39 @@ struct IslandHoverGlassSurfaceModifier: ViewModifier {
     }
 }
 
-/// Wraps the hover controls grid in a shared `GlassEffectContainer` on
-/// macOS 26+ so circular Liquid Glass tiles share the native rendering context
-/// while remaining distinct 44pt circles. Passes content through unchanged
-/// on earlier macOS versions.
+/// Thin specular edge and inner lens, inspired by the user's LiquidButton
+/// reference. Keep the native backdrop visible and every decorative layer
+/// outside mouse routing.
+struct IslandHoverGlassRim<S: InsettableShape>: View {
+    let shape: S
+    var highlighted = false
+
+    var body: some View {
+        shape
+            .strokeBorder(
+                LinearGradient(
+                    stops: [
+                        .init(color: .white.opacity(highlighted ? 0.95 : 0.75), location: 0),
+                        .init(color: .white.opacity(0.12), location: 0.35),
+                        .init(color: .white.opacity(0.08), location: 0.65),
+                        .init(color: .white.opacity(highlighted ? 0.70 : 0.45), location: 1)
+                    ],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ),
+                lineWidth: 0.75
+            )
+            .overlay {
+                shape.inset(by: 1)
+                    .strokeBorder(.white.opacity(highlighted ? 0.22 : 0.12), lineWidth: 2)
+                    .blur(radius: 1.2)
+                    .clipShape(shape)
+            }
+    }
+}
+
+/// Preserves the shared controls container on macOS 26+. Circular foreground
+/// lenses remain distinct 44pt controls without nested native glass effects.
+/// Passes content through unchanged on earlier macOS versions.
 struct IslandHoverGlassControlsContainer<Content: View>: View {
     var spacing: CGFloat = 6
     @ViewBuilder let content: () -> Content

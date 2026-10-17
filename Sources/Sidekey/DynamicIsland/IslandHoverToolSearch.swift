@@ -118,7 +118,10 @@ struct IslandHoverSearchField: NSViewRepresentable {
         }
 
         func controlTextDidBeginEditing(_ notification: Notification) { parent.onFocusChange(true) }
-        func controlTextDidEndEditing(_ notification: Notification) { parent.onFocusChange(false) }
+        // Moving from the field editor to an in-panel Button must not resign
+        // the key window between its mouse-down and mouse-up. Activation or the
+        // actual window.didResignKey observer releases text-entry focus.
+        func controlTextDidEndEditing(_ notification: Notification) {}
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             let command: IslandHoverSearchCommand

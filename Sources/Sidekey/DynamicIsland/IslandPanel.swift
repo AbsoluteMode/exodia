@@ -579,6 +579,7 @@ final class IslandPanel: NSPanel {
     /// compact/expanded hit-test sizes on screen changes.
     private var host: ClickThroughHostingView<IslandView>!
     private var acceptsKeyboardFocus = false
+    private let hoverHitBridge = IslandHoverHitBridge()
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
 
@@ -1007,7 +1008,30 @@ final class IslandPanel: NSPanel {
         }
     }
 
+    private var allowsHoverPointerDispatch: Bool {
+        isShown && isVisible && !idleHidden && (host?.acceptsExpandedHitTesting ?? false)
+    }
+
     override func sendEvent(_ event: NSEvent) {
+        // Use measured control frames instead of the inactive SwiftUI first-
+        // mouse bridge. One owned down/drag/up sequence invokes at most once.
+        switch event.type {
+        case .leftMouseDown:
+            if hoverHitBridge.mouseDown(at: event.locationInWindow, in: self, allowed: allowsHoverPointerDispatch) {
+                return
+            }
+        case .leftMouseDragged where hoverHitBridge.consumesPointerSequence:
+            hoverHitBridge.mouseDragged(at: event.locationInWindow, in: self, allowed: allowsHoverPointerDispatch)
+            return
+        case .leftMouseUp where hoverHitBridge.consumesPointerSequence:
+            hoverHitBridge.mouseUp(at: event.locationInWindow, in: self, allowed: allowsHoverPointerDispatch)
+            refreshMouseEventRouting()
+            return
+        case .keyDown where event.keyCode == 53:
+            hoverHitBridge.cancelPress()
+        default:
+            break
+        }
         // The answer panel's ✕ is dismissed HERE, at the window level. The
         // island is a non-activating panel that is never key while an answer
         // is on screen, and Whytap is an inactive app (the user is in another
@@ -1252,6 +1276,9 @@ final class IslandPanel: NSPanel {
     }
 
     func hide() {
+        // Eligibility belongs to the live view; orderOut does not guarantee an
+        // onDisappear/onAppear pair when this same panel is shown again.
+        hoverHitBridge.discardSequence()
         stopMouseEventRouting()
         agentComposerPanel.hide()
         ignoresMouseEvents = true
@@ -1404,6 +1431,7 @@ final class IslandPanel: NSPanel {
             onKeyboardFocusRequest: { [weak self] wantsFocus in
                 self?.setKeyboardFocusRequested(wantsFocus)
             },
+            hoverHitBridge: hoverHitBridge,
             onHoverPanelBandHeightChange: { [weak self] height in
                 self?.setHoverBandHeight(height)
             },
@@ -1706,10 +1734,13 @@ final class IslandPanel: NSPanel {
             musicStripActive: musicStripActive
         )
 
-        let shouldIgnore = IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
-            cursor: NSEvent.mouseLocation,
-            activeFrames: activeFrames
-        )
+        // Keep delivery of the mouse-up we own even after a drag leaves the
+        // control. The bridge cancels activation on that first exit.
+        let shouldIgnore = !hoverHitBridge.consumesPointerSequence
+            && IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
+                cursor: NSEvent.mouseLocation,
+                activeFrames: activeFrames
+            )
 
         // Hover blocker (spec §3 B10): cursor over actually-rendered island
         // content holds `.active` even when stationary. Fired only on the edge
