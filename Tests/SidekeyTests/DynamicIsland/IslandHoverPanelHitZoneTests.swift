@@ -5,18 +5,26 @@ import XCTest
 final class IslandHoverPanelHitZoneTests: XCTestCase {
     private let compact = CGRect(x: 300, y: 600, width: 310, height: 38)
 
-    func test_wideDrawerIsCenteredAndSideCapsulesRemainMouseActive() {
-        let hover = IslandHoverPanelHitZone(compactFrame: compact, bandHeight: 267)
-        XCTAssertEqual(hover.drawerFrame.width, 457, accuracy: 0.001)
-        XCTAssertEqual(hover.drawerFrame.midX, compact.midX, accuracy: 0.001)
-        XCTAssertEqual(hover.drawerFrame.minY, compact.minY - 267, accuracy: 0.001)
-        let frames = [compact] + hover.activeFrames
-        for x in [hover.drawerFrame.minX + 1, hover.drawerFrame.maxX - 1] {
-            XCTAssertFalse(IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
-                cursor: CGPoint(x: x, y: hover.drawerFrame.midY), activeFrames: frames))
-            XCTAssertTrue(IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
-                cursor: CGPoint(x: x, y: compact.midY), activeFrames: frames),
-                "Widening the drawer must not claim empty menu-bar regions next to the pill.")
+    func test_drawerAndIslandShareExactEdgesOnEveryDisplayWidth() {
+        for width in [CGFloat(310), 312, 360, 500] {
+            let pill = CGRect(x: compact.minX, y: compact.minY, width: width, height: compact.height)
+            let hover = IslandHoverPanelHitZone(compactFrame: pill, bandHeight: 243)
+            XCTAssertEqual(hover.drawerFrame.width, width, accuracy: 0.001)
+            XCTAssertEqual(hover.drawerFrame.minX, pill.minX, accuracy: 0.001)
+            XCTAssertEqual(hover.drawerFrame.maxX, pill.maxX, accuracy: 0.001)
+            XCTAssertEqual(hover.drawerFrame.minY, pill.minY - 243, accuracy: 0.001)
+            let frames = [pill] + hover.activeFrames
+            for x in [pill.minX + 1, pill.maxX - 1] {
+                XCTAssertFalse(IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
+                    cursor: CGPoint(x: x, y: hover.drawerFrame.midY), activeFrames: frames))
+            }
+            for x in [pill.minX - 1, pill.maxX + 1] {
+                for y in [pill.midY, hover.drawerFrame.midY, hover.transitionFrame.midY] {
+                    XCTAssertTrue(IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
+                        cursor: CGPoint(x: x, y: y), activeFrames: frames),
+                        "Hover must not claim space outside the island's horizontal edges.")
+                }
+            }
         }
     }
 
@@ -26,7 +34,7 @@ final class IslandHoverPanelHitZoneTests: XCTestCase {
         XCTAssertEqual(music.drawerFrame.height, noMusic.drawerFrame.height, accuracy: 0.001)
         XCTAssertEqual(music.transitionFrame.width, compact.width, accuracy: 0.001)
         XCTAssertEqual(music.transitionFrame.height, 58, accuracy: 0.001)
-        let blankCorner = CGPoint(x: music.drawerFrame.minX + 1, y: music.transitionFrame.midY)
+        let blankCorner = CGPoint(x: music.drawerFrame.minX - 1, y: music.transitionFrame.midY)
         XCTAssertTrue(IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
             cursor: blankCorner, activeFrames: [compact] + music.activeFrames))
         XCTAssertFalse(IslandPanelMouseEventPolicy.shouldIgnoreMouseEvents(
@@ -34,7 +42,7 @@ final class IslandHoverPanelHitZoneTests: XCTestCase {
             activeFrames: [compact] + music.activeFrames))
     }
 
-    func test_preciseWideFramesAreGatedByExpansionAndIdleVisibility() {
+    func test_matchingFramesAreGatedByExpansionAndIdleVisibility() {
         let hover = IslandHoverPanelHitZone(compactFrame: compact, bandHeight: 267)
         func frames(expanded: Bool, hidden: Bool) -> [NSRect] {
             IslandPanelMouseEventPolicy.activeFrames(compactFrame: compact, expandedFrame: hover.expandedFrame,
@@ -51,7 +59,7 @@ final class IslandHoverPanelHitZoneTests: XCTestCase {
             activeFrames: frames(expanded: true, hidden: true)))
     }
 
-    func test_existingReservedAgentWindowContainsWideDrawerAndAllModes() {
+    func test_existingReservedAgentWindowContainsMatchingDrawerAndAllModes() {
         let host = CGRect(x: compact.minX - IslandFrameLayout.leftNotificationWidth,
                           y: compact.minY - IslandDropModeControl.hoverPanelHeight
                             - IslandFrameLayout.agentWingGap - IslandFrameLayout.agentAnswerZoneHeight,

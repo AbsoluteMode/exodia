@@ -1,14 +1,18 @@
 # Add or change a hover tool
 
 The user chooses any number of tools in **Settings, Toolbox**. Selected tools wrap
-into rows of three 139x64-point capsules. Each shows an icon and title inside,
+into rows of three compact capsules, 52 points high. The drawer has exactly the
+same width as the compact island, using its actual notch-derived `compactWidth`.
+Each cell width is `(panelWidth - 24 - 16) / 3`: 90 points for a 310-point island,
+or about 90.67 for 312 points. Each shows an icon and title inside,
 with a current status when the tool has state. Settings stays last and cannot
 be removed. The editor always
 shows an add target; the live hover grid shows the selected tools. The search
 field above it searches the full catalog and launches a tool without pinning it.
-The drawer is 457 points wide, with at most four visible rows; the thirteenth
+At most four rows are visible in a 312-point grid viewport; the thirteenth
 and later selections scroll without being removed. New-install defaults have six
-tools and two rows; existing selections persist. Positions one through five have
+tools, two rows and a 243-point host band; existing selections persist. Positions
+one through five have
 configurable positional hotkeys, independent of the column count.
 
 ## Source map
@@ -47,8 +51,9 @@ All paths below start at `Sources/Sidekey/`.
    new row must resize the AppKit panel and its hit region, not just the SwiftUI
    contents. `IslandHoverControlsLayout` centers fixed-height buttons; shortcut
    hints overlay the top edge without moving them. Keep native hit zones in sync
-   with the 457-point drawer while compact pill/music stay 310 points. Preserve
-   scroll content beyond four visible rows; do not fill or truncate saved layouts.
+   with the drawer, compact pill and music at the actual `compactWidth`. Derive
+   every capsule's width from that same value; never restore a fixed wide drawer.
+   Preserve scroll content beyond four visible rows; do not fill or truncate saved layouts.
 6. Preserve Settings as the final selected tool. A new tool belongs in the catalog;
    adding it does not authorize replacing the user's existing selections.
 7. Use `HoverToolPresentation` for real mode/language/recording status, not a
@@ -68,10 +73,12 @@ python3 scripts/customize.py build
 ```
 
 Inspect one row and multiple rows, add/reorder/remove, Settings locking, relaunch
-persistence and keyboard activation of the first five positions. Verify that a
-scrolling preserves and reaches tool 13+, the larger drawer matches its native
-hit region, and the compact pill/music dimensions are unchanged. Check pure
-status updates and Monitor picker -> dashboard -> Back in the same drawer.
+persistence and keyboard activation of the first five positions. Verify that
+scrolling preserves and reaches tool 13+, all drawer/search/inline-panel native
+hit regions match the compact island width, and music uses that same width.
+Cover 310-point and 312-point examples, including fractional capsule widths;
+History's 300-point reservation must fit its 280-point preview plus eight-point
+gap with zero drawer overhang. Check pure status updates and Monitor picker -> dashboard -> Back in the same drawer.
 Use offscreen checks; do not open GUI test windows over the user's work.
 Search for an unpinned Output Lang, verify keyboard and pointer activation,
 clear with Escape, and check that clicking outside releases text focus. Ordinary

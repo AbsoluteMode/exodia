@@ -5,10 +5,10 @@ final class IslandDropModeControlTests: XCTestCase {
 
     func test_capsuleControlHeightWrapsAtThreeToolsAndCapsAtFourVisibleRows() {
         let expectedBands: [(tools: Int, rows: Int, height: CGFloat)] = [
-            (0, 1, 179), (1, 1, 179), (2, 1, 179), (3, 1, 179),
-            (4, 2, 267), (5, 2, 267), (6, 2, 267),
-            (7, 3, 355), (8, 3, 355), (9, 3, 355),
-            (10, 4, 443), (12, 4, 443), (13, 5, 443)
+            (0, 1, 167), (1, 1, 167), (2, 1, 167), (3, 1, 167),
+            (4, 2, 243), (5, 2, 243), (6, 2, 243),
+            (7, 3, 319), (8, 3, 319), (9, 3, 319),
+            (10, 4, 395), (12, 4, 395), (13, 5, 395)
         ]
         for expected in expectedBands {
             XCTAssertEqual(IslandHoverControlsLayout.rowCount(toolCount: expected.tools), expected.rows)
@@ -21,8 +21,8 @@ final class IslandDropModeControlTests: XCTestCase {
     func test_capsuleGridRetainsOverflowRowsBeyondItsVisibleCapacity() {
         XCTAssertFalse(IslandHoverControlsLayout.requiresScrolling(toolCount: 12))
         XCTAssertTrue(IslandHoverControlsLayout.requiresScrolling(toolCount: 13))
-        XCTAssertEqual(IslandHoverControlsLayout.gridHeight(toolCount: 13), 360, accuracy: 0.001)
-        XCTAssertEqual(IslandHoverControlsLayout.contentHeight(toolCount: 13), 448, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.gridHeight(toolCount: 13), 312, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.contentHeight(toolCount: 13), 388, accuracy: 0.001)
         XCTAssertEqual(IslandHoverControlsLayout.contentHeight(toolCount: 13)
             - IslandHoverControlsLayout.gridHeight(toolCount: 13),
                        IslandHoverControlsLayout.rowStride, accuracy: 0.001)
@@ -30,23 +30,24 @@ final class IslandDropModeControlTests: XCTestCase {
     }
 
     func test_capsulesStayCenteredWithRoomForShortcutHints() {
-        XCTAssertEqual(IslandHoverPanelControl.tileWidth, 139, accuracy: 0.001)
-        XCTAssertEqual(IslandHoverPanelControl.tileHeight, 64, accuracy: 0.001)
-        XCTAssertEqual(IslandHoverControlsLayout.rowHeight, 80, accuracy: 0.001)
-        XCTAssertEqual(IslandHoverControlsLayout.rowStride, 88, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverPanelControl.tileWidth, 90, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverPanelControl.tileHeight, 52, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.rowHeight, 68, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.rowStride, 76, accuracy: 0.001)
         let capsuleTop = (IslandHoverControlsLayout.rowHeight - IslandHoverPanelControl.tileHeight) / 2
         let capsuleBottom = capsuleTop + IslandHoverPanelControl.tileHeight
         XCTAssertEqual(capsuleTop, 8, accuracy: 0.001)
         XCTAssertEqual(IslandHoverControlsLayout.rowHeight - capsuleBottom, capsuleTop, accuracy: 0.001)
-        let fallbackPanelWidth = IslandFrameLayout.leftSideWidth + IslandFrameLayout.syntheticNotchWidth
-            + IslandFrameLayout.rightSideWidth
-        let requiredWidth = IslandHoverPanelControl.tileWidth * CGFloat(HoverLayoutStore.columns)
-            + IslandHoverControlsLayout.columnSpacing * CGFloat(HoverLayoutStore.columns - 1)
-            + IslandHoverControlsLayout.horizontalInset * 2
-        XCTAssertEqual(IslandDropModeControl.controlsHoverPanelWidth, 457, accuracy: 0.001)
-        XCTAssertEqual(requiredWidth, IslandDropModeControl.controlsHoverPanelWidth, accuracy: 0.001)
-        XCTAssertGreaterThan(requiredWidth, fallbackPanelWidth,
-                             "The detached drawer must widen independently of the compact pill.")
+        for panelWidth in [CGFloat(310), 312, 360, 500] {
+            let tileWidth = IslandHoverControlsLayout.tileWidth(panelWidth: panelWidth)
+            let requiredWidth = tileWidth * CGFloat(HoverLayoutStore.columns)
+                + IslandHoverControlsLayout.columnSpacing * CGFloat(HoverLayoutStore.columns - 1)
+                + IslandHoverControlsLayout.horizontalInset * 2
+            XCTAssertEqual(requiredWidth, panelWidth, accuracy: 0.001,
+                           "Three capsules must fit exactly inside the actual island width.")
+        }
+        XCTAssertEqual(IslandHoverControlsLayout.tileWidth(panelWidth: 310), 90, accuracy: 0.001)
+        XCTAssertEqual(IslandHoverControlsLayout.tileWidth(panelWidth: 312), 90 + 2.0 / 3.0, accuracy: 0.001)
     }
 
     func test_controlsGridFillsSpaceBetweenSearchAndDescriptionForEveryRowCount() {

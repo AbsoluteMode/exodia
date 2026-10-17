@@ -42,6 +42,8 @@ is historical; runtime installation and resource checks remain current.
 
 Hover uses [three-column native-glass capsules](decisions/2026-10-17-native-hover-glass.md),
 with current status inside each control and a legacy material on older macOS.
+The current development candidate follows the user's 2026-10-17 correction:
+smaller capsules in a drawer matching the actual compact island width.
 Monitor opens its dashboard picker inside the same hover drawer; see
 [dashboard contracts](../docs/customization/dashboards.md).
 

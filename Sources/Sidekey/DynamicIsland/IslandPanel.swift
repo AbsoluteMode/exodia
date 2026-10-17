@@ -122,25 +122,19 @@ struct IslandAgentHitZones {
 }
 
 /// Matching screen/bounds-space geometry for a drawer centered under the pill.
-/// Only the drawer widens; its transition corridor and music stay pill-width.
+/// Drawer, transition corridor and music share the actual compact island width.
 struct IslandHoverPanelHitZone {
     let compactFrame: CGRect
     let bandHeight: CGFloat
-    var panelWidth: CGFloat = IslandDropModeControl.controlsHoverPanelWidth
+    var panelWidth: CGFloat { compactFrame.width }
     var musicStripActive = false
 
-    /// The drawer is centered on the compact pill, so a wider drawer extends
-    /// this far past either pill edge. Also used by the History preview and
-    /// SwiftUI's outer width to keep them aligned with the native host.
-    static func leftOverhang(compactWidth: CGFloat) -> CGFloat {
-        max(0, (IslandDropModeControl.controlsHoverPanelWidth - compactWidth) / 2)
-    }
+    /// Equal-width surfaces need no extra space beyond the island edges.
+    static func leftOverhang(compactWidth: CGFloat) -> CGFloat { 0 }
 
-    /// Preserve the notification's existing 300pt slot and reserve the same
-    /// space to the left of the wider drawer. A 280pt History preview plus
-    /// its 8pt gap fits here without resizing the host when it appears.
+    /// The original notification slot also fits the 280pt preview and 8pt gap.
     static func leftHostReservation(compactWidth: CGFloat) -> CGFloat {
-        IslandFrameLayout.leftNotificationWidth + leftOverhang(compactWidth: compactWidth)
+        IslandFrameLayout.leftNotificationWidth
     }
 
     private var transitionHeight: CGFloat {
@@ -1638,10 +1632,9 @@ final class IslandPanel: NSPanel {
         syncAgentSurfaces()
     }
 
-    /// Drawer width is independent of the notch-sized compact pill. The host
-    /// already reserves notification/agent space on both sides and below it.
+    /// Native routing matches the drawer and compact island on every display.
     private func expandedHitTestSize(layout: Layout) -> CGSize {
-        CGSize(width: IslandDropModeControl.controlsHoverPanelWidth,
+        CGSize(width: layout.compactSize.width,
                height: layout.compactSize.height + hoverBandHeight)
     }
 

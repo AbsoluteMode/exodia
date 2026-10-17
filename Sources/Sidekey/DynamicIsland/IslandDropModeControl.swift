@@ -62,6 +62,13 @@ enum IslandHoverControlsLayout {
     static var rowStride: CGFloat { rowHeight + rowSpacing }
     static var hintOffset: CGFloat { KeycapView.tinySize + 1 }
 
+    /// Fit every column inside the actual notch-derived island width.
+    static func tileWidth(panelWidth: CGFloat) -> CGFloat {
+        max(0, (panelWidth - horizontalInset * 2
+            - CGFloat(HoverLayoutStore.columns - 1) * columnSpacing)
+            / CGFloat(HoverLayoutStore.columns))
+    }
+
     /// Keep one row for the Settings-only/empty transient state. Subtracting
     /// before division also avoids overflowing when the supplied count is large.
     static func rowCount(toolCount: Int) -> Int {
@@ -98,14 +105,6 @@ enum IslandDropModeControl {
     /// grid centres itself within this space.
     /// Minimum: edgeInset(5) + chipH(20) + startY(48) + 3*minimumStride(72) = 145.
     static let hoverPanelHeight: CGFloat = 145
-
-    /// All detached hover panels share this width while the compact pill keeps
-    /// its notch-derived width. Music remains compact-width above the drawer.
-    static var controlsHoverPanelWidth: CGFloat {
-        CGFloat(HoverLayoutStore.columns) * IslandHoverPanelControl.tileWidth
-            + CGFloat(HoverLayoutStore.columns - 1) * IslandHoverControlsLayout.columnSpacing
-            + IslandHoverControlsLayout.horizontalInset * 2
-    }
 
     /// Derive the host hit band from the same row geometry used by the view.
     static func controlsHoverPanelHeight(toolCount: Int) -> CGFloat {

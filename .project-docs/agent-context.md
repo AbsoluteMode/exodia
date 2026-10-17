@@ -127,35 +127,47 @@ Local LLM (Apple Silicon):
   docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
 
 Hover capsules and materials:
-  IslandHoverPanelControl.swift renders a 139x64 foreground capsule with a left
-  36 pt white icon disk/blue glyph and normal-case 12 pt title plus optional 11 pt
-  current status inside. Bundled icon assets retain their own presentation.
-  HoverToolPresentation resolves state purely from mode, languages and recording:
-  Fast/Smart, input Auto/language, output Smart only/Off/language, and Recording/
-  Not recording. Stateless navigation tools have no invented status.
-  HoverLayoutStore.columns=3. Shared geometry uses 80 pt rows, 8 pt row/column gaps,
-  12 pt horizontal and 8 pt vertical insets. Drawer width=457 pt
-  (3*139+2*8+24); default six tools occupy two rows and a 267 pt host band.
-  At most four rows are visible; 13+ selected tools scroll without truncating
-  persistence. Settings stays last; first five positional hotkeys remain.
-  Compact pill and music keep their existing 310 pt layout; detached hover panels
-  and native hit zones use 457 pt. Hints overlay stable targets without moving them.
+  The 2026-10-17 user correction requires hover and the compact island to have
+  exactly the same width, with three smaller capsules per row. Follow the actual
+  notch-derived compactWidth (310/312 pt examples), not a fixed 457 pt drawer.
+  IslandHoverPanelControl.swift defaults to a 90x52 foreground capsule with a
+  24 pt white icon disk/blue glyph, normal-case 11 pt title and optional 10 pt
+  current status inside. The grid supplies each instance's exact width through
+  IslandHoverControlsLayout.tileWidth(panelWidth:): (panelWidth - 24 - 16) / 3.
+  Bundled icon assets retain their own presentation. HoverToolPresentation
+  resolves state purely from mode, languages and recording: Fast/Smart, input
+  Auto/language, output Smart only/Off/language, and Recording/Not recording.
+  Stateless navigation tools have no invented status.
+  HoverLayoutStore.columns=3. Shared geometry uses 68 pt rows, a 76 pt row
+  stride, 8 pt row/column gaps, 12 pt horizontal and 8 pt vertical insets.
+  Default six tools occupy two rows and a 243 pt host band. At most four rows
+  are visible (312 pt grid viewport); 13 tools retain 388 pt of scroll content.
+  Settings stays last; persistence and the first five positional hotkeys remain.
+  Drawer, compact pill, music, detached inline panels and native hit zones all
+  use the actual compactWidth. Hints overlay stable targets without moving them.
+  History needs no drawer overhang: its 300 pt left reservation still fits a
+  280 pt preview and 8 pt gap without moving the island's right/top anchors.
   Each card has one native .regular backdrop in an independent background shape
   on macOS 26+, with passive rims and foreground lenses, never child glassEffect.
   Explicit hover/press/magnetic feedback respects Reduce Motion. Older material
   fallback is unchanged. Do not show test windows over the user's work; use
-  offscreen checks and state compositor limits. Earlier v3/v4 fixtures predate
-  this capsule/width change. The 2.2.3 candidate passed 2,947 tests (8 skipped,
-  0 failures) and 21 offscreen layout/text renders with no visible/key windows.
-  Offscreen renders do not prove native glass, real pointer or Monitor-button
-  behavior; production acceptance remains separate. WHY:
+  offscreen checks and state compositor limits. The planned 2.2.4 compact
+  candidate passed 69 focused tests and the full 2,947-test suite (8 skipped,
+  0 failures, 45.315 seconds). Eighteen actual capsule/search-layout renders cover
+  310/312 pt layouts with source-hash match and no visible/key windows.
+  Dark text-audit backing is test-only. These checks do not prove native glass,
+  real pointer, physical input/focus or live Monitor-button behavior; production
+  acceptance remains separate. Historical 2.2.3 evidence (2,947 tests: 8 skipped,
+  0 failures; 21 renders) covers the earlier 139x64/457 pt layout. WHY:
   .project-docs/decisions/2026-10-17-native-hover-glass.md
 
 Monitor inside hover:
   Monitor registry kind is inlinePanel and HoverSlotRouter resolves
   .openPanel(.monitor). Capsule, catalog search and positional hotkeys all open
-  MonitorHoverPanel in the same drawer, with contentHeight 344 pt: dashboard
-  picker -> Server status or custom dashboard -> Back to picker -> Tools.
+  MonitorHoverPanel in the same compact-width drawer, with contentHeight 344 pt:
+  dashboard picker -> Server status or custom dashboard -> Back to picker -> Tools.
+  Its compactPresentation uses vertical CPU/RAM/load/GPU metrics and one flexible
+  column of custom widgets; the legacy window keeps its existing presentation.
   The view starts MonitorStore when shown and stops it on disappearance;
   Refresh calls requestRefresh and reuses existing collectors/snapshot rendering.
   Hover launch and the legacy openMonitor callback both request inline .monitor

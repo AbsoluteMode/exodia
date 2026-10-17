@@ -108,12 +108,13 @@ struct MonitorServersView: View {
     @ObservedObject var store: MonitorStore
     var allowsOpeningFolder = true
     var showsHeader = true
+    var compactPresentation = false
     private var groups: [String] { Array(Set(store.readings.map { $0.server.group })).sorted() }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { context in
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: compactPresentation ? 12 : 18) {
                     if showsHeader {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
@@ -126,12 +127,13 @@ struct MonitorServersView: View {
                         }
                     }
                     if let error = store.serverError {
-                        Text(error).foregroundStyle(.orange)
+                        Text(error).font(compactPresentation ? .caption : .body).foregroundStyle(.orange)
                     }
                     if store.readings.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("No servers connected").font(.headline)
                             Text("Ask your agent to add servers.json to the Monitor folder using existing SSH aliases or credential references. Passwords do not belong in dashboard files.")
+                                .font(compactPresentation ? .system(size: 12) : .body)
                                 .foregroundStyle(.secondary)
                             if allowsOpeningFolder {
                                 Button("Open Monitor folder") { NSWorkspace.shared.open(store.root) }
@@ -141,18 +143,20 @@ struct MonitorServersView: View {
                                     .textSelection(.enabled)
                             }
                         }
-                        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(compactPresentation ? 12 : 18)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
                     }
                     ForEach(groups, id: \.self) { group in
                         Text(group).font(.headline)
                         ForEach(store.readings.filter { $0.server.group == group }) { reading in
                             MonitorServerCard(reading: reading, now: context.date,
-                                              staleAfter: max(45, store.refreshSeconds * 3))
+                                              staleAfter: max(45, store.refreshSeconds * 3),
+                                              compactPresentation: compactPresentation)
                         }
                     }
                 }
-                .padding(22)
+                .padding(compactPresentation ? 0 : 22)
             }
         }
     }
@@ -162,31 +166,54 @@ private struct MonitorServerCard: View {
     let reading: MonitorServerReading
     let now: Date
     let staleAfter: Double
+    var compactPresentation = false
     private var status: String { reading.status(at: now, staleAfter: staleAfter) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(reading.server.name).font(.headline)
+        VStack(alignment: .leading, spacing: compactPresentation ? 10 : 14) {
+            HStack(alignment: compactPresentation ? .top : .center, spacing: compactPresentation ? 8 : nil) {
+                Text(reading.server.name)
+                    .font(compactPresentation ? .system(size: 12, weight: .semibold) : .headline)
+                    .lineLimit(compactPresentation ? 2 : nil)
+                    .layoutPriority(compactPresentation ? 1 : 0)
                 Spacer()
                 if reading.refreshing { ProgressView().controlSize(.small) }
                 Text(status).font(.caption.weight(.semibold))
                     .foregroundStyle(status == "Live" ? .green : .orange)
+                    .fixedSize(horizontal: compactPresentation, vertical: false)
             }
             if let metrics = reading.metrics {
-                HStack(spacing: 24) {
-                    stat("CPU", String(format: "%.1f%%", metrics.cpuPercent))
-                    stat("RAM", "\(gib(metrics.memoryUsedBytes)) / \(gib(metrics.memoryTotalBytes)) GiB")
-                    stat("Load (1 min)", String(format: "%.2f", metrics.load1))
+                if compactPresentation {
+                    VStack(spacing: 6) {
+                        compactStat("CPU", String(format: "%.1f%%", metrics.cpuPercent))
+                        compactStat("RAM", "\(gib(metrics.memoryUsedBytes)) / \(gib(metrics.memoryTotalBytes)) GiB")
+                        compactStat("Load (1 min)", String(format: "%.2f", metrics.load1))
+                    }
+                } else {
+                    HStack(spacing: 24) {
+                        stat("CPU", String(format: "%.1f%%", metrics.cpuPercent))
+                        stat("RAM", "\(gib(metrics.memoryUsedBytes)) / \(gib(metrics.memoryTotalBytes)) GiB")
+                        stat("Load (1 min)", String(format: "%.2f", metrics.load1))
+                    }
                 }
                 ProgressView(value: metrics.memoryUsedBytes / metrics.memoryTotalBytes)
                     .tint(.accentColor).accessibilityLabel("Memory usage")
                 ForEach(metrics.gpus, id: \.index) { gpu in
-                    HStack {
-                        stat("GPU \(gpu.index) · \(gpu.name)", String(format: "%.0f%%", gpu.utilizationPercent))
-                        Spacer()
-                        stat("VRAM", String(format: "%.1f / %.1f GiB", gpu.memoryUsedMiB / 1024,
-                                             gpu.memoryTotalMiB / 1024))
+                    if compactPresentation {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(gpu.name).font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            compactStat("GPU \(gpu.index)", String(format: "%.0f%%", gpu.utilizationPercent))
+                            compactStat("VRAM", String(format: "%.1f / %.1f GiB", gpu.memoryUsedMiB / 1024,
+                                                       gpu.memoryTotalMiB / 1024))
+                        }
+                    } else {
+                        HStack {
+                            stat("GPU \(gpu.index) · \(gpu.name)", String(format: "%.0f%%", gpu.utilizationPercent))
+                            Spacer()
+                            stat("VRAM", String(format: "%.1f / %.1f GiB", gpu.memoryUsedMiB / 1024,
+                                                 gpu.memoryTotalMiB / 1024))
+                        }
                     }
                 }
                 if metrics.gpus.isEmpty {
@@ -202,14 +229,15 @@ private struct MonitorServerCard: View {
                 }
             } else {
                 Text(reading.refreshing ? "Connecting…" : "Metrics could not be fetched. Check SSH access, VPN and local collector tools.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(compactPresentation ? .system(size: 12) : .callout).foregroundStyle(.secondary)
             }
             if reading.refreshFailed, reading.metrics != nil {
                 Text("Refresh failed. Values above are from the last successful reading.")
                     .font(.caption).foregroundStyle(.orange)
             }
         }
-        .padding(18)
+        .padding(compactPresentation ? 12 : 18)
+        .frame(maxWidth: compactPresentation ? .infinity : nil, alignment: .leading)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
     }
@@ -221,32 +249,48 @@ private struct MonitorServerCard: View {
         }
     }
 
+    private func compactStat(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 0)
+            Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private func gib(_ bytes: Double) -> String { String(format: "%.1f", bytes / 1_073_741_824) }
 }
 
 struct MonitorCustomDashboardView: View {
     let dashboard: MonitorDashboard
     var showsTitle = true
+    var compactPresentation = false
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { context in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if showsTitle { Text(dashboard.title).font(.title2.weight(.semibold)) }
-                    if !dashboard.subtitle.isEmpty { Text(dashboard.subtitle).foregroundStyle(.secondary) }
+                    if !dashboard.subtitle.isEmpty {
+                        Text(dashboard.subtitle).font(compactPresentation ? .system(size: 12) : .body)
+                            .foregroundStyle(.secondary)
+                    }
                     Text(dashboard.freshness(at: context.date).rawValue)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(dashboard.freshness(at: context.date) == .live ? .green : .orange)
                     if let date = dashboard.updatedAt {
                         Text("Snapshot: \(date.formatted())").font(.caption).foregroundStyle(.secondary)
                     }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230))], spacing: 12) {
+                    LazyVGrid(columns: compactPresentation ? [GridItem(.flexible(minimum: 0))]
+                              : [GridItem(.adaptive(minimum: 230))], spacing: 12) {
                         ForEach(dashboard.widgets) { widget in
-                            MonitorWidgetView(widget: widget)
+                            MonitorWidgetView(widget: widget, compactPresentation: compactPresentation)
                         }
                     }
                 }
-                .padding(22)
+                .padding(compactPresentation ? 0 : 22)
             }
         }
     }
@@ -254,15 +298,26 @@ struct MonitorCustomDashboardView: View {
 
 private struct MonitorWidgetView: View {
     let widget: MonitorWidget
+    var compactPresentation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(widget.title).font(.headline)
+            Text(widget.title).font(compactPresentation ? .system(size: 12, weight: .semibold) : .headline)
             switch widget.kind {
             case .metric:
-                HStack(alignment: .firstTextBaseline) {
-                    Text(widget.value ?? "—").font(.title.weight(.semibold)).monospacedDigit()
-                    if let unit = widget.unit { Text(unit).foregroundStyle(.secondary) }
+                if compactPresentation {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(widget.value ?? "—").font(.system(size: 20, weight: .semibold)).monospacedDigit()
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let unit = widget.unit {
+                            Text(unit).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(widget.value ?? "—").font(.title.weight(.semibold)).monospacedDigit()
+                        if let unit = widget.unit { Text(unit).foregroundStyle(.secondary) }
+                    }
                 }
             case .progress:
                 if let value = widget.value { Text(value).font(.title3).monospacedDigit() }
@@ -282,7 +337,8 @@ private struct MonitorWidgetView: View {
             }
             if let detail = widget.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
         }
-        .padding(16).frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+        .padding(compactPresentation ? 12 : 16)
+        .frame(maxWidth: .infinity, minHeight: compactPresentation ? 0 : 110, alignment: .topLeading)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
     }
