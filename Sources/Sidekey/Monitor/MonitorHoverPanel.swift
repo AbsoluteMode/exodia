@@ -65,9 +65,11 @@ struct MonitorHoverPanel: View {
                 if selectedID == nil {
                     dashboardPicker
                 } else if selectedID == "server-status" {
-                    MonitorServersView(store: store, allowsOpeningFolder: false, showsHeader: false)
+                    MonitorServersView(store: store, allowsOpeningFolder: false, showsHeader: false,
+                                       compactPresentation: true)
                 } else if let dashboard = selectedDashboard {
-                    MonitorCustomDashboardView(dashboard: dashboard, showsTitle: false)
+                    MonitorCustomDashboardView(dashboard: dashboard, showsTitle: false,
+                                               compactPresentation: true)
                 } else {
                     Text("This dashboard is no longer available. Choose another dashboard.")
                         .font(.system(size: 12))
@@ -77,7 +79,7 @@ struct MonitorHoverPanel: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(12)
+        .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { store.start() }
         .onDisappear { store.stop() }
@@ -110,12 +112,12 @@ struct MonitorHoverPanel: View {
 
     private func dashboardButton(id: String, title: String, image: String, subtitle: String) -> some View {
         Button { selectedID = id } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: image)
                     .font(.system(size: 18))
-                    .frame(width: 28)
+                    .frame(width: 24)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 12, weight: .semibold))
+                    Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(2)
                     if !subtitle.isEmpty {
                         Text(subtitle).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
                     }
@@ -124,7 +126,7 @@ struct MonitorHoverPanel: View {
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            .padding(12)
+            .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.14), lineWidth: 0.7))

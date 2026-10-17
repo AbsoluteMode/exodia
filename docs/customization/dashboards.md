@@ -9,19 +9,27 @@ install software or grant access to a server.
 
 Select Monitor from the hover capsule, catalog search or its positional hotkey.
 All three use `.openPanel(.monitor)` and show `MonitorHoverPanel` in the same
-457-point drawer, with 344-point content height. Choose **Server status** or a
+compact-width drawer, with 344-point content height. The drawer follows the
+actual island width (310/312-point examples), not a fixed wider panel. Choose
+**Server status** or a
 custom dashboard; **Back** returns to the picker, then **Tools** returns to the
 capsules. Refresh uses the existing store. The panel starts polling when shown
 and stops it on disappearance, reusing `MonitorStore` and the existing collectors.
 No hover launch opens a separate window; the legacy `openMonitor` callback also
 requests the inline panel. The old standalone window class is retained only for
-compatibility.
+compatibility. Inline `compactPresentation` stacks server CPU/RAM/load/GPU
+metrics vertically and uses one flexible custom-widget column; standalone
+presentation keeps its existing defaults. The store and polling are shared.
 
 The inline view does not change snapshot validation, collector permissions or
-private storage. The 2.2.3 candidate passed 2,947 tests (8 skipped, 0 failures)
-and offscreen layout/text checks; actual native-pointer and Monitor-button
-interaction was not tested live. Earlier standalone-window verification does
-not prove the inline route. Production acceptance stays separate. Do not show
+private storage. Historical 2.2.3 verification passed 2,947 tests (8 skipped,
+0 failures) and offscreen layout/text checks for the earlier wider drawer;
+actual native-pointer and Monitor-button interaction was not tested live. The
+compact-candidate checks passed 69 focused tests and the full 2,947-test suite
+(8 skipped, 0 failures), plus 18 capsule/search-layout offscreen renders at
+310/312 points. Those renders do not exercise live Monitor buttons. Earlier
+standalone-window verification does not prove the inline route or the compact
+presentation. Production acceptance stays separate. Do not show
 GUI test windows over the user's work; use offscreen checks.
 
 Generate a disconnected starting point:

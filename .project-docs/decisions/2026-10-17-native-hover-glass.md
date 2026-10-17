@@ -2,7 +2,7 @@
 id: native-hover-glass-2026-10-17
 type: decision
 title: Native Apple Liquid Glass for hover surfaces
-summary: Use three-column Control Center-style capsules with real inline status, an independent Regular backdrop and shared bounded hover geometry.
+summary: Match hover to the actual compact island width with three smaller capsules per row, real inline status and one independent Regular backdrop.
 status: confirmed
 tags: [macos, hover, liquid-glass, swiftui, accessibility]
 canonical_for: [hover-glass-material]
@@ -28,6 +28,18 @@ sources:
     confirmed_at: 2026-10-17
   - type: user-confirmed
     reference: User selected three horizontal capsules per row with icon, title and current status inside on 2026-10-17, and requested Monitor dashboards inside hover.
+    confirmed_at: 2026-10-17
+  - type: user-confirmed
+    reference: User clarified on 2026-10-17 that hover must have the same width as the island and confirmed three smaller capsules per row; this supersedes the earlier wider drawer.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-matched-width-focused-tests.log, 69 focused tests with 0 failures for the compact-width candidate.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-matched-width-full-tests.log, full 2947 tests with 8 skipped and 0 failures in 45.315 seconds for the compact-width candidate.
+    confirmed_at: 2026-10-17
+  - type: trace
+    reference: /tmp/exodia-compact-hover-offscreen/render-manifest.json and source-manifest.json, 18 actual-component offscreen renders at 310/312 points with source-hash match and no visible/key windows.
     confirmed_at: 2026-10-17
   - type: trace
     reference: /tmp/exodia-capsules-final-tests.log, final 2947 tests with 8 skipped and 0 failures after the inline legacy callback and functional-test migration.
@@ -103,8 +115,11 @@ policy; they are not a claim that every macOS backdrop renders identically.
 The released 2.2.1 then received production feedback: search and History still
 looked black, while focused Clear glass over a white background lost contrast
 with the white controls. The 2.2.2 refinement addressed those surfaces;
-its actual-field v4 check is separate from the earlier v3 fixture. The current
-2.2.3 candidate adds the three-column capsules and inline Monitor below.
+its actual-field v4 check is separate from the earlier v3 fixture. The 2.2.3
+candidate added three-column capsules and inline Monitor. After seeing that
+layout, the user clarified on 2026-10-17 that hover should match the island's
+width and confirmed three smaller capsules per row. That correction governs the
+current development candidate, planned as 2.2.4; it is not yet release proof.
 
 ## Decision
 
@@ -113,9 +128,11 @@ drawer or music-strip card, on an independent transparent rounded rectangle
 inside `content.background`. Do not apply the material modifier to the whole
 foreground hierarchy: the lens gradient, rim and icon keep their independent
 colors, matching the user's separate-layer reference. The current controls are
-139x64-point horizontal capsules in `IslandHoverPanelControl.swift`, with a
-36-point left icon disk, blue standard glyph, normal-case 12-point title and
-optional 11-point status inside. They are foreground gradient/rim lenses without
+compact horizontal capsules in `IslandHoverPanelControl.swift`, defaulting to
+90x52 points with a 24-point left icon disk, blue standard glyph, normal-case
+11-point title and optional 10-point status inside. Each grid instance receives
+the width calculated from the actual compact island width. They are foreground
+gradient/rim lenses without
 a child native glass effect. `HoverToolPresentation` derives actual mode,
 language and recording status; stateless navigation tools have no status. Apple's [WWDC25 session 323](https://developer.apple.com/videos/play/wwdc2025/323/)
 explains that glass does not sample other glass. Avoid layering independent
@@ -147,20 +164,32 @@ native and legacy paths. Reduce Motion suppresses translation, scaling and their
 spring animations. The native material does not replace the control's explicit
 feedback contract.
 
-`HoverLayoutStore.columns` is three. `IslandHoverControlsLayout` centers stable
-139x64-point targets in 80-point rows with eight-point spacing and 12-point
-horizontal insets. Width is 457 points (`3*139 + 2*8 + 24`). New-install defaults
-have six tools, two rows and a 267-point host band; existing selections persist.
-Only four rows are visible: the thirteenth and later tools scroll without
-removing anything from the saved layout. Settings remains last and the first
-five positional hotkeys are independent of the column count. Hints overlay the
-capsules without moving their targets. The compact pill and music keep their
-310-point layout; detached panels and native hit regions use the wider drawer.
+`HoverLayoutStore.columns` remains three. `IslandHoverControlsLayout` calculates
+capsule width as `(panelWidth - 24 - 16) / 3`: three 90-point capsules fit a
+310-point island, while a 312-point island gives each capsule about 90.67 points.
+It centers 52-point targets in 68-point rows with a 76-point row stride,
+eight-point row/column spacing and 12-point horizontal insets. New-install
+defaults have six tools, two rows and a 243-point host band; existing selections
+persist. Only four rows are visible, in a 312-point grid viewport. Thirteen
+tools retain 388 points of full scroll content without removing anything from
+the saved layout. Settings remains last and the first five positional hotkeys
+are independent of the column count. Hints overlay stable targets.
+
+The drawer, search, detached inline panels, music and native hit zones all use
+the actual notch-derived `compactWidth`, rather than a fixed wider drawer.
+History preview uses `leftHostReservation(compactWidth:)` with the original
+300-point reservation and zero drawer overhang. A 280-point preview plus an
+eight-point gap still leaves twelve points of padding, without shifting the
+compact island's right/top anchors. Reserved capacity is not an extra
+mouse-active area.
 
 Monitor launches inline from capsules, search and positional hotkeys through
 `.openPanel(.monitor)`. `MonitorHoverPanel.contentHeight` is 344 points, with a
 dashboard picker, Server status/custom content, Refresh and Back navigation.
-It starts/stops the existing MonitorStore with view visibility, without opening
+The inline route enables `compactPresentation`: server metrics stack vertically
+and custom widgets use one flexible column, fitting the compact drawer while
+the legacy window retains its existing layout. It starts/stops the existing
+MonitorStore with view visibility, without opening
 a separate window or duplicating collectors. The standalone window remains for
 compatibility as a class only. The production legacy `openMonitor` callback
 also publishes an inline Monitor request with programmatic expansion; see
@@ -191,12 +220,34 @@ for integrated vibrancy is also superseded: the optical backdrop is independent
 of the foreground lenses and their colors. Merely increasing blur or making the
 window key would not address the requested feedback and non-activating behavior.
 
+The user's later equal-width correction supersedes the 2.2.3 457-point drawer
+and 139x64-point capsule geometry. It retains three columns, icon/title/status,
+inline Monitor and existing persistence; it does not request one long row or a
+wider compact island.
+
 The older layered material remains the fallback for runtimes before macOS 26
 and older toolchains. Availability guards preserve the macOS 14.2 deployment
 floor. This decision does not restore the June fixed opaque wash to the native
 path or flatten live glass into an offscreen bitmap.
 
-## 2.2.3 candidate verification
+## Current compact candidate verification
+
+The planned 2.2.4 candidate passed 69 focused tests with 0 failures and the full
+2,947-test suite with 8 skipped and 0 failures in 45.315 seconds. The matching
+source produced 18 actual capsule/search-layout offscreen renders at both
+310-point and 312-point widths; the render/source manifests record matching
+source hashes, no visible windows and no key windows. Standard and long-language
+text-audit outputs were inspected. The dark audit backing is test-only.
+
+These are geometry/text checks with synthetic states and an empty native-field
+layout; they do not render the production search-result switch. They do not
+prove the native compositor, real pointer activation, physical keyboard
+input/focus or live Monitor-button interaction. Production acceptance and release
+publication remain separate. None of the earlier fixtures or 2.2.3 results
+establishes acceptance for this smaller layout. Do not display GUI test windows
+over the user's work.
+
+## Historical 2.2.3 candidate verification
 
 The final suite passed 2,947 tests with 8 skipped and 0 failures in 42.184 seconds,
 after the legacy callback was made inline and obsolete source-pattern checks
@@ -210,11 +261,9 @@ not a rendered native-glass result. Native compositor output, real pointer
 activation, keyboard focus and live Monitor-button interaction were not proved
 by these offscreen checks; production acceptance remains separate.
 
-History preview uses `leftHostReservation(compactWidth:)`: the existing
-300-point reservation plus drawer overhang (73.5 points for a 310-point pill).
-The 280-point preview and eight-point gap leave twelve points of padding. Host
-capacity and preview positioning share this API without shifting the compact
-island's right/top anchors; reserved capacity is not an extra mouse-active area.
+That earlier wider drawer used `leftHostReservation(compactWidth:)` with a
+300-point reservation plus 73.5 points of overhang for a 310-point island. Those
+values describe the superseded 2.2.3 geometry, not the current compact candidate.
 
 The earlier fixture results below predate this capsule/inline-Monitor change.
 No new test windows may appear over the user's work.

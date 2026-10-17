@@ -1073,6 +1073,7 @@ struct IslandView: View {
                         }
 
                         IslandDropModeHoverPanel(
+                            panelWidth: compactWidth,
                             mode: dropMode,
                             selectedLanguage: selectedLanguage,
                             targetLanguage: targetLanguage,
@@ -1135,7 +1136,7 @@ struct IslandView: View {
                             }
                         )
                         .frame(
-                            width: IslandDropModeControl.controlsHoverPanelWidth,
+                            width: compactWidth,
                             height: activeHoverPanelHeight
                                 // Subtract the ACTUAL top gap used above (the
                                 // music-strip case uses the smaller
@@ -1157,7 +1158,7 @@ struct IslandView: View {
                             showGlass: hoverPanelMode != .history || IslandHoverGlass.usesNativeLiquidGlass
                         )
                     }
-                    .frame(width: IslandDropModeControl.controlsHoverPanelWidth, height: activeHoverPanelHeight)
+                    .frame(width: compactWidth, height: activeHoverPanelHeight)
                     // Hover trigger zone for the lower panel (gap + drawer as
                     // one hit zone) — only present once expansion has already
                     // happened. Keeps the expanded state alive while the cursor
@@ -2318,6 +2319,7 @@ enum IslandHoverPanelMode: Equatable {
 }
 
 private struct IslandDropModeHoverPanel: View {
+    let panelWidth: CGFloat
     let mode: TranscriptionMode
     let selectedLanguage: AppLanguage?
     let targetLanguage: AppLanguage?
@@ -2517,7 +2519,7 @@ private struct IslandDropModeHoverPanel: View {
         }
     }
 
-    /// User-selected tools wrap into rows of five above the description strip.
+    /// Three compact capsules fit within the same width as the island.
     private var controls: some View {
         return VStack(spacing: 0) {
             IslandHoverSearchField(
@@ -2801,6 +2803,7 @@ private struct IslandDropModeHoverPanel: View {
             circleSize: circleSize,
             accessibilityLabel: presentation.title,
             isDimmed: tool == .outputLang && mode == .fast,
+            width: IslandHoverControlsLayout.tileWidth(panelWidth: panelWidth),
             action: { activateTool(tool) }
         )
         .accessibilityHint(info.description)

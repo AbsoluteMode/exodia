@@ -76,9 +76,19 @@ limits in [the hover-glass decision](2026-10-17-native-hover-glass.md). This doe
 not repeat full search or hover acceptance in the installed production app; the
 earlier search check and the component fixture cover different verification scopes.
 
-The 2.2.3 capsule/inline-Monitor candidate passed 2,947 tests (8 skipped, 0
+Historical 2.2.3 capsule/inline-Monitor verification passed 2,947 tests (8 skipped, 0
 failures), with 21 offscreen layout/text renders. These do not prove native
 pointer, physical keyboard input or real Monitor-button interaction. Earlier
 narrow-grid fixtures cover a different layout; production acceptance stays
 separate. Use offscreen checks only, without displaying test windows over the
 user's work.
+
+The later user-confirmed equal-width correction keeps three smaller capsules per
+row and gives search the actual compact island width. The planned 2.2.4 candidate
+passed 69 focused tests and the full 2,947-test suite (8 skipped, 0 failures).
+Eighteen source-matched offscreen capsule/search-layout renders cover 310/312
+points without visible/key windows. These use an empty native-field layout,
+not the production search-result switch, and do not prove real pointer,
+physical input/focus or the native compositor. The earlier results above cover
+the previous geometry. See the canonical
+[hover-glass decision](2026-10-17-native-hover-glass.md).

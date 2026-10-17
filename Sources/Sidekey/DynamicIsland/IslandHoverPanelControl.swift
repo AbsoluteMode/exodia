@@ -28,13 +28,17 @@ struct IslandHoverPanelControl: View {
     var showsDot: Bool = false
     /// Hide the title/status text while preserving the capsule footprint.
     var showsLabel: Bool = true
+    /// The grid supplies its exact available cell width, including fractional
+    /// widths from the current screen's notch geometry.
+    var width: CGFloat = Self.tileWidth
     let action: () -> Void
 
-    static let tileWidth: CGFloat = 139
-    static let tileHeight: CGFloat = 64
-    static let iconSize: CGFloat = 36
-    private static let horizontalPadding: CGFloat = 8
-    private static let contentSpacing: CGFloat = 8
+    static let tileWidth: CGFloat = 90
+    static let tileHeight: CGFloat = 52
+    static let iconSize: CGFloat = 24
+    private static let horizontalPadding: CGFloat = 6
+    private static let contentSpacing: CGFloat = 5
+    private static let iconScale: CGFloat = iconSize / 36
 
     /// Preserve the caller's title casing without forced uppercase or line breaks.
     static func displayTitle(_ title: String) -> String {
@@ -80,7 +84,7 @@ struct IslandHoverPanelControl: View {
                 .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.76), value: hovering)
         }
         .buttonStyle(.plain)
-            .frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .center)
+            .frame(width: width, height: Self.tileHeight, alignment: .center)
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
@@ -88,7 +92,7 @@ struct IslandHoverPanelControl: View {
                     hovering = true
                     let rawPull = IslandGraphiteHoverControlStyle.magneticPull(
                             location: location,
-                            bounds: CGSize(width: Self.tileWidth, height: Self.tileHeight),
+                            bounds: CGSize(width: width, height: Self.tileHeight),
                             presentation: resolvedIconPresentation
                         )
                     pull = reduceMotion ? .zero : CGSize(width: rawPull.width * 0.35, height: rawPull.height * 0.35)
@@ -100,7 +104,7 @@ struct IslandHoverPanelControl: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .updating($pressed) { value, isPressed, _ in
-                        isPressed = CGRect(x: 0, y: 0, width: Self.tileWidth, height: Self.tileHeight)
+                        isPressed = CGRect(x: 0, y: 0, width: width, height: Self.tileHeight)
                             .contains(value.location)
                     }
             )
@@ -120,14 +124,14 @@ struct IslandHoverPanelControl: View {
             if showsLabel {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Self.displayTitle(title))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.96))
                         .lineLimit(2)
                         .minimumScaleFactor(0.9)
                         .layoutPriority(1)
                     if let statusText {
                         Text(statusText)
-                            .font(.system(size: 11, weight: .regular))
+                            .font(.system(size: 10, weight: .regular))
                             .foregroundStyle(.white.opacity(hovering ? 0.78 : 0.64))
                             .lineLimit(2)
                             .minimumScaleFactor(0.9)
@@ -140,7 +144,7 @@ struct IslandHoverPanelControl: View {
             }
         }
         .padding(Self.horizontalPadding)
-        .frame(width: Self.tileWidth, height: Self.tileHeight, alignment: .leading)
+        .frame(width: width, height: Self.tileHeight, alignment: .leading)
         .background {
             Capsule()
                 .fill(LinearGradient(
@@ -169,8 +173,8 @@ struct IslandHoverPanelControl: View {
             if showsDot {
                 Circle()
                     .fill(Color(red: 1, green: 0.27, blue: 0.23))
-                    .frame(width: 7, height: 7)
-                    .overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1.5))
+                    .frame(width: 5, height: 5)
+                    .overlay(Circle().stroke(.black.opacity(0.35), lineWidth: 1))
                     .offset(x: 1, y: -1)
             }
         }
@@ -197,20 +201,20 @@ struct IslandHoverPanelControl: View {
 
         case .systemImage(let systemImage):
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.blue)
                 .symbolRenderingMode(.monochrome)
 
         case .flag(let flag):
             Text(flag)
-                .font(.system(size: IslandHoverPanelIconStyle.dynamicFlagFontSize, weight: .semibold))
+                .font(.system(size: IslandHoverPanelIconStyle.dynamicFlagFontSize * Self.iconScale, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.74)
 
         case .text(let text):
             Text(text)
                 .font(.system(
-                    size: 13,
+                    size: 9,
                     weight: .semibold,
                     design: .monospaced
                 ))
@@ -220,7 +224,7 @@ struct IslandHoverPanelControl: View {
                 .minimumScaleFactor(0.72)
                 .frame(
                     width: Self.iconSize - 6,
-                    height: 22
+                    height: 15
                 )
                 .offset(y: IslandGraphiteHoverControlStyle.textIconOpticalYOffset)
                 .drawingGroup(opaque: false, colorMode: .linear)
@@ -228,14 +232,14 @@ struct IslandHoverPanelControl: View {
         case .pdfRingedSystemImage(let ringResource, let systemImage):
             pdfRingedIcon(ringResource: ringResource) {
                 Image(systemName: systemImage)
-                    .font(.system(size: IslandHoverPanelIconStyle.ringSystemFontSize, weight: .semibold))
+                    .font(.system(size: IslandHoverPanelIconStyle.ringSystemFontSize * Self.iconScale, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.94))
             }
 
         case .pdfRingedFlag(let ringResource, let flag):
             pdfRingedIcon(ringResource: ringResource) {
                 Text(flag)
-                    .font(.system(size: IslandHoverPanelIconStyle.ringFlagFontSize, weight: .semibold))
+                    .font(.system(size: IslandHoverPanelIconStyle.ringFlagFontSize * Self.iconScale, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.76)
             }
@@ -275,7 +279,7 @@ struct IslandHoverPanelControl: View {
     @ViewBuilder
     private var fallbackSystemIcon: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 18, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Color.blue)
             .symbolRenderingMode(.monochrome)
     }
