@@ -100,10 +100,12 @@ Meeting Notes:
           other providers use their adapters, then LLM with the user's keys). Neither configured = the meeting is
           marked failed with `LocalModelMessaging.meetingProcessorNotConfigured`
           and its audio stays staged; a `MeetingFinalizeManifest` re-dispatches
-          it later with the language captured at Stop time. A completed Soniox
-          job without speech is not a failure: it stores a "No speech detected"
-          note without the LLM and releases the staged audio, so it is never
-          retried. WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
+          it later with the language captured at Stop time. A recording without
+          speech is not a failure: a completed Soniox job, or a successful local
+          transcription with no text on either track, stores a "No speech
+          detected" note without the LLM (locally also without the diarizer)
+          and releases the staged audio, so it is never retried. Model failures
+          remain errors. WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
        -> MeetingsStore (local SQLite) -> notes window (BlockNote in WKWebView)
   Manual start: Option M (configurable), the Record hover tile, or Settings ->
   Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the

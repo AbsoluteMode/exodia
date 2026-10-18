@@ -97,6 +97,19 @@ struct ParakeetMeetingASREngine: MeetingASRTranscribing {
     }
 }
 
+// MARK: - Errors
+
+enum MeetingLocalTranscriptionError: Error, CustomStringConvertible, Equatable {
+    case noAudio
+
+    var description: String {
+        switch self {
+        case .noAudio:
+            return "Neither recorded track contains readable audio."
+        }
+    }
+}
+
 // MARK: - MeetingLocalTranscriber
 
 /// Seam the coordinator depends on so the local capture/transcribe path
@@ -143,10 +156,17 @@ struct MeetingLocalTranscriber: MeetingLocalTranscribing {
     /// own call (never mixed), so the returned mic/system segment lists are
     /// independently derived. An empty input track is skipped (no engine
     /// call, no segments) so a mic-only or system-only meeting still works.
+    /// Throws `noAudio` when both tracks are empty.
     func transcribe(
         micSamples: [Float],
         systemSamples: [Float]
     ) async throws -> MeetingLocalTranscript {
+        // WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
+        // Without audio the engine never runs, so an empty result would not
+        // prove silence.
+        guard !micSamples.isEmpty || !systemSamples.isEmpty else {
+            throw MeetingLocalTranscriptionError.noAudio
+        }
         let mic = try await transcribeTrack(samples: micSamples, track: "mic")
         let system = try await transcribeTrack(samples: systemSamples, track: "system")
 

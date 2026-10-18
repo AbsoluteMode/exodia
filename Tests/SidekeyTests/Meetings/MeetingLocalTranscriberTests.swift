@@ -146,6 +146,21 @@ final class MeetingLocalTranscriberTests: XCTestCase {
         XCTAssertEqual(calls.first?.firstSample, -0.5)
     }
 
+    func test_noAudioOnEitherTrack_throwsInsteadOfReportingSilence() async throws {
+        let engine = SpyASREngine(resultsByFirstSample: [:])
+        let transcriber = MeetingLocalTranscriber(engine: engine, language: nil)
+
+        do {
+            _ = try await transcriber.transcribe(micSamples: [], systemSamples: [])
+            XCTFail("the engine never ran, so an empty result would not prove silence")
+        } catch {
+            XCTAssertEqual(error as? MeetingLocalTranscriptionError, .noAudio)
+        }
+
+        let calls = await engine.recordedCalls()
+        XCTAssertTrue(calls.isEmpty)
+    }
+
     func test_blankTranscriptResultProducesNoSegments() async throws {
         let micResult = ASRResult(
             text: "   ",
