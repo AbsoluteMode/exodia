@@ -1,3 +1,4 @@
+import Security
 import XCTest
 @testable import Sidekey
 
@@ -1735,6 +1736,161 @@ final class MeetingsCoordinatorTests: XCTestCase {
             manifestStore.manifestExists(in: recorderDir),
             "the stale manifest of a stored meeting is reconciled away"
         )
+    }
+
+    // MARK: - Keychain prompt unavailable (dark wake)
+
+    /// Recovery can run while macOS cannot show a Keychain access prompt: the
+    /// lid is closing or the Mac is in a dark wake. The key read then fails
+    /// with `errSecInDarkWake`, which says nothing about the meeting. The row
+    /// keeps its earlier failure reason, the manifest stays, and the next pass
+    /// (`startReady()` after a full wake) processes the meeting.
+    func test_recovery_in_dark_wake_keeps_previous_failure_and_processes_after_full_wake() async throws {
+        let config = MeetingsConfig(defaults: testDefaults)
+        config.isEnabled = true
+
+        let stagingRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("coord-recover-dark-wake-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: stagingRoot) }
+        let store = try MeetingsStore(rootDirectory: stagingRoot.appendingPathComponent("store"))
+
+        let recorderId = UUID()
+        let recorderDir = stagingRoot.appendingPathComponent(recorderId.uuidString)
+        try FileManager.default.createDirectory(at: recorderDir, withIntermediateDirectories: true)
+        _ = try writeChunk(name: "chunk-000.wav", bytes: [0x01], in: recorderDir)
+        let startedAt = Date(timeIntervalSince1970: 1_700_600_000)
+        let endedAt = Date(timeIntervalSince1970: 1_700_600_060)
+        let earlierFailure = String(describing: MeetingBYOKProcessingError.upstreamError("simulated 503"))
+        try await store.upsertProgress(
+            meta: MeetingMetaWithLocalState(
+                id: recorderId,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                durationSeconds: 60,
+                title: nil,
+                syncStatus: .new,
+                serverVersion: 1,
+                createdAt: startedAt
+            ),
+            status: .failed,
+            failureReason: earlierFailure
+        )
+        let manifestStore = MeetingFinalizeManifestStore()
+        try manifestStore.write(
+            MeetingFinalizeManifest(
+                recorderMeetingId: recorderId,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                durationSeconds: 60,
+                language: nil,
+                chunkFileNames: ["chunk-000.wav"],
+                isFinal: true
+            ),
+            to: recorderDir
+        )
+
+        let directProcessor = RecordingMeetingDirectProcessor(active: true)
+        directProcessor.error = KeychainError.unhandledError(errSecInDarkWake)
+        let coordinator = MeetingsCoordinator(
+            config: config,
+            detector: StubMeetingDetector(),
+            stagingRoot: { stagingRoot },
+            meetingsStore: store,
+            directProcessor: directProcessor,
+            meetingsEnabled: { true }
+        )
+        // The first event across both passes must be the stored meeting, not
+        // a failure from the dark-wake pass.
+        let eventTask = Task<MeetingsCoordinatorEvent?, Never> {
+            for await event in coordinator.events { return event }
+            return nil
+        }
+
+        // Dark wake: the key read cannot show its prompt.
+        await coordinator.recoverFinalizeManifestsOnLaunch()
+
+        XCTAssertEqual(directProcessor.calls.count, 1)
+        let deferred = try await store.list().first
+        XCTAssertEqual(deferred?.progressStatus, .failed)
+        XCTAssertEqual(
+            deferred?.failureReason, earlierFailure,
+            "a Keychain prompt that cannot be shown must not replace the meeting's real failure"
+        )
+        XCTAssertTrue(manifestStore.manifestExists(in: recorderDir))
+
+        // Full wake: the AppDelegate's `.full` rearm runs startReady(), which
+        // resumes pending processing again.
+        directProcessor.error = nil
+        coordinator.resumePendingProcessingOnLaunch()
+
+        let event = await withTimeout(seconds: 2.0) { await eventTask.value }
+        eventTask.cancel()
+
+        XCTAssertEqual(directProcessor.calls.count, 2)
+        if case .newMeetingAvailable(let id)? = event {
+            XCTAssertEqual(id, recorderId)
+        } else {
+            XCTFail("Expected .newMeetingAvailable after the full wake, got \(String(describing: event))")
+        }
+        let processed = try await store.list().first
+        XCTAssertEqual(processed?.progressStatus, .ready)
+        XCTAssertNil(processed?.failureReason)
+    }
+
+    /// A fresh Stop whose key read hits a dark wake (the lid closed right
+    /// after the meeting) is not a failed meeting either: no failure event,
+    /// the row stays queued as transcribing and the manifest stays for the
+    /// full-wake pass.
+    func test_dispatch_in_dark_wake_keeps_meeting_queued_without_failure() async throws {
+        let config = MeetingsConfig(defaults: testDefaults)
+        config.isEnabled = true
+
+        let stagingRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("coord-dispatch-dark-wake-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: stagingRoot) }
+        let recorderId = UUID()
+        let recorderDir = stagingRoot.appendingPathComponent(recorderId.uuidString)
+        try FileManager.default.createDirectory(at: recorderDir, withIntermediateDirectories: true)
+        let chunk0 = try writeChunk(name: "chunk-000.wav", bytes: [0x01], in: recorderDir)
+        let store = try MeetingsStore(rootDirectory: stagingRoot.appendingPathComponent("store"))
+
+        let directProcessor = RecordingMeetingDirectProcessor(active: true)
+        directProcessor.error = KeychainError.unhandledError(errSecInDarkWake)
+        let coordinator = MeetingsCoordinator(
+            config: config,
+            detector: StubMeetingDetector(),
+            meetingsStore: store,
+            directProcessor: directProcessor,
+            meetingsEnabled: { true }
+        )
+        let eventTask = Task<MeetingsCoordinatorEvent?, Never> {
+            for await event in coordinator.events { return event }
+            return nil
+        }
+
+        await coordinator.dispatchFinalizedForProcessing(
+            event: MeetingRecorder.FinalizedEvent(
+                meetingId: recorderId,
+                chunkURLs: [chunk0],
+                totalDurationSeconds: 60,
+                reason: .user
+            ),
+            startedAt: Date()
+        )
+
+        // Dispatch has returned, so any event it emitted is already buffered.
+        // A cancelled listener still receives buffered events, then nil.
+        eventTask.cancel()
+        let emitted = await eventTask.value
+
+        XCTAssertEqual(directProcessor.calls.count, 1)
+        XCTAssertNil(emitted, "a dark-wake Keychain read must not broadcast .meetingFailed")
+        let row = try await store.list().first
+        XCTAssertEqual(row?.progressStatus, .transcribing)
+        XCTAssertNil(row?.failureReason)
+        XCTAssertTrue(MeetingFinalizeManifestStore().manifestExists(in: recorderDir))
     }
 
     // MARK: - Manual refresh (repairLocalTitle)
