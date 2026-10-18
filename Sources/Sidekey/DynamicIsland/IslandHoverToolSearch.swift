@@ -105,6 +105,24 @@ struct IslandHoverSearchField: NSViewRepresentable {
         // that would steal it back from a clicked result or the next inline tool.
     }
 
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: IslandHoverSearchNativeField,
+        context: Context
+    ) -> CGSize? {
+        // The outer SwiftUI frame is 30 pt, but AppKit's intrinsic search
+        // field is only 24 pt. Its native button rect then extends beyond
+        // the NSView, where a remounted transition layer can clip the icon.
+        // Give the NSView the full field height on every layout pass;
+        // AppKit still owns the text/search/cancel layout inside that frame.
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *), let width = proposal.width, width.isFinite {
+            return CGSize(width: max(0, width), height: IslandHoverToolSearch.fieldHeight)
+        }
+        #endif
+        return nil
+    }
+
     static func dismantleNSView(_ field: IslandHoverSearchNativeField, coordinator: Coordinator) {
         field.removeWindowObserver()
         field.delegate = nil

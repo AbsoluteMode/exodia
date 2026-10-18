@@ -4,7 +4,6 @@ import SwiftUI
 /// standalone Monitor. No window activation or collector implementation here.
 @MainActor
 struct MonitorHoverPanel: View {
-    nonisolated static let contentHeight: CGFloat = 344
     @StateObject private var store: MonitorStore
     @State private var selectedID: String?
     let onBack: () -> Void
@@ -25,6 +24,7 @@ struct MonitorHoverPanel: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            // Equal side slots center the title without overlapping navigation.
             HStack(spacing: 8) {
                 Button {
                     if selectedID == nil { onBack() }
@@ -34,21 +34,28 @@ struct MonitorHoverPanel: View {
                         .font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                Spacer(minLength: 4)
+                .frame(width: 88, alignment: .leading)
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
-                Spacer(minLength: 4)
-                if selectedID != nil {
-                    Button { store.requestRefresh() } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity)
+                Group {
+                    if selectedID != nil {
+                        Button { store.requestRefresh() } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .medium))
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Refresh dashboard")
+                    } else {
+                        Color.clear.frame(width: 24, height: 24)
+                            .accessibilityHidden(true)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Refresh dashboard")
                 }
+                .frame(width: 88, alignment: .trailing)
             }
             .frame(height: 26)
 
@@ -86,28 +93,18 @@ struct MonitorHoverPanel: View {
     }
 
     private var dashboardPicker: some View {
-        ScrollView {
-            VStack(spacing: 8) {
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 8) {
                 dashboardButton(id: "server-status", title: "Server status",
                                 image: "server.rack", subtitle: "CPU, memory and GPU readings")
                 ForEach(store.dashboards) { dashboard in
                     dashboardButton(id: dashboard.id, title: dashboard.title,
                                     image: dashboard.systemImage, subtitle: dashboard.subtitle)
                 }
-                Text("Your agent can add custom dashboards to this Mac's Monitor folder.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 4)
-                if store.dashboards.isEmpty {
-                    Text(store.dashboardsDirectory.path)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func dashboardButton(id: String, title: String, image: String, subtitle: String) -> some View {

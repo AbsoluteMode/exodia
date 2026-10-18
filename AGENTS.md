@@ -131,9 +131,13 @@ Hover capsules and materials:
   exactly the same width, with three smaller capsules per row. Follow the actual
   notch-derived compactWidth (310/312 pt examples), not a fixed 457 pt drawer.
   IslandHoverPanelControl.swift defaults to a 90x52 foreground capsule with a
-  24 pt white icon disk/blue glyph, normal-case 11 pt title and optional 10 pt
+  30 pt white icon disk with 17 pt blue symbols, normal-case 11 pt title and optional 10 pt
   current status inside. The grid supplies each instance's exact width through
   IslandHoverControlsLayout.tileWidth(panelWidth:): (panelWidth - 24 - 16) / 3.
+  User feedback on 2026-10-18 called the 24 pt disks and 12 pt symbols too small;
+  larger icons retain the same capsule and text sizes.
+  Historical 2.2.5 icon-refinement proof covers 101 focused tests and 18
+  source-matched offscreen renders with no visible/key windows (layout/text only).
   Bundled icon assets retain their own presentation. HoverToolPresentation
   resolves state purely from mode, languages and recording: Fast/Smart, input
   Auto/language, output Smart only/Off/language, and Recording/Not recording.
@@ -151,7 +155,7 @@ Hover capsules and materials:
   on macOS 26+, with passive rims and foreground lenses, never child glassEffect.
   Explicit hover/press/magnetic feedback respects Reduce Motion. Older material
   fallback is unchanged. Do not show test windows over the user's work; use
-  offscreen checks and state compositor limits. The planned 2.2.4 compact
+  offscreen checks and state compositor limits. Historical 2.2.4 compact
   candidate passed 69 focused tests and the full 2,947-test suite (8 skipped,
   0 failures, 45.315 seconds). Eighteen actual capsule/search-layout renders cover
   310/312 pt layouts with source-hash match and no visible/key windows.
@@ -164,15 +168,28 @@ Hover capsules and materials:
 Monitor inside hover:
   Monitor registry kind is inlinePanel and HoverSlotRouter resolves
   .openPanel(.monitor). Capsule, catalog search and positional hotkeys all open
-  MonitorHoverPanel in the same compact-width drawer, with contentHeight 344 pt:
-  dashboard picker -> Server status or custom dashboard -> Back to picker -> Tools.
+  MonitorHoverPanel in the same compact-width drawer: dashboard picker -> Server
+  status or custom dashboard -> Back to picker -> Tools. The 2026-10-18 user
+  clarification keeps the Monitor heading and centers it precisely, using equal
+  88 pt navigation/refresh slots. Do not remove the heading or grow the drawer
+  with dashboard count. IslandView .controls/.monitor share
+  controlsHoverPanelHeight(toolCount:): six tools give a 243 pt host band/235 pt
+  content; three tools give 167/159 pt. Music adds 50 pt to the host band for its
+  strip and gap. The picker scrolls vertically in a bounded LazyVStack; long
+  dashboard lists stay within the normal controls height. Keep user-facing
+  dashboard choices here; setup instructions and local paths belong in the guide.
   Its compactPresentation uses vertical CPU/RAM/load/GPU metrics and one flexible
   column of custom widgets; the legacy window keeps its existing presentation.
   The view starts MonitorStore when shown and stops it on disappearance;
   Refresh calls requestRefresh and reuses existing collectors/snapshot rendering.
   Hover launch and the legacy openMonitor callback both request inline .monitor
   with programmatic expansion; neither opens a window. The legacy window class
-  is retained for compatibility only. Guide: docs/customization/dashboards.md.
+  is retained for compatibility only. Current Monitor/search candidate proof:
+  2,949 tests, 8 skipped, 0 failures (45.711 s); search-focused 9/0 (3.901 s).
+  Source-matched offscreen checks cover 16 Monitor fixtures/20 current PNGs and
+  40 search PNGs with no visible/key windows. Synthetic no-op stores avoid real
+  collectors/user data; native glass, real pointer/focus and installed-app
+  acceptance remain separate. Guide: docs/customization/dashboards.md.
 
 Hover tool search and pointer routing:
   Search all tools searches the full catalog (titles, descriptions and aliases),
@@ -181,6 +198,11 @@ Hover tool search and pointer routing:
   focus; ordinary hover and active visual treatment leave the user's app focused.
   On macOS 26+, NSSearchField uses a custom cell drawInterior without the black
   bezel, keeping native text/search/cancel geometry; its field editor is clear.
+  Its NSViewRepresentable.sizeThatFits explicitly returns the declared 30 pt
+  height rather than AppKit's 24 pt intrinsic height. This keeps the native
+  24 pt button rect inside the hosted field (y=4), avoiding a measured 1 pt
+  overflow at the smaller height. The user-reported Monitor -> Back top slice
+  was not reproduced offscreen; do not claim a proved desktop-compositor cause.
   A translucent input lens/rim supplies the foreground surface without child
   native glass. History shares the drawer's Regular backdrop, uses translucent
   rows/hints and a separate preview backdrop. macOS 14/15 fallback is unchanged;
