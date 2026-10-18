@@ -9,6 +9,24 @@ canonical_for: [hover-glass-material]
 verified_at: 2026-10-18
 sources:
   - type: trace
+    reference: /tmp/exodia-monitor-search-final-tests.log, full 2949 tests with 8 skipped and 0 failures in 45.711 seconds for the Monitor layout/search return candidate.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-search-return-focused-tests.log, 9 focused hosted-search tests with 0 failures in 3.901 seconds.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-monitor-layout-offscreen/render-manifest.json and source-manifest.json, 16 source-matched production-layout fixtures with 20 current PNGs and no visible/key windows.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-search-return-proof/manifest.json, 40 source-matched offscreen native-search snapshots and hosted resize/remount geometry with no visible/key windows.
+    confirmed_at: 2026-10-18
+  - type: user-confirmed
+    reference: User clarified on 2026-10-18 that the Monitor heading must remain and be precisely centered, its panel must match the normal controls height and long dashboard lists must scroll vertically.
+    confirmed_at: 2026-10-18
+  - type: repository
+    reference: Tests/SidekeyTests/DynamicIsland/IslandHoverPanelControlTests.swift
+    confirmed_at: 2026-10-18
+  - type: trace
     reference: /tmp/exodia-hover-icons-focused-tests.log, 101 focused tests with 0 failures for the larger-icon refinement.
     confirmed_at: 2026-10-18
   - type: trace
@@ -129,7 +147,10 @@ candidate added three-column capsules and inline Monitor. After seeing that
 layout, the user clarified on 2026-10-17 that hover should match the island's
 width and confirmed three smaller capsules per row. That correction governs the
 2.2.4 layout. On 2026-10-18 the user reported that its icons looked too small.
-The next refinement enlarges only the icon presentation within the same capsules.
+The next refinement enlarged only the icon presentation within the same capsules.
+On 2026-10-18 the user then clarified the Monitor layout: retain and precisely
+center its heading, keep the normal controls height and scroll long dashboard
+lists vertically.
 
 ## Decision
 
@@ -156,7 +177,15 @@ when search makes the panel key. Keep the independent backdrop and foreground
 rims/lenses; do not restore an opaque black surface or nested native glass.
 On macOS 26+, a custom `NSSearchFieldCell` draws its interior without the black
 bezel, preserving native geometry and button tracking. Its shared field editor
-is transparent; a foreground gradient/rim supplies the input lens. History uses
+is transparent; a foreground gradient/rim supplies the input lens. The native
+search representable explicitly returns its declared 30-point height through
+`sizeThatFits`, avoiding the 24-point intrinsic-height proposal that left the
+native 24-point button rect one point outside the hosted field. Native cell
+text/search/cancel geometry and transparent drawing remain unchanged. Offscreen
+Monitor -> Back remounts did not reproduce the top slice reported by the user;
+this removes a measured clipping risk without establishing the exact desktop-
+compositor cause. See the [search decision](2026-10-17-hover-tool-search.md).
+History uses
 the common drawer backdrop, translucent row/hint lenses and an independent
 preview backdrop. Existing macOS 14/15 fallback and transparent Case/Vocab/Filler
 panels are retained.
@@ -194,8 +223,17 @@ compact island's right/top anchors. Reserved capacity is not an extra
 mouse-active area.
 
 Monitor launches inline from capsules, search and positional hotkeys through
-`.openPanel(.monitor)`. `MonitorHoverPanel.contentHeight` is 344 points, with a
-dashboard picker, Server status/custom content, Refresh and Back navigation.
+`.openPanel(.monitor)`, with a dashboard picker, Server status/custom content,
+Refresh and Back navigation. The current heading stays visible and is precisely
+centered between equal 88-point navigation/refresh slots. The controls and
+Monitor modes share `controlsHoverPanelHeight(toolCount:)`: six selected tools
+produce a 243-point host band and 235-point content; three tools produce
+167/159 points. An active music strip adds 50 points to the host band for its
+strip and gap. Monitor no longer uses an independent 344-point content height.
+Its bounded vertical `ScrollView`/`LazyVStack` keeps additional dashboards
+reachable without making the panel taller. Setup instructions and local path
+text are omitted from this user-facing picker; the source customization guide
+keeps that information.
 The inline route enables `compactPresentation`: server metrics stack vertically
 and custom widgets use one flexible column, fitting the compact drawer while
 the legacy window retains its existing layout. It starts/stops the existing
@@ -246,7 +284,39 @@ and older toolchains. Availability guards preserve the macOS 14.2 deployment
 floor. This decision does not restore the June fixed opaque wash to the native
 path or flatten live glass into an offscreen bitmap.
 
-## Icon refinement verification
+## Monitor layout and search-return verification
+
+The current candidate passed the full 2,949-test suite with 8 skipped and 0
+failures in 45.711 seconds. Nine focused hosted-search tests passed with 0
+failures in 3.901 seconds. These are current-source results; the historical
+2.2.5/2.2.4 results below cover earlier candidates.
+
+Monitor proof contains 16 production-layout fixtures and 20 current PNGs across
+310/312-point widths and 159/235-point content heights, with 1/21 dashboards,
+selected-server and long-title headers, and programmatic scrolling to dashboard
+20. The native scroll viewport is bounded at 92/168 points. The one-dashboard
+picker, 21-dashboard bottom position and long-title header were inspected.
+Only manifest-listed current fixtures count; older files in the output directory
+are excluded. Synthetic no-op stores and dashboard-detail placeholders avoid
+collectors, network calls and local user data.
+
+Search proof contains 40 native-field snapshots across 310/312-point widths,
+empty/query states and earlier/matched Monitor heights, with actual hidden-host
+resize, field removal/remount and opacity/scale transition. The native 24-point
+button rect fits inside the fixed 30-point field, identical bounds retain the
+same native cell geometry, and full native render bytes remain stable across
+remount. Fixed 310-point matched-height return and 312-point earlier-height
+query outputs were inspected with complete icons. The tests do not autofocus
+the field.
+
+Both proof manifests match the current production sources and record invisible,
+non-key windows with prohibited activation. Dark/flat backing is test-only. The
+exact top slice in the user's image was not reproduced in the offscreen
+baseline; this proves removal of a native sizing/clipping defect, not the exact
+desktop-compositor cause. Native glass, real pointer/physical focus, live
+Monitor collectors/buttons and installed-app acceptance remain separate.
+
+## Historical 2.2.5 icon refinement verification
 
 The 2.2.5 candidate passed 101 focused layout, presentation, search and pointer
 routing tests with 0 failures. Eighteen source-matched offscreen renders at

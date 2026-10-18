@@ -2,6 +2,20 @@ import XCTest
 @testable import Sidekey
 
 final class IslandHoverPanelControlTests: XCTestCase {
+    @MainActor
+    func test_monitorKeepsTheControlsBandHeightForEveryLayoutAndMusicState() {
+        for count in [1, 3, 6, 9, 13] {
+            for musicActive in [false, true] {
+                let controls = IslandView.hoverPanelHeight(for: .controls, musicActive: musicActive, toolCount: count)
+                let monitor = IslandView.hoverPanelHeight(for: .monitor, musicActive: musicActive, toolCount: count)
+                XCTAssertEqual(monitor, controls, accuracy: 0.001,
+                               "Opening Monitor must not resize the drawer or its native pointer band.")
+            }
+        }
+        XCTAssertEqual(IslandView.hoverPanelHeight(for: .monitor, musicActive: false, toolCount: 6), 243)
+        XCTAssertEqual(IslandView.hoverPanelHeight(for: .monitor, musicActive: true, toolCount: 6), 293)
+    }
+
     func test_notificationSlotIsTopAlignedWithIslandSurface() throws {
         let source = try Self.source(
             "Sources/Sidekey/DynamicIsland/IslandView.swift"

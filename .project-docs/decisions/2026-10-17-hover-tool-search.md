@@ -6,8 +6,11 @@ summary: Keep frequent tools in the saved grid and find occasional tools through
 status: confirmed
 tags: [hover, search, keyboard, customization]
 canonical_for: [hover-tool-search]
-verified_at: 2026-10-17
+verified_at: 2026-10-18
 sources:
+  - type: user-confirmed
+    reference: User reported on 2026-10-18 that the search loupe was clipped after returning from Monitor to the normal hover controls.
+    confirmed_at: 2026-10-18
   - type: user-confirmed
     reference: User request on 2026-10-17 for hover search to find Output Lang without keeping it among frequent tools.
     confirmed_at: 2026-10-17
@@ -56,6 +59,29 @@ testing. Settings stays pinned last; the first five saved positions retain
 their positional shortcuts. Search is a launcher for occasional tools, not an
 alternative persistence format.
 
+## Native field height after Monitor
+
+The search `NSViewRepresentable` explicitly returns the declared 30-point field
+height in `sizeThatFits`, instead of accepting AppKit's 24-point intrinsic
+height. With a 24-point hosted view, the native search/cancel button rectangle
+was measured at y=1 with height 24, overflowing by one point. At the declared
+30-point height it sits at y=4 with height 24, fully inside the view. The native
+cell still calculates text, search and cancel rectangles from the actual bounds;
+its transparent interior drawing is unchanged, and no replacement loupe was
+introduced.
+
+Offscreen hosted remounts at the earlier 352-point Monitor band and matched
+243-point band did not reproduce the physical top slice in the user's image.
+This change removes a concrete sizing/clipping risk; it does not prove the exact
+desktop-compositor cause of that report. Nine focused hosted-search tests passed
+with 0 failures in 3.901 seconds. The current source-matched proof contains 40
+native-field snapshots with hidden-host resize/remount across 310/312 points,
+empty/query states and earlier/matched Monitor heights; no window became visible
+or key. It verifies in-bounds native rectangles and stable render bytes without
+autofocusing the field. Full current-candidate results and precise limits are
+recorded in [the hover decision](2026-10-17-native-hover-glass.md); previous
+search proofs below cover their stated earlier scopes.
+
 ## Earlier verification
 
 Before the subsequent user-reported hover regression, on 2026-10-17, the separate Exodia Beta development bundle accepted `output`
@@ -84,7 +110,7 @@ separate. Use offscreen checks only, without displaying test windows over the
 user's work.
 
 The later user-confirmed equal-width correction keeps three smaller capsules per
-row and gives search the actual compact island width. The planned 2.2.4 candidate
+row and gives search the actual compact island width. The historical 2.2.4 candidate
 passed 69 focused tests and the full 2,947-test suite (8 skipped, 0 failures).
 Eighteen source-matched offscreen capsule/search-layout renders cover 310/312
 points without visible/key windows. These use an empty native-field layout,
