@@ -16,6 +16,7 @@ verifiable claim rather than a slogan.
   restarts, with image attachments stored beside the database. New copies
   evict the oldest excess entries and their images. It does not import the
   existing pasteboard payload on launch.
+  History → Clipboard displays the latest 20 retained copies with scrolling.
 - API keys you enter ("Your key") are stored in the macOS Keychain under the
   app's own service name (`com.rootwise.sidekey`).
 - Logs go to the unified system log (`os_log`, subsystem

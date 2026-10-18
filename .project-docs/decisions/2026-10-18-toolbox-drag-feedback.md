@@ -8,6 +8,9 @@ tags: [toolbox, hover, drag-and-drop, animation, accessibility]
 canonical_for: [toolbox-drag-feedback]
 verified_at: 2026-10-18
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-18 the user confirmed that installed Exodia 2.2.10 no longer duplicates the cursor and inserted icons when dropping into Add.
+    confirmed_at: 2026-10-18
   - type: trace
     reference: /tmp/exodia-toolbox-handoff-focused-tests.log, 33 focused tests with 0 failures in 2.110 seconds for native handoff and actual hosted geometry.
     confirmed_at: 2026-10-18
@@ -133,3 +136,7 @@ stale-session and configuration cleanup. They do not render a real native
 drag preview. No GUI test window may appear over the user's work. Native
 pointer dragging, absence of the double icon and perceived smoothness require
 installed-app acceptance; hidden checks do not prove an NSDragging latency fix.
+
+On 2026-10-18 the user performed the installed 2.2.10 native drop check and
+confirmed there is no duplicate image. This supplies the separate physical
+handoff acceptance; it does not expand the hidden fixtures' measurement scope.

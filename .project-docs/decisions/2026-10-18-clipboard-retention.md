@@ -9,7 +9,7 @@ canonical_for: [clipboard-history-retention]
 verified_at: 2026-10-18
 sources:
   - type: user-confirmed
-    reference: On 2026-10-18 the user reported that Clipboard in History keeps disappearing; whether this referred to the tab or its entries was asked separately.
+    reference: On 2026-10-18 the user clarified that copied records disappear, confirmed a new record appears in installed 2.2.10 and requested a clipboard history of the latest twenty copies.
     confirmed_at: 2026-10-18
   - type: repository
     reference: Sources/Sidekey/AppDelegate.swift
@@ -48,15 +48,16 @@ needed. The existing fifty-entry cap remains: inserting the fifty-first copy
 evicts the oldest entry and its image file if applicable.
 
 The watcher still ignores the current pasteboard payload at startup and
-suppresses Exodia's own dictation write/restore events. The History feed still
-shows the newest ten entries; this UI limit does not delete older retained
-rows. Sleep/wake only stops and starts the watcher.
+suppresses Exodia's own dictation write/restore events. The Clipboard feed shows the newest twenty entries in a scrollable list,
+following the user's request. The hover retains its five-row viewport; scroll
+reveals the remaining copies. Agent and Drop keep their ten-card feeds. These
+UI limits do not delete older retained rows. Sleep/wake only stops and starts the watcher.
 
 ## Alternatives
 
 Keeping session-only purging reproduces complete loss after every application
-restart. Adding retention controls or changing the visible feed limit is outside
-this fix. A separate audit observation concerns stale asynchronous tab loads;
+restart. The initial ten-card Clipboard feed was expanded to twenty on the
+user's follow-up request; additional retention controls are outside this fix. A separate audit observation concerns stale asynchronous tab loads;
 that affects display rather than stored data and is not changed here.
 
 ## Sources and verification
@@ -72,8 +73,13 @@ bytes, or establish installed-application acceptance.
 An independent source review found no other full clipboard deletion path;
 the remaining production deletion enforces the existing cap.
 
-The full integrated suite passed 2,966 tests, with 8 skipped and 0 failures
-in 48.542 seconds (`/tmp/exodia-clipboard-retention-full.log`).
+The earlier 2.2.10 integrated suite passed 2,966 tests, with 8 skipped and
+0 failures in 48.542 seconds (`/tmp/exodia-clipboard-retention-full.log`).
+The twenty-card follow-up passed 55 focused tests with 0 failures in 0.171
+seconds (`/tmp/exodia-clipboard-twenty-focused.log`); its feed test verifies
+newest-first ordering, twenty visible records and twenty-five remaining rows
+in the isolated store. Independent source review confirmed both hover and
+strip consume this default and scroll the full array.
 
 ## Comments and objections
 
@@ -89,9 +95,13 @@ preserve its local clipboard database and assets privately, then restore only
 clipboard rows/assets after that process has quit. Do not overwrite newer
 agent or dictation history with an entire older database snapshot.
 
-Installed acceptance and public publication remain pending. The currently
-installed candidate is also blocked on a macOS Keychain authorization request;
-no credential contents were inspected.
+The 2.2.10 build1462 candidate was installed and launched normally after the
+previous Keychain startup blocker cleared. The user confirmed a new copied
+record appears. Before the upgrade, a private local snapshot found zero
+clipboard rows; previously erased copies cannot be repopulated from macOS.
+The twenty-card follow-up and restart persistence check are pending installation
+of the next candidate. No clipboard text or credential contents were inspected.
+Public publication remains pending.
 
 ## Supersedes
 

@@ -342,7 +342,8 @@ configuration, project contents or credentials with the source.
 Clipboard history retains the newest 50 local entries across launch, quit and
 sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
 the oldest excess rows and their image sidecars; the current History feed shows
-10 entries without deleting other retained rows. Startup seeds only the current
+20 clipboard entries in a scrollable five-row viewport (Agent/Drop keep 10),
+without deleting other retained rows. Startup seeds only the current
 pasteboard change counter; dictation write/restore suppression remains. Before
 replacing a running older binary with the old quit purge, preserve local
 clipboard data privately and restore only clipboard rows/assets after quit.
