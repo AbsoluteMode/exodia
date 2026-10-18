@@ -305,6 +305,9 @@ final class MeetingsCoordinator {
             transcriptProvider: { id in try await store.transcript(id: id) },
             refreshHandler: { [weak self] id in
                 await self?.repairLocalTitle(id: id)
+            },
+            deleteHandler: { [weak self] id in
+                await self?.deleteMeeting(id: id) ?? false
             }
         )
         _meetingsWindowController = controller
@@ -329,6 +332,9 @@ final class MeetingsCoordinator {
             bundleAccessRoot: bundleURL?.deletingLastPathComponent(),
             refreshHandler: { [weak self] id in
                 await self?.repairLocalTitle(id: id)
+            },
+            deleteHandler: { [weak self] id in
+                await self?.deleteMeeting(id: id) ?? false
             },
             // Settings top bar sits in the detail pane (right of the sidebar) —
             // no traffic lights above it, so the big 72pt inset isn't needed.
@@ -1373,9 +1379,10 @@ final class MeetingsCoordinator {
         for entry in entries {
             let dir = entry.dir
             // A meeting that already reached the store (note on disk) needs no
-            // re-processing: drop the stale manifest and move on.
+            // re-processing, and its staged recording is the leftover of a run
+            // that stopped after the insert: release it and move on.
             if await restoreReadyLocalMeetingIfPresent(meetingId: entry.manifest.recorderMeetingId) {
-                manifestStore.delete(in: dir)
+                await releaseStagedRecording(of: entry.manifest.recorderMeetingId, in: dir)
                 continue
             }
             // Recovered recordings never re-nudge for reconnect: they are
@@ -1652,6 +1659,35 @@ final class MeetingsCoordinator {
         return true
     }
 
+    /// Frees the staged recording of a meeting that is already stored. The
+    /// processors remove it right after the insert, so what is still here
+    /// belongs to a run that stopped in between. It goes only together with a
+    /// durable note: a ready row without a note keeps its audio, the only
+    /// source left, and just loses its stale manifest.
+    /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
+    private func releaseStagedRecording(of meetingId: UUID, in dir: URL) async {
+        guard let store = meetingsStore,
+              ((try? await store.markdown(id: meetingId)) ?? nil) != nil else {
+            manifestStore.delete(in: dir)
+            return
+        }
+        do {
+            try FileManager.default.removeItem(at: dir)
+            os_log(
+                "released staged recording of a stored meeting (dir: %{public}@)",
+                log: Self.log, type: .info,
+                dir.lastPathComponent
+            )
+        } catch {
+            os_log(
+                "could not release staged recording (dir: %{public}@, error: %{public}@)",
+                log: Self.log, type: .error,
+                dir.lastPathComponent, String(describing: error)
+            )
+            manifestStore.delete(in: dir)
+        }
+    }
+
     // MARK: - Edit persistence
 
     /// Persist a note edit. Called by `MeetingsEditBridge` once a 500 ms
@@ -1681,6 +1717,64 @@ final class MeetingsCoordinator {
                 id.uuidString, String(describing: error)
             )
         }
+    }
+
+    // MARK: - Delete
+
+    /// Deletes one meeting for good: its staged recording, row, note and
+    /// transcript. `false` when the meeting is unknown, still being
+    /// processed, or something could not be removed; the meeting then stays in
+    /// the list so the user can retry. The staged recording goes first: while
+    /// its manifest exists, launch recovery would bring the meeting back.
+    /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
+    func deleteMeeting(id: UUID) async -> Bool {
+        guard let store = meetingsStore else { return false }
+        guard let status = (try? await store.progressStatus(id: id)) ?? nil else {
+            os_log(
+                "deleteMeeting refused: unknown meeting (meetingId: %{public}@)",
+                log: Self.log, type: .info,
+                id.uuidString
+            )
+            return false
+        }
+        guard status.canBeDeleted else {
+            os_log(
+                "deleteMeeting refused: still processing (meetingId: %{public}@, status: %{public}@)",
+                log: Self.log, type: .info,
+                id.uuidString, status.rawValue
+            )
+            return false
+        }
+        if let stagedDir = stagingRootProvider?().appendingPathComponent(id.uuidString),
+           FileManager.default.fileExists(atPath: stagedDir.path) {
+            do {
+                try FileManager.default.removeItem(at: stagedDir)
+            } catch {
+                os_log(
+                    "deleteMeeting failed to remove the staged recording (meetingId: %{public}@, error: %{public}@)",
+                    log: Self.log, type: .error,
+                    id.uuidString, String(describing: error)
+                )
+                return false
+            }
+        }
+        do {
+            try await store.delete(id: id)
+        } catch {
+            os_log(
+                "deleteMeeting failed to delete the stored meeting (meetingId: %{public}@, error: %{public}@)",
+                log: Self.log, type: .error,
+                id.uuidString, String(describing: error)
+            )
+            return false
+        }
+        os_log(
+            "meeting deleted (meetingId: %{public}@)",
+            log: Self.log, type: .info,
+            id.uuidString
+        )
+        refreshOpenWindowIfNeeded()
+        return true
     }
 
     // MARK: - Manual refresh (sidebar context menu)

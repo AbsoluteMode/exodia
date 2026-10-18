@@ -143,6 +143,9 @@ final class MeetingListModel: ObservableObject {
 struct MeetingListView: View {
     @ObservedObject var model: MeetingListModel
     let onSelect: (UUID) -> Void
+    /// Offered in a row's context menu for meetings that can be deleted.
+    /// `nil` hides the menu in surfaces that cannot delete.
+    var onDelete: ((UUID) -> Void)? = nil
 
     var body: some View {
         Group {
@@ -166,6 +169,11 @@ struct MeetingListView: View {
                                 isSelected: row.id == model.selectedId,
                                 onTap: { onSelect(row.id) }
                             )
+                            .contextMenu {
+                                if let onDelete, row.progressStatus.canBeDeleted {
+                                    Button("Delete…", role: .destructive) { onDelete(row.id) }
+                                }
+                            }
                         }
                     } header: {
                         sectionHeader(section.header)

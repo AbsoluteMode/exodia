@@ -22,6 +22,10 @@ final class MeetingsContentController: NSViewController {
     private let markdownProvider: @MainActor (UUID) async throws -> String?
     private let transcriptProvider: @MainActor (UUID) async throws -> [TranscriptSegment]?
     private let refreshHandler: (@MainActor (UUID) async -> Void)?
+    /// Deletes one meeting for good; `false` means it could not be deleted.
+    /// `nil` hides the feature in surfaces that cannot delete.
+    private let deleteHandler: (@MainActor (UUID) async -> Bool)?
+    private let deletionPrompts: MeetingDeletionPrompts
 
     private let topBar: NotesTopBar
     private var topBarHeight: NSLayoutConstraint!
@@ -46,14 +50,18 @@ final class MeetingsContentController: NSViewController {
         bundleURL: URL?,
         bundleAccessRoot: URL?,
         refreshHandler: (@MainActor (UUID) async -> Void)? = nil,
+        deleteHandler: (@MainActor (UUID) async -> Bool)? = nil,
+        deletionPrompts: MeetingDeletionPrompts = .system,
         topBarLeadingInset: CGFloat = 72
     ) {
         self.source = source
         self.markdownProvider = markdownProvider
         self.transcriptProvider = transcriptProvider
         self.refreshHandler = refreshHandler
+        self.deleteHandler = deleteHandler
+        self.deletionPrompts = deletionPrompts
 
-        let sidebar = MeetingsSidebarController(source: source)
+        let sidebar = MeetingsSidebarController(source: source, canDelete: deleteHandler != nil)
         self.sidebarController = sidebar
 
         let detail = MeetingsDetailView(bundleURL: bundleURL, bundleAccessRoot: bundleAccessRoot)
@@ -374,5 +382,28 @@ extension MeetingsContentController: MeetingsSidebarDelegate {
         Task { @MainActor in
             await refreshHandler(id)
         }
+    }
+
+    /// Ask first; delete through the host's handler only after a yes; reload
+    /// the list either way (the state may have changed); say so when the
+    /// delete did not go through. The question names the meeting like the
+    /// list does.
+    func sidebarDidRequestDelete(id: UUID) {
+        guard let deleteHandler else { return }
+        let title = deletionTitle(for: id)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard await self.deletionPrompts.confirm(title, self.view.window) else { return }
+            let deleted = await deleteHandler(id)
+            self.sidebarController.refresh()
+            if !deleted {
+                await self.deletionPrompts.reportFailure(title, self.view.window)
+            }
+        }
+    }
+
+    private func deletionTitle(for id: UUID) -> String {
+        let title = sidebarController.meetings.first { $0.id == id }?.title
+        return (title?.isEmpty == false) ? title! : "Untitled"
     }
 }

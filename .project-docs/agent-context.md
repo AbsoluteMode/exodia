@@ -105,6 +105,15 @@ Meeting Notes:
           note without the LLM and releases the staged audio, so it is never
           retried. WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
        -> MeetingsStore (local SQLite) -> notes window (BlockNote in WKWebView)
+  Delete: a finished meeting (ready or failed) has "Delete…" in its row
+  context menu behind a confirmation whose default button is Cancel.
+  MeetingsCoordinator.deleteMeeting removes the staged recording first (while
+  its manifest exists, launch recovery would bring the meeting back), then the
+  row and its note and transcript files; a meeting still processing is
+  refused. Launch recovery frees the whole staged directory of a meeting that
+  already has a note, and keeps the audio when the note is missing. Remote
+  Soniox resources are not cleaned by Delete. WHY:
+  .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
   Manual start: Option M (configurable), the Record hover tile, or Settings ->
   Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
