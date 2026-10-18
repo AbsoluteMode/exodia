@@ -9,10 +9,11 @@ final class SelfKeyPreferencesTests: XCTestCase {
     }
 
     func testDefaultsFollowHardwareAndSoniox() {
-        // A fresh install runs on-device on Apple Silicon and on BYOK elsewhere.
+        // A fresh install has no route on Apple Silicon (the removed on-device
+        // models used to be the default there) and uses BYOK elsewhere.
         let appleSilicon = SelfKeyPreferences(defaults: makeDefaults(), isAppleSilicon: true)
-        XCTAssertEqual(appleSilicon.transcriptionLevel, .local)
-        XCTAssertEqual(appleSilicon.llmLevel, .local)
+        XCTAssertNil(appleSilicon.transcriptionLevel)
+        XCTAssertNil(appleSilicon.llmLevel)
 
         let intel = SelfKeyPreferences(defaults: makeDefaults(), isAppleSilicon: false)
         XCTAssertEqual(intel.transcriptionLevel, .yourKey)
@@ -27,24 +28,17 @@ final class SelfKeyPreferencesTests: XCTestCase {
         XCTAssertEqual(intel.customLLMModel, "local-model")
     }
 
-    func testDefaultLevelHelpersFollowHardware() {
-        XCTAssertEqual(TranscriptionIsolationLevel.defaultLevel(isAppleSilicon: true), .local)
-        XCTAssertEqual(TranscriptionIsolationLevel.defaultLevel(isAppleSilicon: false), .yourKey)
-        XCTAssertEqual(LLMIsolationLevel.defaultLevel(isAppleSilicon: true), .local)
-        XCTAssertEqual(LLMIsolationLevel.defaultLevel(isAppleSilicon: false), .yourKey)
-    }
-
     func testRetiredCloudLevelDecodesToHardwareDefault() {
         // Older installs persisted the cloud ("whytap") level. It is no longer
-        // a case, so the stored string resolves to the hardware default instead
-        // of failing to decode.
+        // a case, so the stored string resolves to the hardware default (no
+        // route on Apple Silicon) instead of failing to decode.
         let d = makeDefaults()
         d.set("whytap", forKey: "sidekey.models.transcriptionLevel")
         d.set("whytap", forKey: "sidekey.models.llmLevel")
 
         let appleSilicon = SelfKeyPreferences(defaults: d, isAppleSilicon: true)
-        XCTAssertEqual(appleSilicon.transcriptionLevel, .local)
-        XCTAssertEqual(appleSilicon.llmLevel, .local)
+        XCTAssertNil(appleSilicon.transcriptionLevel)
+        XCTAssertNil(appleSilicon.llmLevel)
 
         let intel = SelfKeyPreferences(defaults: d, isAppleSilicon: false)
         XCTAssertEqual(intel.transcriptionLevel, .yourKey)

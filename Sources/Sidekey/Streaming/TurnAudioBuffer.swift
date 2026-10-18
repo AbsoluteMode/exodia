@@ -3,7 +3,7 @@ import os.lock
 
 /// Per-turn accumulator of the exact PCM16 bytes the mic produced, so a
 /// degraded live stream can be recovered by re-transcribing the full audio
-/// with the on-device batch transcriber. Thread-safe: the audio tap appends from the
+/// with a `BatchTranscribing` recognizer. Thread-safe: the audio tap appends from the
 /// chunker queue; the main actor snapshots after the session resolves.
 ///
 /// Holds raw PCM16 mono @ 16 kHz (the format `StreamingAudioEngine` emits).

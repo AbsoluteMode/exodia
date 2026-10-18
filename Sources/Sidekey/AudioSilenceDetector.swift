@@ -1,8 +1,8 @@
 import Foundation
 
 /// Pure-logic decision: is this freshly-captured recording worth
-/// transcribing at all (on-device or with the user's STT provider), or is
-/// it a hot-key misfire we should drop silently?
+/// transcribing at all with the user's STT provider, or is it a hot-key
+/// misfire we should drop silently?
 ///
 /// Why this exists:
 ///   A fast tap-and-release of either the Agent gesture (Right Cmd) or

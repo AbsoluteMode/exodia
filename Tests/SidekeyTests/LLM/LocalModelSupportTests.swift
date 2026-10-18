@@ -13,27 +13,4 @@ final class LocalModelSupportTests: XCTestCase {
         let value = LocalModelSupport.isAppleSilicon
         XCTAssertTrue(value == true || value == false)
     }
-
-    // MARK: - Unified messaging
-
-    func testRequiresAppleSiliconStringIsStable() {
-        XCTAssertEqual(
-            LocalModelMessaging.requiresAppleSilicon,
-            "Local models require Apple Silicon."
-        )
-    }
-
-    func testOfflineCannotDownloadStringIsStable() {
-        XCTAssertEqual(
-            LocalModelMessaging.offlineCannotDownload,
-            "You're offline — connect to the internet to download the model."
-        )
-    }
-
-    func testModelNotDownloadedStringIsStable() {
-        XCTAssertEqual(
-            LocalModelMessaging.modelNotDownloaded,
-            "Download the local model first."
-        )
-    }
 }

@@ -11,21 +11,10 @@ files, next to the files themselves.
 | Package | Use | License |
 |---|---|---|
 | sparkle-project/Sparkle | in-app updates | MIT |
-| FluidInference/FluidAudio | Silero VAD, Parakeet speech recognition, speaker diarization (Core ML) | Apache-2.0 |
-| ml-explore/mlx-swift | on-device inference runtime | MIT |
-| ml-explore/mlx-swift-lm | LLM loading, chat session, Hugging Face download | MIT |
-| huggingface/swift-transformers | tokenizers for the local LLM | Apache-2.0 |
-| huggingface/swift-huggingface | Hugging Face Hub client | Apache-2.0 |
-| huggingface/swift-jinja | chat template rendering | Apache-2.0 |
-| mattt/EventSource | server-sent events parsing | MIT |
-| ibireme/yyjson | JSON parsing (transitive) | MIT |
-| apple/swift-nio, swift-crypto, swift-asn1, swift-atomics, swift-collections, swift-numerics, swift-system | transitive dependencies of the packages above | Apache-2.0 |
+| FluidInference/FluidAudio | Silero VAD for the meeting detector (Core ML) | Apache-2.0 |
 
 ## Vendored and generated binaries
 
-- `Resources/mlx.metallib`: Metal kernels compiled from ml-explore/mlx-swift at
-  the revision recorded in `Resources/mlx.metallib.revision` with
-  `scripts/build-metallib.sh`. License: MIT (ml-explore).
 - `Resources/MediaRemoteAdapter/`: runtime artifacts of ungive/mediaremote-adapter.
   License: BSD-3-Clause. See `Resources/MediaRemoteAdapter/THIRD_PARTY_NOTICE.md`
   for the pinned commit and full text.
@@ -38,15 +27,13 @@ files, next to the files themselves.
 
 ## Models downloaded at runtime
 
-Exodia does not bundle model weights. On first use it downloads, with your
-consent, from Hugging Face:
+Exodia does not bundle model weights. The meeting detector downloads, on its
+first speech check, the Silero VAD Core ML conversion published by
+FluidInference on Hugging Face (`FluidInference/silero-vad-coreml`; the
+upstream Silero VAD is MIT). On-device speech recognition, diarization and
+LLM models were removed.
 
-- Parakeet TDT v3 Core ML conversion published by FluidInference (CC-BY-4.0
-  model weights, Apache-2.0 conversion tooling);
-- FluidAudio speaker-diarization Core ML models (Apache-2.0);
-- Qwen3-4B-Instruct-2507 4-bit MLX conversion (Apache-2.0, Qwen).
-
-Check the model cards on Hugging Face for the exact terms of each model.
+Check the model card on Hugging Face for the exact terms.
 
 ## Fonts
 

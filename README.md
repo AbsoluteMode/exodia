@@ -1,7 +1,7 @@
 # Exodia
 
 Voice input and a voice-driven agent for macOS. Bring your own API keys
-(BYOK), or use local models on Apple Silicon.
+(BYOK) or your own OpenAI-compatible endpoint.
 
 Hold **Space** in any text field, speak, release: the transcript is pasted
 where the cursor is. Tap **Right Command** to ask your local OpenCode agent
@@ -31,9 +31,9 @@ will not force a restart during a meeting recording, dictation or agent task.
 A prepared download can also apply when you quit Exodia normally. **Later**
 cancels the current installation; **Restart** applies it once work is finished.
 
-Runtime: macOS 14.2 (Sonoma) or newer. Local speech and text models need Apple
-Silicon; Intel Macs can use their own provider keys. Exodia keeps the original
-storage identities so the rename preserves settings, keys, notes and agent memory.
+Runtime: macOS 14.2 (Sonoma) or newer, on Apple Silicon or Intel. Exodia keeps
+the original storage identities so the rename preserves settings, keys, notes
+and agent memory.
 
 Source and custom builds remain available; see [Development](#development).
 
@@ -42,11 +42,14 @@ Source and custom builds remain available; see [Development](#development).
 | Feature | Route | Runs on |
 |---|---|---|
 | Dictation (Drop) | Your key (BYOK): Soniox, Deepgram, ElevenLabs, or a self-hosted OpenAI-compatible endpoint | the provider you chose, with your key |
-| Dictation (Drop) | Local model: FluidAudio Parakeet TDT v3 (Core ML) | your Mac, offline after a one-time download |
 | Smart cleanup of dictated text | OpenRouter with your key, or a custom OpenAI-compatible endpoint (Ollama, LM Studio, vLLM) | the endpoint you chose |
-| Smart cleanup of dictated text | Local model: Qwen3-4B on MLX | your Mac |
 | Agent (Right Command) | OpenCode with your OpenRouter key and selected model | tools and memory on your Mac; inference at your selected provider |
-| Meeting Notes | Your key, or local Parakeet + FluidAudio diarization + MLX summary | the provider you chose, or your Mac |
+| Meeting Notes | Your speech provider (Soniox labels speakers), then your LLM for the summary | the providers you chose |
+
+Exodia no longer ships on-device speech or text models. If you used **Local**
+before, Exodia does not switch you to a provider on its own: dictation opens
+**Settings, Models** until you choose a speech provider, Smart cleanup is
+skipped until you choose an LLM, and recorded meetings wait for both.
 
 Keys you enter are stored in the macOS Keychain and sent only to the
 provider you selected. Transcripts, notes and history are SQLite files under
@@ -57,11 +60,10 @@ provider you selected. Transcripts, notes and history are SQLite files under
 Exodia opens directly to the island. There is no onboarding wizard or account.
 Open **Settings** from the island's hover controls:
 
-1. In **Models**, choose **Your key**, select a speech provider and enter your
-   API key. Save to check the connection and store the key in macOS Keychain.
-   On Apple Silicon, you can choose **Local** and download the model instead.
-2. Optionally configure OpenRouter, your own endpoint or a local model for text
-   cleanup and meeting summaries.
+1. In **Models**, select a speech provider and enter your API key. Save to
+   check the connection and store the key in macOS Keychain.
+2. Optionally configure OpenRouter or your own endpoint for text cleanup and
+   meeting summaries.
 3. In **Permissions**, grant Accessibility and Microphone for dictation.
    Meeting recording also needs System Audio Recording. Features may request
    a missing permission when you use them.
@@ -124,10 +126,8 @@ bundle at a stable path and preserves the bundle identity. With the existing
 local signing identity, permission grants can survive rebuilds. An ad-hoc
 rebuild may require granting permissions again in macOS Settings.
 
-The Metal library for MLX is committed (`Resources/mlx.metallib`) and pinned
-to the resolved `mlx-swift` revision; bump both together with
-`scripts/build-metallib.sh`. See [build details](docs/build-and-release.md).
-Builds and tests run locally; GitHub Actions is disabled. Ready-made releases
+See [build details](docs/build-and-release.md). Builds and tests run locally;
+GitHub Actions is disabled. Ready-made releases
 use the community DMG and signed Sparkle archive pipeline; no Apple Developer
 account is required. Development builds use version `0.0.0-dev` / build `9999`
 and do not accept binary-feed updates over your custom build. Update the source

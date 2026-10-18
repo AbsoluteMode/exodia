@@ -17,8 +17,8 @@ labels: bug
 - macOS version:
 - Mac (Apple Silicon or Intel):
 - Exodia version (Settings window):
-- Speech route: local model / your own key (which provider) / custom endpoint
-- Text route: local model / OpenRouter / custom endpoint / none
+- Speech route: your own key (which provider) / custom endpoint
+- Text route: OpenRouter / custom endpoint / none
 - Agent: Claude Code / Codex / none
 
 **Logs**
