@@ -260,16 +260,23 @@ final class ClaudeRunStreamingTests: XCTestCase {
     }
 
     // MARK: - Test 9: idle watchdog fires agent_timeout when child is silent
+    //
+    // As in CodexRunStreamingTests: onHard finishes the stream before it
+    // terminates the child, so terminate() can land on the watchdog queue after
+    // the loop ends. Wait for it instead of reading a counter.
 
     func testSilentChildTriggersWatchdogTerminateAndError() async {
         final class FakeWriter: ClaudeStdinWriting {
-            var terminateCount = 0
+            let terminated: XCTestExpectation
+            init(terminated: XCTestExpectation) { self.terminated = terminated }
             func writeLine(_ line: String) {}
             func closeStdin() {}
-            func terminate() { terminateCount += 1 }
+            func terminate() { terminated.fulfill() }
             var processIdentifier: Int32? { nil }
         }
-        let fake = FakeWriter()
+        let terminated = XCTestExpectation(description: "watchdog must terminate the stuck child")
+        terminated.assertForOverFulfill = false   // onTermination and onHard both terminate
+        let fake = FakeWriter(terminated: terminated)
         let provider = ClaudeCodeProvider(
             locate: { URL(fileURLWithPath: "/x/claude") },
             runOneShot: { _, _ in nil },
@@ -285,6 +292,6 @@ final class ClaudeRunStreamingTests: XCTestCase {
             }
         }
         XCTAssertTrue(sawTimeoutError)
-        XCTAssertGreaterThanOrEqual(fake.terminateCount, 1)
+        await fulfillment(of: [terminated], timeout: 2)
     }
 }
