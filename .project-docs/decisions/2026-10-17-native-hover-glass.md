@@ -8,6 +8,18 @@ tags: [macos, hover, liquid-glass, swiftui, accessibility]
 canonical_for: [hover-glass-material]
 verified_at: 2026-10-18
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-18 the user tested installed Exodia 2.2.7, opened Monitor, returned with Tools and confirmed the search loupe was fully visible.
+    confirmed_at: 2026-10-18
+  - type: url
+    reference: https://github.com/AbsoluteMode/exodia/releases/tag/v2.2.7
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-public-release-2.2.7-verification.log, independent public latest/source/feed, both DMG hashes/sizes, Ed25519 signatures, read-only app metadata/universal architectures/installation checks passed.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-search-loupe-integrated-full-tests.log, final integrated full suite of 2953 tests, 8 skipped, 0 failures in 51.673 seconds.
+    confirmed_at: 2026-10-18
   - type: trace
     reference: /tmp/exodia-search-loupe-explicit-tests.log, 10 focused tests with 0 failures in 3.933 seconds for the explicit native-button-aligned glyph candidate.
     confirmed_at: 2026-10-18
@@ -324,10 +336,19 @@ complete glyphs. Every proof window stayed invisible and non-key; the flat
 backing and Monitor-labelled fixture are test-only, with no live MonitorStore
 or user configuration access.
 
-The exact physical clipping remains unreproduced offscreen. This verifies the
-new drawing/geometry/action contracts, not the private compositor's cause or a
-confirmed live visual fix. Installed 2.2.7 user acceptance and public publication
-remain pending. The stopped 2.2.6 draft and its earlier proof remain separate.
+The exact physical clipping remains unreproduced offscreen. The fixtures verify
+new drawing/geometry/action contracts and do not establish the private
+compositor's cause. On 2026-10-18 the user separately tested installed Exodia
+2.2.7, opened Monitor, returned with Tools and confirmed the loupe was fully
+visible. The final integrated source passed 2,953 tests with 8 skipped and
+0 failures in 51.673 seconds, including the current silent-meeting changes.
+
+Public 2.2.7 build 1459 was published from sealed source
+`a35ca9d5778c65e9dbb861535178696c887293ee`. Independent verification passed for
+the public latest tag/feed, both immutable and latest DMG hashes/sizes,
+Ed25519 signatures against repository and embedded keys, read-only mounted app
+metadata, ad-hoc integrity, arm64/x86_64 architectures and installation checks.
+The stopped 2.2.6 draft and its earlier proof remain separate.
 
 ## Historical 2.2.6 Monitor layout and search-return verification
 
