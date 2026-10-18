@@ -186,14 +186,22 @@ final class CodexRunStreamingTests: XCTestCase {
     }
 
     // MARK: - Test 6: silent child triggers watchdog terminate + agent_timeout error
+    //
+    // onHard finishes the stream BEFORE it terminates the child, and AsyncStream
+    // runs onTermination only after the stream is already finished. Both
+    // terminate() calls run on the watchdog queue and can land after the loop
+    // below ends, so the test waits for terminate() instead of reading a counter.
 
     func testSilentChildTriggersWatchdogTerminateAndError() async {
         final class FakeCodexHandle: CodexProcessTerminating {
-            var terminateCount = 0
-            func terminate() { terminateCount += 1 }
+            let terminated: XCTestExpectation
+            init(terminated: XCTestExpectation) { self.terminated = terminated }
+            func terminate() { terminated.fulfill() }
             var processIdentifier: Int32? { nil }   // nil → diagnostics no-op, fine
         }
-        let fake = FakeCodexHandle()
+        let terminated = XCTestExpectation(description: "watchdog must terminate the stuck child")
+        terminated.assertForOverFulfill = false   // onTermination and onHard both terminate
+        let fake = FakeCodexHandle(terminated: terminated)
         // Spawned, but never emits a line and never exits — pure silence.
         let provider = CodexProvider(
             locate: { URL(fileURLWithPath: "/x/codex") },
@@ -210,7 +218,7 @@ final class CodexRunStreamingTests: XCTestCase {
             }
         }
         XCTAssertTrue(sawTimeoutError, "silent child must yield agent_timeout .error")
-        XCTAssertGreaterThanOrEqual(fake.terminateCount, 1, "watchdog must terminate the stuck child")
+        await fulfillment(of: [terminated], timeout: 2)
     }
 
     // MARK: - Test 7: real-Process termination via tail -f /dev/null
