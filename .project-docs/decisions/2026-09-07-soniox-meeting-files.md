@@ -17,7 +17,7 @@ sources:
   - type: url
     reference: https://soniox.com/docs/stt/async/async-transcription
     confirmed_at: 2026-09-07
-related: [../project.md]
+related: [../project.md, 2026-10-18-silent-meetings.md]
 ---
 
 # Soniox meeting file transcription
