@@ -6,8 +6,17 @@ summary: Match hover to the actual compact island width with three smaller capsu
 status: confirmed
 tags: [macos, hover, liquid-glass, swiftui, accessibility]
 canonical_for: [hover-glass-material]
-verified_at: 2026-10-17
+verified_at: 2026-10-18
 sources:
+  - type: trace
+    reference: /tmp/exodia-hover-icons-focused-tests.log, 101 focused tests with 0 failures for the larger-icon refinement.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-hover-icon-proportions-offscreen/render-manifest.json and source-manifest.json, 18 source-matched offscreen layout renders with no visible or key windows.
+    confirmed_at: 2026-10-18
+  - type: user-confirmed
+    reference: User feedback on 2026-10-18 reported that the compact hover icons looked too small after the equal-width change.
+    confirmed_at: 2026-10-18
   - type: user-confirmed
     reference: User request on 2026-10-17 to delegate Apple Liquid Glass hover styling to the Argon agent, with a Control Center reference image.
     confirmed_at: 2026-10-17
@@ -119,7 +128,8 @@ its actual-field v4 check is separate from the earlier v3 fixture. The 2.2.3
 candidate added three-column capsules and inline Monitor. After seeing that
 layout, the user clarified on 2026-10-17 that hover should match the island's
 width and confirmed three smaller capsules per row. That correction governs the
-current development candidate, planned as 2.2.4; it is not yet release proof.
+2.2.4 layout. On 2026-10-18 the user reported that its icons looked too small.
+The next refinement enlarges only the icon presentation within the same capsules.
 
 ## Decision
 
@@ -129,7 +139,7 @@ inside `content.background`. Do not apply the material modifier to the whole
 foreground hierarchy: the lens gradient, rim and icon keep their independent
 colors, matching the user's separate-layer reference. The current controls are
 compact horizontal capsules in `IslandHoverPanelControl.swift`, defaulting to
-90x52 points with a 24-point left icon disk, blue standard glyph, normal-case
+90x52 points with a 30-point left icon disk, 17-point blue standard glyph, normal-case
 11-point title and optional 10-point status inside. Each grid instance receives
 the width calculated from the actual compact island width. They are foreground
 gradient/rim lenses without
@@ -225,14 +235,30 @@ and 139x64-point capsule geometry. It retains three columns, icon/title/status,
 inline Monitor and existing persistence; it does not request one long row or a
 wider compact island.
 
+The icon refinement keeps the equal-width geometry, three columns and 90x52
+click targets. Disk size rises from 24 to 30 points and standard glyphs from
+12 to 17 points; language text is 11 points and flag/ring presentations scale
+with the disk. Title/status fonts stay at 11/10 points. This addresses the user
+feedback without changing native material or interaction routing.
+
 The older layered material remains the fallback for runtimes before macOS 26
 and older toolchains. Availability guards preserve the macOS 14.2 deployment
 floor. This decision does not restore the June fixed opaque wash to the native
 path or flatten live glass into an offscreen bitmap.
 
-## Current compact candidate verification
+## Icon refinement verification
 
-The planned 2.2.4 candidate passed 69 focused tests with 0 failures and the full
+The 2.2.5 candidate passed 101 focused layout, presentation, search and pointer
+routing tests with 0 failures. Eighteen source-matched offscreen renders at
+310/312 points covered standard tools, long language statuses and 13 selected
+tools; all windows remained invisible and non-key. Standard and long-language
+text-audit images were inspected. The explicit dark audit backing is test-only;
+these images do not prove native screen glass, real pointer/focus behavior or
+installed-app acceptance. No new GUI test window may appear over the user's work.
+
+## Historical 2.2.4 compact candidate verification
+
+The 2.2.4 candidate passed 69 focused tests with 0 failures and the full
 2,947-test suite with 8 skipped and 0 failures in 45.315 seconds. The matching
 source produced 18 actual capsule/search-layout offscreen renders at both
 310-point and 312-point widths; the render/source manifests record matching

@@ -131,9 +131,13 @@ Hover capsules and materials:
   exactly the same width, with three smaller capsules per row. Follow the actual
   notch-derived compactWidth (310/312 pt examples), not a fixed 457 pt drawer.
   IslandHoverPanelControl.swift defaults to a 90x52 foreground capsule with a
-  24 pt white icon disk/blue glyph, normal-case 11 pt title and optional 10 pt
+  30 pt white icon disk with 17 pt blue symbols, normal-case 11 pt title and optional 10 pt
   current status inside. The grid supplies each instance's exact width through
   IslandHoverControlsLayout.tileWidth(panelWidth:): (panelWidth - 24 - 16) / 3.
+  User feedback on 2026-10-18 called the 24 pt disks and 12 pt symbols too small;
+  larger icons retain the same capsule and text sizes.
+  The 2.2.5 icon refinement passed 101 focused tests and 18 source-matched
+  offscreen renders with no visible/key windows. These prove layout/text only.
   Bundled icon assets retain their own presentation. HoverToolPresentation
   resolves state purely from mode, languages and recording: Fast/Smart, input
   Auto/language, output Smart only/Off/language, and Recording/Not recording.
@@ -151,7 +155,7 @@ Hover capsules and materials:
   on macOS 26+, with passive rims and foreground lenses, never child glassEffect.
   Explicit hover/press/magnetic feedback respects Reduce Motion. Older material
   fallback is unchanged. Do not show test windows over the user's work; use
-  offscreen checks and state compositor limits. The planned 2.2.4 compact
+  offscreen checks and state compositor limits. The 2.2.4 compact
   candidate passed 69 focused tests and the full 2,947-test suite (8 skipped,
   0 failures, 45.315 seconds). Eighteen actual capsule/search-layout renders cover
   310/312 pt layouts with source-hash match and no visible/key windows.
