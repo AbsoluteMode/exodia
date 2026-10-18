@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Security
 import os.log
 
 /// Wiring shell for the Meeting Notes feature. Owned by `AppDelegate` and
@@ -1136,6 +1137,7 @@ final class MeetingsCoordinator {
             return
         }
         let endedAt = endedAt ?? Date()
+        let progressBeforeAttempt = try? await meetingsStore?.progressState(id: event.meetingId)
 
         if let meetingsStore {
             let meta = Self.progressMeta(
@@ -1173,6 +1175,26 @@ final class MeetingsCoordinator {
                 )
                 try? await meetingsStore?.updateProgress(id: meetingId, status: .ready)
                 eventsContinuation.yield(.newMeetingAvailable(id: meetingId))
+                refreshOpenWindowIfNeeded()
+            } catch KeychainError.unhandledError(errSecInDarkWake) {
+                // macOS cannot show a Keychain prompt in a dark wake or while
+                // the lid closes, so this says nothing about the meeting. Keep
+                // it staged without a failure event and put back the failure
+                // the attempt replaced; startReady() after a full wake retries.
+                // WHY: .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
+                os_log(
+                    "handleFinalizedEvent BYOK processing deferred until full wake (meetingId: %{public}@)",
+                    log: Self.log,
+                    type: .default,
+                    event.meetingId.uuidString
+                )
+                if progressBeforeAttempt?.status == .failed {
+                    try? await meetingsStore?.updateProgress(
+                        id: event.meetingId,
+                        status: .failed,
+                        failureReason: progressBeforeAttempt?.failureReason
+                    )
+                }
                 refreshOpenWindowIfNeeded()
             } catch {
                 os_log(

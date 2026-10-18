@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Meetings/MeetingBYOKProcessorTests.swift
     confirmed_at: 2026-10-18
-related: [2026-09-07-soniox-meeting-files.md, 2026-10-18-remove-local-models.md]
+related: [2026-09-07-soniox-meeting-files.md, 2026-10-18-meeting-recovery-dark-wake.md, 2026-10-18-remove-local-models.md]
 ---
 
 # Silent meetings

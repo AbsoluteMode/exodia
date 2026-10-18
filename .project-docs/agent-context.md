@@ -123,6 +123,12 @@ Meeting Notes:
   pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
   resuming is always the user's decision. WHY:
   docs/decisions/2026-07-29-reconnect-always-asks.md
+  A BYOK key read that fails with errSecInDarkWake (no Keychain prompt
+  possible: dark wake or the lid closing) defers the meeting instead of
+  failing it: no failure event, the earlier failure reason is restored and
+  the manifest stays for the next pass (startReady() after a full wake, or
+  the next launch). WHY:
+  .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
 
 Hover capsules and materials:
   The 2026-10-17 user correction requires hover and the compact island to have
@@ -145,6 +151,13 @@ Hover capsules and materials:
   Default six tools occupy two rows and a 243 pt host band. At most four rows
   are visible (312 pt grid viewport); 13 tools retain 388 pt of scroll content.
   Settings stays last; persistence and the first five positional hotkeys remain.
+  Settings Toolbox draws editable tools, a permanent Add target, then Settings,
+  using stable tool/Add identities. Add occupies the actual insertion position.
+  Drop targeting highlights without moving targets or saving; only drop commit
+  resolves the current target identity and changes preferences. Grid changes
+  ease over 0.18 s and highlights over 0.1 s; Reduce Motion disables both.
+  The editor can be hosted independently of Case/Vocab/provider stores. WHY:
+  `.project-docs/decisions/2026-10-18-toolbox-drag-feedback.md`.
   Drawer, compact pill, music, detached inline panels and native hit zones all
   use the actual compactWidth. Hints overlay stable targets without moving them.
   History needs no drawer overhang: its 300 pt left reservation still fits a
