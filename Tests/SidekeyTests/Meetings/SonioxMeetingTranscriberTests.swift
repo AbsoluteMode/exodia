@@ -166,6 +166,43 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
         }
     }
 
+    func testSilenceDecodesToEmptyResultNotError() throws {
+        for payload in [
+            #"{"text":"","tokens":[]}"#,
+            #"{"text":" ","tokens":[{"text":" "},{"text":"<end>"}]}"#
+        ] {
+            XCTAssertEqual(try SonioxMeetingTranscriber.decodeTranscript(Data(payload.utf8)),
+                           .init(text: "", segments: []))
+        }
+    }
+
+    func testCompletedSilentJobCleansResourcesAndIsReusedWithoutNetwork() async throws {
+        let url = try chunk()
+        let fileID = fileID, jobID = jobID
+        StubURLProtocol.handler = { request in
+            let path = request.url!.path
+            if request.httpMethod == "DELETE" { return (204, [:], Data()) }
+            let body: [String: Any]
+            if path == "/v1/files" { body = ["id": fileID] }
+            else if path == "/v1/transcriptions" { body = ["id": jobID] }
+            else if path.hasSuffix("/transcript") { body = ["id": jobID, "text": "", "tokens": []] }
+            else { body = ["status": "completed"] }
+            return (200, [:], try JSONSerialization.data(withJSONObject: body))
+        }
+        let client = SonioxMeetingTranscriber(apiKey: "test-key", session: session, pollInterval: .zero)
+        let result = try await client.transcribe(chunkURLs: [url], language: nil, terms: [])
+        XCTAssertEqual(result, .init(text: "", segments: []))
+        XCTAssertEqual(StubURLProtocol.capturedRequests.filter { $0.httpMethod == "DELETE" }.count, 2)
+        let saved = try JSONDecoder().decode(SonioxMeetingTranscriber.Checkpoint.self,
+            from: Data(contentsOf: directory.appendingPathComponent("soniox-transcription.json")))
+        XCTAssertNil(saved.transcriptionID)
+        XCTAssertNil(saved.fileID)
+        let count = StubURLProtocol.capturedRequests.count
+        let resumed = try await client.transcribe(chunkURLs: [url], language: nil, terms: [])
+        XCTAssertEqual(resumed, result)
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, count)
+    }
+
     func testLegacyTextCheckpointIsNotReusedAsDiarization() async throws {
         let url = try chunk()
         try save(.init(transcript: "Old unlabelled text"))

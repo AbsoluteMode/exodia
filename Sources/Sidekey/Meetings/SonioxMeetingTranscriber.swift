@@ -3,6 +3,7 @@ import Foundation
 /// Finished recordings use Soniox's file API. A durable checkpoint survives
 /// network failures and note-generation retries without uploading audio again.
 actor SonioxMeetingTranscriber {
+    /// Empty `segments` means the completed job recognised no speech.
     struct Result: Codable, Sendable, Equatable {
         let text: String
         let segments: [TranscriptSegment]
@@ -51,8 +52,9 @@ actor SonioxMeetingTranscriber {
             checkpoint = Checkpoint(diarizationEnabled: true)
             try save(checkpoint, to: checkpointURL)
         }
+        // An empty transcript without segments is a stored no-speech result.
         if let transcript = checkpoint.transcript, let segments = checkpoint.segments,
-           !segments.isEmpty {
+           !segments.isEmpty || transcript.isEmpty {
             await cleanup(&checkpoint, at: checkpointURL)
             return Result(text: transcript, segments: segments)
         }
@@ -162,6 +164,12 @@ actor SonioxMeetingTranscriber {
             end = max(end, tokenEnd)
         }
         flush()
+        // WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
+        // Silence is a final result: the same audio returns the same empty
+        // transcript on every retry. Speech without speakers stays an error.
+        if segments.isEmpty, response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return Result(text: "", segments: [])
+        }
         guard !response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               segments.contains(where: { $0.speaker != nil }) else {
             throw MeetingBYOKProcessingError.upstreamError("Soniox returned no speaker-attributed transcript. The audio is saved for retry.")
