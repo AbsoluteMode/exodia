@@ -66,7 +66,7 @@ struct SelfKeyPreferences {
     private let defaults: UserDefaults
     private let isAppleSilicon: Bool
 
-    init(defaults: UserDefaults = .standard, isAppleSilicon: Bool = LocalModelSupport.isAppleSilicon) {
+    init(defaults: UserDefaults = .standard, isAppleSilicon: Bool = HostArchitecture.isAppleSilicon) {
         self.defaults = defaults
         self.isAppleSilicon = isAppleSilicon
     }

@@ -53,16 +53,6 @@ final class TranscriptionProviderBrandTests: XCTestCase {
         XCTAssertEqual(brand.systemName, "server.rack")
     }
 
-    func testProviderBrandsDefaultToMonochrome() {
-        // Every provider mark stays template/white in the island.
-        XCTAssertFalse(TranscriptionProviderBrand.agent(.codex).isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.agent(.claude).isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.google.isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.openRouter.isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.customLLM.isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.byok(.soniox).isFullColor)
-    }
-
     @MainActor
     func testCurrentDropBrandIsNilWithoutChosenProvider() {
         // A retired on-device choice reads as "no provider chosen" on any

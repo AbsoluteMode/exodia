@@ -114,6 +114,7 @@ from an on-device diarizer.
 - Delete previously downloaded model files on upgrade: not done here. The
   app no longer reads `LocalTranscriptionModels`, `LocalLLMModels` or
   `LocalDiarizationModels` under Application Support/Sidekey; cleaning them
-  up is a separate decision.
+  up is a separate decision. Decided later: a one-time launch cleanup,
+  `2026-10-18-legacy-model-cleanup.md`.
 
 2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/22.

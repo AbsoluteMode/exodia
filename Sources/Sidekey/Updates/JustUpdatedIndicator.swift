@@ -54,7 +54,7 @@ final class JustUpdatedTimerScheduler: JustUpdatedDismissScheduling {
 ///      is strictly one-shot.
 ///
 /// This is a cosmetic island indicator, NOT a Sparkle window and NOT a modal —
-/// invariant #5 is untouched; the update itself still installs + relaunches from
+/// invariant #4 is untouched; the update itself still installs + relaunches from
 /// the single ↓ click.
 ///
 /// Pure of AppKit: the current build and the clock flow in through injected

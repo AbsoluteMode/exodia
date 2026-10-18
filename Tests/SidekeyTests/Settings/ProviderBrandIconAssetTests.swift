@@ -71,7 +71,6 @@ final class ProviderBrandIconAssetTests: XCTestCase {
             loadedCount,
             ProviderBrandIconAsset.transcriptionProviderAssetNames.count
                 * ProviderBrandIconAsset.prewarmedPointSizes.count
-                + ProviderBrandIconAsset.fullColorProviderAssetNames.count
         )
         for name in ProviderBrandIconAsset.transcriptionProviderAssetNames {
             XCTAssertTrue(ProviderBrandIconAsset.isSourceCachedForTesting(name))
@@ -79,48 +78,6 @@ final class ProviderBrandIconAssetTests: XCTestCase {
                 XCTAssertTrue(ProviderBrandIconAsset.isRenderedCachedForTesting(name, pointSize: pointSize))
             }
         }
-        for name in ProviderBrandIconAsset.fullColorProviderAssetNames {
-            XCTAssertTrue(ProviderBrandIconAsset.isFullColorSourceCachedForTesting(name))
-        }
-    }
-
-    /// The full-color loader keeps native colors (used for the Qwen island mark);
-    /// the template loader flattens to a monochrome tint. They must be distinct
-    /// objects so one never clobbers the other's `isTemplate` flag.
-    func testFullColorImageIsNonTemplateAndDistinctFromTemplate() throws {
-        let iconDir = try projectRoot().appendingPathComponent("Resources/UsefulLinkIcons")
-        ProviderBrandIconAsset.setResourceDirectoryForTesting(iconDir)
-        ProviderBrandIconAsset.clearCacheForTesting()
-        defer {
-            ProviderBrandIconAsset.clearCacheForTesting()
-            ProviderBrandIconAsset.setResourceDirectoryForTesting(nil)
-        }
-
-        let fullColor = try XCTUnwrap(ProviderBrandIconAsset.fullColorImage(named: "qwen"))
-        XCTAssertFalse(fullColor.isTemplate, "full-color mark must keep native colors")
-
-        let template = try XCTUnwrap(ProviderBrandIconAsset.image(named: "qwen"))
-        XCTAssertTrue(template.isTemplate)
-        XCTAssertFalse(fullColor === template)
-        // The template flag must not have leaked onto the full-color instance.
-        XCTAssertFalse(fullColor.isTemplate)
-    }
-
-    /// Brand choice (per Andrey, 2026-06-27): the Qwen mark uses the purple
-    /// brand gradient, not the solid HF blue — the blue variant was reverted.
-    func testQwenAssetIsPurpleBrandMark() throws {
-        let svgURL = try projectRoot()
-            .appendingPathComponent("Resources/UsefulLinkIcons")
-            .appendingPathComponent("qwen.svg")
-        let svg = try String(contentsOf: svgURL, encoding: .utf8).lowercased()
-
-        XCTAssertTrue(svg.contains("#6336e7") || svg.contains("#6f69f7"),
-                      "Qwen mark must use the purple brand gradient")
-        XCTAssertFalse(svg.contains("#002efe"), "the HF-blue variant was reverted")
-        // Vector, not an embedded bitmap.
-        XCTAssertTrue(svg.contains("<path"))
-        XCTAssertFalse(svg.contains("<image"))
-        XCTAssertFalse(svg.contains("base64"))
     }
 
     private func projectRoot() throws -> URL {

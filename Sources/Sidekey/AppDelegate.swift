@@ -343,6 +343,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // first credential read (CAN-001). Idempotent, cheap.
         CredentialMigration().run()
 
+        // Free the retired on-device models' disk space once
+        // (Application Support/Sidekey/Local*Models, up to a few GB); off the
+        // main thread so launch never waits on the removal.
+        // WHY: .project-docs/decisions/2026-10-18-legacy-model-cleanup.md
+        DispatchQueue.global(qos: .utility).async {
+            LegacyLocalModelCleanup().run()
+        }
+
         // Restore standard text-editing shortcuts (⌘V/⌘C/⌘X/⌘A) for the app's
         // text fields. Accessory apps have no menu bar, so without this the
         // Settings → Models API-key field (and any other field) can't paste.
@@ -1490,7 +1498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Register the manual Meeting-record toggle (default ⌥M). Idempotent —
     /// a no-op while a monitor is installed (`reregisterMeetingRecordHotkey()`
     /// tears it down first). Only the fact of the trigger is ever logged —
-    /// never keystrokes (invariant #3).
+    /// never keystrokes (invariant #2).
     /// - Parameter override: freshly published shortcut from the Settings-Save
     ///   sink; `@Published` fires in willSet, so re-reading `shared` there
     ///   would observe the stale value (same ROO-234 race as Drop and the
@@ -1547,7 +1555,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// programmatic Hover expansion (honoured only when
     /// `IslandHoverPolicy.allowsExpansion`, enforced in `IslandView`, D4) plus
     /// the specific sub-panel. Only the fact of the trigger is logged — never the
-    /// keystroke (invariant #3).
+    /// keystroke (invariant #2).
     private func onHoverSlotActivated(index: Int) {
         registerIslandHotkeyActivity()
         let slots = HoverLayoutStore.shared.slots
@@ -2903,7 +2911,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // should fire rarely; a FREQUENT fire means cleanup is still
                 // returning empty (e.g. a model or prompt regression), so this
                 // is a bug signal worth surfacing.
-                // Flag only — never the transcript text (invariant #3).
+                // Flag only — never the transcript text (invariant #2).
                 os_log(
                     "cleanup_raw_fallback: empty cleanup, pasting raw transcript",
                     log: Self.log, type: .error
@@ -3656,7 +3664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///     `.active` while any blocker is up).
     ///   * panel mouse-activity / hover → `controller.registerActivity` /
     ///     `setHovered` (wake + B10 hover blocker). No event payload crosses —
-    ///     invariant #3.
+    ///     invariant #2.
     private func installIslandIdleControllerIfNeeded() {
         guard islandIdleController == nil else { return }
         let controller = IslandIdleController(
@@ -3723,7 +3731,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// handler. Blocker-flipping hotkeys (Drop / Agent / Meeting / Hover) also
     /// wake via the busy bridge, but this covers non-blocker hotkeys (Help /
     /// History) and keeps the pill alive for the full timeout while the user
-    /// interacts. Carries NO keystroke content — invariant #3.
+    /// interacts. Carries NO keystroke content — invariant #2.
     private func registerIslandHotkeyActivity() {
         islandIdleController?.registerActivity()
     }

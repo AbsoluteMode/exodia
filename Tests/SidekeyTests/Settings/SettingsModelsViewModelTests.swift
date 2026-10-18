@@ -472,9 +472,3 @@ private final class GatedOpenRouterClient: OpenRouterLLMClienting {
         "unused"
     }
 }
-
-private struct ModelsFailingTokenStore: TokenStore {
-    func read() throws -> String? { nil }
-    func save(_ token: String) throws { throw NSError(domain: "TestKeychain", code: 1) }
-    func delete() throws { throw NSError(domain: "TestKeychain", code: 1) }
-}
