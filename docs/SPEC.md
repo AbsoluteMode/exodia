@@ -241,10 +241,13 @@ paste / replace
 correction & learning loop
 ```
 
-**STT-провайдеры (whytap-уровень, выбор на сервере per-user + language-fallback):**
-Soniox (`stt-rt-v4`), Deepgram (`nova-3`), OpenAI (`gpt-4o-transcribe`),
-ElevenLabs (`scribe_v2_realtime`). BYOK добавляет OpenAI-Realtime-совместимый
-self-hosted endpoint. Это realtime streaming, не batch.
+**STT-провайдеры (Your key, выбор пользователя в Settings → Models):**
+Soniox (`stt-rt-v5`, по умолчанию), Deepgram (`nova-3`), ElevenLabs
+(`scribe_v2_realtime`) или self-hosted endpoint с протоколом OpenAI Realtime
+(модель вводит пользователь, по умолчанию `gpt-4o-transcribe`). Сам OpenAI не
+предлагается: сохранённый выбор OpenAI читается как Soniox. Drop — realtime
+streaming, не batch; заметки встреч с Soniox идут через file API
+(`stt-async-v5`).
 
 **Local STT** (FluidAudio Parakeet TDT v3) убран 2026-10-18 вместе с MLX
 Qwen и локальной диаризацией. Сохранённый выбор Local не переключается на

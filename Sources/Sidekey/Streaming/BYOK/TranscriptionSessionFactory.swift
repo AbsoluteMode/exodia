@@ -42,10 +42,10 @@ struct TranscriptionSessionFactory {
             switch provider {
             case .openAI, .selfHosted:
                 let baseURL = provider == .selfHosted ? prefs.selfHostedBaseURL : nil
-                if provider == .selfHosted, (baseURL?.isEmpty ?? true) {
+                guard let url = BYOKRealtimeURL.openAIRealtime(baseURL: baseURL) else {
                     throw TranscriptionFactoryError.missingBaseURL
                 }
-                adapter = OpenAIRealtimeAdapter(apiKey: key, baseURL: baseURL, model: model)
+                adapter = OpenAIRealtimeAdapter(apiKey: key, url: url, model: model)
             case .deepgram:
                 adapter = DeepgramBYOKAdapter(apiKey: key, model: model)
             case .soniox:

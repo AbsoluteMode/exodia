@@ -28,10 +28,13 @@ Voice flow (Drop / dictation):
             from the Keychain (Streaming/BYOK/): Soniox (default), Deepgram,
             ElevenLabs or a self-hosted endpoint speaking the OpenAI Realtime
             protocol. OpenAI itself is not offered; a legacy OpenAI choice
-            resolves to Soniox. No chosen level (never chosen on Apple Silicon,
-            or the retired Local route) throws .notConfigured and opens
-            Settings -> Models; a saved Local choice never switches to a
-            provider on its own. WHY:
+            resolves to Soniox. The self-hosted route has no default host: a
+            missing or unparseable base URL fails (.missingBaseURL) before any
+            socket opens, never reaching api.openai.com. WHY:
+            .project-docs/decisions/2026-10-18-no-default-realtime-host.md
+            No chosen level (never chosen on Apple Silicon, or the retired
+            Local route) throws .notConfigured and opens Settings -> Models;
+            a saved Local choice never switches to a provider on its own. WHY:
             .project-docs/decisions/2026-10-18-remove-local-models.md
        Soniox Stop: drain all captured audio -> 200ms PCM silence -> explicit
        finalize + text EOF. A final <fin> acknowledgement completes the take;

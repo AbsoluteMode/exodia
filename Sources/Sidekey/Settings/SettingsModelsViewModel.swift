@@ -536,7 +536,8 @@ struct OpenAIRealtimeProbe: BYOKConnectionProbing {
     let model: String
 
     func probe() async -> Bool {
-        var request = URLRequest(url: BYOKRealtimeURL.openAIRealtime(baseURL: baseURL))
+        guard let url = BYOKRealtimeURL.openAIRealtime(baseURL: baseURL) else { return false }
+        var request = URLRequest(url: url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         let task = URLSession.shared.webSocketTask(with: request)
         task.resume()

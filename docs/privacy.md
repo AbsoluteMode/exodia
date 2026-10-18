@@ -43,12 +43,16 @@ the user’s local files and is absent from the source repository.
 | Route | Where data goes | When |
 |---|---|---|
 | Meeting detector (FluidAudio Silero VAD) | nowhere; a one-time download from Hugging Face fetches the model | the first time the detector checks for speech |
-| Your key (OpenAI, Deepgram, Soniox, ElevenLabs, OpenRouter, self-hosted OpenAI-compatible endpoint) | the provider you selected, authenticated with your key | while the selected route is in use |
+| Your key: speech (Soniox, Deepgram, ElevenLabs, or a self-hosted endpoint speaking the OpenAI Realtime protocol) and text (OpenRouter or a custom OpenAI-compatible endpoint) | the provider or endpoint you selected, with your key (a custom text endpoint may need none) | while the selected route is in use |
 | Agent (OpenCode) | OpenRouter and the selected model provider, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
 | Sparkle updates | GitHub Releases (`appcast.xml` and the DMG) | hourly check, download only on your click |
+
+OpenAI itself is not offered for speech. An older saved OpenAI choice reads as
+Soniox and sends audio there only with a Soniox key you stored; without one,
+dictation opens Settings → Models instead of recording.
 
 Each provider has its own data-use terms; check them before pasting a key.
 Data-use policies depend on the selected provider and its account settings.

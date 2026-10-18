@@ -48,6 +48,17 @@ final class TranscriptionSessionFactoryTests: XCTestCase {
         }
     }
 
+    func testSelfHostedWithUnparseableBaseURLThrows() throws {
+        let kc = BYOKKeyStore.inMemory()
+        try kc.save(key: "key-selfHosted", for: .selfHosted)
+        let p = prefs(.yourKey, .selfHosted)
+        p.selfHostedBaseURL = "http://my host:8000"
+        let factory = TranscriptionSessionFactory(prefs: p, keyStore: kc, vocab: vocab())
+        XCTAssertThrowsError(try factory.make(language: "en")) { error in
+            XCTAssertEqual(error as? TranscriptionFactoryError, .missingBaseURL)
+        }
+    }
+
     func testNoChosenProviderThrowsNotConfigured() throws {
         // A fresh Apple Silicon install has no provider chosen: no session,
         // even with a stored provider key.
