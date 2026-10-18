@@ -160,8 +160,12 @@ Hover capsules and materials:
   Settings stays last; persistence and the first five positional hotkeys remain.
   Settings Toolbox draws editable tools, a permanent Add target, then Settings,
   using stable tool/Add identities. Add occupies the actual insertion position.
-  Drop targeting highlights without moving targets or saving; only drop commit
-  resolves the current target identity and changes preferences. Grid changes
+  Drop targeting highlights without moving targets or saving. Native hosted
+  destinations set animatesToDestination=false in prepare, before AppKit removes
+  its preview and perform commits the current target identity. Settings has no
+  registered drop types; cancel/invalid/stale sessions do not save. No timers or
+  manual preview replacement. The 2.2.8/1460 candidate was not published after
+  the user reported a duplicate cursor/inserted image. Grid changes
   ease over 0.18 s and highlights over 0.1 s; Reduce Motion disables both.
   The editor can be hosted independently of Case/Vocab/provider stores. WHY:
   `.project-docs/decisions/2026-10-18-toolbox-drag-feedback.md`.
