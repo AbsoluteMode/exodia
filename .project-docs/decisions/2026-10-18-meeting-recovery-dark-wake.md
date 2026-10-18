@@ -120,4 +120,4 @@ Found during the investigation, not changed here:
 - A `.soft` wake (screens wake without a preceding willSleep) does not rerun
   recovery.
 
-2026-10-18, PR: pending.
+2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/21.
