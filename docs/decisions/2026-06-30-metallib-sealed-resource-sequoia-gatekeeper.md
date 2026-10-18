@@ -1,5 +1,9 @@
 # Ship mlx.metallib as a sealed resource (symlinked), not detached-signed nested code
 
+> Update 2026-10-18: MLX, `Resources/mlx.metallib` and `scripts/build-metallib.sh`
+> were removed with the [on-device models](../../.project-docs/decisions/2026-10-18-remove-local-models.md).
+> The app no longer ships a metallib; this record is history.
+
 Date: 2026-06-30
 
 ## Context

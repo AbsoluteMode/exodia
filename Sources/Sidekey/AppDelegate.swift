@@ -4,10 +4,10 @@ import Combine
 import Foundation
 import os.log
 
-/// How the drop streaming session failed to start. A missing BYOK key or a
-/// not-yet-downloaded local model is the user's configuration — surfaced,
-/// never fatal. Lives at file scope so the classification is unit-testable
-/// without standing up the AppDelegate.
+/// How the drop streaming session failed to start. No chosen provider or a
+/// missing BYOK key is the user's configuration — surfaced, never fatal.
+/// Lives at file scope so the classification is unit-testable without
+/// standing up the AppDelegate.
 enum StreamingSessionSetupError: Error {
     case byokMisconfigured(TranscriptionFactoryError)
 }
@@ -56,10 +56,11 @@ enum DropCancelRoute: Equatable {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = AudioRecorder()
-    /// On-device batch transcriber (Parakeet) for the recorder fallback and
-    /// the resilient-delivery batch rung. Unavailable until the local model
-    /// is downloaded — every caller checks `isAvailable()` first.
-    private let localBatchTranscriber: any BatchTranscribing = LocalBatchTranscriber()
+    /// Batch transcriber for the recorder fallback and the resilient-delivery
+    /// batch rung. None is wired since the on-device model was removed, so
+    /// the batch rung is skipped and the recorder fallback ends at idle.
+    /// WHY: .project-docs/decisions/2026-10-18-remove-local-models.md
+    private let batchTranscriber: any BatchTranscribing = UnavailableBatchTranscriber()
     /// In-flight streaming session for the Drop flow. Both `.fast` and
     /// `.smart` open one — they share the live realtime pipeline; `.smart`
     /// differs only after the stop, when the transcript runs through the
@@ -2240,8 +2241,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startDropVoiceCapture() {
-        // Every transcription level (BYOK, on-device) streams live; the batch
-        // recorder is only the fallback when a session fails to open.
+        // Every provider streams live; the batch recorder is only the
+        // fallback when a session fails to open.
         startStreamingSession()
     }
 
@@ -2426,14 +2427,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppState.shared.phase = .transcribing
 
-        // Recorder fallback: transcribe the captured WAV with the on-device
-        // model. Without the model there is nothing that can transcribe the
-        // take, so it ends here (the transcript is never sent anywhere).
+        // Recorder fallback: transcribe the captured WAV with the batch
+        // transcriber. Without one there is nothing that can transcribe the
+        // take, so it ends here (the audio is never sent anywhere).
         Task { @MainActor in
             let startedAt = Date()
             do {
                 let prefs = PrivacyPreferences.shared
-                let raw = try await localBatchTranscriber.transcribe(
+                let raw = try await batchTranscriber.transcribe(
                     audio: wav,
                     language: prefs.selectedLanguage?.code
                 )
@@ -2475,7 +2476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         streamingPendingStop = false
     }
 
-    /// Open a streaming session (direct-to-provider or on-device), mirror the
+    /// Open a direct-to-provider streaming session, mirror the
     /// async path's UI states (`phase = .recording`), and resolve to a
     /// paste in `stopStreamingSession()`. If transport setup fails before
     /// the user stops the turn, fall back to the recorder path so Drop does
@@ -2505,8 +2506,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // this task must not touch phase/flags/telemetry it no
                 // longer owns.
                 guard streamingSetupGeneration == setupGeneration else { return }
-                // Config problem (BYOK key missing, local model not
-                // downloaded) — surface it and idle.
+                // Config problem (no speech provider chosen, BYOK key
+                // missing) — surface it and idle.
                 clearStreamingSetupWindow()
                 os_log(
                     "streaming: setup config problem (%{public}@)",
@@ -2516,11 +2517,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 failDropTurnTelemetry(reason: "byok_misconfigured")
                 AppState.shared.phase = .idle
                 // The problem is one the user fixes in Settings -> Models
-                // (local model not downloaded yet, BYOK key or endpoint
-                // missing). On a fresh install the local level is the
-                // default and nothing is downloaded, so idling silently
+                // (no provider chosen yet, BYOK key or endpoint missing).
+                // On a fresh install nothing is chosen, so idling silently
                 // would look like a dead hotkey: open the Models tab where
-                // the download button / key field is one click away.
+                // the provider and key fields are one click away.
                 if case StreamingSessionSetupError.byokMisconfigured = error {
                     openSettingsWindow(tab: .models)
                 }
@@ -2614,13 +2614,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Builds the drop transcription session, routing the isolation level
-    /// (`local` → on-device ASR, `yourKey` → direct BYOK) through
-    /// `TranscriptionSessionFactory`. Shared by the drop flow and the agent
-    /// voice factory so the construction recipe has one source of truth. A
-    /// thrown factory error (e.g. BYOK enabled without a key) surfaces as
-    /// `.byokMisconfigured`; the Settings UI prevents enabling BYOK without a
-    /// key.
+    /// Builds the drop transcription session (direct BYOK to the user's
+    /// provider) through `TranscriptionSessionFactory`. Shared by the drop
+    /// flow and the agent voice factory so the construction recipe has one
+    /// source of truth. A thrown factory error (no provider chosen, or BYOK
+    /// enabled without a key) surfaces as `.byokMisconfigured`; the Settings
+    /// UI prevents enabling BYOK without a key.
     ///
     /// `resilient` must be `true` ONLY for the Drop call site. Agent-voice and
     /// Google-search pass `false` explicitly — their result handlers treat
@@ -2629,13 +2628,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeStreamingSession(
         resilient: Bool = false
     ) async throws -> any StreamingSessionRunning {
-        let prefs = SelfKeyPreferences.shared
-        if prefs.transcriptionLevel == .local,
-           await !localBatchTranscriber.isAvailable() {
-            throw StreamingSessionSetupError.byokMisconfigured(.localModelNotDownloaded)
-        }
         let factory = TranscriptionSessionFactory(
-            prefs: prefs,
+            prefs: SelfKeyPreferences.shared,
             keyStore: BYOKKeyStore(),
             vocab: .shared
         )
@@ -2714,22 +2708,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // capturing it unconditionally here is cheap and keeps the teardown in
         // one place.
         let capturedPCM = streamingSession?.capturedAudioPCM16() ?? Data()
-        let isLocalTranscription = streamingSession is LocalTranscriptionSession
-        // Local STT Smart Drop cleans via the configured LLM route (on-device
-        // Qwen or BYOK). It bypasses cleanup when Drop is in Fast mode (raw
-        // output by design) or when no LLM route is configured.
-        // `localTranscriptionBypassesPostProcessing` encodes that.
-        let bypassesPostProcessing: Bool
-        if isLocalTranscription {
-            let mode = UserPreferencesCache.shared.currentMode
-            let route = try? await postProcessor?.cleanupRouteForDrop()
-            bypassesPostProcessing = Self.localTranscriptionBypassesPostProcessing(
-                mode: mode,
-                route: route
-            )
-        } else {
-            bypassesPostProcessing = false
-        }
         streamingSession = nil
         streamingStopRequested = false
         // The turn is resolving; clear the setup/pending window so a late
@@ -2791,11 +2769,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // All other failures route through the resolver: salvage the
             // realtime partial or batch-transcribe retained audio instead of
-            // silently idling. Thread the already-computed bypass flag so the
-            // .failed recovery path matches the .transcript/.degraded arm below
-            // (a local-STT turn must not attempt cleanup when its resolved
-            // route is bypass-only) — ROO-257 consistency fix.
-            await resolveViaSink(result: result, stopRequested: stopRequested, capturedPCM: capturedPCM, startedAt: startedAt, targetApp: targetApp, targetPID: targetPID, bypassesPostProcessing: bypassesPostProcessing)
+            // silently idling.
+            await resolveViaSink(result: result, stopRequested: stopRequested, capturedPCM: capturedPCM, startedAt: startedAt, targetApp: targetApp, targetPID: targetPID)
         case .transcript, .endpointDetected, .degraded:
             await resolveViaSink(
                 result: result,
@@ -2803,8 +2778,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 capturedPCM: capturedPCM,
                 startedAt: startedAt,
                 targetApp: targetApp,
-                targetPID: targetPID,
-                bypassesPostProcessing: bypassesPostProcessing
+                targetPID: targetPID
             )
         }
     }
@@ -2848,42 +2822,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Whether a LOCAL-STT Drop turn should bypass post-processing (paste the raw
-    /// Parakeet transcript). Pure so the routing decision is unit-tested without
-    /// the AppKit delegate.
-    ///
-    /// Bypass (raw paste) when:
-    ///   - Fast mode — raw output is the design (no cleanup in Fast).
-    ///   - route is unresolved — no LLM is configured (missing key / base
-    ///     URL), so there is nothing to clean with.
-    /// Run cleanup (don't bypass) only in Smart mode on a configured route
-    /// (`.local` on-device LLM, or `.direct` BYOK to the user's own provider).
-    /// WHY: docs/decisions/2026-06-26-local-llm.md (local LLM does Smart-Drop
-    /// cleanup) supersedes the ROO-256 blanket bypass.
-    static func localTranscriptionBypassesPostProcessing(
-        mode: TranscriptionMode,
-        route: LLMCleanupRoute?
-    ) -> Bool {
-        guard mode == .smart else { return true }
-        switch route {
-        case .local, .direct:
-            return false
-        case .none:
-            return true
-        }
-    }
-
     /// Picks the deliverable for a Drop turn after cleanup ran. Pure so the
     /// empty-output fallback is unit-tested without the AppKit delegate.
     ///
-    /// WHY: a degenerate on-device cleanup reply can be whitespace-only —
-    /// `LocalLLMSession.complete()` trims it to "" (and `DropFillerFilter` can
-    /// also strip cleanup output to ""). Feeding "" into the paste tail makes
-    /// `deliverDropTranscript`'s `guard !text.isEmpty` early-return, silently
-    /// eating the paste with no error surfaced (ROO-257). So when cleanup is
-    /// empty/whitespace but the raw transcript is not, fall back to the raw
-    /// transcript — guaranteeing a non-empty deliverable whenever the dictation
-    /// was non-empty. Both-empty stays "" (the downstream guard still idles
+    /// WHY: a degenerate cleanup reply can be whitespace-only, and
+    /// `DropFillerFilter` can also strip cleanup output to "". Feeding "" into
+    /// the paste tail makes `deliverDropTranscript`'s `guard !text.isEmpty`
+    /// early-return, silently eating the paste with no error surfaced
+    /// (ROO-257). So when cleanup is empty/whitespace but the raw transcript
+    /// is not, fall back to the raw transcript — guaranteeing a non-empty
+    /// deliverable whenever the dictation was non-empty. Both-empty stays "" (the downstream guard still idles
     /// without pasting). Mirrors the thrown-error fallback that already pastes
     /// the raw transcript. See docs/decisions/2026-06-26-local-llm.md.
     static func dropDeliverableAfterCleanup(cleaned: String, rawTranscript: String) -> String {
@@ -2932,19 +2880,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
 
             // WHY: docs/decisions/2026-06-26-local-llm.md — a degenerate
-            // on-device cleanup reply can be empty/whitespace (LocalLLMSession
-            // trims to ""); without this guard the empty string flows into the
-            // paste tail and is silently swallowed (deliverDropTranscript's
-            // `guard !text.isEmpty`). Fall back to the raw transcript so a
-            // non-empty dictation is never silently dropped (ROO-257).
+            // cleanup reply can be empty/whitespace; without this guard the
+            // empty string flows into the paste tail and is silently swallowed
+            // (deliverDropTranscript's `guard !text.isEmpty`). Fall back to
+            // the raw transcript so a non-empty dictation is never silently
+            // dropped (ROO-257).
             let deliverable = Self.dropDeliverableAfterCleanup(
                 cleaned: final, rawTranscript: rawText
             )
             if deliverable != final {
-                // ROO-257: the raw-fallback is a band-aid, not a happy path. With
-                // non-greedy on-device decoding it should fire rarely; a FREQUENT
-                // fire means cleanup is still returning empty (e.g. a decoding/
-                // prompt regression), so this is a bug signal worth surfacing.
+                // ROO-257: the raw-fallback is a band-aid, not a happy path. It
+                // should fire rarely; a FREQUENT fire means cleanup is still
+                // returning empty (e.g. a model or prompt regression), so this
+                // is a bug signal worth surfacing.
                 // Flag only — never the transcript text (invariant #3).
                 os_log(
                     "cleanup_raw_fallback: empty cleanup, pasting raw transcript",
@@ -2958,8 +2906,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         } catch {
             guard !Task.isCancelled else { return }
-            // No usable LLM route (missing key / model not downloaded /
-            // endpoint down): degrade to the fast output — the raw transcript
+            // No usable LLM route (none chosen / missing key / endpoint
+            // down): degrade to the fast output — the raw transcript
             // (filler stripping still applies in `finishDropDelivery`). The
             // paste never fails because cleanup is unavailable.
             os_log(
@@ -2979,9 +2927,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// missing-prerequisite branch is unit-tested in isolation — mirrors
     /// `shouldFallbackToRecorderOnStreamingFailure` /
     /// `streamingTranscriptIsEmpty`. Returns `false` when there is no retained
-    /// audio (nothing to transcribe) or no batch transcriber (the on-device
-    /// model is not downloaded); the caller then falls to the partial-salvage
-    /// rungs WITHOUT a batch attempt.
+    /// audio (nothing to transcribe) or no batch transcriber (none is wired);
+    /// the caller then falls to the partial-salvage rungs WITHOUT a batch
+    /// attempt.
     static func shouldAttemptBatchRecovery(
         hasAudio: Bool,
         hasBatchTranscriber: Bool
@@ -3015,35 +2963,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// side-effect wiring — phase, paste tail, retry-state, telemetry, and
     /// raw-partial salvage — is defined in exactly one place.
     private func dropDeliverySink(targetApp: String?, targetPID: pid_t?) -> DropBatchRecoverySink {
-        dropDeliverySink(
-            targetApp: targetApp,
-            targetPID: targetPID,
-            bypassesPostProcessing: false
-        )
-    }
-
-    private func dropDeliverySink(
-        targetApp: String?,
-        targetPID: pid_t?,
-        bypassesPostProcessing: Bool
-    ) -> DropBatchRecoverySink {
         DropBatchRecoverySink(
             setPhase: { AppState.shared.phase = $0 },
             deliver: { [weak self] raw in
                 guard let self else { return }
-                if bypassesPostProcessing {
-                    // Fast mode / no LLM configured: paste the raw transcript.
-                    // WHY: docs/decisions/2026-06-24-local-transcription-fluid-audio.md
-                    await self.finishDropDelivery(
-                        text: raw,
-                        rawTranscript: raw,
-                        targetApp: targetApp
-                    )
-                } else {
-                    await self.runPostProcessAndPaste(
-                        rawText: raw, targetApp: targetApp, targetPID: targetPID
-                    )
-                }
+                await self.runPostProcessAndPaste(
+                    rawText: raw, targetApp: targetApp, targetPID: targetPID
+                )
             },
             retainForRetry: { [weak self] pcm in
                 self?.pendingRetryPCM = pcm
@@ -3075,7 +3001,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    /// Batch-transcribe the locally-retained audio with the on-device model
+    /// Batch-transcribe the locally-retained audio with the batch transcriber
     /// when the live stream degraded, then deliver via the normal
     /// post-process + paste tail — so a network blip never silently loses the
     /// dictation. Only reached when the resilient-delivery flag is on (the
@@ -3091,7 +3017,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is untouched.
     private func recoverViaBatch(pcm: Data, targetApp: String?, targetPID: pid_t?) async {
         let prefs = PrivacyPreferences.shared
-        let transcriber = localBatchTranscriber
+        let transcriber = batchTranscriber
         let hasBatchTranscriber = await transcriber.isAvailable()
         await Self.runBatchRecovery(
             pcm: pcm,
@@ -3113,12 +3039,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the same sink shape as `recoverViaBatch` via `dropDeliverySink`.
     private func resolveViaSink(
         result: StreamingSessionResult, stopRequested: Bool, capturedPCM: Data,
-        startedAt: Date, targetApp: String?, targetPID: pid_t?,
-        bypassesPostProcessing: Bool = false
+        startedAt: Date, targetApp: String?, targetPID: pid_t?
     ) async {
         let partial = lastDropPartial
         let prefs = PrivacyPreferences.shared
-        let transcriber = localBatchTranscriber
+        let transcriber = batchTranscriber
         let hasBatchTranscriber = await transcriber.isAvailable()
         await Self.resolveDelivery(
             result: result, stopRequested: stopRequested,
@@ -3130,11 +3055,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     audio: pcm,
                     language: prefs.selectedLanguage?.code)
             },
-            sink: dropDeliverySink(
-                targetApp: targetApp,
-                targetPID: targetPID,
-                bypassesPostProcessing: bypassesPostProcessing
-            ))
+            sink: dropDeliverySink(targetApp: targetApp, targetPID: targetPID))
     }
 
     /// Drop the retained total-offline take (Task 7): clears the PCM kept for a
@@ -3383,7 +3304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Rungs 2–4: full batch (on-device) → raw partial → deliveryFailed/idle.
+    /// Rungs 2–4: full batch → raw partial → deliveryFailed/idle.
     private static func recoverOrSalvage(
         pcm: Data, lastPartial: String, hasBatchTranscriber: Bool,
         deadline: BatchRecoveryDeadline = .production,
@@ -3401,7 +3322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             armRetry: Bool = true
         ) async {
             // The manual Retry armed by `retainForRetry` (.deliveryFailed →
-            // `recoverViaBatch`) re-transcribes the retained PCM on-device.
+            // `recoverViaBatch`) re-transcribes the retained PCM in batch.
             if !streamingTranscriptIsEmpty(lastPartial) {
                 let pasted = await sink.pasteRaw(lastPartial)          // rung 3
                 if pasted {
@@ -3514,32 +3435,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // survive app restarts (launch recovery picks them back up from
         // disk).
         let stagingRoot = Self.meetingsStagingRoot()
-        // Activation gate: fully-on-device meeting (local STT + local
-        // diarization + local LLM) when BOTH transcription and LLM isolation
-        // are `.local` AND the host is Apple Silicon (ROO-257 Stage 6 —
-        // MLX/Core ML never engage on Intel). Read fresh on each use so a
-        // level change between meetings takes effect without restarting the
-        // app.
-        let localMeetingGate: @MainActor () -> Bool = {
-            MeetingsCoordinator.isFullyLocalMeetingEnabled(
-                transcriptionLevel: SelfKeyPreferences.shared.transcriptionLevel,
-                llmLevel: SelfKeyPreferences.shared.llmLevel,
-                isAppleSilicon: LocalModelSupport.isAppleSilicon
-            )
-        }
         let recorderFactory: MeetingsCoordinator.RecorderFactory = { meetingId in
-            let micSource = MicCaptureSource()
-            let usesLocalMeetingPipeline = localMeetingGate()
-            // When the fully-local path is active, retain the raw un-mixed
-            // mic/system tracks so `MeetingLocalProcessor` can label mic as
-            // "Me" and diarize the system track into remote speakers. The
-            // BYOK path keeps `false` (consumes the mixed chunks).
-            return MeetingRecorder(
-                micSource: micSource,
+            MeetingRecorder(
+                micSource: MicCaptureSource(),
                 systemSource: vadProbe,
                 micInUseProbe: micProbe,
-                stagingRoot: stagingRoot,
-                retainSeparateTracks: usesLocalMeetingPipeline
+                stagingRoot: stagingRoot
             )
         }
         // Local store + coordinator wire. Store init can throw on
@@ -3567,8 +3468,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stagingRoot: { stagingRoot },
             meetingsStore: store,
             directProcessor: MeetingBYOKProcessor(),
-            localProcessor: MeetingLocalProcessor(language: config.preferredLanguage),
-            localMeetingGate: localMeetingGate,
             meetingsEnabled: { UserPreferencesCache.shared.currentMeetingsEnabled },
             enableMeetingsCapability: { UserPreferencesCache.shared.setMeetingsEnabled(true) }
         )

@@ -39,18 +39,7 @@ let package = Package(
         // `.upToNextMinor` is intentionally strict — FluidAudio is still
         // pre-1.0 so we treat minor bumps as breaking and gate them on
         // an explicit review.
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.14.6")),
-
-        // MLX Swift LM — on-device LLM runtime (MIT) for the local "smart"
-        // cleanup + meeting summaries (ROO-257). Provides `MLXLLM` (model
-        // factory) and `MLXLMCommon` (`ModelContainer`, `ChatSession`,
-        // HuggingFace download via `HubApi`). Pulls in `ml-explore/mlx-swift`
-        // (core `MLX`) transitively. Apple Silicon only — gated at the feature
-        // level. Pin: 2.31.3 (the 2.x line uses the published
-        // huggingface/swift-transformers Hub rather than the 3.x in-tree
-        // macro module, keeping the build graph lighter). `.upToNextMinor`
-        // mirrors the strict pre-1.0 policy used for FluidAudio/Sparkle.
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", .upToNextMinor(from: "2.31.3"))
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.14.6"))
     ],
     targets: [
         // App library — all application code. Entry lives in
@@ -59,9 +48,7 @@ let package = Package(
             name: "Sidekey",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
-                .product(name: "FluidAudio", package: "FluidAudio"),
-                .product(name: "MLXLLM", package: "mlx-swift-lm"),
-                .product(name: "MLXLMCommon", package: "mlx-swift-lm")
+                .product(name: "FluidAudio", package: "FluidAudio")
             ],
             path: "Sources/Sidekey"
         ),

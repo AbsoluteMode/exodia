@@ -1,14 +1,14 @@
 # Privacy
 
 Exodia has no accounts, no Exodia-operated servers and no telemetry. This
-document lists every way data can leave the Mac, so that "fully local" is a
-verifiable claim rather than a slogan.
+document lists every way data can leave the Mac, so that "no Exodia servers"
+is a verifiable claim rather than a slogan.
 
 ## What stays on the device
 
 - Audio captured for dictation (Drop) and for meetings is processed in memory
   and, for meetings, staged as WAV chunks under `~/Library/Application
-  Support/` only until the local pipeline has transcribed them.
+  Support/` only until your configured provider has transcribed them.
 - Transcripts, agent history, clipboard history and meeting notes live in
   SQLite databases under `~/Library/Application Support/`. Delete them from
   Settings, History, or by removing the files.
@@ -22,7 +22,7 @@ verifiable claim rather than a slogan.
 - Logs go to the unified system log (`os_log`, subsystem
   `com.rootwise.sidekey`). They never contain transcripts, prompts, replies
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
-  enforces that for the local pipelines.
+  enforces that for the provider paths that carry this content.
 
 Project folders are indexed only after you select them in Settings → Projects.
 The catalog, notes and SQLite text index stay in the app’s local Application
@@ -42,7 +42,7 @@ the user’s local files and is absent from the source repository.
 
 | Route | Where data goes | When |
 |---|---|---|
-| Local models (Parakeet, FluidAudio diarization, MLX Qwen3) | nowhere; a one-time download from Hugging Face fetches the weights | Apple Silicon, after you click Download |
+| Meeting detector (FluidAudio Silero VAD) | nowhere; a one-time download from Hugging Face fetches the model | the first time the detector checks for speech |
 | Your key (OpenAI, Deepgram, Soniox, ElevenLabs, OpenRouter, self-hosted OpenAI-compatible endpoint) | the provider you selected, authenticated with your key | while the selected route is in use |
 | Agent (OpenCode) | OpenRouter and the selected model provider, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |

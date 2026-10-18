@@ -1,5 +1,8 @@
 # Local Drop live partials: bounded-window fresh-state re-decode
 
+> Update 2026-10-18: local Drop transcription was removed with the
+> [on-device models](../../.project-docs/decisions/2026-10-18-remove-local-models.md); this record is history.
+
 Date: 2026-06-27
 Status: accepted
 Context: ROO-257 (local STT — live partial transcript in the Dynamic Island)

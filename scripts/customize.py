@@ -97,7 +97,7 @@ def doctor(args: argparse.Namespace) -> int:
         check("agent guidance", status["synchronized"], "byte-identical" if status["synchronized"] else "Run sync-guidance --write")
     except ValueError as error:
         check("agent guidance", False, str(error))
-    for name in ("Package.swift", "Package.resolved", "scripts/dev-run.sh", "Resources/Info.plist.template", "Resources/mlx.metallib"):
+    for name in ("Package.swift", "Package.resolved", "scripts/dev-run.sh", "Resources/Info.plist.template"):
         check(name, (ROOT / name).is_file(), "present" if (ROOT / name).is_file() else "missing")
     missing = sorted({path for topic in capabilities()["change_kinds"].values() for path in topic["entry_points"] if not (ROOT / path).is_file()})
     check("capability entry points", not missing, "current" if not missing else "Missing: " + ", ".join(missing))

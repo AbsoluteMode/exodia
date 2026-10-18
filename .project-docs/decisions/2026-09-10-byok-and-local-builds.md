@@ -17,10 +17,12 @@ sources:
   - type: repository
     reference: docs/build-and-release.md
     confirmed_at: 2026-09-10
-related: [../project.md, 2026-10-17-source-first-distribution.md]
+related: [../project.md, 2026-10-17-source-first-distribution.md, 2026-10-18-remove-local-models.md]
 ---
 
 # BYOK presentation and local builds
+
+> Model update, 2026-10-18: [on-device models were removed](2026-10-18-remove-local-models.md). Settings -> Models offers only Your key (BYOK) and custom endpoints; saved routes still never switch on their own. Local builds and validation remain current.
 
 > Distribution update, 2026-10-17: [source-first Exodia](2026-10-17-source-first-distribution.md) supersedes the signed DMG delivery requirement. Runtime installation/resource checks, BYOK-first presentation and local validation remain current.
 

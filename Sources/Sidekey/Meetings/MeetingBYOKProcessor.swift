@@ -83,9 +83,9 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
     }
 
     func shouldProcessDirectly() -> Bool {
-        // Only the cloud BYOK LLM routes drive this direct processor. `.local`
-        // (on-device MLX) is handled by the fully-local meetings pipeline, so
-        // it must not fall into the BYOK cloud path here.
+        // Both stages run on providers the user chose. Without a chosen level
+        // (never chosen, or the retired on-device route) the meeting stays
+        // staged until they choose one in Settings -> Models.
         let cloudBYOKLLM = prefs.llmLevel == .yourKey || prefs.llmLevel == .custom
         return prefs.transcriptionLevel == .yourKey && cloudBYOKLLM
     }

@@ -149,20 +149,24 @@ final class ProviderBreathingMarkViewTests: XCTestCase {
         XCTAssertFalse(before === after)
     }
 
-    // MARK: - Full-color marks (Qwen on-device) keep native colors
+    // MARK: - Full-color marks keep native colors
+
+    /// No shipped brand is full-color since the on-device Qwen mark left with
+    /// the local models; its bundled asset still exercises the rendering path.
+    private let fullColorBrand = TranscriptionProviderBrand(assetName: "qwen", label: "Qwen", isFullColor: true)
 
     func testFullColorBrandRendersLayerContents() {
-        let view = makeView(brand: .localTranscription)
+        let view = makeView(brand: fullColorBrand)
         XCTAssertNotNil(view.markLayerForTesting.contents)
     }
 
-    /// The Qwen mark must survive in its real brand color, NOT be flattened to
+    /// A full-color mark must survive in its real brand color, NOT be flattened to
     /// the white tint every monochrome provider mark receives. Render the mark
     /// bitmap and assert at least one saturated (non-white, non-gray) pixel —
     /// color-agnostic so the brand color can change without breaking this guard.
     func testFullColorBrandKeepsColorInsteadOfWhiteTint() throws {
         let image = try XCTUnwrap(
-            ProviderBreathingMarkView.markImageForTesting(brand: .localTranscription)
+            ProviderBreathingMarkView.markImageForTesting(brand: fullColorBrand)
         )
         let rep = try XCTUnwrap(bitmap(from: image))
 
@@ -181,7 +185,7 @@ final class ProviderBreathingMarkViewTests: XCTestCase {
             }
             if sawColor { break }
         }
-        XCTAssertTrue(sawColor, "full-color Qwen mark must keep its brand color, not be white-tinted")
+        XCTAssertTrue(sawColor, "full-color mark must keep its brand color, not be white-tinted")
     }
 
     /// A monochrome provider mark is white-tinted: it must NOT contain a

@@ -1,8 +1,8 @@
 import Foundation
 
 /// The realtime-voice surface `AgentController` depends on. Every
-/// `StreamingSessionRunning` (direct-to-provider BYOK, on-device Parakeet)
-/// satisfies it in production; tests inject a fake. Mirrors the session's own
+/// `StreamingSessionRunning` (direct-to-provider BYOK) satisfies it in
+/// production; tests inject a fake. Mirrors the session's own
 /// lifecycle: `run()` blocks until the session resolves, `stop()` finalizes
 /// (sends end-of-stream), `cancel()` tears down.
 @MainActor
