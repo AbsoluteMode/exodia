@@ -265,33 +265,84 @@ final class MeetingLocalProcessorTests: XCTestCase {
         XCTAssertEqual(llm.prompts.count, 1, "short transcript needs a single summary call")
     }
 
-    func test_process_emptyTranscript_throwsNoTranscript() async throws {
+    // MARK: - Silence
+
+    func test_process_silentRecording_storesNoSpeechNoteWithoutDiarizerOrLLM() async throws {
+        let log = EvictionLog()
+        let diarizer = FakeDiarizer([])
+        let llm = FakeLLM()
         let store = try makeStore()
+        let tracks = try makeTracks()
+        let stagingDir = tracks.micURL.deletingLastPathComponent()
+        try Data("{}".utf8).write(to: stagingDir.appendingPathComponent(MeetingFinalizeManifest.fileName))
         let processor = MeetingLocalProcessor(
             transcriber: FakeTranscriber(MeetingLocalTranscript(mic: [], system: [])),
+            diarizer: diarizer,
+            llm: llm,
+            transcriptionStore: SpyEvictable(name: "stt", log: log),
+            diarizerStore: SpyEvictable(name: "diar", log: log),
+            llmStore: SpyEvictable(name: "llm", log: log)
+        )
+        let meetingId = UUID()
+        let event = MeetingRecorder.FinalizedEvent(
+            meetingId: meetingId, chunkURLs: [], totalDurationSeconds: 4, reason: .user,
+            separateTrackURLs: tracks
+        )
+
+        let id = try await processor.process(
+            event: event, startedAt: Date(), language: nil, meetingsStore: store
+        )
+
+        // Silence is a finished meeting: a ready note, never a failure.
+        XCTAssertEqual(id, meetingId)
+        let meta = try await store.list().first { $0.id == meetingId }
+        XCTAssertEqual(meta?.title, "No speech detected")
+        XCTAssertEqual(meta?.progressStatus, .ready)
+        XCTAssertNil(meta?.failureReason)
+        let markdown = try await store.markdown(id: meetingId)
+        XCTAssertTrue(markdown?.contains("no speech") == true)
+        let transcript = try await store.transcript(id: meetingId)
+        XCTAssertEqual(transcript, [])
+        // Only the transcription model ran: nothing is left to diarize or summarize.
+        XCTAssertEqual(diarizer.sampleCallCount, 0)
+        XCTAssertTrue(llm.prompts.isEmpty, "silence must not reach the LLM")
+        XCTAssertEqual(log.order, ["stt"])
+        // Audio and manifest are released, so recovery has nothing to retry.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingDir.path))
+    }
+
+    func test_process_speechWithoutTokenTimings_staysAnError() async throws {
+        let llm = FakeLLM()
+        let store = try makeStore()
+        // The system track has text but no token timings to align it by.
+        let transcript = MeetingLocalTranscript(
+            mic: [],
+            system: [MeetingASRSegment(text: "remote speech", start: 0, end: 2)],
+            systemTokens: []
+        )
+        let processor = MeetingLocalProcessor(
+            transcriber: FakeTranscriber(transcript),
             diarizer: FakeDiarizer([]),
-            llm: FakeLLM(),
+            llm: llm,
             transcriptionStore: SpyEvictable(name: "stt", log: EvictionLog()),
             diarizerStore: SpyEvictable(name: "diar", log: EvictionLog()),
             llmStore: SpyEvictable(name: "llm", log: EvictionLog())
         )
-
+        let meetingId = UUID()
         let event = MeetingRecorder.FinalizedEvent(
-            meetingId: UUID(),
-            chunkURLs: [],
-            totalDurationSeconds: 0,
-            reason: .user,
+            meetingId: meetingId, chunkURLs: [], totalDurationSeconds: 2, reason: .user,
             separateTrackURLs: try makeTracks()
         )
 
         do {
-            _ = try await processor.process(
-                event: event, startedAt: Date(), language: nil, meetingsStore: store
-            )
-            XCTFail("expected empty transcript to throw")
+            _ = try await processor.process(event: event, startedAt: Date(), language: nil, meetingsStore: store)
+            XCTFail("recognised speech must never become a no-speech note")
         } catch {
-            // expected — nothing was said on either track.
+            XCTAssertEqual(error as? MeetingLocalProcessingError, .noTranscript)
         }
+        let meta = try await store.list().first { $0.id == meetingId }
+        XCTAssertNil(meta)
+        XCTAssertTrue(llm.prompts.isEmpty)
     }
 
     // MARK: - FIX 2: failure-safe eviction
@@ -478,5 +529,89 @@ final class MeetingLocalProcessorTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: stagingDir.path),
                            "the staging directory must be removed even on failure")
         }
+    }
+
+    // MARK: - Outcome through the coordinator
+
+    private final class StubDetector: MeetingDetectorProtocol, @unchecked Sendable {
+        func subscribe() {}
+    }
+
+    /// Dispatch a finalized local meeting the way Stop does: progress row,
+    /// recovery manifest next to the chunks, then the on-device processor.
+    private func dispatchThroughCoordinator(
+        transcriber: any MeetingLocalTranscribing,
+        llm: FakeLLM,
+        store: MeetingsStore
+    ) async throws -> (meetingId: UUID, stagingRoot: URL, stagingDir: URL) {
+        let tracks = try makeTracks()
+        let stagingDir = tracks.micURL.deletingLastPathComponent()
+        let chunk = stagingDir.appendingPathComponent("chunk-000.wav")
+        try Data([0x01]).write(to: chunk)
+        let config = MeetingsConfig(defaults: UserDefaults(suiteName: "local-processor-\(UUID().uuidString)")!)
+        config.isEnabled = true
+        let coordinator = MeetingsCoordinator(
+            config: config,
+            detector: StubDetector(),
+            meetingsStore: store,
+            localProcessor: MeetingLocalProcessor(
+                transcriber: transcriber,
+                diarizer: FakeDiarizer([]),
+                llm: llm,
+                transcriptionStore: SpyEvictable(name: "stt", log: EvictionLog()),
+                diarizerStore: SpyEvictable(name: "diar", log: EvictionLog()),
+                llmStore: SpyEvictable(name: "llm", log: EvictionLog())
+            ),
+            localMeetingGate: { true }
+        )
+        let meetingId = UUID()
+
+        await coordinator.dispatchFinalizedForProcessing(
+            event: MeetingRecorder.FinalizedEvent(
+                meetingId: meetingId, chunkURLs: [chunk], totalDurationSeconds: 4, reason: .user,
+                separateTrackURLs: tracks
+            ),
+            startedAt: Date()
+        )
+        return (meetingId, stagingDir.deletingLastPathComponent(), stagingDir)
+    }
+
+    func test_coordinator_silentLocalMeeting_isReadyAndLeavesNothingToRetry() async throws {
+        let llm = FakeLLM()
+        let store = try makeStore()
+
+        let run = try await dispatchThroughCoordinator(
+            transcriber: FakeTranscriber(MeetingLocalTranscript(mic: [], system: [])),
+            llm: llm,
+            store: store
+        )
+
+        let meta = try await store.list().first { $0.id == run.meetingId }
+        XCTAssertEqual(meta?.progressStatus, .ready)
+        XCTAssertNil(meta?.failureReason)
+        XCTAssertEqual(meta?.title, "No speech detected")
+        XCTAssertTrue(llm.prompts.isEmpty, "silence must not reach the LLM")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: run.stagingDir.path))
+        XCTAssertTrue(
+            MeetingFinalizeManifestStore().scan(stagingRoot: run.stagingRoot).isEmpty,
+            "no manifest may remain for launch or wake recovery"
+        )
+    }
+
+    func test_coordinator_localModelFailure_isStillFailed() async throws {
+        let llm = FakeLLM()
+        let store = try makeStore()
+
+        let run = try await dispatchThroughCoordinator(
+            transcriber: ThrowingTranscriber(),
+            llm: llm,
+            store: store
+        )
+
+        let meta = try await store.list().first { $0.id == run.meetingId }
+        XCTAssertEqual(meta?.progressStatus, .failed)
+        XCTAssertNotNil(meta?.failureReason)
+        XCTAssertNotEqual(meta?.title, "No speech detected")
+        XCTAssertTrue(llm.prompts.isEmpty)
     }
 }

@@ -100,10 +100,12 @@ Meeting Notes:
           other providers use their adapters, then LLM with the user's keys). Neither configured = the meeting is
           marked failed with `LocalModelMessaging.meetingProcessorNotConfigured`
           and its audio stays staged; a `MeetingFinalizeManifest` re-dispatches
-          it later with the language captured at Stop time. A completed Soniox
-          job without speech is not a failure: it stores a "No speech detected"
-          note without the LLM and releases the staged audio, so it is never
-          retried. WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
+          it later with the language captured at Stop time. A recording without
+          speech is not a failure: a completed Soniox job, or a successful local
+          transcription with no text on either track, stores a "No speech
+          detected" note without the LLM (locally also without the diarizer)
+          and releases the staged audio, so it is never retried. Model failures
+          remain errors. WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
        -> MeetingsStore (local SQLite) -> notes window (BlockNote in WKWebView)
   Delete: a finished meeting (ready or failed) has "Delete…" in its row
   context menu behind a confirmation whose default button is Cancel.
@@ -225,11 +227,14 @@ Hover tool search and pointer routing:
   is not an accessibility element. Native button identity, geometry, image,
   target/action, text/cancel and recents behavior are retained; older fallback
   and parent transitions are unchanged. Setup runs in init/layout without focus.
-  Current proof: 10 focused tests/0 failures (3.933 s); full 2,950 tests,
-  8 skipped/0 failures (47.511 s), plus 60 source-matched native/transparent/
-  explicit-glyph comparison PNGs with invisible/non-key windows. Exact live
-  clipping was not reproduced offscreen; installed 2.2.7 user acceptance and
-  public publication remain pending. Do not claim a proved compositor cause.
+  Current proof: 10 focused tests/0 failures (3.933 s); final integrated full
+  suite 2,953 tests, 8 skipped/0 failures (51.673 s), plus 60 source-matched
+  native/transparent/explicit-glyph comparison PNGs with invisible/non-key
+  windows. Exact clipping was not reproduced offscreen. On 2026-10-18 the user
+  separately confirmed the loupe fully visible after installed 2.2.7 Monitor ->
+  Tools. Public 2.2.7 build 1459 was published from sealed a35ca9d5778c65e9dbb861535178696c887293ee;
+  independent public source/feed, both DMG hashes/signatures and read-only app
+  checks passed. Do not claim a proved compositor cause.
   A translucent input lens/rim supplies the foreground surface without child
   native glass. History shares the drawer's Regular backdrop, uses translucent
   rows/hints and a separate preview backdrop. macOS 14/15 fallback is unchanged;

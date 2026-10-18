@@ -55,7 +55,7 @@ enum MeetingLocalProcessingError: Error, CustomStringConvertible, Equatable {
         case .noSeparateTracks:
             return "The finalized meeting has no retained separate tracks."
         case .noTranscript:
-            return "Local transcription produced no speech on either track."
+            return "Local transcription returned speech without timings, so it could not be aligned."
         }
     }
 }
@@ -93,6 +93,10 @@ protocol MeetingLocalProcessing: AnyObject {
 ///      budget,
 ///   5. evicts the LLM and writes the note markdown + transcript into the
 ///      `MeetingsStore` — the SAME store shape the BYOK path uses.
+///
+/// When neither track contains recognised speech, step 1 is the last model
+/// stage: the processor stores a "No speech detected" note without loading the
+/// diarizer or the LLM.
 ///
 /// The whole flow is offline: no server is involved and nothing is
 /// counted or reported anywhere. The three model
@@ -153,8 +157,10 @@ final class MeetingLocalProcessor: MeetingLocalProcessing {
     }
 
     /// Run the full on-device pipeline and persist the diarized note. Returns
-    /// the meeting id written to the store. Throws when the store is missing,
-    /// the event has no retained tracks, or neither track produced any speech.
+    /// the meeting id written to the store. A recording without speech stores a
+    /// "No speech detected" note instead. Throws when the store is missing, the
+    /// event has no retained tracks, a model stage fails, or recognised speech
+    /// cannot be aligned.
     @discardableResult
     func process(
         event: MeetingRecorder.FinalizedEvent,
@@ -211,6 +217,15 @@ final class MeetingLocalProcessor: MeetingLocalProcessing {
             throw error
         }
         await transcriptionStore.evict()
+
+        // WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
+        // Silence is the final result of a successful transcription: store the
+        // note without loading the diarizer or the LLM.
+        guard Self.containsSpeech(transcript) else {
+            return try await storeNoSpeechMeeting(
+                event: event, startedAt: startedAt, meetingsStore: meetingsStore
+            )
+        }
 
         // STAGE 2 — diarize the SYSTEM track only (mic is always "Me"), then
         // free the diarizer (even on throw).
@@ -275,6 +290,48 @@ final class MeetingLocalProcessor: MeetingLocalProcessing {
             event.meetingId.uuidString,
             segments.count,
             Set(segments.compactMap(\.speaker)).count,
+            durationSeconds
+        )
+        return event.meetingId
+    }
+
+    /// Whether the transcription recognised text on either track. The
+    /// transcriber throws when neither track has audio, so `false` here means
+    /// the model ran and heard no speech.
+    private static func containsSpeech(_ transcript: MeetingLocalTranscript) -> Bool {
+        let texts = transcript.mic.map(\.text)
+            + transcript.system.map(\.text)
+            + transcript.systemTokens.map(\.text)
+        return texts.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    /// A recording without speech is finished, not failed: store a short note
+    /// with an empty transcript. `process` then removes the staged audio as
+    /// after any result, so recovery never sees the meeting again.
+    private func storeNoSpeechMeeting(
+        event: MeetingRecorder.FinalizedEvent,
+        startedAt: Date,
+        meetingsStore: MeetingsStore
+    ) async throws -> UUID {
+        let durationSeconds = MeetingsCoordinator.roundedDurationSeconds(event.totalDurationSeconds)
+        try await meetingsStore.insert(
+            meta: MeetingMetaWithLocalState(
+                id: event.meetingId,
+                startedAt: startedAt,
+                endedAt: startedAt.addingTimeInterval(max(0, event.totalDurationSeconds)),
+                durationSeconds: durationSeconds,
+                title: Self.noSpeechTitle,
+                syncStatus: .new,
+                serverVersion: 1,
+                createdAt: Date()
+            ),
+            markdown: Self.noSpeechMarkdown,
+            transcript: []
+        )
+        os_log(
+            "local meeting had no speech (meetingId: %{public}@, duration_s: %{public}d)",
+            log: Self.log, type: .info,
+            event.meetingId.uuidString,
             durationSeconds
         )
         return event.meetingId
@@ -445,6 +502,14 @@ final class MeetingLocalProcessor: MeetingLocalProcessing {
     """
 
     // MARK: - Markdown helpers (mirrors MeetingBYOKProcessor)
+
+    private static let noSpeechTitle = "No speech detected"
+
+    private static let noSpeechMarkdown = """
+    # No speech detected
+
+    The recording contained no speech, so there is nothing to summarize.
+    """
 
     private static func normalizedProtocolMarkdown(_ markdown: String) -> String {
         let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
