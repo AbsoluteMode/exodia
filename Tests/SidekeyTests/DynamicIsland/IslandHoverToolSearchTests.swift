@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import Sidekey
 
@@ -82,6 +83,93 @@ final class IslandHoverToolSearchTests: XCTestCase {
     }
 
     @MainActor
+    func testHostedSearchKeepsNativeButtonsInsideItsFrameAfterReturningFromInlinePanel() throws {
+        guard IslandHoverGlass.usesNativeLiquidGlass else {
+            throw XCTSkip("Transparent search cell requires macOS 26+ and its SDK")
+        }
+        for panelWidth in [CGFloat(310), 312] {
+            for monitorHeight in [CGFloat(243), 352] {
+                for query in ["", "output"] {
+                    try verifySearchReturn(panelWidth: panelWidth, monitorHeight: monitorHeight, query: query)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func verifySearchReturn(panelWidth: CGFloat, monitorHeight: CGFloat, query: String) throws {
+        // No app runtime, store, providers or user data. The window is never
+        // ordered, activated or made key: only native layout/drawing is tested.
+        _ = NSApplication.shared
+        let state = SearchReturnFixtureState(query: query)
+        let window = NSWindow(
+            contentRect: CGRect(x: -20_000, y: -20_000, width: panelWidth, height: 243),
+            styleMask: [.borderless], backing: .buffered, defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        let host = NSHostingView(rootView: SearchReturnFixture(state: state))
+        host.sizingOptions = []
+        host.frame = CGRect(x: 0, y: 0, width: panelWidth, height: 243)
+        window.contentView = host
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+
+        func settle(_ duration: TimeInterval) {
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: duration))
+            host.layoutSubtreeIfNeeded()
+        }
+        func searchFields(in view: NSView) -> [IslandHoverSearchNativeField] {
+            if let field = view as? IslandHoverSearchNativeField { return [field] }
+            return view.subviews.flatMap { searchFields(in: $0) }
+        }
+        func validateField() throws -> Data {
+            let fields = searchFields(in: host)
+            XCTAssertEqual(fields.count, 1)
+            let field = try XCTUnwrap(fields.first)
+            XCTAssertEqual(field.bounds.height, IslandHoverToolSearch.fieldHeight)
+            XCTAssertEqual(field.bounds.width, panelWidth - 36)
+            XCTAssertEqual(field.stringValue, query)
+            XCTAssertNil(field.currentEditor())
+            let cell = try XCTUnwrap(field.cell as? NSSearchFieldCell)
+            // Compare against an ordinary AppKit cell in the SAME actual
+            // bounds; the fix must not alter text/cancel/search geometry.
+            let native = NSSearchField(frame: field.bounds)
+            native.font = field.font
+            native.stringValue = query
+            let nativeCell = try XCTUnwrap(native.cell as? NSSearchFieldCell)
+            for (actual, expected) in [
+                (cell.searchTextRect(forBounds: field.bounds), nativeCell.searchTextRect(forBounds: native.bounds)),
+                (cell.searchButtonRect(forBounds: field.bounds), nativeCell.searchButtonRect(forBounds: native.bounds)),
+                (cell.cancelButtonRect(forBounds: field.bounds), nativeCell.cancelButtonRect(forBounds: native.bounds))
+            ] {
+                XCTAssertEqual(actual, expected)
+                if !actual.isEmpty { XCTAssertTrue(field.bounds.contains(actual), "Native control must fit inside its view: \(actual)") }
+            }
+            let bitmap = try XCTUnwrap(field.bitmapImageRepForCachingDisplay(in: field.bounds))
+            field.cacheDisplay(in: field.bounds, to: bitmap)
+            return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        }
+
+        settle(0.05)
+        let initialDrawing = try validateField()
+        state.showsSearch = false
+        window.setContentSize(CGSize(width: panelWidth, height: monitorHeight))
+        settle(0.20)
+        XCTAssertTrue(searchFields(in: host).isEmpty)
+        state.showsSearch = true
+        window.setContentSize(CGSize(width: panelWidth, height: 243))
+        settle(0.20)
+        XCTAssertEqual(try validateField(), initialDrawing, "Native loupe/text/cancel drawing must survive removal and remount")
+        XCTAssertTrue(state.focusChanges.isEmpty, "Returning to Tools must not acquire keyboard focus")
+        XCTAssertFalse(window.isVisible)
+        XCTAssertFalse(window.isKeyWindow)
+    }
+
+    @MainActor
     func testSearchingDoesNotChangeSavedLayoutOrPinnedSettings() {
         let suite = "IslandHoverToolSearchTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -94,5 +182,42 @@ final class IslandHoverToolSearchTests: XCTestCase {
         XCTAssertEqual(store.slots, [.monitor, .settings])
         XCTAssertEqual(defaults.stringArray(forKey: HoverLayoutStore.defaultsKey), before)
         XCTAssertEqual(HoverSlotRouter.effect(for: .outputLang), .openPanel(.outputLanguagePicker))
+    }
+}
+
+@MainActor
+private final class SearchReturnFixtureState: ObservableObject {
+    @Published var showsSearch = true
+    @Published var query: String
+    var focusChanges: [Bool] = []
+
+    init(query: String) { self.query = query }
+}
+
+private struct SearchReturnFixture: View {
+    @ObservedObject var state: SearchReturnFixtureState
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if state.showsSearch {
+                VStack(spacing: 0) {
+                    IslandHoverSearchField(
+                        text: $state.query,
+                        onFocusChange: { state.focusChanges.append($0) },
+                        onCommand: { _ in }
+                    )
+                    .frame(height: IslandHoverToolSearch.fieldHeight)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
+                    Spacer(minLength: 0)
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else {
+                Text("Monitor")
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(.easeInOut(duration: 0.16), value: state.showsSearch)
     }
 }

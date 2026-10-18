@@ -294,12 +294,10 @@ struct IslandView: View {
     ) -> CGFloat {
         let base: CGFloat
         switch mode {
-        case .controls:
+        case .controls, .monitor:
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .history:
             base = IslandDropModeControl.historyHoverPanelHeight
-        case .monitor:
-            base = IslandDropModeControl.detachedPanelGap + MonitorHoverPanel.contentHeight
         default:
             base = IslandDropModeControl.hoverPanelHeight
         }
