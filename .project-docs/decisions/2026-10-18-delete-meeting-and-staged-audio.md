@@ -111,4 +111,4 @@ real meetings, so they were not exercised outside unit tests.
   meeting whose job still exists is better retried (see the silent-meetings
   decision) than deleted.
 
-2026-10-18, this branch.
+2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/20.
