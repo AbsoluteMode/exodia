@@ -116,4 +116,4 @@ from an on-device diarizer.
   `LocalDiarizationModels` under Application Support/Sidekey; cleaning them
   up is a separate decision.
 
-2026-10-18 · PR: pending
+2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/22.
