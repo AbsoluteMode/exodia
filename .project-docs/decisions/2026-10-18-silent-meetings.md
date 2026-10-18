@@ -96,4 +96,4 @@ Not verified:
   also end empty after an aborted stream, so its empty result does not prove
   silence.
 
-2026-10-18, branch `claude/meetings-issue-a131db`.
+2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/16.
