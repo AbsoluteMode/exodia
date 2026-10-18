@@ -160,4 +160,4 @@ Not verified:
   trades privacy for retries and needs its own decision.
 
 2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/16; local pipeline:
-branch `claude/competent-perlman-044d37`.
+PR https://github.com/AbsoluteMode/exodia/pull/19.
