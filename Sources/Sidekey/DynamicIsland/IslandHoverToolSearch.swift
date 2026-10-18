@@ -176,6 +176,51 @@ final class IslandHoverSearchNativeField: NSSearchField {
 
     var onFocusChange: (Bool) -> Void = { _ in }
     private var resignKeyObserver: NSObjectProtocol?
+    private var searchGlyph: IslandHoverSearchGlyphView?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        updateSearchGlyph()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        updateSearchGlyph()
+    }
+
+    override func layout() {
+        super.layout()
+        updateSearchGlyph()
+    }
+
+    private func updateSearchGlyph() {
+        guard let cell = cell as? IslandHoverSearchGlassCell else { return }
+        // Draw the loupe independently of NSSearchFieldCell's interior pass
+        // and image clipping when SwiftUI removes and remounts the field.
+        // Keep the original button cell for native hit testing/actions/insets.
+        cell.searchButtonCell?.isTransparent = true
+        let glyph: IslandHoverSearchGlyphView
+        if let searchGlyph {
+            glyph = searchGlyph
+        } else {
+            glyph = IslandHoverSearchGlyphView(frame: .zero)
+            glyph.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+            glyph.imageScaling = .scaleProportionallyUpOrDown
+            glyph.contentTintColor = NSColor.white.withAlphaComponent(0.62)
+            glyph.setAccessibilityElement(false)
+            addSubview(glyph)
+            searchGlyph = glyph
+        }
+        let nativeButtonRect = cell.searchButtonRect(forBounds: bounds)
+        let side = max(0, min(14, nativeButtonRect.width, nativeButtonRect.height))
+        glyph.frame = NSRect(
+            x: nativeButtonRect.midX - side / 2,
+            y: nativeButtonRect.midY - side / 2,
+            width: side, height: side
+        )
+        glyph.isHidden = side == 0
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -205,6 +250,13 @@ final class IslandHoverSearchNativeField: NSSearchField {
     deinit {
         if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
     }
+}
+
+/// Decoration only: a click on the loupe still reaches NSSearchField and its
+/// original search button, and VoiceOver exposes only the labelled search field.
+@MainActor
+final class IslandHoverSearchGlyphView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// Keep NSSearchFieldCell's native layout and button tracking, but let the

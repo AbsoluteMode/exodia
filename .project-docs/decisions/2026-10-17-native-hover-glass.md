@@ -9,6 +9,21 @@ canonical_for: [hover-glass-material]
 verified_at: 2026-10-18
 sources:
   - type: trace
+    reference: /tmp/exodia-search-loupe-explicit-tests.log, 10 focused tests with 0 failures in 3.933 seconds for the explicit native-button-aligned glyph candidate.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-search-loupe-explicit-full-tests.log, full 2950 tests with 8 skipped and 0 failures in 47.511 seconds.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-search-loupe-explicit-proof/manifest.json, 60 source-matched native/transparent/explicit-glyph comparison PNGs with no visible/key windows.
+    confirmed_at: 2026-10-18
+  - type: user-confirmed
+    reference: Live user feedback on 2026-10-18 confirmed the search loupe remained cropped after Monitor -> Back in the locally installed 2.2.6 candidate.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: gh release view v2.2.6 --repo AbsoluteMode/exodia reported isDraft=true and publishedAt=null on 2026-10-18 after publication was stopped.
+    confirmed_at: 2026-10-18
+  - type: trace
     reference: /tmp/exodia-monitor-search-final-tests.log, full 2949 tests with 8 skipped and 0 failures in 45.711 seconds for the Monitor layout/search return candidate.
     confirmed_at: 2026-10-18
   - type: trace
@@ -150,7 +165,11 @@ width and confirmed three smaller capsules per row. That correction governs the
 The next refinement enlarged only the icon presentation within the same capsules.
 On 2026-10-18 the user then clarified the Monitor layout: retain and precisely
 center its heading, keep the normal controls height and scroll long dashboard
-lists vertically.
+lists vertically. Live feedback on the locally installed 2.2.6 candidate then
+confirmed that Monitor -> Back still cropped the search loupe. The merged Monitor
+layout and explicit native field-height correction remain valid partial changes;
+they did not complete the reported visual fix. Publication was stopped, and
+GitHub v2.2.6 remained a draft with `publishedAt=null` on 2026-10-18.
 
 ## Decision
 
@@ -183,8 +202,13 @@ search representable explicitly returns its declared 30-point height through
 native 24-point button rect one point outside the hosted field. Native cell
 text/search/cancel geometry and transparent drawing remain unchanged. Offscreen
 Monitor -> Back remounts did not reproduce the top slice reported by the user;
-this removes a measured clipping risk without establishing the exact desktop-
-compositor cause. See the [search decision](2026-10-17-hover-tool-search.md).
+the 30-point fit corrects that measured sizing risk, but live 2.2.6 feedback
+confirmed that it did not resolve the reported cropping. The exact desktop-
+compositor cause remains unproved. The new candidate retains that 30-point fit
+and original native button, makes its paint transparent, and draws a separate
+non-hitting/non-accessibility loupe inside its native button rectangle on the
+macOS 26 glass path. Native button action/geometry and older fallback remain;
+see the precise [search contract](2026-10-17-hover-tool-search.md).
 History uses
 the common drawer backdrop, translucent row/hint lenses and an independent
 preview backdrop. Existing macOS 14/15 fallback and transparent Case/Vocab/Filler
@@ -284,12 +308,37 @@ and older toolchains. Availability guards preserve the macOS 14.2 deployment
 floor. This decision does not restore the June fixed opaque wash to the native
 path or flatten live glass into an offscreen bitmap.
 
-## Monitor layout and search-return verification
+## Explicit loupe candidate verification
 
-The current candidate passed the full 2,949-test suite with 8 skipped and 0
+The 2.2.7 candidate passed 10 focused tests with 0 failures in 3.933 seconds and
+the full 2,950-test suite with 8 skipped and 0 failures in 47.511 seconds. Tests
+verify the original transparent button's target/action through `performClick`
+and its native hit testing, along with retained geometry and separate glyph
+placement. They do not use a replacement click target.
+
+The current source-matched proof contains 60 native/transparent/explicit-glyph
+comparison PNGs across 310/312-point widths and earlier/matched Monitor heights,
+with hidden-host removal/remount and the existing opacity/scale transition.
+Explicit 310-point matched-height return and query images were inspected with
+complete glyphs. Every proof window stayed invisible and non-key; the flat
+backing and Monitor-labelled fixture are test-only, with no live MonitorStore
+or user configuration access.
+
+The exact physical clipping remains unreproduced offscreen. This verifies the
+new drawing/geometry/action contracts, not the private compositor's cause or a
+confirmed live visual fix. Installed 2.2.7 user acceptance and public publication
+remain pending. The stopped 2.2.6 draft and its earlier proof remain separate.
+
+## Historical 2.2.6 Monitor layout and search-return verification
+
+The 2.2.6 candidate passed the full 2,949-test suite with 8 skipped and 0
 failures in 45.711 seconds. Nine focused hosted-search tests passed with 0
-failures in 3.901 seconds. These are current-source results; the historical
-2.2.5/2.2.4 results below cover earlier candidates.
+failures in 3.901 seconds. These results cover the earlier height-only search
+implementation. Subsequent live feedback reported continued loupe cropping;
+they do not establish visual acceptance for that report or verify a later glyph
+change. The 2.2.6 publication was stopped and remained a draft; these checks
+do not establish a public 2.2.6 release. The historical 2.2.5/2.2.4 results below
+cover earlier candidates.
 
 Monitor proof contains 16 production-layout fixtures and 20 current PNGs across
 310/312-point widths and 159/235-point content heights, with 1/21 dashboards,
@@ -309,10 +358,11 @@ remount. Fixed 310-point matched-height return and 312-point earlier-height
 query outputs were inspected with complete icons. The tests do not autofocus
 the field.
 
-Both proof manifests match the current production sources and record invisible,
+Both proof manifests matched that candidate's production sources and record invisible,
 non-key windows with prohibited activation. Dark/flat backing is test-only. The
 exact top slice in the user's image was not reproduced in the offscreen
-baseline; this proves removal of a native sizing/clipping defect, not the exact
+baseline. The tests proved the native field-height correction, while later
+live feedback showed the loupe still cropped. They do not establish the exact
 desktop-compositor cause. Native glass, real pointer/physical focus, live
 Monitor collectors/buttons and installed-app acceptance remain separate.
 
