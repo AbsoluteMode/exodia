@@ -8,6 +8,18 @@ tags: [hover, search, keyboard, customization]
 canonical_for: [hover-tool-search]
 verified_at: 2026-10-18
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-18 the user tested installed Exodia 2.2.7, opened Monitor, returned with Tools and confirmed the search loupe was fully visible.
+    confirmed_at: 2026-10-18
+  - type: url
+    reference: https://github.com/AbsoluteMode/exodia/releases/tag/v2.2.7
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-public-release-2.2.7-verification.log, independent public latest/source/feed, both DMG hashes/sizes, Ed25519 signatures, read-only app metadata/universal architectures/installation checks passed.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-search-loupe-integrated-full-tests.log, final integrated full suite of 2953 tests, 8 skipped, 0 failures in 51.673 seconds.
+    confirmed_at: 2026-10-18
   - type: url
     reference: https://developer.apple.com/documentation/appkit/nsbuttoncell/istransparent
     confirmed_at: 2026-10-18
@@ -117,11 +129,13 @@ focus and does not alter the parent transition. Older fallback is unchanged.
 Ten focused tests passed with 0 failures in 3.933 seconds. Sixty source-matched
 offscreen native/transparent/explicit-glyph comparisons cover the retained
 button contracts and independent glyph drawing with all windows invisible and
-non-key. The original physical top slice was not reproduced offscreen; current
-proof therefore does not establish the exact compositor cause or completed live
-visual acceptance. Full results and limits are in the
-[hover decision](2026-10-17-native-hover-glass.md). Installed 2.2.7 user acceptance
-and public publication remain pending.
+non-key. The original physical top slice was not reproduced offscreen, so these
+fixtures do not establish its exact compositor cause. On 2026-10-18 the user
+separately confirmed the loupe was fully visible in installed Exodia 2.2.7 after
+Monitor -> Tools. Public 2.2.7 build 1459 passed independent source/feed,
+archive/signature and read-only packaged-app verification. Full integrated
+results, source identity and proof limits are in the
+[hover decision](2026-10-17-native-hover-glass.md).
 
 ## Earlier verification
 
