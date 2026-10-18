@@ -8,6 +8,15 @@ tags: [clipboard, history, persistence, macos]
 canonical_for: [clipboard-history-retention]
 verified_at: 2026-10-18
 sources:
+  - type: url
+    reference: https://github.com/AbsoluteMode/exodia/releases/tag/v2.2.11
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-public-release-2.2.11-verification.log, independent public source/feed/archive/signature and read-only app verification.
+    confirmed_at: 2026-10-18
+  - type: trace
+    reference: /tmp/exodia-clipboard-installed-persistence.log, all six original clipboard row IDs survived normal quit and updated-app launch; seven total rows, payloads not queried.
+    confirmed_at: 2026-10-18
   - type: user-confirmed
     reference: On 2026-10-18 the user clarified that copied records disappear, confirmed a new record appears in installed 2.2.10 and requested a clipboard history of the latest twenty copies.
     confirmed_at: 2026-10-18
@@ -23,7 +32,7 @@ sources:
   - type: trace
     reference: /tmp/exodia-clipboard-retention-focused.log, 55 tests with 0 failures in 0.114 seconds.
     confirmed_at: 2026-10-18
-related: [../project.md]
+related: [../project.md, 2026-10-18-toolbox-drag-feedback.md]
 ---
 
 # Clipboard retention
@@ -97,11 +106,34 @@ agent or dictation history with an entire older database snapshot.
 
 The 2.2.10 build1462 candidate was installed and launched normally after the
 previous Keychain startup blocker cleared. The user confirmed a new copied
-record appears. Before the upgrade, a private local snapshot found zero
+record appears. Before that upgrade, a private local snapshot found zero
 clipboard rows; previously erased copies cannot be repopulated from macOS.
-The twenty-card follow-up and restart persistence check are pending installation
-of the next candidate. No clipboard text or credential contents were inspected.
-Public publication remains pending.
+
+Exodia 2.2.11 build1463 is installed and published. Immediately before the
+update, six clipboard rows existed. All six original row IDs survived both
+normal 2.2.10 termination and 2.2.11 launch; seven total rows remained because
+another copy arrived before quit. Checks queried row IDs only, without copied
+text. The private backup stays on the user's Mac. No clipboard text or
+credential contents were inspected or uploaded.
+
+The final source includes the already-merged BYOK-only main-branch change.
+Its full suite passed 2,834 tests, with 5 skipped and 0 failures in 50.598
+seconds (`/tmp/exodia-clipboard-twenty-integrated-full.log`). The lower count
+reflects main's removed on-device model tests. PR #25 merged as
+5105bfc53d63075dae727b1034dfa371a2a278ea with the identical source tree.
+
+Published source: 64d9e02f61e144bb86ca4e6911612b300489ec13. Archive:
+`Exodia-2.2.11-build1463.dmg`, 19,572,687 bytes, SHA-256
+`e1a52dd180741c9c671a0d01e379fbaaa38bf5fdb938510180831f07c21d2288`.
+Independent verification checked the public latest release, immutable source
+tag, stable appcast, both versioned and latest-alias DMG downloads, SHA-256,
+size and Ed25519 signatures against repository and embedded public keys.
+A read-only mounted app passed strict ad-hoc integrity, metadata, universal
+architectures and installation-check. The first latest-feed attempt did not
+yet offer build1463; subsequent stable and immutable probes and the full
+retry passed. Hidden/unit checks do not establish physical wheel/trackpad
+scrolling through twenty records; the unchanged scroll containers receive
+all twenty cards.
 
 ## Supersedes
 

@@ -47,7 +47,7 @@ sources:
   - type: trace
     reference: /tmp/exodia-toolbox-drag-proof/manifest.json, 14 actual editor/card/Add PNGs and source hash, unordered non-key windows with isolated preferences.
     confirmed_at: 2026-10-18
-related: [../project.md]
+related: [../project.md, 2026-10-18-clipboard-retention.md]
 ---
 
 # Toolbox drag feedback
@@ -140,3 +140,9 @@ installed-app acceptance; hidden checks do not prove an NSDragging latency fix.
 On 2026-10-18 the user performed the installed 2.2.10 native drop check and
 confirmed there is no duplicate image. This supplies the separate physical
 handoff acceptance; it does not expand the hidden fixtures' measurement scope.
+
+The unchanged native handoff ships in public 2.2.11 build1463. Installed
+restart and public archive/feed verification are recorded in the
+[clipboard retention decision](2026-10-18-clipboard-retention.md). The user
+accepted duplicate-image absence in installed 2.2.10; no later handoff source
+change was made for the twenty-copy feed or BYOK-only base integration.
