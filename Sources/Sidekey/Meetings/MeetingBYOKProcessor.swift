@@ -51,6 +51,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
     private let llmRouteResolver: DirectLLMRouteResolver
     private let openRouterClient: any OpenRouterLLMClienting
     private let fileManager: FileManager
+    private let sonioxSession: URLSession
 
     convenience init() {
         self.init(
@@ -69,7 +70,8 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         vocab: VocabularyCache,
         llmRouteResolver: DirectLLMRouteResolver,
         openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        sonioxSession: URLSession = .shared
     ) {
         self.prefs = prefs
         self.keyStore = keyStore
@@ -77,6 +79,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         self.llmRouteResolver = llmRouteResolver
         self.openRouterClient = openRouterClient
         self.fileManager = fileManager
+        self.sonioxSession = sonioxSession
     }
 
     func shouldProcessDirectly() -> Bool {
@@ -104,9 +107,15 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
             guard let key = try keyStore.read(for: .soniox), !key.isEmpty else {
                 throw MeetingBYOKProcessingError.missingTranscriptionKey
             }
-            let result = try await SonioxMeetingTranscriber(apiKey: key).transcribe(
+            let result = try await SonioxMeetingTranscriber(apiKey: key, session: sonioxSession).transcribe(
                 chunkURLs: event.chunkURLs, language: language, terms: vocab.terms
             )
+            // WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
+            if result.segments.isEmpty {
+                return try await storeNoSpeechMeeting(
+                    event: event, startedAt: startedAt, meetingsStore: meetingsStore
+                )
+            }
             segments = result.segments
             transcript = TranscriptMarkdownFormatter.format(segments)
         } else {
@@ -153,6 +162,40 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         cleanupStagingDirectory(for: event)
         os_log(
             "meeting processed locally via BYOK (meetingId: %{public}@, duration_s: %{public}d)",
+            log: Self.log,
+            type: .info,
+            event.meetingId.uuidString,
+            durationSeconds
+        )
+        return event.meetingId
+    }
+
+    /// A recording without speech is finished, not failed: store a short note
+    /// without calling the LLM and release the staged audio, so launch and
+    /// wake recovery never retry it.
+    private func storeNoSpeechMeeting(
+        event: MeetingRecorder.FinalizedEvent,
+        startedAt: Date,
+        meetingsStore: MeetingsStore
+    ) async throws -> UUID {
+        let durationSeconds = MeetingsCoordinator.roundedDurationSeconds(event.totalDurationSeconds)
+        try await meetingsStore.insert(
+            meta: MeetingMetaWithLocalState(
+                id: event.meetingId,
+                startedAt: startedAt,
+                endedAt: startedAt.addingTimeInterval(max(0, event.totalDurationSeconds)),
+                durationSeconds: durationSeconds,
+                title: Self.noSpeechTitle,
+                syncStatus: .new,
+                serverVersion: 1,
+                createdAt: Date()
+            ),
+            markdown: Self.noSpeechMarkdown,
+            transcript: []
+        )
+        cleanupStagingDirectory(for: event)
+        os_log(
+            "meeting had no speech (meetingId: %{public}@, duration_s: %{public}d)",
             log: Self.log,
             type: .info,
             event.meetingId.uuidString,
@@ -237,6 +280,14 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         }
         return "\(MeetingProtocolParser.marker)\n\(trimmed)"
     }
+
+    private static let noSpeechTitle = "No speech detected"
+
+    private static let noSpeechMarkdown = """
+    # No speech detected
+
+    The recording contained no speech, so there is nothing to summarize.
+    """
 
     private static let noteSystemPrompt = """
     You generate concise meeting notes from a transcript.
