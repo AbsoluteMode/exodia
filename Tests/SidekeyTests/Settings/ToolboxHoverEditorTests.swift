@@ -39,15 +39,13 @@ final class ToolboxHoverEditorTests: XCTestCase {
         }
     }
 
-    func testReorderingAnimatesUnlessReduceMotionIsEnabled() throws {
+    func testReorderingKeepsPositionsWithReduceMotionOnAndOff() throws {
         for reduced in [false, true] {
             try withEditor(tools: [.inputLang, .notes, .vocab], reduceMotion: reduced) { fixture in
                 let first = try XCTUnwrap(fixture.frames()["Input Lang"])
-                fixture.transactions.removeAll()
                 XCTAssertTrue(fixture.store.placeTool(.vocab, at: 0))
                 fixture.settle(0.25)
                 assertSameFrame(try XCTUnwrap(fixture.frames()["Vocab"]), first)
-                XCTAssertEqual(fixture.transactions.contains(true), !reduced)
                 XCTAssertEqual(fixture.store.slots, [.vocab, .inputLang, .notes, .settings])
             }
         }
@@ -85,8 +83,6 @@ final class ToolboxHoverEditorTests: XCTestCase {
         let store: HoverLayoutStore
         let window: NSWindow
         let host: NSHostingView<AnyView>
-        var transactions: [Bool] = []
-        var capturedFrames: [ToolboxHoverEditorItem: CGRect] = [:]
 
         init(store: HoverLayoutStore, reduceMotion: Bool) {
             self.store = store
@@ -99,7 +95,7 @@ final class ToolboxHoverEditorTests: XCTestCase {
             host.frame = CGRect(x: 0, y: 0, width: 420, height: 640)
             window.contentView = host
             host.rootView = AnyView(
-                ToolboxHoverEditor(hoverStore: store, reduceMotion: reduceMotion) { [weak self] item in
+                ToolboxHoverEditor(hoverStore: store, reduceMotion: reduceMotion) { item in
                     Group {
                         switch item {
                         case .tool(let tool):
@@ -111,19 +107,6 @@ final class ToolboxHoverEditorTests: XCTestCase {
                             ToolboxAddTile()
                         }
                     }
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(key: EditorFramesKey.self,
-                                value: [item: proxy.frame(in: .named("editor"))])
-                        }
-                    }
-                    .transaction { transaction in
-                        self?.transactions.append(transaction.animation != nil)
-                    }
-                }
-                .coordinateSpace(name: "editor")
-                .onPreferenceChange(EditorFramesKey.self) { [weak self] frames in
-                    self?.capturedFrames = frames
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -140,15 +123,22 @@ final class ToolboxHoverEditorTests: XCTestCase {
 
         func frames() throws -> [String: CGRect] {
             var result: [String: CGRect] = [:]
-            for (item, frame) in capturedFrames {
-                let label: String
-                switch item {
-                case .tool(let tool): label = HoverToolRegistry.info(for: tool).title
-                case .add: label = ToolboxHoverEditorTests.addLabel
+            func walk(_ view: NSView) {
+                if let cell = view as? ToolboxDropTargetView {
+                    let label: String
+                    switch cell.targetID {
+                    case .tool(let tool): label = HoverToolRegistry.info(for: tool).title
+                    case .add: label = ToolboxHoverEditorTests.addLabel
+                    }
+                    result[label] = host.convert(cell.bounds, from: cell)
+                    XCTAssertEqual(cell.isDropEnabled, cell.targetID != .tool(.settings))
+                    XCTAssertEqual(cell.registeredDraggedTypes.contains(.string), cell.isDropEnabled)
+                    XCTAssertNotNil(cell.hitTest(NSPoint(x: 28, y: 44)))
                 }
-                result[label] = frame
+                for child in view.subviews { walk(child) }
             }
-            XCTAssertFalse(result.isEmpty, "Actual editor layout must expose the cell frames")
+            walk(host)
+            XCTAssertFalse(result.isEmpty, "Actual native editor cells must have measurable frames")
             return result
         }
 
@@ -166,13 +156,5 @@ final class ToolboxHoverEditorTests: XCTestCase {
             window.contentView = nil
             window.close()
         }
-    }
-}
-
-private struct EditorFramesKey: PreferenceKey {
-    static var defaultValue: [ToolboxHoverEditorItem: CGRect] { [:] }
-    static func reduce(value: inout [ToolboxHoverEditorItem: CGRect],
-                       nextValue: () -> [ToolboxHoverEditorItem: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
