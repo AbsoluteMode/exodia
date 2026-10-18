@@ -35,7 +35,7 @@ struct IslandHoverPanelControl: View {
 
     static let tileWidth: CGFloat = 90
     static let tileHeight: CGFloat = 52
-    static let iconSize: CGFloat = 24
+    static let iconSize: CGFloat = 30
     private static let horizontalPadding: CGFloat = 6
     private static let contentSpacing: CGFloat = 5
     private static let iconScale: CGFloat = iconSize / 36
@@ -201,7 +201,7 @@ struct IslandHoverPanelControl: View {
 
         case .systemImage(let systemImage):
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color.blue)
                 .symbolRenderingMode(.monochrome)
 
@@ -214,7 +214,7 @@ struct IslandHoverPanelControl: View {
         case .text(let text):
             Text(text)
                 .font(.system(
-                    size: 9,
+                    size: 11,
                     weight: .semibold,
                     design: .monospaced
                 ))
@@ -224,7 +224,7 @@ struct IslandHoverPanelControl: View {
                 .minimumScaleFactor(0.72)
                 .frame(
                     width: Self.iconSize - 6,
-                    height: 15
+                    height: 18
                 )
                 .offset(y: IslandGraphiteHoverControlStyle.textIconOpticalYOffset)
                 .drawingGroup(opaque: false, colorMode: .linear)
@@ -279,7 +279,7 @@ struct IslandHoverPanelControl: View {
     @ViewBuilder
     private var fallbackSystemIcon: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(Color.blue)
             .symbolRenderingMode(.monochrome)
     }
