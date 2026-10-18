@@ -218,11 +218,14 @@ Hover tool search and pointer routing:
   is not an accessibility element. Native button identity, geometry, image,
   target/action, text/cancel and recents behavior are retained; older fallback
   and parent transitions are unchanged. Setup runs in init/layout without focus.
-  Current proof: 10 focused tests/0 failures (3.933 s); full 2,950 tests,
-  8 skipped/0 failures (47.511 s), plus 60 source-matched native/transparent/
-  explicit-glyph comparison PNGs with invisible/non-key windows. Exact live
-  clipping was not reproduced offscreen; installed 2.2.7 user acceptance and
-  public publication remain pending. Do not claim a proved compositor cause.
+  Current proof: 10 focused tests/0 failures (3.933 s); final integrated full
+  suite 2,953 tests, 8 skipped/0 failures (51.673 s), plus 60 source-matched
+  native/transparent/explicit-glyph comparison PNGs with invisible/non-key
+  windows. Exact clipping was not reproduced offscreen. On 2026-10-18 the user
+  separately confirmed the loupe fully visible after installed 2.2.7 Monitor ->
+  Tools. Public 2.2.7 build 1459 was published from sealed a35ca9d5778c65e9dbb861535178696c887293ee;
+  independent public source/feed, both DMG hashes/signatures and read-only app
+  checks passed. Do not claim a proved compositor cause.
   A translucent input lens/rim supplies the foreground surface without child
   native glass. History shares the drawer's Regular backdrop, uses translucent
   rows/hints and a separate preview backdrop. macOS 14/15 fallback is unchanged;
