@@ -339,6 +339,15 @@ are drafts. Guide: docs/customization/README.md. Update the capability map
 when moving its source entry points. Do not publish private monitoring
 configuration, project contents or credentials with the source.
 
+Clipboard history retains the newest 50 local entries across launch, quit and
+sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
+the oldest excess rows and their image sidecars; the current History feed shows
+10 entries without deleting other retained rows. Startup seeds only the current
+pasteboard change counter; dictation write/restore suppression remains. Before
+replacing a running older binary with the old quit purge, preserve local
+clipboard data privately and restore only clipboard rows/assets after quit.
+WHY: .project-docs/decisions/2026-10-18-clipboard-retention.md
+
 Installation: SidekeyAppMain checks InstallationGuard before constructing the
 app delegate. A read-only or AppTranslocation copy shows Finder installation
 instructions and quits before permissions, provider discovery or updates.

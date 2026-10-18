@@ -672,20 +672,6 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
         }
     }
 
-    /// Wipes all clipboard rows + every file under `assetsDirectory`.
-    /// Used by `ClipboardHistoryLaunchPurge`.
-    func wipeAllClipboardEntries(assetsDirectory: URL) throws {
-        try queue.sync {
-            try exec("DELETE FROM clipboard_entries;")
-        }
-        if FileManager.default.fileExists(atPath: assetsDirectory.path) {
-            let contents = (try? FileManager.default.contentsOfDirectory(at: assetsDirectory, includingPropertiesForKeys: nil)) ?? []
-            for url in contents {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
-    }
-
     // MARK: - Drop / agent cap enforcement (Strip feature)
 
     /// Strip-feature cap for `drop_entries`: keep the newest `maxRows`,

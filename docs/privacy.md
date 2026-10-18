@@ -12,6 +12,10 @@ verifiable claim rather than a slogan.
 - Transcripts, agent history, clipboard history and meeting notes live in
   SQLite databases under `~/Library/Application Support/`. Delete them from
   Settings, History, or by removing the files.
+  Clipboard keeps up to 50 recent text, image and file-path entries across
+  restarts, with image attachments stored beside the database. New copies
+  evict the oldest excess entries and their images. It does not import the
+  existing pasteboard payload on launch.
 - API keys you enter ("Your key") are stored in the macOS Keychain under the
   app's own service name (`com.rootwise.sidekey`).
 - Logs go to the unified system log (`os_log`, subsystem
