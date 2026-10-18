@@ -1,7 +1,7 @@
 # Contributing to Exodia
 
 Thanks for helping. Exodia is a native macOS app (Swift, SwiftUI, AppKit,
-SwiftPM). Users bring their own provider keys or choose local models.
+SwiftPM). Users bring their own provider keys or OpenAI-compatible endpoints.
 Pull requests that preserve this independence from Exodia services are welcome.
 
 ## Ground rules
@@ -12,7 +12,7 @@ Pull requests that preserve this independence from Exodia services are welcome.
   enforces this at build time.
 - Privacy in logs: never interpolate transcripts, prompts, replies or API keys
   into `os_log`. `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
-  guards the local pipelines.
+  guards the provider paths that carry this content.
 - No emoji in code, comments or commit messages.
 - Hotkeys follow `docs/hotkey.md` (single `HotkeyHintView` entry point, a row
   in the Help window for every new shortcut).
@@ -24,8 +24,7 @@ Pull requests that preserve this independence from Exodia services are welcome.
 
 Use macOS 14.2 or newer and Xcode 26 or newer with a Swift 6 toolchain
 (`swift-tools-version:6.0`, Swift 5 language mode). No Apple Developer
-account, Developer ID certificate or notarization is required. Local speech
-and LLM models need Apple Silicon; Intel Macs use provider keys.
+account, Developer ID certificate or notarization is required.
 
 ```bash
 git clone https://github.com/AbsoluteMode/exodia.git
@@ -66,4 +65,4 @@ License of this repository. No CLA is required.
 
 Use the issue templates. Include the macOS version, the Mac model (Apple
 Silicon or Intel), the Exodia version from Settings, and which speech / LLM
-route you use (your own key, custom endpoint, local model).
+route you use (your own key or custom endpoint).

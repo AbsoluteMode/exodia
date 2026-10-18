@@ -33,7 +33,7 @@ enum InstallationGuard {
     /// reading keys, contacting providers or requesting system permissions.
     static func installationCheck(bundle: Bundle = .main) -> Bool {
         guard let resources = bundle.resourceURL else { return false }
-        let required = ["mlx.metallib", "Fonts", "blocknote/index.html", "AppIcon.icns"]
+        let required = ["Fonts", "blocknote/index.html", "AppIcon.icns"]
         let files = FileManager.default
         guard required.allSatisfy({ files.fileExists(atPath: resources.appendingPathComponent($0).path) }),
               files.fileExists(atPath: bundle.bundleURL.appendingPathComponent("Contents/Frameworks/Sparkle.framework").path)

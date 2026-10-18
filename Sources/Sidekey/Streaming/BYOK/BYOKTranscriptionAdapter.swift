@@ -1,8 +1,8 @@
 import Foundation
 
 /// Common contract for any drop transcription session (direct-to-provider
-/// or on-device). Lets `TranscriptionSessionFactory` route without the
-/// caller knowing which path runs.
+/// in production, fakes in tests). Lets `TranscriptionSessionFactory`
+/// route without the caller knowing which provider runs.
 ///
 /// Inherits `AgentRealtimeVoiceSessioning` (`run`/`stop`/`cancel`) so the same
 /// factory-built session can drive both the drop flow and the agent voice

@@ -148,34 +148,6 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
 
-# --- Bundle the MLX Metal shader library (sealed RESOURCE + symlink) -------
-# MLX (on-device LLM, ROO-257) loads its GPU kernels from a precompiled
-# metallib at runtime; without it the first GPU op throws
-#   "MLX error: Failed to load the default metallib. library not found".
-# `swift build` cannot compile Metal shaders (upstream limitation), so the lib
-# is precompiled into the committed Resources/mlx.metallib via
-# scripts/build-metallib.sh. MLX's load_default_library() tries
-# <binary_dir>/mlx.metallib first (see device.cpp). We mirror the production
-# layout from build-dmg.sh: ship the lib as Contents/Resources/mlx.metallib and
-# symlink Contents/MacOS/mlx.metallib -> ../Resources/mlx.metallib, so dev runs
-# exercise the same colocated-via-symlink path the signed build ships. In the
-# signed build that keeps the metallib a sealed resource instead of
-# detached-signed nested code — the macOS 15 (Sequoia) first-launch Gatekeeper
-# fix. Guarded so a tree that hasn't generated the lib yet still builds
-# (inference just fails at runtime with the message above). The committed lib is
-# version-locked to the resolved mlx-swift revision — bump MLX ⇒ re-run
-# build-metallib.sh.
-# WHY: docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
-MLX_METALLIB_SRC="${PROJECT_DIR}/Resources/mlx.metallib"
-if [ -f "${MLX_METALLIB_SRC}" ]; then
-    echo "▶ Bundling MLX metallib (Contents/Resources/mlx.metallib + MacOS symlink)..."
-    cp "${MLX_METALLIB_SRC}" "${APP_BUNDLE}/Contents/Resources/mlx.metallib"
-    ln -sf "../Resources/mlx.metallib" "${APP_BUNDLE}/Contents/MacOS/mlx.metallib"
-else
-    echo "⚠ Resources/mlx.metallib missing — on-device LLM inference will fail." >&2
-    echo "  Generate it with: bash scripts/build-metallib.sh" >&2
-fi
-
 # Mirror build-dmg.sh: SwiftPM does NOT embed @executable_path/../Frameworks
 # in the binary's rpath search list, so without this step dyld can't resolve
 # the @rpath/Sparkle.framework/Versions/B/Sparkle install name at launch.
@@ -376,17 +348,6 @@ if [ -d "${MRA_FW_DST}" ]; then
     codesign --force --sign "${SIGN_IDENTITY}" --options runtime "${MRA_FW_DST}"
 fi
 
-# Sign the MLX metallib before the app sign (deepest-first, no --deep). A
-# .metallib is a Mach-O-type artifact, so the single bundle codesign treats it
-# as nested code and leaves it "not signed at all" (failing --verify --strict)
-# unless we sign it explicitly first — same reason Sparkle/MediaRemoteAdapter
-# are signed above.
-MLX_METALLIB_DST="${APP_BUNDLE}/Contents/MacOS/mlx.metallib"
-if [ -f "${MLX_METALLIB_DST}" ]; then
-    echo "▶ Signing MLX metallib (${SIGN_LABEL})..."
-    codesign --force --sign "${SIGN_IDENTITY}" --options runtime "${MLX_METALLIB_DST}"
-fi
-
 # --- Dev entitlements (no team-id-prefixed keychain group) -----------------
 #
 # Resources/Sidekey.entitlements used to ship with keychain-access-groups
@@ -454,8 +415,8 @@ echo "✓ Built: ${APP_BUNDLE}"
 echo ""
 
 if [ "${RUN_AFTER_BUILD}" -eq 1 ]; then
-    # The app needs no env vars at launch: STT / LLM run on-device or with
-    # the user's own provider keys stored in the macOS Keychain, so `open`
+    # The app needs no env vars at launch: STT / LLM run with the user's
+    # own provider keys stored in the macOS Keychain, so `open`
     # is enough — it does not pass the calling shell's env to the launched
     # app, but the app does not read any.
     #

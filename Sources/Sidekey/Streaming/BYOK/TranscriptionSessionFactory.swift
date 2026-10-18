@@ -3,14 +3,13 @@ import Foundation
 enum TranscriptionFactoryError: Error, Equatable {
     case missingKey
     case missingBaseURL
-    /// The on-device level is selected but the Parakeet model has not been
-    /// downloaded yet (Settings -> Models -> Local -> Download).
-    case localModelNotDownloaded
+    /// No transcription provider has been chosen yet (Settings -> Models).
+    /// A former on-device user lands here too: their audio never left the Mac.
+    case notConfigured
 }
 
-/// Turns the current isolation-level config into a `StreamingSessionRunning`.
-/// `local` -> on-device FluidAudio/Parakeet, `yourKey` -> a
-/// `DirectProviderStreamingSession` driving the per-provider BYOK adapter
+/// Turns the current isolation-level config into a `StreamingSessionRunning`:
+/// a `DirectProviderStreamingSession` driving the per-provider BYOK adapter
 /// (openAI/selfHosted -> OpenAI Realtime standard; deepgram/soniox/elevenLabs
 /// -> their native client-direct adapters).
 @MainActor
@@ -18,19 +17,6 @@ struct TranscriptionSessionFactory {
     let prefs: SelfKeyPreferences
     let keyStore: BYOKKeyStore
     let vocab: VocabularyCache
-    let localModelStore: any LocalTranscriptionModelManaging
-
-    init(
-        prefs: SelfKeyPreferences,
-        keyStore: BYOKKeyStore,
-        vocab: VocabularyCache,
-        localModelStore: any LocalTranscriptionModelManaging = LocalTranscriptionModelStore.shared
-    ) {
-        self.prefs = prefs
-        self.keyStore = keyStore
-        self.vocab = vocab
-        self.localModelStore = localModelStore
-    }
 
     /// Build the session for the current isolation level. `resilient` enables
     /// degraded-turn batch recovery and must be `true` ONLY for the Drop flow;
@@ -42,11 +28,8 @@ struct TranscriptionSessionFactory {
         resilient: Bool = false
     ) throws -> StreamingSessionRunning {
         switch prefs.transcriptionLevel {
-        case .local:
-            return LocalTranscriptionSession(
-                modelStore: localModelStore,
-                language: language
-            )
+        case nil:
+            throw TranscriptionFactoryError.notConfigured
         case .yourKey:
             let provider = prefs.selectedProvider
             guard let key = (try? keyStore.read(for: provider)), !key.isEmpty else {

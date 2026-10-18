@@ -1,7 +1,7 @@
 /// Represents a transcription/agent response language.
 ///
-/// `code` is the ISO 639-1 tag handed to the STT session (on-device or
-/// BYOK) as the language hint for drops, meeting notes, and agent audio.
+/// `code` is the ISO 639-1 tag handed to the BYOK STT session as the
+/// language hint for drops, meeting notes, and agent audio.
 /// `displayName` is the native script label shown in the language UI.
 /// `englishName` is the human-readable output-language label handed to the
 /// LLM cleanup prompt so the model understands which language to respond in

@@ -53,19 +53,8 @@ final class TranscriptionProviderBrandTests: XCTestCase {
         XCTAssertEqual(brand.systemName, "server.rack")
     }
 
-    func testLocalTranscriptionBrand() {
-        // The on-device path surfaces the genuine Qwen mark in full color in the
-        // Dynamic Island, not a generic CPU glyph.
-        let brand = TranscriptionProviderBrand.localTranscription
-        XCTAssertEqual(brand.assetName, "qwen")
-        XCTAssertEqual(brand.label, "Qwen")
-        XCTAssertNil(brand.systemName)
-        XCTAssertTrue(brand.isFullColor)
-    }
-
     func testProviderBrandsDefaultToMonochrome() {
-        // Only the Qwen on-device mark opts into full color; every cloud provider
-        // mark stays template/white in the island.
+        // Every provider mark stays template/white in the island.
         XCTAssertFalse(TranscriptionProviderBrand.agent(.codex).isFullColor)
         XCTAssertFalse(TranscriptionProviderBrand.agent(.claude).isFullColor)
         XCTAssertFalse(TranscriptionProviderBrand.google.isFullColor)
@@ -75,14 +64,12 @@ final class TranscriptionProviderBrandTests: XCTestCase {
     }
 
     @MainActor
-    func testCurrentDropBrandReturnsLocalForLocalTranscription() {
-        let prefs = SelfKeyPreferences.shared
-        let originalLevel = prefs.transcriptionLevel
-        defer { prefs.transcriptionLevel = originalLevel }
-
-        prefs.transcriptionLevel = .local
-
-        XCTAssertEqual(TranscriptionProviderBrand.currentDrop(), .localTranscription)
+    func testCurrentDropBrandIsNilWithoutChosenProvider() {
+        // A retired on-device choice reads as "no provider chosen" on any
+        // hardware: no audio goes to a provider, so there is no brand to show.
+        withStoredLevel("local", forKey: "sidekey.models.transcriptionLevel") {
+            XCTAssertNil(TranscriptionProviderBrand.currentDrop())
+        }
     }
 
     @MainActor
@@ -113,9 +100,24 @@ final class TranscriptionProviderBrandTests: XCTestCase {
         prefs.llmLevel = .custom
         XCTAssertEqual(TranscriptionProviderBrand.currentDropCleanup(), .customLLM)
 
-        // The on-device LLM has no cloud provider brand to surface.
-        prefs.llmLevel = .local
-        XCTAssertNil(TranscriptionProviderBrand.currentDropCleanup())
+        // No route chosen (a retired on-device choice): nothing to surface.
+        withStoredLevel("local", forKey: "sidekey.models.llmLevel") {
+            XCTAssertNil(TranscriptionProviderBrand.currentDropCleanup())
+        }
+    }
+
+    /// Stores a raw level in the defaults `SelfKeyPreferences.shared` reads,
+    /// runs `body`, then restores whatever was stored before.
+    @MainActor
+    private func withStoredLevel(_ rawValue: String, forKey key: String, _ body: () -> Void) {
+        let defaults = UserDefaults.standard
+        let original = defaults.object(forKey: key)
+        defer {
+            if let original { defaults.set(original, forKey: key) }
+            else { defaults.removeObject(forKey: key) }
+        }
+        defaults.set(rawValue, forKey: key)
+        body()
     }
 
     // MARK: assets resolve to bundled files
@@ -127,7 +129,6 @@ final class TranscriptionProviderBrandTests: XCTestCase {
             .agent(.claude),
             .google,
             .openRouter,
-            .localTranscription,
         ]
         for brand in brands {
             let assetName = try XCTUnwrap(brand.assetName, "brand \(brand.label) missing assetName")

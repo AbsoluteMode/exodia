@@ -1240,7 +1240,7 @@ final class MeetingsCoordinatorTests: XCTestCase {
         XCTAssertTrue(directProcessor.calls.isEmpty, "an inactive BYOK processor must not be invoked")
         if case .meetingFailed(let id, let error)? = emitted {
             XCTAssertEqual(id, recorderId)
-            XCTAssertEqual(error, LocalModelMessaging.meetingProcessorNotConfigured)
+            XCTAssertEqual(error, MeetingsCoordinator.processorNotConfiguredMessage)
         } else {
             XCTFail("Expected .meetingFailed, got \(String(describing: emitted))")
         }
@@ -1248,7 +1248,7 @@ final class MeetingsCoordinatorTests: XCTestCase {
         let row = try await store.list().first
         XCTAssertEqual(row?.id, recorderId)
         XCTAssertEqual(row?.progressStatus, .failed)
-        XCTAssertEqual(row?.failureReason, LocalModelMessaging.meetingProcessorNotConfigured)
+        XCTAssertEqual(row?.failureReason, MeetingsCoordinator.processorNotConfiguredMessage)
 
         // The staged recording is kept for a later launch.
         XCTAssertTrue(MeetingFinalizeManifestStore().manifestExists(in: recorderDir))

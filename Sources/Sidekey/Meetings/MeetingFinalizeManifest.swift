@@ -9,8 +9,8 @@ struct MeetingReconnectMarker: Codable, Equatable, Sendable {
 /// Durability record for a finalised recording.
 ///
 /// WHY this exists: at Stop time the coordinator hands the recorder's WAV
-/// chunks to the on-device / BYOK processor. If the app quits (or the model
-/// load fails) before the note lands in the store, the chunks sitting in
+/// chunks to the BYOK processor. If the app quits (or processing fails)
+/// before the note lands in the store, the chunks sitting in
 /// `meetings-staging/<recorderUUID>/` would be invisible to recovery and a
 /// fully recorded meeting silently lost.
 ///

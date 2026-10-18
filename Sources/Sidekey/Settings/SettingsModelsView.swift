@@ -26,57 +26,16 @@ struct SettingsModelsView: View {
 
     private var transcribeSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Processing")
-            MacSegmented(
-                items: [
-                    .init(value: .yourKey, label: "Your key"),
-                    .init(value: .local, label: "Local"),
-                ],
-                selection: Binding(
-                    get: { viewModel.level },
-                    set: { viewModel.selectLevel($0) }
-                ),
-                disabledValues: gatedLevels
-            )
-            if viewModel.localBlockedByHardware {
-                appleSiliconHint.padding(.top, 10)
+            MacGroupTitle(title: "Transcription")
+            if viewModel.approvedLevel == nil {
+                MacBanner(
+                    tone: .warn,
+                    systemImage: "exclamationmark.triangle",
+                    text: "No transcription provider is set up, so Drop is off. Pick one below, enter your key and press Save."
+                )
+                .padding(.bottom, 12)
             }
-            levelDescription.padding(.top, 8)
-
-            Group {
-                switch viewModel.level {
-                case .yourKey: yourKeyConfig
-                case .local: localConfig
-                }
-            }
-            .padding(.top, 16)
-        }
-    }
-
-    /// Isolation levels this Mac cannot use (Intel: no on-device models).
-    private var gatedLevels: Set<TranscriptionIsolationLevel> {
-        var set: Set<TranscriptionIsolationLevel> = []
-        if !viewModel.canUseLocal { set.insert(.local) }
-        return set
-    }
-
-    /// Shown when the host is Intel: the on-device model stack (MLX + Core ML)
-    /// is Apple-Silicon-only, so "Local" is disabled with a clear reason.
-    private var appleSiliconHint: some View {
-        MacBanner(
-            tone: .info,
-            systemImage: "cpu",
-            text: LocalModelMessaging.requiresAppleSilicon
-        )
-    }
-
-    @ViewBuilder
-    private var levelDescription: some View {
-        switch viewModel.level {
-        case .yourKey:
-            EmptyView()
-        case .local:
-            caption("Audio is transcribed on this Mac after a one-time model download.")
+            yourKeyConfig
         }
     }
 
@@ -145,7 +104,9 @@ struct SettingsModelsView: View {
                     Text(providerName(provider))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(MacSettingsTheme.text)
-                    MacPill(text: "Active", tone: .blue)
+                    if viewModel.approvedLevel != nil {
+                        MacPill(text: "Active", tone: .blue)
+                    }
                     Spacer()
                 }
 
@@ -224,213 +185,6 @@ struct SettingsModelsView: View {
         }
     }
 
-    // MARK: - Local level (on-device ASR)
-
-    private var localConfig: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            MacBanner(
-                tone: .privacy,
-                systemImage: "lock.shield",
-                text: "Drop transcription runs entirely on this Mac. After the one-time model download, recording and inference work offline."
-            )
-
-            MacCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        LocalParakeetModelIcon()
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Parakeet TDT v3")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(MacSettingsTheme.text)
-                            Text("Multilingual Core ML ASR")
-                                .font(.system(size: 11))
-                                .foregroundStyle(MacSettingsTheme.text2)
-                        }
-                        Spacer()
-                        localModelStatusPill
-                    }
-
-                    HStack(spacing: 10) {
-                        LocalConnectControl(
-                            phase: localConnectPhase,
-                            isBusy: viewModel.connectionStatus == .testing,
-                            onDownload: { Task { await viewModel.downloadLocalModel() } },
-                            onConnect: { Task { await viewModel.saveCurrentSelection() } },
-                            onDisconnect: { viewModel.disconnectLocal() }
-                        )
-                        if case .ready = viewModel.localModelStatus {
-                            MacButton(title: "Delete model", style: .danger) {
-                                Task { await viewModel.deleteLocalModel() }
-                            }
-                        }
-                        if case .failed(let message) = viewModel.connectionStatus {
-                            MacPill(text: message, tone: .red)
-                        }
-                    }
-                    .padding(.top, 2)
-                }
-                .padding(14)
-            }
-        }
-        .task { await viewModel.watchLocalModelStatus() }
-    }
-
-    @ViewBuilder
-    private var localModelStatusPill: some View {
-        switch viewModel.localModelStatus {
-        case .checking:
-            ProgressView().controlSize(.small)
-        case .notDownloaded:
-            MacPill(text: "Not downloaded", tone: .neutral)
-        case .downloading(let fraction):
-            MacPill(text: "Downloading \(Int(fraction * 100))%", tone: .blue)
-        case .ready:
-            if viewModel.isLocalConnected {
-                MacPill(text: "Connected", tone: .green, showsDot: true)
-            } else {
-                MacPill(text: "Ready", tone: .neutral)
-            }
-        case .failed(let message):
-            MacPill(text: message, tone: .red)
-        }
-    }
-
-    private var localConnectPhase: LocalConnectControl.Phase {
-        switch viewModel.localModelStatus {
-        case .downloading(let fraction):
-            return .downloading(fraction)
-        case .ready:
-            return viewModel.isLocalConnected ? .connected : .connect
-        default:
-            return .download
-        }
-    }
-
-    private struct LocalParakeetModelIcon: View {
-        var body: some View {
-            Canvas { context, size in
-                context.scaleBy(x: size.width / 100, y: size.height / 100)
-
-                // 1. Tail
-                var tail = Path()
-                tail.move(to: CGPoint(x: 62, y: 74))
-                tail.addLine(to: CGPoint(x: 90, y: 90))
-                tail.addLine(to: CGPoint(x: 74, y: 95))
-                tail.addLine(to: CGPoint(x: 66, y: 84))
-                tail.closeSubpath()
-                context.fill(tail, with: .color(Color(hexCSS: "#4F8310")))
-
-                // 2. Body (ellipse rotated 16° around its center)
-                let bodyEllipse = Path(ellipseIn: CGRect(x: 31, y: 29, width: 50, height: 58))
-                let body = bodyEllipse.applying(
-                    CGAffineTransform(translationX: 56, y: 58)
-                        .rotated(by: 16 * .pi / 180)
-                        .translatedBy(x: -56, y: -58)
-                )
-                context.fill(body, with: .color(Color(hexCSS: "#76B900")))
-
-                // 3. Light belly
-                var belly = Path()
-                belly.move(to: CGPoint(x: 41, y: 54))
-                belly.addQuadCurve(to: CGPoint(x: 62, y: 82), control: CGPoint(x: 43, y: 78))
-                belly.addQuadCurve(to: CGPoint(x: 40, y: 74), control: CGPoint(x: 49, y: 85))
-                belly.addQuadCurve(to: CGPoint(x: 41, y: 54), control: CGPoint(x: 35, y: 63))
-                belly.closeSubpath()
-                context.fill(belly, with: .color(Color(hexCSS: "#97CE33")))
-
-                // 4. Wing
-                var wing = Path()
-                wing.move(to: CGPoint(x: 54, y: 42))
-                wing.addQuadCurve(to: CGPoint(x: 78, y: 72), control: CGPoint(x: 76, y: 46))
-                wing.addQuadCurve(to: CGPoint(x: 60, y: 79), control: CGPoint(x: 73, y: 81))
-                wing.addQuadCurve(to: CGPoint(x: 51, y: 47), control: CGPoint(x: 49, y: 64))
-                wing.closeSubpath()
-                context.fill(wing, with: .color(Color(hexCSS: "#5C9610")))
-
-                // 5. Feather line 1
-                var feather1 = Path()
-                feather1.move(to: CGPoint(x: 58, y: 50))
-                feather1.addQuadCurve(to: CGPoint(x: 70, y: 70), control: CGPoint(x: 68, y: 54))
-                context.stroke(
-                    feather1,
-                    with: .color(Color(hexCSS: "#46760B")),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                )
-
-                // 6. Feather line 2
-                var feather2 = Path()
-                feather2.move(to: CGPoint(x: 53, y: 52))
-                feather2.addQuadCurve(to: CGPoint(x: 61, y: 74), control: CGPoint(x: 60, y: 58))
-                context.stroke(
-                    feather2,
-                    with: .color(Color(hexCSS: "#46760B").opacity(0.8)),
-                    style: StrokeStyle(lineWidth: 1.6, lineCap: .round)
-                )
-
-                // 7. Head
-                let head = Path(ellipseIn: CGRect(x: 19, y: 11, width: 38, height: 38))
-                context.fill(head, with: .color(Color(hexCSS: "#E7D63E")))
-
-                // 8. Beak
-                var beak = Path()
-                beak.move(to: CGPoint(x: 28, y: 27))
-                beak.addQuadCurve(to: CGPoint(x: 7, y: 39), control: CGPoint(x: 9, y: 28))
-                beak.addQuadCurve(to: CGPoint(x: 13, y: 44), control: CGPoint(x: 6.5, y: 45))
-                beak.addQuadCurve(to: CGPoint(x: 22, y: 36), control: CGPoint(x: 14, y: 37))
-                beak.addQuadCurve(to: CGPoint(x: 28, y: 33), control: CGPoint(x: 26, y: 35))
-                beak.closeSubpath()
-                context.fill(beak, with: .color(Color(hexCSS: "#54606E")))
-
-                // 9. Eye
-                let eye = Path(ellipseIn: CGRect(x: 28.8, y: 22.8, width: 8.4, height: 8.4))
-                context.fill(eye, with: .color(Color(hexCSS: "#222831")))
-
-                // 10. Eye highlight
-                let highlight = Path(ellipseIn: CGRect(x: 33.0, y: 24.2, width: 2.8, height: 2.8))
-                context.fill(highlight, with: .color(Color(hexCSS: "#FFFFFF")))
-            }
-            .frame(width: 22, height: 22)
-            .accessibilityHidden(true)
-        }
-    }
-
-    /// Official Qwen brand mark for the on-device LLM card. Rendered in full
-    /// color from the bundled `qwen.pdf` — unlike `ProviderBrandIcon`, whose
-    /// asset path forces `isTemplate = true` and would flatten the logo's
-    /// purple gradient into a single tint.
-    private struct LocalLLMQwenIcon: View {
-        var body: some View {
-            Group {
-                if let image = LocalLLMQwenIcon.brandImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(systemName: "cpu")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(MacSettingsTheme.text2)
-                }
-            }
-            .frame(width: 22, height: 22)
-            .accessibilityHidden(true)
-        }
-
-        /// Loaded once and cached. Color preserved by leaving `isTemplate`
-        /// false (the default) so the gradient survives.
-        private static let brandImage: NSImage? = {
-            guard let url = Bundle.main.url(
-                forResource: "qwen",
-                withExtension: "pdf",
-                subdirectory: "UsefulLinkIcons"
-            ) ?? Bundle.main.url(forResource: "qwen", withExtension: "pdf") else {
-                return nil
-            }
-            let image = NSImage(contentsOf: url)
-            image?.isTemplate = false
-            return image
-        }()
-    }
-
     // MARK: - LLM section
 
     private var llmSection: some View {
@@ -439,41 +193,16 @@ struct SettingsModelsView: View {
                 title: "Smart processing LLM",
                 trailing: llmTrailingTitle
             )
-            MacSegmented(
-                items: [
-                    .init(value: .yourKey, label: "Your key"),
-                    .init(value: .local, label: "Local"),
-                ],
-                selection: Binding(
-                    get: { viewModel.llmTopLevel },
-                    set: { viewModel.selectLLMTopLevel($0) }
-                ),
-                disabledValues: gatedLLMTopLevels
-            )
-            if viewModel.localBlockedByHardware {
-                appleSiliconHint.padding(.top, 10)
+            if viewModel.approvedLLMLevel == nil {
+                MacBanner(
+                    tone: .info,
+                    systemImage: "info.circle",
+                    text: "No LLM is set up. Drop pastes the plain transcript and meeting notes wait until you save a route below."
+                )
+                .padding(.bottom, 12)
             }
-
-            Group {
-                switch viewModel.llmTopLevel {
-                case .yourKey:
-                    yourKeyLLMConfig
-                case .local:
-                    localLLMConfig
-                }
-            }
-            .padding(.top, 16)
+            yourKeyLLMConfig
         }
-    }
-
-    /// Top-segment values this Mac cannot use (Intel: no on-device LLM). The
-    /// merged "Your key" segment is disabled only when both BYOK sub-routes
-    /// are gated.
-    private var gatedLLMTopLevels: Set<LLMTopLevel> {
-        var set: Set<LLMTopLevel> = []
-        if viewModel.isYourKeyLLMTopGated { set.insert(.yourKey) }
-        if !viewModel.canUseLocalLLM { set.insert(.local) }
-        return set
     }
 
     /// "Your key" sub-panel: a provider-card list (OpenRouter / Self-hosted)
@@ -485,11 +214,11 @@ struct SettingsModelsView: View {
         VStack(alignment: .leading, spacing: 0) {
             MacGroupTitle(
                 title: "Provider",
-                trailing: llmVariantName(viewModel.yourKeyLLMVariant)
+                trailing: llmVariantName(viewModel.llmLevel)
             )
             VStack(spacing: 8) {
                 ForEach(llmYourKeyVariants, id: \.self) { variant in
-                    if variant == viewModel.yourKeyLLMVariant {
+                    if variant == viewModel.llmLevel {
                         expandedLLMVariantCard(variant)
                     } else {
                         collapsedLLMVariantRow(variant)
@@ -518,8 +247,8 @@ struct SettingsModelsView: View {
     private func collapsedLLMVariantRow(_ variant: LLMIsolationLevel) -> some View {
         MacCard {
             Button {
-                guard viewModel.yourKeyLLMVariant != variant else { return }
-                viewModel.selectYourKeyLLMVariant(variant)
+                guard viewModel.llmLevel != variant else { return }
+                viewModel.selectLLMLevel(variant)
             } label: {
                 MacRow(
                     title: llmVariantName(variant),
@@ -544,88 +273,6 @@ struct SettingsModelsView: View {
         }
     }
 
-    // MARK: - Local LLM level (on-device MLX)
-
-    private var localLLMConfig: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            MacBanner(
-                tone: .privacy,
-                systemImage: "lock.shield",
-                text: "Drop cleanup and meeting notes run entirely on this Mac. After the one-time model download, inference works offline."
-            )
-
-            MacCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        LocalLLMQwenIcon()
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Qwen3 4B Instruct")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(MacSettingsTheme.text)
-                            Text("On-device MLX 4-bit LLM")
-                                .font(.system(size: 11))
-                                .foregroundStyle(MacSettingsTheme.text2)
-                        }
-                        Spacer()
-                        localLLMStatusPill
-                    }
-
-                    HStack(spacing: 10) {
-                        LocalConnectControl(
-                            phase: localLLMConnectPhase,
-                            isBusy: viewModel.llmConnectionStatus == .testing,
-                            onDownload: { Task { await viewModel.downloadLocalLLMModel() } },
-                            onConnect: { Task { await viewModel.saveCurrentLLMSelection() } },
-                            onDisconnect: { viewModel.disconnectLLM() }
-                        )
-                        if case .ready = viewModel.localLLMStatus {
-                            MacButton(title: "Delete model", style: .danger) {
-                                Task { await viewModel.deleteLocalLLMModel() }
-                            }
-                        }
-                        if case .failed(let message) = viewModel.llmConnectionStatus {
-                            MacPill(text: message, tone: .red)
-                        }
-                    }
-                    .padding(.top, 2)
-                }
-                .padding(14)
-            }
-        }
-        .task { await viewModel.watchLocalLLMStatus() }
-    }
-
-    @ViewBuilder
-    private var localLLMStatusPill: some View {
-        switch viewModel.localLLMStatus {
-        case .checking:
-            ProgressView().controlSize(.small)
-        case .notDownloaded:
-            MacPill(text: "Not downloaded", tone: .neutral)
-        case .downloading(let fraction):
-            MacPill(text: "Downloading \(Int(fraction * 100))%", tone: .blue)
-        case .ready:
-            if viewModel.isLocalLLMConnected {
-                MacPill(text: "Connected", tone: .green, showsDot: true)
-            } else {
-                MacPill(text: "Ready", tone: .neutral)
-            }
-        case .failed(let message):
-            MacPill(text: message, tone: .red)
-        }
-    }
-
-    private var localLLMConnectPhase: LocalConnectControl.Phase {
-        switch viewModel.localLLMStatus {
-        case .downloading(let fraction):
-            return .downloading(fraction)
-        case .ready:
-            return viewModel.isLocalLLMConnected ? .connected : .connect
-        default:
-            return .download
-        }
-    }
-
     private var openRouterConfig: some View {
         VStack(alignment: .leading, spacing: 12) {
             MacBanner(
@@ -642,7 +289,9 @@ struct SettingsModelsView: View {
                         Text("OpenRouter direct")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(MacSettingsTheme.text)
-                        MacPill(text: "Route active", tone: .blue)
+                        if viewModel.approvedLLMLevel != nil {
+                            MacPill(text: "Route active", tone: .blue)
+                        }
                         Spacer()
                     }
 
@@ -715,7 +364,9 @@ struct SettingsModelsView: View {
                         Text(Self.selfHostedProviderName)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(MacSettingsTheme.text)
-                        MacPill(text: "Route active", tone: .blue)
+                        if viewModel.approvedLLMLevel != nil {
+                            MacPill(text: "Route active", tone: .blue)
+                        }
                         Spacer()
                     }
 
@@ -787,13 +438,12 @@ struct SettingsModelsView: View {
     // MARK: - Helpers
 
     private var llmTrailingTitle: String {
+        guard viewModel.approvedLLMLevel != nil else { return "Route: Not set up" }
         switch viewModel.llmLevel {
         case .yourKey:
             return "Route: OpenRouter direct"
         case .custom:
             return "Route: Self-hosted"
-        case .local:
-            return "Route: On-device"
         }
     }
 
@@ -992,45 +642,6 @@ private struct LLMModelSearchField: View {
                         .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
                 )
             }
-        }
-    }
-}
-
-/// Single state-machine control for an on-device model card:
-/// Download → Downloading% → Connect → Connected (hover reveals Disconnect).
-/// Replaces the old separate "Use Local" button + "Connected" status pill so the
-/// whole connect flow lives on one button (ROO-257).
-private struct LocalConnectControl: View {
-    enum Phase: Equatable {
-        case download
-        case downloading(Double)
-        case connect
-        case connected
-    }
-
-    let phase: Phase
-    let isBusy: Bool
-    let onDownload: () -> Void
-    let onConnect: () -> Void
-    let onDisconnect: () -> Void
-
-    var body: some View {
-        switch phase {
-        case .download:
-            MacButton(title: "Download", style: .primary, isEnabled: !isBusy, action: onDownload)
-        case .downloading(let fraction):
-            MacButton(
-                title: "Downloading \(Int(fraction * 100))%",
-                style: .default,
-                isEnabled: false,
-                action: {}
-            )
-        case .connect:
-            MacButton(title: "Connect", style: .primary, isEnabled: !isBusy, action: onConnect)
-        case .connected:
-            // The "Connected" status is shown by the card's status pill on the
-            // right, so the button itself is just the action — "Disconnect".
-            MacButton(title: "Disconnect", style: .default, isEnabled: !isBusy, action: onDisconnect)
         }
     }
 }
