@@ -34,9 +34,9 @@ self-hosted route is the only live caller. Its callers rejected an empty base
 URL but not one that `URLComponents` cannot parse, such as
 `http://my host:8000`. Such a value reached the fallback:
 
-- Settings: Test connection, and Save & connect before saving, sent the
-  self-hosted key as a Bearer token to api.openai.com. The key left for a
-  third party even when OpenAI rejected it.
+- Settings → Models: Test connection, and the connection check that Save runs
+  first, sent the self-hosted key as a Bearer token to api.openai.com. The key
+  left for a third party even when OpenAI rejected it.
 - If OpenAI accepted the key, the probe passed and the route was saved. Drop
   and meeting processing then streamed audio to api.openai.com, a provider the
   user never chose.
@@ -92,4 +92,4 @@ URL but not one that `URLComponents` cannot parse, such as
   a value fails to connect and reaches no third party. Tightening it changes
   what users can save, so it is a separate follow-up.
 
-2026-10-18, PR pending.
+2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/28.
