@@ -706,6 +706,42 @@ final class MeetingRecorderTests: XCTestCase {
         )
     }
 
+    func test_mic_only_tail_keeps_sample_values() async throws {
+        let pcm = try await recordSingleSourceTail(micSamples: [0.5, -0.25, 1.0], systemSamples: [])
+        XCTAssertEqual(pcm, [Int16((0.5 as Float) * Float(Int16.max)),
+                             Int16((-0.25 as Float) * Float(Int16.max)),
+                             Int16.max])
+    }
+
+    func test_system_only_tail_keeps_sample_values() async throws {
+        let pcm = try await recordSingleSourceTail(micSamples: [], systemSamples: [0.5, -0.25, 1.0])
+        XCTAssertEqual(pcm, [Int16((0.5 as Float) * Float(Int16.max)),
+                             Int16((-0.25 as Float) * Float(Int16.max)),
+                             Int16.max])
+    }
+
+    /// Feeds one source only; `stop()` solo-drains that tail unmixed.
+    private func recordSingleSourceTail(micSamples: [Float], systemSamples: [Float]) async throws -> [Int16] {
+        let mic = StubMicSource()
+        let sys = StubSystemSource()
+        let recorder = MeetingRecorder(
+            micSource: mic,
+            systemSource: sys,
+            micInUseProbe: StubMicInUse(),
+            stagingRoot: stagingRoot,
+            chunkRotationSeconds: 60,
+            autoEndMicReleasedSeconds: 60,
+            sampleRate: 16_000
+        )
+        let meetingId = UUID()
+        try await recorder.start(prerecordSnapshot: Data(), meetingId: meetingId)
+        if !micSamples.isEmpty { mic.feed(micSamples) }
+        if !systemSamples.isEmpty { sys.feed(systemSamples) }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        _ = await recorder.stop(reason: .user)
+        return try pcmSamples(from: firstChunk(meetingId: meetingId))
+    }
+
     func test_finalized_duration_uses_written_audio_samples_not_wall_clock() async throws {
         let mic = StubMicSource()
         let sys = StubSystemSource()

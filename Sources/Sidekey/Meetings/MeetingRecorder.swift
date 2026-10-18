@@ -849,8 +849,7 @@ private actor ChunkWriter {
             let m = micQueue[i]
             let s = systemQueue[i]
             // Per-sample average so combined amplitude stays in [-1, 1].
-            let mixed = (m + s) * 0.5
-            appendFrame(mixed: mixed, mic: m, system: s)
+            appendFrame((m + s) * 0.5)
         }
         micQueue.removeFirst(count)
         systemQueue.removeFirst(count)
@@ -859,8 +858,7 @@ private actor ChunkWriter {
     private func drainSoloMic(count: Int) {
         currentChunkSamples.reserveCapacity(currentChunkSamples.count + count)
         for i in 0..<count {
-            let mic = micQueue[i]
-            appendFrame(mixed: mic, mic: mic, system: 0)
+            appendFrame(micQueue[i])
         }
         micQueue.removeFirst(count)
     }
@@ -868,16 +866,13 @@ private actor ChunkWriter {
     private func drainSoloSystem(count: Int) {
         currentChunkSamples.reserveCapacity(currentChunkSamples.count + count)
         for i in 0..<count {
-            let system = systemQueue[i]
-            appendFrame(mixed: system, mic: 0, system: system)
+            appendFrame(systemQueue[i])
         }
         systemQueue.removeFirst(count)
     }
 
-    private func appendFrame(mixed: Float, mic: Float, system: Float) {
-        _ = mic
-        _ = system
-        currentChunkSamples.append(Self.pcm16(mixed))
+    private func appendFrame(_ sample: Float) {
+        currentChunkSamples.append(Self.pcm16(sample))
         if currentChunkSamples.count >= chunkSampleBudget {
             flushCurrentChunk(includeAnyResiduals: false)
         }

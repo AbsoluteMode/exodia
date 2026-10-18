@@ -211,13 +211,12 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         }
         let model = prefs.transcriptionModel(for: provider)
         switch provider {
-        case .openAI:
-            return OpenAIRealtimeAdapter(apiKey: key, baseURL: nil, model: model)
-        case .selfHosted:
-            guard let baseURL = prefs.selfHostedBaseURL, !baseURL.isEmpty else {
+        case .openAI, .selfHosted:
+            let baseURL = provider == .selfHosted ? prefs.selfHostedBaseURL : nil
+            guard let url = BYOKRealtimeURL.openAIRealtime(baseURL: baseURL) else {
                 throw MeetingBYOKProcessingError.missingSelfHostedBaseURL
             }
-            return OpenAIRealtimeAdapter(apiKey: key, baseURL: baseURL, model: model)
+            return OpenAIRealtimeAdapter(apiKey: key, url: url, model: model)
         case .deepgram:
             return DeepgramBYOKAdapter(apiKey: key, model: model)
         case .soniox:
