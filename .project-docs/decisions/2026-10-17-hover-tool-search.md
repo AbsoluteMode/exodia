@@ -8,6 +8,12 @@ tags: [hover, search, keyboard, customization]
 canonical_for: [hover-tool-search]
 verified_at: 2026-10-18
 sources:
+  - type: url
+    reference: https://developer.apple.com/documentation/appkit/nsbuttoncell/istransparent
+    confirmed_at: 2026-10-18
+  - type: user-confirmed
+    reference: Live user feedback on 2026-10-18 confirmed the search loupe was still cropped after Monitor -> Back in the locally installed 2.2.6 candidate, despite the native field-height correction.
+    confirmed_at: 2026-10-18
   - type: user-confirmed
     reference: User reported on 2026-10-18 that the search loupe was clipped after returning from Monitor to the normal hover controls.
     confirmed_at: 2026-10-18
@@ -59,28 +65,63 @@ testing. Settings stays pinned last; the first five saved positions retain
 their positional shortcuts. Search is a launcher for occasional tools, not an
 alternative persistence format.
 
-## Native field height after Monitor
+## Native field height and subsequent live feedback
 
-The search `NSViewRepresentable` explicitly returns the declared 30-point field
+The 2.2.6 search `NSViewRepresentable` explicitly returns the declared 30-point field
 height in `sizeThatFits`, instead of accepting AppKit's 24-point intrinsic
 height. With a 24-point hosted view, the native search/cancel button rectangle
 was measured at y=1 with height 24, overflowing by one point. At the declared
 30-point height it sits at y=4 with height 24, fully inside the view. The native
 cell still calculates text, search and cancel rectangles from the actual bounds;
 its transparent interior drawing is unchanged, and no replacement loupe was
-introduced.
+introduced by that height-only change.
+
+Live user feedback on 2026-10-18 confirmed that the locally installed 2.2.6
+candidate still cropped the loupe after Monitor -> Back. Its 30-point fit is a
+partial correction, not completed visual acceptance. Publication was stopped;
+GitHub v2.2.6 remained a draft with no publication timestamp. The new glyph
+candidate has separate drawing/action checks below; installed-app user
+acceptance is still required before a confirmed live visual-fix claim. Earlier
+successful offscreen checks do not override the live report.
 
 Offscreen hosted remounts at the earlier 352-point Monitor band and matched
 243-point band did not reproduce the physical top slice in the user's image.
 This change removes a concrete sizing/clipping risk; it does not prove the exact
 desktop-compositor cause of that report. Nine focused hosted-search tests passed
-with 0 failures in 3.901 seconds. The current source-matched proof contains 40
+with 0 failures in 3.901 seconds. That historical source-matched proof contains 40
 native-field snapshots with hidden-host resize/remount across 310/312 points,
 empty/query states and earlier/matched Monitor heights; no window became visible
 or key. It verifies in-bounds native rectangles and stable render bytes without
-autofocusing the field. Full current-candidate results and precise limits are
+autofocusing the field. The 2.2.6 results and precise limits are
 recorded in [the hover decision](2026-10-17-native-hover-glass.md); previous
 search proofs below cover their stated earlier scopes.
+
+## Explicit loupe paint with the original native button
+
+The 2.2.7 candidate keeps the 30-point native-field fit. On the macOS 26 glass
+cell path, `IslandHoverSearchNativeField` retains the original `searchButtonCell`
+and sets its `isTransparent=true`: native button identity, image metadata,
+target/action and `searchButtonRect` geometry stay intact. Native text/cancel
+layout and recents behavior remain. Apple's [isTransparent documentation](https://developer.apple.com/documentation/appkit/nsbuttoncell/istransparent)
+states that transparent buttons retain mouse tracking and action dispatch while
+omitting paint. Focused tests also check the original button's `performClick`
+action and native hit testing.
+
+A separate `IslandHoverSearchGlyphView: NSImageView` draws the public SF Symbol
+`magnifyingglass` at 13 points in a maximum 14-point square centered inside
+`searchButtonRect(forBounds:)`. Its `hitTest` returns nil and its accessibility
+element flag is false, so input and accessibility remain with the labelled
+native search field and button. Setup runs only during init/layout, acquires no
+focus and does not alter the parent transition. Older fallback is unchanged.
+
+Ten focused tests passed with 0 failures in 3.933 seconds. Sixty source-matched
+offscreen native/transparent/explicit-glyph comparisons cover the retained
+button contracts and independent glyph drawing with all windows invisible and
+non-key. The original physical top slice was not reproduced offscreen; current
+proof therefore does not establish the exact compositor cause or completed live
+visual acceptance. Full results and limits are in the
+[hover decision](2026-10-17-native-hover-glass.md). Installed 2.2.7 user acceptance
+and public publication remain pending.
 
 ## Earlier verification
 

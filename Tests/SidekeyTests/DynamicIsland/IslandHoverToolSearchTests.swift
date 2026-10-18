@@ -141,6 +141,14 @@ final class IslandHoverToolSearchTests: XCTestCase {
             native.font = field.font
             native.stringValue = query
             let nativeCell = try XCTUnwrap(native.cell as? NSSearchFieldCell)
+            let glyph = try XCTUnwrap(field.subviews.compactMap { $0 as? IslandHoverSearchGlyphView }.first)
+            XCTAssertTrue(cell.searchButtonCell?.isTransparent == true)
+            XCTAssertFalse(glyph.isHidden)
+            XCTAssertFalse(glyph.isAccessibilityElement())
+            XCTAssertNil(glyph.hitTest(CGPoint(x: glyph.bounds.midX, y: glyph.bounds.midY)))
+            XCTAssertNotNil(glyph.image)
+            XCTAssertTrue(cell.searchButtonRect(forBounds: field.bounds).contains(glyph.frame))
+            XCTAssertTrue(field.bounds.contains(glyph.frame))
             for (actual, expected) in [
                 (cell.searchTextRect(forBounds: field.bounds), nativeCell.searchTextRect(forBounds: native.bounds)),
                 (cell.searchButtonRect(forBounds: field.bounds), nativeCell.searchButtonRect(forBounds: native.bounds)),
@@ -170,6 +178,42 @@ final class IslandHoverToolSearchTests: XCTestCase {
     }
 
     @MainActor
+    func testExplicitLoupePreservesNativeButtonIdentityTrackingAndAction() throws {
+        guard IslandHoverGlass.usesNativeLiquidGlass else {
+            throw XCTSkip("Transparent search cell requires macOS 26+ and its SDK")
+        }
+        _ = NSApplication.shared
+        let field = IslandHoverSearchNativeField(frame: CGRect(x: 0, y: 0, width: 274, height: 30))
+        let cell = try XCTUnwrap(field.cell as? NSSearchFieldCell)
+        let button = try XCTUnwrap(cell.searchButtonCell)
+        let action = SearchButtonActionFixture()
+        button.target = action
+        button.action = #selector(SearchButtonActionFixture.activate(_:))
+        field.needsLayout = true
+        field.layoutSubtreeIfNeeded()
+        XCTAssertTrue(cell.searchButtonCell === button)
+        XCTAssertTrue(button.target === action)
+        XCTAssertEqual(button.action, #selector(SearchButtonActionFixture.activate(_:)))
+        XCTAssertTrue(button.isTransparent)
+        button.performClick(nil)
+        XCTAssertEqual(action.activationCount, 1)
+
+        // Public cell hit testing is still native, including the search
+        // button's complete original target rather than the smaller glyph.
+        let native = NSSearchField(frame: field.bounds)
+        let nativeCell = try XCTUnwrap(native.cell as? NSSearchFieldCell)
+        let nativeButton = try XCTUnwrap(nativeCell.searchButtonCell)
+        let rect = cell.searchButtonRect(forBounds: field.bounds)
+        for point in [CGPoint(x: rect.midX, y: rect.midY), CGPoint(x: rect.minX + 1, y: rect.minY + 1)] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: point, modifierFlags: [],
+                timestamp: 0, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+            ))
+            XCTAssertEqual(button.hitTest(for: event, in: rect, of: field), nativeButton.hitTest(for: event, in: rect, of: field))
+        }
+    }
+
+    @MainActor
     func testSearchingDoesNotChangeSavedLayoutOrPinnedSettings() {
         let suite = "IslandHoverToolSearchTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -192,6 +236,12 @@ private final class SearchReturnFixtureState: ObservableObject {
     var focusChanges: [Bool] = []
 
     init(query: String) { self.query = query }
+}
+
+@MainActor
+private final class SearchButtonActionFixture: NSObject {
+    var activationCount = 0
+    @objc func activate(_ sender: Any?) { activationCount += 1 }
 }
 
 private struct SearchReturnFixture: View {

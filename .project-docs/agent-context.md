@@ -184,7 +184,7 @@ Monitor inside hover:
   Refresh calls requestRefresh and reuses existing collectors/snapshot rendering.
   Hover launch and the legacy openMonitor callback both request inline .monitor
   with programmatic expansion; neither opens a window. The legacy window class
-  is retained for compatibility only. Current Monitor/search candidate proof:
+  is retained for compatibility only. Historical 2.2.6 Monitor/search proof:
   2,949 tests, 8 skipped, 0 failures (45.711 s); search-focused 9/0 (3.901 s).
   Source-matched offscreen checks cover 16 Monitor fixtures/20 current PNGs and
   40 search PNGs with no visible/key windows. Synthetic no-op stores avoid real
@@ -202,7 +202,22 @@ Hover tool search and pointer routing:
   height rather than AppKit's 24 pt intrinsic height. This keeps the native
   24 pt button rect inside the hosted field (y=4), avoiding a measured 1 pt
   overflow at the smaller height. The user-reported Monitor -> Back top slice
-  was not reproduced offscreen; do not claim a proved desktop-compositor cause.
+  was not reproduced offscreen. Live user feedback on 2026-10-18 confirmed it
+  still occurs in the locally installed 2.2.6 candidate: the 30 pt fit is a
+  partial correction, not a completed visual fix. Publication was stopped;
+  GitHub v2.2.6 remains a draft with no publishedAt. Earlier tests/renders do not
+  override this live feedback. The 2.2.7 candidate retains that 30 pt fit and the
+  original searchButtonCell, setting only its isTransparent=true for the macOS 26
+  glass cell. A separate NSImageView draws the public 13 pt SF loupe in a 14 pt
+  square centered inside native searchButtonRect. Its hitTest returns nil and it
+  is not an accessibility element. Native button identity, geometry, image,
+  target/action, text/cancel and recents behavior are retained; older fallback
+  and parent transitions are unchanged. Setup runs in init/layout without focus.
+  Current proof: 10 focused tests/0 failures (3.933 s); full 2,950 tests,
+  8 skipped/0 failures (47.511 s), plus 60 source-matched native/transparent/
+  explicit-glyph comparison PNGs with invisible/non-key windows. Exact live
+  clipping was not reproduced offscreen; installed 2.2.7 user acceptance and
+  public publication remain pending. Do not claim a proved compositor cause.
   A translucent input lens/rim supplies the foreground surface without child
   native glass. History shares the drawer's Regular backdrop, uses translucent
   rows/hints and a separate preview backdrop. macOS 14/15 fallback is unchanged;
