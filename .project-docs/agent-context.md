@@ -115,6 +115,12 @@ Meeting Notes:
   pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
   resuming is always the user's decision. WHY:
   docs/decisions/2026-07-29-reconnect-always-asks.md
+  A BYOK key read that fails with errSecInDarkWake (no Keychain prompt
+  possible: dark wake or the lid closing) defers the meeting instead of
+  failing it: no failure event, the earlier failure reason is restored and
+  the manifest stays for the next pass (startReady() after a full wake, or
+  the next launch). WHY:
+  .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
 
 Local LLM (Apple Silicon):
   MLX (`ml-explore/mlx-swift` + `-lm`), Qwen3-4B-Instruct-2507-4bit;

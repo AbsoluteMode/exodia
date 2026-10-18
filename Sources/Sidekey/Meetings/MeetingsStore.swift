@@ -285,7 +285,15 @@ actor MeetingsStore: MeetingsStoring {
     /// genuinely unfinished finalized upload from a stale queue whose note
     /// is already safely present in the local cache.
     func progressStatus(id: UUID) throws -> MeetingProgressStatus? {
-        let sql = "SELECT progress_status FROM meetings WHERE id = ? LIMIT 1"
+        try progressState(id: id)?.status
+    }
+
+    /// Status and failure reason of one meeting. A processing attempt that
+    /// is deferred rather than failed puts back the failure it replaced.
+    func progressState(
+        id: UUID
+    ) throws -> (status: MeetingProgressStatus, failureReason: String?)? {
+        let sql = "SELECT progress_status, failure_reason FROM meetings WHERE id = ? LIMIT 1"
         var stmt: OpaquePointer?
         let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
         defer { sqlite3_finalize(stmt) }
@@ -307,7 +315,8 @@ actor MeetingsStore: MeetingsStoring {
         guard let raw = sqlite3_column_text(stmt, 0) else {
             throw MeetingsStoreError.invalidRow("progress_status is NULL")
         }
-        return MeetingProgressStatus(rawValue: String(cString: raw)) ?? .ready
+        let failureReason = sqlite3_column_text(stmt, 1).map { String(cString: $0) }
+        return (MeetingProgressStatus(rawValue: String(cString: raw)) ?? .ready, failureReason)
     }
 
     func delete(id: UUID) throws {
