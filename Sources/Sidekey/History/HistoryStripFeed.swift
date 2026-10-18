@@ -53,16 +53,15 @@ enum HistoryStripCard: Identifiable, Equatable, Sendable {
 /// `nonisolated` because every call goes through the store's own
 /// dispatch queue — there is no main-thread mutation here, only reads.
 ///
-/// ROO-208 iter 2: the per-mode cap is fixed at `Self.uiFeedCap` = 10.
-/// The deck-with-peek carousel inside `HistoryStripView` cannot render
-/// more than a handful of cards usefully, and capping here keeps the
-/// store query small while keeping older rows on disk. Tests can
-/// override the cap via the designated initializer.
+/// Clipboard exposes the latest 20 copies; Agent and Drop retain their
+/// ten-card slices. These bounded queries keep older retained rows on disk.
+/// Tests can override each cap via the designated initializer.
 final class HistoryStripFeed: Sendable {
     /// Default UI-feed cap. The SQLite store still retains older rows
     /// (capped only by the watcher's retention policy) — this is a
     /// pure UI slice so the deck stays interactive.
     static let uiFeedCap: Int = 10
+    static let clipboardUIFeedCap: Int = 20
 
     private let store: SQLiteHistoryStore
     private let maxAgentEntries: Int
@@ -73,7 +72,7 @@ final class HistoryStripFeed: Sendable {
         store: SQLiteHistoryStore,
         maxAgentEntries: Int = HistoryStripFeed.uiFeedCap,
         maxDropEntries: Int = HistoryStripFeed.uiFeedCap,
-        maxClipboardEntries: Int = HistoryStripFeed.uiFeedCap
+        maxClipboardEntries: Int = HistoryStripFeed.clipboardUIFeedCap
     ) {
         self.store = store
         self.maxAgentEntries = maxAgentEntries

@@ -197,10 +197,7 @@ final class ClipboardHistoryStoreTests: XCTestCase {
 
     // MARK: - File-backed persistence
 
-    /// Storage-layer invariant only. `AppDelegate` calls
-    /// `ClipboardHistoryLaunchPurge.run` on launch, so in production
-    /// the rows are wiped before any reader observes them; see
-    /// `ClipboardHistoryLaunchPurgeTests`.
+    /// Clipboard copies remain available after the app reopens its local DB.
     func testClipboardEntriesPersistAcrossReopen() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("sidekey-clipboard-test-\(UUID().uuidString).sqlite")
@@ -222,6 +219,115 @@ final class ClipboardHistoryStoreTests: XCTestCase {
             return
         }
         XCTAssertEqual(t, "persist me")
+    }
+
+    func testImagesAndFileURLsRemainReadableAfterRepeatedReopens() throws {
+        let root = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = root.appendingPathComponent("history.sqlite")
+        let assets = root.appendingPathComponent("assets")
+        let imageID = UUID()
+        let imageBytes = Data([0x01, 0x02, 0x03])
+        let thumbnail = Data([0x04, 0x05])
+        let fileURLs = [root.appendingPathComponent("example.txt")]
+        let expected: [ClipboardHistoryEntry]
+        do {
+            let store = try SQLiteHistoryStore(path: database.path)
+            _ = try store.insertClipboardImageEntry(
+                createdAt: Date(timeIntervalSince1970: 1),
+                uuid: imageID,
+                imageData: imageBytes,
+                imageExtension: "png",
+                thumbnailData: thumbnail,
+                assetsDirectory: assets
+            )
+            _ = try store.insertClipboardFileURLsEntry(
+                createdAt: Date(timeIntervalSince1970: 2), urls: fileURLs
+            )
+            expected = try store.latestClipboardEntries(limit: 10)
+        }
+
+        for _ in 0..<3 {
+            let reopened = try SQLiteHistoryStore(path: database.path)
+            XCTAssertEqual(try reopened.latestClipboardEntries(limit: 10), expected)
+            let feed = HistoryStripFeed(store: reopened)
+            XCTAssertEqual(feed.cards(for: .clipboard).count, 2)
+            XCTAssertEqual(
+                try Data(contentsOf: assets.appendingPathComponent("\(imageID.uuidString).png")),
+                imageBytes
+            )
+        }
+    }
+
+    @MainActor
+    func testWatcherStopAndStartPreserveExistingCopies() throws {
+        let root = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = root.appendingPathComponent("history.sqlite")
+        let assets = root.appendingPathComponent("assets")
+        do {
+            let store = try SQLiteHistoryStore(path: database.path)
+            _ = try store.insertClipboardTextEntry(createdAt: Date(), text: "saved copy")
+            let watcher = ClipboardWatcher(
+                store: store, assetsDirectory: assets, suppression: ClipboardSuppression()
+            )
+            // Synchronous start/stop prevents the timer from polling the real
+            // pasteboard. Only its change counter seeds watcher state.
+            watcher.start()
+            watcher.stop()
+            watcher.start()
+            watcher.stop()
+            XCTAssertEqual(try store.latestClipboardEntries(limit: 10).count, 1)
+        }
+
+        let reopened = try SQLiteHistoryStore(path: database.path)
+        let watcher = ClipboardWatcher(
+            store: reopened, assetsDirectory: assets, suppression: ClipboardSuppression()
+        )
+        watcher.start()
+        watcher.stop()
+        XCTAssertEqual(try reopened.latestClipboardEntries(limit: 10).first?.payload, .text("saved copy"))
+        XCTAssertEqual(HistoryStripFeed(store: reopened).cards(for: .clipboard).count, 1)
+    }
+
+    func testRetentionAfterReopenKeepsFiftyNewestAndCleansOnlyEvictedImage() throws {
+        let root = makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = root.appendingPathComponent("history.sqlite")
+        let assets = root.appendingPathComponent("assets")
+        let oldestID = UUID()
+        let retainedID = UUID()
+        do {
+            let store = try SQLiteHistoryStore(path: database.path)
+            for (id, time) in [(oldestID, 0), (retainedID, 1)] {
+                _ = try store.insertClipboardImageEntry(
+                    createdAt: Date(timeIntervalSince1970: TimeInterval(time)), uuid: id,
+                    imageData: Data([0x01]), imageExtension: "png", thumbnailData: Data([0x02]),
+                    assetsDirectory: assets
+                )
+            }
+            for time in 2..<50 {
+                _ = try store.insertClipboardTextEntry(
+                    createdAt: Date(timeIntervalSince1970: TimeInterval(time)), text: "copy \(time)"
+                )
+            }
+        }
+
+        do {
+            let reopened = try SQLiteHistoryStore(path: database.path)
+            XCTAssertEqual(try reopened.latestClipboardEntries(limit: 100).count, 50)
+            _ = try reopened.insertClipboardTextEntry(
+                createdAt: Date(timeIntervalSince1970: 50), text: "new copy after restart"
+            )
+            try reopened.enforceClipboardCap(maxRows: 50, assetsDirectory: assets)
+        }
+
+        let reopened = try SQLiteHistoryStore(path: database.path)
+        let rows = try reopened.latestClipboardEntries(limit: 100)
+        XCTAssertEqual(rows.count, 50)
+        XCTAssertEqual(rows.first?.payload, .text("new copy after restart"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: assets.appendingPathComponent("\(oldestID.uuidString).png").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: assets.appendingPathComponent("\(retainedID.uuidString).png").path))
     }
 
     // MARK: - Helpers
