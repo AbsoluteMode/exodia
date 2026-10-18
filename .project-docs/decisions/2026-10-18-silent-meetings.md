@@ -29,7 +29,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Meetings/MeetingLocalTranscriberTests.swift
     confirmed_at: 2026-10-18
-related: [2026-09-07-soniox-meeting-files.md]
+related: [2026-09-07-soniox-meeting-files.md, 2026-10-18-meeting-recovery-dark-wake.md]
 ---
 
 # Silent meetings
