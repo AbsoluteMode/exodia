@@ -25,10 +25,11 @@ Voice flow (Drop / dictation):
        -> realtime STT via TranscriptionSessionFactory
             (level = TranscriptionIsolationLevel, Settings -> Models):
             Your key (BYOK) only: direct to the provider with the user's key
-            from the Keychain (Streaming/BYOK/): OpenAI Realtime or a
-            self-hosted OpenAI-compatible endpoint, Deepgram, Soniox,
-            ElevenLabs. No chosen level (never chosen on Apple Silicon, or the
-            retired Local route) throws .notConfigured and opens
+            from the Keychain (Streaming/BYOK/): Soniox (default), Deepgram,
+            ElevenLabs or a self-hosted endpoint speaking the OpenAI Realtime
+            protocol. OpenAI itself is not offered; a legacy OpenAI choice
+            resolves to Soniox. No chosen level (never chosen on Apple Silicon,
+            or the retired Local route) throws .notConfigured and opens
             Settings -> Models; a saved Local choice never switches to a
             provider on its own. WHY:
             .project-docs/decisions/2026-10-18-remove-local-models.md
@@ -477,7 +478,11 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    Local was the default), reads as not configured even when a key is stored;
    Intel keeps its Your key default (`SelfKeyPreferences`,
    `RetiredLocalRouteTests`). FluidAudio stays only for the meeting detector's
-   Silero VAD. There is no paid gate anywhere.
+   Silero VAD; launch removes the retired models' weights under
+   Application Support/Sidekey once per flavor and never touches FluidAudio's
+   cache (`LegacyLocalModelCleanup`, WHY:
+   .project-docs/decisions/2026-10-18-legacy-model-cleanup.md). There is no
+   paid gate anywhere.
 4. **Sparkle never shows a window.** Scheduled checks only show the island
    pill; nothing downloads before the user clicks. Requested downloads may
    install and relaunch while idle. Active meeting recording, dictation or

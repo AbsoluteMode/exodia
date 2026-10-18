@@ -201,7 +201,7 @@ rows live in Settings → Hotkeys (`hoverSlotSection` in
   the hotkey is editable, but the tool in that position is permanently
   `.settings`.
 - Like every other monitor, the keystroke content is never logged — only the
-  fact of the trigger (invariant #3).
+  fact of the trigger (invariant #2).
 
 ## Meeting-record hotkey
 

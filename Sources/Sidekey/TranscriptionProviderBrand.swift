@@ -9,25 +9,17 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
     let assetName: String?
     let systemName: String?
     let label: String
-    /// When `true`, the breathing island mark renders the bundled asset in its
-    /// native colors (loaded non-template) instead of flattening it to the
-    /// monochrome white tint every other provider mark receives. No shipped
-    /// brand sets it since the on-device Qwen mark was removed with the local
-    /// models; the rendering path stays for a multi-color mark.
-    let isFullColor: Bool
 
-    init(assetName: String, label: String, isFullColor: Bool = false) {
+    init(assetName: String, label: String) {
         self.assetName = assetName
         self.systemName = nil
         self.label = label
-        self.isFullColor = isFullColor
     }
 
     init(systemName: String, label: String) {
         self.assetName = nil
         self.systemName = systemName
         self.label = label
-        self.isFullColor = false
     }
 
     static func byok(_ provider: BYOKProvider) -> TranscriptionProviderBrand {

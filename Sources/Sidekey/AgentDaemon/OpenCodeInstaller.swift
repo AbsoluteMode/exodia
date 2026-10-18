@@ -43,7 +43,7 @@ struct OpenCodeInstaller {
         let (metadata, response) = try await session.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let release = try? JSONDecoder().decode(Release.self, from: metadata),
-              let asset = release.assets.first(where: { $0.name == Self.assetName(appleSilicon: LocalModelSupport.isAppleSilicon) }),
+              let asset = release.assets.first(where: { $0.name == Self.assetName(appleSilicon: HostArchitecture.isAppleSilicon) }),
               let url = URL(string: asset.browser_download_url), url.scheme == "https", url.host == "github.com",
               url.path.hasPrefix("/anomalyco/opencode/releases/download/") else { throw OpenCodeInstallError.invalidRelease }
         let (archive, downloadResponse) = try await session.download(from: url)
