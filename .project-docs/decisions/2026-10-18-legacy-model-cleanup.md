@@ -108,4 +108,4 @@ Silero VAD lives there and is still needed.
 - Only a release note: gigabytes stay on disk for everyone who skips it.
 - Also delete `FluidAudio/Models`: the meeting detector needs its Silero VAD.
 
-2026-10-18, PR pending.
+2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/27.
