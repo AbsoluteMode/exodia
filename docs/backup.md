@@ -2,21 +2,21 @@
 
 Your working data stays on your Mac. **Settings → Backup** adds an optional,
 independently encrypted copy in your own GitHub repository or a folder you choose.
-There is no Exodia account or backup server.
+There is no Whytap account or backup server.
 
 ## Set up once
 
 1. Choose **Set up backup**. Save the recovery code in a password manager that
    you can access after losing this Mac. Use **Copy to password manager**, then
-   paste the saved code back to verify it. Keep it outside Exodia and its backup
-   repository. Exodia does not know a way to recover a lost code.
+   paste the saved code back to verify it. Keep it outside Whytap and its backup
+   repository. Whytap does not know a way to recover a lost code.
 2. Connect an existing GitHub CLI login, or supply a GitHub access token.
-   Exodia uses a private repository named **Exodia-Backup** in your account.
+   Whytap uses a private repository named **Exodia-Backup** in your account.
    An existing repository needs Contents read and write permission; creating
    the repository also needs Administration read and write permission. The
    GitHub token and the recovery code serve different purposes.
 3. Alternatively, choose a folder in iCloud Drive, another sync service or an
-   external drive. Exodia checks the file saved there. **Saved to folder** does
+   external drive. Whytap checks the file saved there. **Saved to folder** does
    not prove that your sync service has uploaded it to another device.
 
 Routine backups use a key cached in the local macOS Keychain. You do not enter
@@ -26,7 +26,7 @@ The displayed times distinguish a completed local backup from a checked copy
 at the selected destination. Failed uploads keep the local version for retry.
 
 Encryption happens before upload. A repository accidentally becoming public
-exposes ciphertext, not your provider keys or Case values. Exodia pauses new
+exposes ciphertext, not your provider keys or Case values. Whytap pauses new
 uploads to a public repository. A compromised account can still delete backups,
 so an independent copy on another drive or in another account remains useful.
 The latest 30 copied full versions are kept locally, along with every unsent
@@ -35,7 +35,7 @@ Cloud transfers reuse unchanged files from earlier checked versions and periodic
 write a standalone full version. Recovery follows those dependencies automatically.
 Keep the backup repository intact, including older versions that newer ones need.
 Remote versions are not automatically deleted; their storage and availability
-remain subject to GitHub and your account's limits. Exodia does not use Actions.
+remain subject to GitHub and your account's limits. Whytap does not use Actions.
 
 ## Recover after a lost Mac or set up another Mac
 
@@ -43,16 +43,16 @@ Open **Settings → Backup → Restore a backup**, reconnect the source and ente
 the recovery code from your password manager. This works without the old Mac's
 Keychain. You can also open an `.exodiabackup` file directly.
 
-Exodia checks the whole archive before showing its contents. Review its date,
+Whytap checks the whole archive before showing its contents. Review its date,
 size, included groups and warnings. Select what you need, then choose
-**Restore selected items**. The restore applies when you next quit Exodia
+**Restore selected items**. The restore applies when you next quit Whytap
 normally and open it again. It does not force an interruption of active work.
 Machine permissions are granted separately by macOS. You can cancel a planned
-restore before quitting. During recovery, Exodia shows progress before opening
+restore before quitting. During recovery, Whytap shows progress before opening
 any workspace stores. If it cannot finish safely, it keeps the recovery files
 and offers retry, your saved recovery code, and their Finder location.
 
-Before applying a restore, Exodia keeps the data it will replace. Completed
+Before applying a restore, Whytap keeps the data it will replace. Completed
 restores retain each previous generation on this Mac; **Show all copies**
 opens their common folder in Finder. Older recovery copies stay there until
 you remove them. A failed rollback preserves its transaction for retry and
@@ -69,13 +69,15 @@ between two Macs.
 
 ## What is included
 
-Planner tasks, Exodia calendar events, calendar-connection settings and OAuth
+Planner tasks, Whytap calendar events, calendar-connection settings and OAuth
 credentials are not yet included in the portable backup allowlist. They remain
 on this Mac and are not restored by these archives.
 
-- Models, languages, meeting preferences, hotkeys, vocabulary, Toolbox layout,
+- API & Models routes for every feature, registered server addresses, languages,
+  meeting preferences, hotkeys, vocabulary, Toolbox layout,
   display and feature settings, and agent preferences.
-- Exodia's saved speech and text provider keys and independently recoverable
+- Whytap's saved speech and text provider keys (including Anthropic and each
+  registered custom server), and independently recoverable
   Case items and secrets.
 - Meeting catalogs, notes and transcripts, plus retained unfinished recordings.
 - Agent, Drop and clipboard history, including app-managed image bytes.
@@ -83,7 +85,7 @@ on this Mac and are not restored by these archives.
   and the neutral agent workspace's persistent instructions.
 
 Clipboard file entries refer to external originals. Those original documents
-are not owned by Exodia and are not copied by this feature. The same applies
+are not owned by Whytap and are not copied by this feature. The same applies
 to external scripts, SSH keys, model-provider accounts and credentials managed
 by other applications. Review archive warnings for those references. Downloaded
 models, binaries, caches, logs, obsolete project indexes and OS permissions are
@@ -101,6 +103,22 @@ block leaves them untouched. **Restore defaults** uses the application's
 source defaults for the selected settings block. Both apply at the next normal
 launch, with the previous values kept for recovery.
 
-If an archive is damaged, incomplete, or needs a newer version of Exodia, it
-is refused. Choose another saved version or update Exodia. Losing every copy
+The **API & Models · languages** block restores the exact saved routes and
+server registrations. Its source reset leaves AI routes **Not set**, so the old
+Models-tab choices cannot silently reappear on relaunch. Provider keys stay in
+their separate block. Archives made before API & Models preserve any routes
+already configured on the target Mac; on a fresh Mac the normal one-time
+migration can carry over their old provider choices.
+
+If a routing document is damaged or partly unreadable, its original value and
+any older unreadable copy are preserved inside the encrypted backup. Readable
+servers and all other artifact groups can still be saved. The preview warns
+when keys for unreadable server entries could not be included. Restored routes
+never rerun migration from old choices. Reset keeps the preserved values in the
+local recovery checkpoint before clearing the block. Settings-history snapshots
+are bounded to 1 MB of plaintext in total; unusually large configurations are
+refused with an error instead of being truncated.
+
+If an archive is damaged, incomplete, or needs a newer version of Whytap, it
+is refused. Choose another saved version or update Whytap. Losing every copy
 of the data or every recovery method cannot be repaired by encryption.

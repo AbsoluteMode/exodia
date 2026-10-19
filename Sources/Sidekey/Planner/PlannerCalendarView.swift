@@ -93,7 +93,7 @@ struct PlannerCalendarView: View {
         .alert("Delete this event?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Delete", role: .destructive) { if let event = deleting { _ = store.deleteEvent(event.id) }; deleting = nil }
             Button("Cancel", role: .cancel) { deleting = nil }
-        } message: { Text("This removes the event from your local Exodia calendar.") }
+        } message: { Text("This removes the event from your local Whytap calendar.") }
         .task(id: "\(days.first?.timeIntervalSince1970 ?? 0):\(refreshToken)") {
             guard let first = days.first, let end = calendar.date(byAdding: .day, value: 42, to: first) else { return }
             repeat {
@@ -182,7 +182,7 @@ struct PlannerCalendarView: View {
     }
 
     private func sourceTitle(_ id: String) -> String {
-        if id == "local" { return "Exodia · On this Mac" }
+        if id == "local" { return "Whytap · On this Mac" }
         guard let feed = connections.feeds.first(where: { $0.id == id }) else { return "Connected calendar" }
         return feed.title + " · " + (feed.provider?.title ?? "")
     }
@@ -220,7 +220,7 @@ struct PlannerEventEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Exodia event").font(.title2.bold())
+            Text("Whytap event").font(.title2.bold())
             TextField("Event title", text: $event.title).textFieldStyle(.roundedBorder).accessibilityLabel("Event title")
             Form {
                 Toggle("All day", isOn: $event.allDay)
@@ -232,7 +232,7 @@ struct PlannerEventEditor: View {
             }
             Text("Notes").font(.callout.weight(.medium))
             TextEditor(text: $event.notes).frame(height: 85).border(Color.secondary.opacity(0.2))
-            Text("Saved in Exodia on this Mac. Connected calendars are shown alongside it; they are read-only.")
+            Text("Saved in Whytap on this Mac. Connected calendars are shown alongside it; they are read-only.")
                 .font(.caption).foregroundStyle(.secondary)
             if let message = validationMessage ?? store.errorMessage { Text(message).font(.caption).foregroundStyle(.red) }
             HStack {
@@ -273,7 +273,7 @@ private struct CalendarEventDetails: View {
             if !item.event.allDay { Text("Until " + item.event.end.formatted(date: .abbreviated, time: .shortened)) }
             if !item.event.location.isEmpty { Label(item.event.location, systemImage: "location") }
             if !item.event.notes.isEmpty { ScrollView { Text(item.event.notes).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 200) }
-            Text("This connected event is read-only in Exodia.").font(.caption).foregroundStyle(.secondary)
+            Text("This connected event is read-only in Whytap.").font(.caption).foregroundStyle(.secondary)
             HStack {
                 if let url = item.event.meetingURL { Link("Join meeting", destination: url).buttonStyle(.borderedProminent) }
                 if let url = item.sourceURL { Link("Open original", destination: url) }

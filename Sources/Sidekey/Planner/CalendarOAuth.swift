@@ -161,7 +161,7 @@ final class CalendarBrowserSignIn {
                 do { result = .success((try CalendarPKCE.callback(String(line[1]), expectedState: state), redirect)) }
                 catch CalendarConnectionError.denied { result = .failure(CalendarConnectionError.denied) }
                 catch { self.close(id); return } // Ignore unrelated requests without ending the pending sign-in.
-                let html = "<!doctype html><meta charset=utf-8><title>Exodia</title><p>You can return to Exodia and close this tab.</p>"
+                let html = "<!doctype html><meta charset=utf-8><title>Whytap</title><p>You can return to Whytap and close this tab.</p>"
                 let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n" + html
                 self.connections.removeValue(forKey: id)
                 connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })

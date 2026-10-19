@@ -26,7 +26,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Settings/APIAndModels/APIAndModelsView.swift
     confirmed_at: 2026-10-19
-related: [2026-10-18-remove-local-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-19-deepgram-language-policy.md]
+related: [2026-10-18-remove-local-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-19-deepgram-language-policy.md, 2026-10-19-api-hints.md]
 ---
 
 # API & Models
@@ -112,7 +112,7 @@ tool calls, which the agent needs.
   treats it as "key exists" and assigns the route: the migration runs once,
   and a transient denial must not silently drop the user's choice forever.
 
-## Verification
+## Validation
 
 - Full Swift suite: Part A 3062 tests, Part B 3139, final run (with Anthropic
   and these docs) 3154 tests in 58.6 s. All with 0 failures and 5 skipped.

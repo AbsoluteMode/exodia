@@ -63,7 +63,7 @@ struct SettingsNotificationsView: View {
                     }
                 }
 
-                Text("Sources run while Exodia is open. Turning one off keeps its setup and notification history, so you can enable it again anytime.")
+                Text("Sources run while Whytap is open. Turning one off keeps its setup and notification history, so you can enable it again anytime.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(MacSettingsTheme.text2)
             }

@@ -27,7 +27,7 @@ struct DropShortcutStatusSection: View {
                     if viewModel.dropHotkeyStatus == .inputMonitoringRequired {
                         MacButton(title: "Open Settings", style: .default, action: viewModel.requestInputMonitoring)
                     } else if viewModel.dropHotkeyStatus == .accessibilityRequired {
-                        MacButton(title: "Show Exodia in Finder", style: .default, action: PermissionsHelper.revealCurrentAppBundle)
+                        MacButton(title: "Show Whytap in Finder", style: .default, action: PermissionsHelper.revealCurrentAppBundle)
                     } else if viewModel.dropHotkeyStatus == .shortcutInUse || viewModel.dropHotkeyStatus == .unavailable {
                         MacButton(title: "Hotkeys…", style: .default, action: viewModel.openHotkeys)
                     }

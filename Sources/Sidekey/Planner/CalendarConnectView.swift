@@ -11,7 +11,7 @@ struct CalendarSourcesView: View {
             HStack { Text("Your calendars").font(.headline); Spacer(); Button("Connect account", action: onConnect) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    feedToggle(id: "local", title: "Exodia · On this Mac")
+                    feedToggle(id: "local", title: "Whytap · On this Mac")
                     if connections.appleEnabled {
                         Divider()
                         HStack {
@@ -54,7 +54,7 @@ struct CalendarSourcesView: View {
                 Task { do { try await connections.remove(account) } catch { self.error = error.localizedDescription } }
             }
             Button("Cancel", role: .cancel) { removing = nil }
-        } message: { Text("Its events will disappear from Exodia. The original calendars and events stay with the provider.") }
+        } message: { Text("Its events will disappear from Whytap. The original calendars and events stay with the provider.") }
     }
 
     private func feedToggle(id: String, title: String) -> some View {
@@ -85,14 +85,14 @@ struct CalendarConnectView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Connect a calendar").font(.title2.bold())
-            Text("Bring your schedule together in Exodia.").foregroundStyle(.secondary)
+            Text("Bring your schedule together in Whytap.").foregroundStyle(.secondary)
             Picker("Provider", selection: $provider) {
                 ForEach(CalendarProvider.allCases) { Text($0.title).tag($0) }
             }.disabled(working)
             if provider == .apple {
-                Text("Allow Exodia to show calendars available on your Mac, including iCloud. Google, Outlook and Zoom can connect separately here without being added to macOS.")
+                Text("Allow Whytap to show calendars available on your Mac, including iCloud. Google, Outlook and Zoom can connect separately here without being added to macOS.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Text("macOS requests full calendar permission to allow reading. Exodia uses this connection only to display events.")
+                Text("macOS requests full calendar permission to allow reading. Whytap uses this connection only to display events.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 TextField("Account name (optional)", text: $label).textFieldStyle(.roundedBorder).disabled(working)
@@ -110,7 +110,7 @@ struct CalendarConnectView: View {
                         if let url = setupURL { Link("Open provider setup", destination: url) }
                     }.padding(.top, 8)
                 }
-                Text("Sign-in opens your browser. Exodia receives calendar access; your account password stays with the provider. Tokens are saved in Keychain.")
+                Text("Sign-in opens your browser. Whytap receives calendar access; your account password stays with the provider. Tokens are saved in Keychain.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if working { HStack { ProgressView().controlSize(.small); Text("Finish sign-in in your browser…").font(.callout) } }

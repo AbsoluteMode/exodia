@@ -1,13 +1,13 @@
-# Exodia Planner
+# Whytap Planner
 
 Open **Search all tools → To-do** or **Calendar**. Both open the same native
 Planner window. The tools can also be added from Settings → Toolbox; adding this
 feature does not change existing saved tool layouts or positional shortcuts.
 
-## Tasks and Exodia events
+## Tasks and Whytap events
 
 Tasks support add/Return, search, edit, complete/reopen and confirmed deletion.
-The Active and Completed lists keep finished work available. Exodia events support
+The Active and Completed lists keep finished work available. Whytap events support
 titles, start/end times, all-day spans, locations, notes, https meeting links and
 confirmed deletion. All-day end dates in the editor are inclusive; storage uses
 an exclusive boundary. Civil all-day dates survive a time-zone change.
@@ -23,7 +23,7 @@ restore Planner data on another Mac.
 
 ## Unified calendar
 
-The month grid and selected-day agenda combine the local Exodia calendar with
+The month grid and selected-day agenda combine the local Whytap calendar with
 selected external calendars. Use **Calendars** to hide/show individual feeds,
 inspect the last successful refresh and connection errors, or disconnect an
 account. The displayed time zone is the Mac's current time zone. Recurring
@@ -33,7 +33,7 @@ one agenda item, retaining meeting/original links and an additional-source count
 unrelated events are never merged by title alone.
 
 External connections are **read-only** in this first implementation. Edit them in
-the original app; Exodia refreshes on opening the calendar, changing month,
+the original app; Whytap refreshes on opening the calendar, changing month,
 connecting/disconnecting, explicit Refresh and every minute while it is visible.
 Native calendar-change notifications trigger another refresh. Previously fetched
 events remain visible after a network failure and are marked potentially stale.
@@ -44,8 +44,8 @@ provider-side consent can additionally be revoked in the provider's account UI.
 
 **Apple Calendar:** Connect account → Apple Calendar requests the macOS calendar
 permission. It shows the calendars available through EventKit, including iCloud.
-macOS requires full event permission even for reading; Exodia only reads.
-This connection does not require an Exodia backend or a new Apple OAuth client.
+macOS requires full event permission even for reading; Whytap only reads.
+This connection does not require a Whytap backend or a new Apple OAuth client.
 When the same Google/Exchange account is also available through macOS, use the
 feed checkboxes to select the desired source. UID-based collapse cannot identify
 copies for which the providers return unrelated identifiers.
@@ -67,6 +67,8 @@ any supported source remain joinable.
 
 ## OAuth app registration
 
+Use **Whytap** as the application name and public consent-screen brand.
+
 No shared provider registrations or production OAuth client IDs were supplied
 with this change. Direct sign-in needs the developer's registered public client
 configuration, entered in Connect account. Live authorization, organizational
@@ -82,7 +84,7 @@ These registrations are not created automatically by the application.
    Google's OAuth verification.
 2. **Microsoft Entra:** register a public native app with the appropriate account
    audience, permit public client flows and delegated Calendars.Read. Register
-   **Mobile and desktop applications → http://localhost/callback**. Exodia uses
+   **Mobile and desktop applications → http://localhost/callback**. Whytap uses
    an ephemeral port; Microsoft's documented localhost exception ignores it.
    No client secret is embedded or required.
 3. **Zoom Marketplace:** create a General app, enable Public Client OAuth with

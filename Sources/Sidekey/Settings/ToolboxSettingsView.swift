@@ -326,7 +326,7 @@ struct ToolboxSettingsView: View {
                 ToolboxDisplayPane()
             case .tasks, .calendar:
                 VStack(spacing: 14) {
-                    Text("Open your tasks and calendars in Exodia Planner.")
+                    Text("Open your tasks and calendars in Whytap Planner.")
                         .font(.callout).foregroundStyle(.secondary)
                     Button("Open " + HoverToolRegistry.info(for: tool).title) {
                         PlannerWindowController.shared.show(tool == .tasks ? .tasks : .calendar)

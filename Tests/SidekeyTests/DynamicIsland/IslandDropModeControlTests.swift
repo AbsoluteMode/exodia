@@ -330,7 +330,7 @@ final class IslandDropModeControlTests: XCTestCase {
         }
         XCTAssertEqual(capsule(.meetingRecord).spokenAccessibilityLabel, "Record, Not recording")
         XCTAssertEqual(capsule(.meetingRecord, recording: true).spokenAccessibilityLabel, "Record, Recording")
-        XCTAssertEqual(HoverToolRegistry.info(for: .quit).description, "Quit Exodia")
+        XCTAssertEqual(HoverToolRegistry.info(for: .quit).description, "Quit Whytap")
         XCTAssertEqual(capsule(.dropMode, mode: .fast).spokenAccessibilityLabel, "Drop Mode, Fast")
         XCTAssertEqual(capsule(.dropMode, mode: .smart).spokenAccessibilityLabel, "Drop Mode, Smart")
         XCTAssertEqual(capsule(.inputLang).spokenAccessibilityLabel, "Input Lang, Auto")

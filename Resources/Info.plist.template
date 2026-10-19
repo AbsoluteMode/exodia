@@ -32,17 +32,17 @@
     <key>NSPrefersDisplaySafeAreaCompatibilityMode</key>
     <false/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Exodia records audio to transcribe your speech.</string>
+    <string>Whytap records audio to transcribe your speech.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>Exodia shows your selected calendars and upcoming meetings together in Planner. Connected Apple calendars are read-only in Exodia.</string>
+    <string>Whytap shows your selected calendars and upcoming meetings together in Planner. Connected Apple calendars are read-only in Whytap.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Exodia records the other participants' audio during meetings to transcribe what's said.</string>
+    <string>Whytap records the other participants' audio during meetings to transcribe what's said.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Exodia uses Accessibility to paste transcribed text into the active window.</string>
+    <string>Whytap uses Accessibility to paste transcribed text into the active window.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Exodia captures the active window to provide context for smarter formatting.</string>
+    <string>Whytap captures the active window to provide context for smarter formatting.</string>
     <key>NSAccessibilityUsageDescription</key>
-    <string>Exodia uses Accessibility to detect the global hotkey and to paste transcribed text into the active window.</string>
+    <string>Whytap uses Accessibility to detect the global hotkey and to paste transcribed text into the active window.</string>
     <key>SUFeedURL</key>
     <string>__APPCAST_URL__</string>
     <key>SUPublicEDKey</key>

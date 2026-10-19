@@ -24,7 +24,7 @@ struct PermissionRepairView: View {
                     MacCard {
                         MacRow(
                             title: "Keyboard control",
-                            subtitle: "Required for Drop and the Agent. Allow Exodia under Accessibility or Device Control and Data Access in System Settings.",
+                            subtitle: "Required for Drop and the Agent. Allow Whytap under Accessibility or Device Control and Data Access in System Settings.",
                             leading: {
                                 Image(systemName: "keyboard.fill")
                                     .font(.system(size: 14, weight: .medium))

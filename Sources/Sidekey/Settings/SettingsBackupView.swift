@@ -121,7 +121,9 @@ struct SettingsBackupView: View {
             Button("Restore defaults") { Task { await model.restoreSettingsDefaults(selectedConfigSection) } }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Only this settings block will return to the app defaults at the next normal launch. A copy of its current values is kept. Provider keys are kept.")
+            Text(selectedConfigSection == .models
+                 ? "AI routes will become Not set and server registrations will reset at the next normal launch. Provider keys and a recovery copy of your current values are kept."
+                 : "Only this settings block will return to the app defaults at the next normal launch. A copy of its current values is kept. Provider keys are kept.")
         }
     }
 
@@ -170,7 +172,7 @@ struct SettingsBackupView: View {
         VStack(alignment: .leading, spacing: 10) {
             MacBanner(tone: .info, systemImage: "arrow.clockwise.circle",
                 title: "Ready for your next launch",
-                text: "Quit Exodia normally and open it again when your work is finished. Your previous data is kept for recovery.")
+                text: "Quit Whytap normally and open it again when your work is finished. Your previous data is kept for recovery.")
             MacButton(title: "Cancel planned restore", style: .default, isEnabled: !model.isBusy) {
                 model.cancelPlannedRestore()
             }
@@ -210,7 +212,7 @@ struct SettingsBackupView: View {
                 Button("Enable") { if let item = activationItem { model.activateRecoveredItem(item) }; activationItem = nil }
                 Button("Cancel", role: .cancel) { activationItem = nil }
         } message: {
-            Text("Connections may contact your configured servers. A recording may be sent to your selected speech and text providers using your keys. Enabling allows Exodia to use this recovered item when it next checks for work.")
+            Text("Connections may contact your configured servers. A recording may be sent to your selected speech and text providers using your keys. Enabling allows Whytap to use this recovered item when it next checks for work.")
         }
     }
 
@@ -272,7 +274,7 @@ struct SettingsBackupView: View {
 
     private var emptyStateSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Encrypted Backup", trailing: "No Exodia account")
+            MacGroupTitle(title: "Encrypted Backup", trailing: "No Whytap account")
             MacCard {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -496,7 +498,7 @@ struct SettingsBackupView: View {
         VStack(alignment: .leading, spacing: 0) {
             MacRow(
                 title: "Recovery code verified",
-                subtitle: "Choose where Exodia should store your encrypted backup archives."
+                subtitle: "Choose where Whytap should store your encrypted backup archives."
             ) {
                 MacPill(text: "Verified", tone: .green, showsDot: true)
             }
@@ -1024,12 +1026,18 @@ struct SettingsBackupView: View {
                 MacRowSeparator()
 
                 VStack(alignment: .leading, spacing: 5) {
+                    if selectedSections.contains(.settings) && !selectedSections.contains(.credentials) {
+                        Label("This selection keeps this Mac's existing provider keys. Restored routes may need their matching keys added separately.", systemImage: "key")
+                    }
+                    if selectedSections.contains(.credentials) && !selectedSections.contains(.settings) {
+                        Label("This selection keeps your current routes. Server keys become usable with their matching server setup in API & Models.", systemImage: "key")
+                    }
                     Label(
                         "Existing data on this Mac is saved in a local recovery copy before the restore is applied.",
                         systemImage: "arrow.uturn.backward.circle"
                     )
                     Label(
-                        "Restored items apply at the next normal launch. Exodia will not force-quit or interrupt active work.",
+                        "Restored items apply at the next normal launch. Whytap will not force-quit or interrupt active work.",
                         systemImage: "clock.arrow.circlepath"
                     )
                     Label(
@@ -1120,7 +1128,7 @@ struct SettingsBackupView: View {
                 if availableLocalSnapshots.isEmpty {
                     MacRow(
                         title: "No local settings snapshots yet",
-                        subtitle: "Exodia saves local settings snapshots automatically on this Mac when preferences change."
+                        subtitle: "Whytap saves local settings snapshots automatically on this Mac when preferences change."
                     ) {
                         EmptyView()
                     }
@@ -1156,7 +1164,7 @@ struct SettingsBackupView: View {
                                 Text("Restore “\(pending.section.title)” to \(Self.formatDate(pending.snapshot.createdAt, emptyText: "selected snapshot"))?")
                                     .font(.system(size: 12.5, weight: .semibold))
                                     .foregroundStyle(MacSettingsTheme.text)
-                                Text(pending.section == .credentials ? "Provider keys in this saved copy will be restored. Other settings stay as they are." : "Only \(pending.section.title) will be restored. Other settings and provider keys stay as they are.")
+                                Text(Self.blockRestoreExplanation(pending.snapshot, section: pending.section))
                                     .font(.system(size: 11.5))
                                     .foregroundStyle(MacSettingsTheme.text2)
                             }
@@ -1262,9 +1270,9 @@ struct SettingsBackupView: View {
     private static func sectionSubtitle(_ section: ArtifactBackupSection) -> String {
         switch section {
         case .settings:
-            return "Models, hotkeys, vocabulary, Toolbox layout, display and feature preferences"
+            return "Feature routes, server setup, languages, hotkeys, vocabulary, Toolbox and display preferences"
         case .credentials:
-            return "Saved speech and text provider keys"
+            return "Saved speech, text, Anthropic agent and registered server keys"
         case .caseVault:
             return "Saved Case items and secrets"
         case .meetings:
@@ -1274,6 +1282,16 @@ struct SettingsBackupView: View {
         case .workspace:
             return "Custom Monitor dashboards, Notify sources and agent instructions (scripts stay paused until reviewed)"
         }
+    }
+
+    private static func blockRestoreExplanation(_ snapshot: ConfigBackupSnapshot, section: ConfigBackupSection) -> String {
+        if section == .credentials { return "Provider keys in this saved copy will be restored. Other settings stay as they are. Server keys need their matching server setup in API & Models." }
+        if section == .models && snapshot.preferences[ConfigBackupRegistry.aiRoutingKey] == nil {
+            return snapshot.schemaVersion < 2
+                ? "This snapshot predates API & Models. Current AI routes and provider keys stay as they are."
+                : "No AI routes were recorded in this snapshot. AI routes will become Not set; provider keys are kept."
+        }
+        return "Only \(section.title) will be restored. Other settings and provider keys stay as they are."
     }
 
     /// Summarizes only non-sensitive preference counts for the chosen section;

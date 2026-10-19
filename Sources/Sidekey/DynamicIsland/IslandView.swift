@@ -1474,7 +1474,7 @@ struct IslandView: View {
         // keeps the existing reset so the suggestion pill is not
         // visually overrun.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Exodia Dynamic Island — \(accessibilityLabel)")
+        .accessibilityLabel("Whytap Dynamic Island — \(accessibilityLabel)")
         // Critical: without `.ignoresSafeArea()` the NSHostingView
         // applies the screen's safeAreaInsets to its SwiftUI content,
         // pushing the pill BELOW the notch (we want it AT the notch).
@@ -2925,6 +2925,7 @@ private struct IslandDropModeHoverPanel: View {
             circleSize: circleSize,
             accessibilityLabel: presentation.title,
             isDimmed: tool == .outputLang && mode == .fast,
+            isRecording: tool == .meetingRecord && meetingRecordingActive,
             width: IslandHoverControlsLayout.tileWidth(panelWidth: panelWidth),
             action: { activateTool(tool) }
         )

@@ -4,28 +4,28 @@ import XCTest
 final class AppBuildIdentityTests: XCTestCase {
     func testProductionIdentityUsesTheActualBundleValues() {
         let identity = AppBuildIdentity(info: [
-            "CFBundleIdentifier": "com.rootwise.sidekey", "CFBundleDisplayName": "Exodia",
+            "CFBundleIdentifier": "com.rootwise.sidekey", "CFBundleDisplayName": "Whytap",
             "CFBundleShortVersionString": "2.2.13", "CFBundleVersion": "1465",
             "ExodiaSourceRevision": "b112b44a1234567890", "ExodiaInstanceLeaseVersion": 1
-        ], bundleURL: URL(fileURLWithPath: "/Applications/Exodia.app"))
-        XCTAssertEqual(identity.summary, "Exodia · Production · 2.2.13 (1465)")
-        XCTAssertEqual(identity.bundlePath, "/Applications/Exodia.app")
+        ], bundleURL: URL(fileURLWithPath: "/Applications/Whytap.app"))
+        XCTAssertEqual(identity.summary, "Whytap · Production · 2.2.13 (1465)")
+        XCTAssertEqual(identity.bundlePath, "/Applications/Whytap.app")
         XCTAssertEqual(identity.shortRevision, "b112b44a1234")
-        XCTAssertEqual(identity.settingsTitle, "Exodia Settings")
-        XCTAssertEqual(identity.quitActionTitle, "Quit Exodia")
+        XCTAssertEqual(identity.settingsTitle, "Whytap Settings")
+        XCTAssertEqual(identity.quitActionTitle, "Quit Whytap")
         XCTAssertTrue(identity.usesInstanceLease)
     }
 
     func testSourceBetaShowsDevelopmentAndItsCheckoutPath() {
         let identity = AppBuildIdentity(info: [
-            "CFBundleIdentifier": "com.rootwise.sidekey.beta", "CFBundleName": "Exodia Beta",
+            "CFBundleIdentifier": "com.rootwise.sidekey.beta", "CFBundleName": "Whytap Beta",
             "CFBundleShortVersionString": "0.0.0-dev", "CFBundleVersion": "9999"
-        ], bundleURL: URL(fileURLWithPath: "/tmp/checkout/build/Exodia-Beta-dev.app"))
+        ], bundleURL: URL(fileURLWithPath: "/tmp/checkout/build/Whytap-Beta-dev.app"))
         XCTAssertEqual(identity.channel, "Development")
-        XCTAssertEqual(identity.name, "Exodia Beta")
-        XCTAssertEqual(identity.settingsTitle, "Exodia Beta Settings")
-        XCTAssertEqual(identity.quitActionTitle, "Quit Exodia Beta")
-        XCTAssertEqual(identity.bundlePath, "/tmp/checkout/build/Exodia-Beta-dev.app")
+        XCTAssertEqual(identity.name, "Whytap Beta")
+        XCTAssertEqual(identity.settingsTitle, "Whytap Beta Settings")
+        XCTAssertEqual(identity.quitActionTitle, "Quit Whytap Beta")
+        XCTAssertEqual(identity.bundlePath, "/tmp/checkout/build/Whytap-Beta-dev.app")
         XCTAssertFalse(identity.usesInstanceLease)
     }
 
@@ -33,7 +33,7 @@ final class AppBuildIdentityTests: XCTestCase {
         let identity = AppBuildIdentity(info: [
             "CFBundleIdentifier": "com.rootwise.sidekey.beta",
             "CFBundleShortVersionString": "2.2.13", "CFBundleVersion": "1465"
-        ], bundleURL: URL(fileURLWithPath: "/Applications/Exodia-Beta.app"))
+        ], bundleURL: URL(fileURLWithPath: "/Applications/Whytap-Beta.app"))
         XCTAssertEqual(identity.channel, "Beta")
         XCTAssertFalse(identity.usesInstanceLease)
     }

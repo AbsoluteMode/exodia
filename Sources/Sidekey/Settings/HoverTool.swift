@@ -95,14 +95,14 @@ enum HoverToolRegistry {
                                  description: "Screen brightness, Extra boost and battery time")
         case .tasks:
             return HoverToolInfo(title: "To-do", sfSymbol: "checklist", kind: .action,
-                                 description: "Manage your local tasks in Exodia Planner")
+                                 description: "Manage your local tasks in Whytap Planner")
         case .calendar:
             return HoverToolInfo(title: "Calendar", sfSymbol: "calendar", kind: .action,
-                                 description: "Your schedule from Exodia, Apple, Google, Outlook and Zoom")
+                                 description: "Your schedule from Whytap, Apple, Google, Outlook and Zoom")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
                                  kind: .navigate(.quitRow),
-                                 description: "Quit Exodia")
+                                 description: "Quit Whytap")
         case .settings:
             return HoverToolInfo(title: "Settings", sfSymbol: "slider.horizontal.3",
                                  kind: .action,

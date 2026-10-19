@@ -20,11 +20,11 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Streaming/BYOK/DeepgramLanguagePolicy.swift
     confirmed_at: 2026-10-19
-  - type: repository
-    reference: Sources/Sidekey/Settings/SettingsModelsView.swift@2991ff7
+  - type: commit
+    reference: a3165080780d57635e8c4da48e9a91719fa082ee:Sources/Sidekey/Settings/SettingsModelsView.swift
     confirmed_at: 2026-10-19
-  - type: repository
-    reference: Sources/Sidekey/Settings/SettingsModelsViewModel.swift@2991ff7
+  - type: commit
+    reference: a3165080780d57635e8c4da48e9a91719fa082ee:Sources/Sidekey/Settings/SettingsModelsViewModel.swift
     confirmed_at: 2026-10-19
   - type: repository
     reference: Sources/Sidekey/Streaming/BYOK/TranscriptionSessionFactory.swift

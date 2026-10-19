@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "BlockNote editor bundle for Exodia Meeting Notes viewer (Stage 8a). Built via scripts/build-blocknote.sh; output committed to Resources/blocknote/.",
+  "description": "BlockNote editor bundle for Whytap Meeting Notes viewer (Stage 8a). Built via scripts/build-blocknote.sh; output committed to Resources/blocknote/.",
   "scripts": {
     "build": "vite build"
   },

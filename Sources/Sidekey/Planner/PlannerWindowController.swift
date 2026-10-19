@@ -18,7 +18,7 @@ final class PlannerWindowController: NSWindowController {
     init(store: PlannerStore, connections: CalendarConnections) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Exodia Planner"
+        window.title = "Whytap Planner"
         window.minSize = NSSize(width: 820, height: 560)
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("ExodiaPlanner")

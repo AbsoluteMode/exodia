@@ -10,7 +10,7 @@
 
 **Spec:** `docs/specs/api-and-models.md` (утверждена Максимом 19.10.2026). Исполнитель читает спеку и план вместе.
 
-**База:** `origin/main` a316508 (после PR #35); worktree `/path/to/exodia`; ветка `claude/keys-and-models` (upstream снят). Номера строк в задачах сняты с 2a85e6d и могли сдвинуться: место в коде ищется по имени символа. Что изменил PR #35 и как план это учитывает — раздел «Сверка с main a316508».
+**База:** `origin/main` a316508 (после PR #35); worktree `${PROJECT_ROOT}`; ветка `claude/keys-and-models` (upstream снят). Номера строк в задачах сняты с 2a85e6d и могли сдвинуться: место в коде ищется по имени символа. Что изменил PR #35 и как план это учитывает — раздел «Сверка с main a316508».
 
 ## Global Constraints
 
@@ -548,7 +548,7 @@ extension ServerEndpoint { var modelsURL: URL? { get } }
 
 - [ ] **Step 1: Failing tests**
   - `test_registry_recommendations_match_the_spec` — все пары выше.
-  - `test_soniox_catalog_maps_modes_and_aliases` — фикстура: `stt-rt-v5` real_time, `stt-rt-v4` real_time с `aliased_model_id: "stt-rt-v5"`, `stt-async-v5` async → uses и `aliasOf`; заголовок `Bearer <example-key>`.
+  - `test_soniox_catalog_maps_modes_and_aliases` — фикстура: `stt-rt-v5` real_time, `stt-rt-v4` real_time с `aliased_model_id: "stt-rt-v5"`, `stt-async-v5` async → uses и `aliasOf`; заголовок `Authorization` с фиктивным значением `${SYNTHETIC_API_KEY}`.
   - `test_deepgram_catalog_merges_rows_and_keeps_nova_3` — две строки `nova-3-general` (streaming и batch) и `nova-3-medical` → ids `["nova-3", "nova-3-general", "nova-3-medical"]`; запрос без `Authorization`.
   - `test_openrouter_catalog_drops_batch_aliases_and_routers_but_keeps_auto` — фикстура `google/gemini-3.8-flash`, `google/gemini-3.8-flash:batch`, `~anthropic/claude-sonnet-latest`, `openrouter/fusion` (`"-1"`), `openrouter/auto` (`"-1"`) → `["google/gemini-3.8-flash", "openrouter/auto"]`; у gemini `contextLength == 1_048_576`, `maxOutputTokens == 65_536`, `supportsTools == true`.
   - `test_server_models_url_rules` — `http://h:8000/v1` → `http://h:8000/v1/models`; `wss://h/v1/realtime` → `https://h/v1/models`; `http://h:11434` → `http://h:11434/v1/models`.
@@ -578,7 +578,7 @@ struct CatalogSnapshot: Codable, Equatable {
 }
 @MainActor final class ModelCatalogStore: ObservableObject {
     static let shared: ModelCatalogStore
-    static var defaultFileURL: URL { get }   // /path/to/exodia<BuildConfig.bundleID>/model-catalog-v1.json
+    static var defaultFileURL: URL { get }   // ${CACHE_DIRECTORY}/model-catalog-v1.json
     init(fileURL: URL = defaultFileURL, fetcher: any ModelCatalogFetching = ModelCatalogFetcher(),
          now: @escaping () -> Date = Date.init, ttl: TimeInterval = 86_400)
     @Published private(set) var snapshots: [String: CatalogSnapshot]   // ключ — ProviderAccount.storageID
@@ -633,10 +633,10 @@ struct ProviderKeyChecker: ProviderKeyChecking { init(session: URLSession = .sha
 
 | Провайдер | Запрос | valid | rejected(invalidKey) | limited | rejected(outOfCredit) |
 |---|---|---|---|---|---|
-| Soniox | `GET api.soniox.com/v1/models`, Bearer <example-key> 2xx | 401 | 403 | 402 |
+| Soniox | `GET api.soniox.com/v1/models`, `Authorization` | 2xx | 401 | 403 | 402 |
 | Deepgram | `GET api.deepgram.com/v1/projects`, `Token` | 2xx | 401 без `INSUFFICIENT_PERMISSIONS` | 401 с ним, 403 | 402 |
 | ElevenLabs | `GET api.elevenlabs.io/v1/user`, `xi-api-key` | 2xx | 401 | 403 (при `allowPaidProbe` — STT-проба, см. ниже) | 402 |
-| OpenRouter | `GET openrouter.ai/api/v1/key`, Bearer <example-key> 2xx | 401 | — | 402, 403 |
+| OpenRouter | `GET openrouter.ai/api/v1/key`, `Authorization` | 2xx | 401 | — | 402, 403 |
 | Сервер | `GET modelsURL`, Bearer, если ключ есть | 2xx, 404 | 401, 403 | — | — |
 
 STT-проба ElevenLabs: 1 с тишины через `ProviderBatchTranscriber(route: { .elevenLabs(apiKey: key, model: "scribe_v2") })`; `httpStatus(401)` → `rejected(.invalidKey)`, иначе `limited`. Нет сети и 5xx → `unreachable` (вызывающий показывает жёлтый и хранит прежний статус). `os_log` — провайдер, статус, мс.
@@ -692,7 +692,7 @@ extension SonioxBYOKAdapter { static func handshakeRequest(apiKey: String) -> UR
 - [ ] **Step 1: Failing tests**
   - `test_realtime_probe_sends_one_second_of_silence_only` — фейковый адаптер собирает `sendAudio`: всего 32 000 байт, все нули.
   - `test_realtime_probe_passes_on_done`, `test_realtime_probe_fails_with_the_provider_reason` (`.error("model_not_available")`), `test_server_probe_timeout_reports_the_dialect` (`timeout: .milliseconds(50)`).
-  - `test_soniox_probe_handshake_carries_the_key_in_the_header` — `SonioxBYOKAdapter.handshakeRequest(apiKey: "<example-key>")`: `Authorization == "Bearer <example-key>"`, URL `wss://stt-rt.soniox.com/transcribe-websocket`.
+  - `test_soniox_probe_handshake_carries_the_key_in_the_header` — `SonioxBYOKAdapter.handshakeRequest(apiKey: syntheticKey)`: заголовок `Authorization` содержит фиктивный ключ `${SYNTHETIC_API_KEY}`, URL `wss://stt-rt.soniox.com/transcribe-websocket`.
   - `test_chat_probe_body` — для OpenRouter `max_tokens == 16` и `provider.require_parameters == true`; у сервера без ключа нет `provider` и нет `Authorization` (Review Focus 5).
   - `test_agent_probe_offers_one_fake_tool` — `tools[0].function.name == "exodia_probe"`.
   - `test_max_tokens_rejection_retries_once_with_512`.
@@ -796,8 +796,8 @@ static func make(workingDirectory: URL, model: String, key: String?, allowAction
 - [ ] **Step 3: Реализовать.**
 - [ ] **Step 4:** → PASS.
 - [ ] **Step 5: Проверка на настоящем OpenCode** (без запроса к модели, ключ фиктивный, XDG-папки во временной папке): JSON конфига из теста →
-  `OPENROUTER_API_KEY="${EXAMPLE_PROVIDER_KEY}" XDG_CONFIG_HOME=… XDG_DATA_HOME=… XDG_STATE_HOME=… XDG_CACHE_HOME=… OPENCODE_DISABLE_AUTOUPDATE=true OPENCODE_CONFIG_CONTENT='<json>' opencode models openrouter --verbose`.
-  Ожидание: у модели `limit.context` и `limit.output` из конфига. 19.10 так проверено на OpenCode 1.17.12 (`/path/to/exodia`): пустой объект → `"context": 0`, заполненный → значения конфига; `anthropic/claude-sonnet-5.5` в его снимке models.dev нет. Если есть копия, которую ставит Exodia (`OpenCodeBinaryLocator`), повторить на ней и записать версию в отчёт.
+  `OPENROUTER_API_KEY=${SYNTHETIC_API_KEY} XDG_CONFIG_HOME=… XDG_DATA_HOME=… XDG_STATE_HOME=… XDG_CACHE_HOME=… OPENCODE_DISABLE_AUTOUPDATE=true OPENCODE_CONFIG_CONTENT='<json>' opencode models openrouter --verbose`.
+  Ожидание: у модели `limit.context` и `limit.output` из конфига. 19.10 так проверено на OpenCode 1.17.12 (`${OPENCODE_EXECUTABLE}`): пустой объект → `"context": 0`, заполненный → значения конфига; `anthropic/claude-sonnet-5.5` в его снимке models.dev нет. Если есть копия, которую ставит Exodia (`OpenCodeBinaryLocator`), повторить на ней и записать версию в отчёт.
 - [ ] **Step 6: Полный прогон части B:** `swift build`, `swift test` → 0 failures, N — в отчёт.
 - [ ] **Step 7: Commit** `feat(agent): declare OpenCode model limits from the OpenRouter catalog`.
 
@@ -1004,7 +1004,7 @@ Agents: убрать поле ключа, Model ID, Find a model, Choose model, 
 - [ ] **Step 2:** фильтр по затронутым классам → FAIL.
 - [ ] **Step 3: Реализовать.**
 - [ ] **Step 4:** → PASS; `swift build`.
-- [ ] **Step 5: Проверка на настоящем OpenCode** (без запроса к модели, ключ фиктивный, XDG во временной папке): `ANTHROPIC_API_KEY="${EXAMPLE_PROVIDER_KEY}" … OPENCODE_CONFIG_CONTENT='<json из теста>' opencode models anthropic --verbose` → у модели `limit` из конфига. Версию OpenCode — в отчёт.
+- [ ] **Step 5: Проверка на настоящем OpenCode** (без запроса к модели, ключ фиктивный, XDG во временной папке): `ANTHROPIC_API_KEY=${SYNTHETIC_API_KEY} … OPENCODE_CONFIG_CONTENT='<json из теста>' opencode models anthropic --verbose` → у модели `limit` из конфига. Версию OpenCode — в отчёт.
 - [ ] **Step 6: Commit** `feat(agent): let the agent run on an Anthropic key`.
 
 ## Приёмка на рабочем приложении (в PR; выполняет интеграция)

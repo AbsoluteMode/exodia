@@ -124,8 +124,13 @@ final class ArtifactBackupEngine {
         let verification = try await stager.verifyArchive(at: url, archiveKey: key,
                                                           scratchRoot: environment.locations.stagingWorkRoot)
         var warnings = verification.warnings
+        if let data = verification.inline[.settings],
+           let payload = try? JSONDecoder.artifactBackup.decode(ArtifactSettingsPayload.self, from: data),
+           payload.schema < 3, payload.values[ConfigBackupRegistry.aiRoutingKey] == nil {
+            warnings.append("This backup predates API & Models. Routes already configured on this Mac are kept; a fresh Mac can migrate the saved legacy provider choices.")
+        }
         if verification.manifest.flavor != BuildConfig.flavor.rawValue {
-            warnings.append("This backup was made by the \(verification.manifest.flavor) build of Exodia.")
+            warnings.append("This backup was made by the \(verification.manifest.flavor) build of Whytap.")
         }
         let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         let summary = ArtifactBackupSummary(id: verification.manifest.id,
@@ -240,14 +245,14 @@ final class ArtifactBackupEngine {
                                        warnings: inout [String]) throws -> CapturedSecrets {
         var payloads: [ArtifactInlinePayload] = []
         if sections.contains(.settings) {
-            let values = try ConfigBackupRegistry.capture(environment.defaults)
+            let values = try ConfigBackupRegistry.capture(environment.defaults, warnings: &warnings)
             let payload = ArtifactSettingsPayload(values: values)
             payloads.append(ArtifactInlinePayload(path: "settings/preferences.json", section: .settings,
                                                  data: try JSONEncoder.artifactBackup.encode(payload)))
         }
         if sections.contains(.credentials) {
             var accounts: [String: String] = [:]
-            for account in ConfigBackupRegistry.credentialAccounts.sorted() {
+            for account in try ConfigBackupRegistry.credentialAccounts(in: environment.defaults).sorted() {
                 // A Keychain read that fails is not an absent key: failing
                 // closed keeps a backup from quietly dropping a provider key.
                 let value: String?
