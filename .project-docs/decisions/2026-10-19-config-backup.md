@@ -50,8 +50,8 @@ The user approved implementation on 2026-10-19 after the joint recommendation.
 The implementation uses a random 256-bit recovery credential saved once outside
 Exodia, a local Keychain cache, GitHub release assets and an alternative folder
 destination. No connector has been enabled for the maintainer and no real user
-data has been exported. Implementation is under review and is not yet in the
-shared working application.
+data has been exported. Source verification and integration follow the shared
+application procedure; the local build receipt records the running version.
 
 The settings/key history is independent of cloud setup. Complete archives use
 bounded-memory authenticated framing, with all private names and the manifest
@@ -232,11 +232,11 @@ It does not implement passkey-based key derivation or continuous synchronization
 
 ## Decision and resolution
 
-Implementation is authorized. Its source, coherent exports, encrypted transport,
-clean-profile recovery and visual checks must pass before integration. It is not
-yet merged, installed or enabled. The maintainer must explicitly connect a
-destination and save the recovery credential in the finished UI; development
-checks use synthetic profiles and stub credentials.
+Implementation is authorized. Source, coherent exports, encrypted transport,
+clean-profile recovery and visual checks are integration gates. The maintainer
+must explicitly connect a destination and save the recovery credential in the
+finished UI; development checks use synthetic profiles and stub credentials.
+Merging or installing the feature does not configure or upload a user backup.
 
 ## Sources
 
