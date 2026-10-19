@@ -1,0 +1,146 @@
+---
+id: community-signing-identity-2026-10-19
+type: decision
+title: Community builds sign with a stable self-signed certificate
+summary: Community builds sign with a committed self-signed code-signing certificate whose private key lives in Doppler, so the designated requirement pins the certificate instead of the cdhash and macOS privacy grants survive updates. Without the certificate the pipeline still signs ad hoc.
+status: confirmed
+tags: [distribution, code-signing, tcc, sparkle, macos, opensource]
+canonical_for: [community-code-signing-identity]
+verified_at: 2026-10-19
+sources:
+  - type: trace
+    reference: On 2026-10-19, after the ad-hoc 2.2.12 update, tccd logged "Failed to match existing code requirement" for Microphone and AudioCapture.
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: scripts/build-dmg.sh
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: scripts/community-signing-bootstrap.sh
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: scripts/release-provenance.py
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: scripts/upload-release.sh
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: scripts/user-release.sh
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: Tests/SidekeyTests/PackagingRebrandTests.swift
+    confirmed_at: 2026-10-19
+  - type: url
+    reference: https://github.com/sparkle-project/Sparkle/tree/2.9.1 (SUUpdateValidator.m, Autoupdate/SUCodeSigningVerifier.m)
+    confirmed_at: 2026-10-19
+related: [../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md]
+---
+
+# Stable code-signing identity for community builds
+
+## Context
+
+Community builds were signed ad hoc (2026-10-17 community updates). An ad-hoc
+signature has no certificate, so its designated requirement is the build's
+cdhash, which changes with every build.
+
+macOS stores the designated requirement of the app a privacy grant was given
+to and evaluates it on every access. After an update the new build no longer
+satisfies the stored cdhash. On 2026-10-19, after the 2.2.12 update, tccd
+logged "Failed to match existing code requirement" for Microphone and
+AudioCapture (System Audio Recording): every update made users grant both
+permissions again.
+
+A Developer ID certificate would give a stable requirement, but the project
+does not depend on Apple Developer membership.
+
+## Decision
+
+- The project has one community signing identity: a self-signed code-signing
+  certificate (CN "Exodia Community Code Signing", no organization, RSA-3072,
+  code-signing extended key usage, 30 years). The public certificate is
+  committed as `Resources/community-signing-certificate.pem`. The private key
+  lives in Doppler `sidekey/dev` as `EXODIA_COMMUNITY_SIGNING_KEY`, next to the
+  Sparkle key. `scripts/community-signing-bootstrap.sh` creates both once and
+  refuses to replace an existing certificate or secret.
+- With the certificate committed, community `build-dmg.sh` signs the nested
+  code, the app and the DMG with it. The key comes from the environment or
+  `EXODIA_COMMUNITY_SIGNING_KEY_FILE`, is checked against the certificate
+  before compiling, and is used through a temporary keychain that is deleted
+  when the build ends; the user's keychain search list is not changed. The
+  build verifies the designated requirement
+  `identifier "<bundle ID>" and certificate leaf = H"<certificate SHA-1>"` on
+  the app and on the copy in the DMG.
+- Without the certificate the pipeline signs ad hoc as before, so a fork
+  needs no key to build.
+- The DMG manifest (schema 2) seals `code_signing`: `adhoc`, `developer-id`
+  or `certificate:<SHA-1>`. Upload derives the expected value from the
+  committed certificate alone, so an archive signed ad hoc or with another
+  certificate cannot be published. `EXODIA_COMMUNITY_SIGNING=adhoc` and
+  `EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE` are for local builds; a
+  publishing `user-release.sh` run refuses them.
+- Nothing else changes for users: no notarization, Gatekeeper warnings on the
+  first download stay, users never trust the certificate, and Sparkle's EdDSA
+  archive verification and code-signature checks stay.
+- Replace the certificate only for a leaked key.
+
+## Why
+
+- A designated requirement of the form `certificate leaf = H"…"` compares the
+  certificate's hash; it does not require a trusted anchor. A self-signed
+  certificate satisfies it without the user trusting it or changing any
+  setting, and every build signed with the same key satisfies the same
+  requirement, so the stored privacy grants keep matching.
+- No Apple Developer membership or cost, in line with the community
+  distribution decisions.
+- Sparkle 2.9.1 accepts both the first switch from ad hoc and later updates:
+  - With `SUVerifyUpdateBeforeExtraction`, which community builds set (the
+    installed 2.2.12 has it), the archive is
+    prevalidated with EdDSA; then the basic policy counts both ad-hoc and
+    certificate signatures as code-signed (`SUUpdateValidator.m:191`), and
+    the new app only has to have a valid signature, without a requirement
+    (`:196`).
+  - Without prevalidation, EdDSA passes, the new app does not satisfy the old
+    ad-hoc requirement (`:347`), a valid signature is then required (`:366`),
+    and the update is accepted on EdDSA (`:375`).
+  - `validateConnection` sets an XPC requirement only when the host has a
+    team ID (`Autoupdate/SUCodeSigningVerifier.m:448`). A certificate without
+    an organization yields no team ID, as an ad-hoc signature does.
+- No team ID also means no library-validation constraint matters:
+  `Resources/Sidekey.entitlements` already disables library validation.
+- Key custody matches the Sparkle key. Code signed with the key inherits the
+  users' grants, so the key is a secret of the same class; anyone who holds
+  the Sparkle key can already ship arbitrary updates.
+- The DR pins the SHA-1, so a new certificate is a new identity and every
+  install has to grant again; 30 years means expiry never forces that.
+
+## What we tested
+
+- `PackagingRebrandTests`: 15 tests, 0 failures (12.796 s). Fixtures cover
+  the key check before compiling (missing or mismatched key stops the build,
+  a matching key reaches the compiler), the preflight report, the refusal of
+  local overrides in a publishing run, and upload refusing a manifest whose
+  code-signing value does not match the committed certificate.
+- Bootstrap in key-file mode: key file 0600, certificate 0644, printed
+  requirements; it refuses to run when a certificate already exists.
+- Candidate build A: commit `8c0e6b6`, build 90001, universal, signed with a
+  throwaway certificate (SHA-1 `4ef2cb47…`): requirement verified on the app
+  and in the DMG, manifest sealed `certificate:4ef2cb47…`.
+
+## Rejected
+
+- Developer ID: needs Apple Developer membership, which the community
+  distribution avoids.
+- Keep ad hoc and document re-granting: every update asks for Microphone and
+  System Audio Recording again.
+- Ask users to trust the certificate: changes system trust settings, and the
+  requirement does not need trust.
+- A key per build, release or machine: each one is a new identity, the same
+  as ad hoc.
+
+## Supersedes
+
+Refines the 2026-10-17 community-updates decision: community builds sign with
+the committed certificate, ad hoc only without it. The rest of that decision
+stays current.
+
+2026-10-19, PR pending.
