@@ -51,11 +51,7 @@ final class MeetingBYOKProcessorTests: XCTestCase {
             prefs: prefs,
             keyStore: keyStore,
             vocab: VocabularyCache(defaults: defaults),
-            llmRouteResolver: DirectLLMRouteResolver(
-                prefs: prefs,
-                llmKeyStore: StaticLLMKeyStore(key: "or-key"),
-                customLLMKeyStore: StaticLLMKeyStore(key: nil)
-            ),
+            llmRouteResolver: notesResolver(defaults: defaults),
             openRouterClient: llm,
             sonioxSession: session
         )
@@ -102,11 +98,7 @@ final class MeetingBYOKProcessorTests: XCTestCase {
             prefs: prefs,
             keyStore: keyStore,
             vocab: VocabularyCache(defaults: defaults),
-            llmRouteResolver: DirectLLMRouteResolver(
-                prefs: prefs,
-                llmKeyStore: StaticLLMKeyStore(key: "or-key"),
-                customLLMKeyStore: StaticLLMKeyStore(key: nil)
-            ),
+            llmRouteResolver: notesResolver(defaults: defaults),
             openRouterClient: SpyLLMClient(),
             sonioxSession: session
         )
@@ -134,6 +126,16 @@ final class MeetingBYOKProcessorTests: XCTestCase {
         await store.close()
     }
 
+    /// Meeting notes routed to OpenRouter with a stored key, all in memory.
+    private func notesResolver(defaults: UserDefaults) -> DirectLLMRouteResolver {
+        let routing = AIRoutingStore(defaults: defaults)
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "openrouter/auto"), for: .meetingNotes)
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        try? keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        return DirectLLMRouteResolver(feature: .meetingNotes, routing: routing, keys: keys)
+    }
+
     private static func wav(samples: [UInt8]) -> Data {
         var data = Data("RIFF".utf8)
         func append(_ value: UInt32) {
@@ -158,25 +160,5 @@ private final class SpyLLMClient: OpenRouterLLMClienting {
     func complete(endpoint: OpenAICompatibleLLMEndpoint, model: String, messages: [OpenRouterChatMessage]) async throws -> String {
         completeCalls += 1
         return "<!-- protocol:v1 -->\n# Unexpected note"
-    }
-}
-
-private final class StaticLLMKeyStore: OpenRouterLLMKeyStoring {
-    var key: String?
-
-    init(key: String?) {
-        self.key = key
-    }
-
-    func save(key: String) throws {
-        self.key = key
-    }
-
-    func read() throws -> String? {
-        key
-    }
-
-    func delete() throws {
-        key = nil
     }
 }

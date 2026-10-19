@@ -1,22 +1,36 @@
 import XCTest
 @testable import Sidekey
 
+@MainActor
 final class PostProcessorOpenRouterTests: XCTestCase {
-    @MainActor
-    func testOpenRouterBYOKProcessesDirectlyWithoutBackendProcessCall() async throws {
-        let defaults = UserDefaults(suiteName: "post.openrouter.\(UUID().uuidString)")!
-        let prefs = SelfKeyPreferences(defaults: defaults)
-        prefs.llmLevel = .yourKey
-        prefs.openRouterModel = "openrouter/auto"
+    private struct Env {
+        let routing: AIRoutingStore
+        let keys: ProviderKeyStore
+        func processor(_ client: any OpenRouterLLMClienting) -> PostProcessor {
+            PostProcessor(
+                llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: routing, keys: keys),
+                openRouterClient: client
+            )
+        }
+    }
 
-        let keyStore = FakeOpenRouterKeyStore(key: "or-key")
-        let openRouter = FakeOpenRouterClient(completion: "cleaned by openrouter")
-
-        let processor = PostProcessor(
-            prefs: prefs,
-            llmKeyStore: keyStore,
-            openRouterClient: openRouter,
+    private func makeEnv() -> Env {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let box = InMemoryTokenStore.Box()
+        return Env(
+            routing: AIRoutingStore(defaults: defaults),
+            keys: ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
         )
+    }
+
+    func testOpenRouterBYOKProcessesDirectlyWithoutBackendProcessCall() async throws {
+        let env = makeEnv()
+        try env.keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "openrouter/auto"), for: .dropSmartCleanup)
+        let openRouter = FakeOpenRouterClient(completion: "cleaned by openrouter")
+        let processor = env.processor(openRouter)
 
         let result = try await processor.process(
             "raw text",
@@ -44,47 +58,27 @@ final class PostProcessorOpenRouterTests: XCTestCase {
         XCTAssertTrue(userMessage.contains("Transcription mode: smart"))
     }
 
-    @MainActor
-    func testOpenRouterBYOKMissingKeyDoesNotFallbackToBackend() async throws {
-        let defaults = UserDefaults(suiteName: "post.openrouter.\(UUID().uuidString)")!
-        let prefs = SelfKeyPreferences(defaults: defaults)
-        prefs.llmLevel = .yourKey
-        prefs.openRouterModel = "openrouter/auto"
-
-
-        let processor = PostProcessor(
-            prefs: prefs,
-            llmKeyStore: FakeOpenRouterKeyStore(key: nil),
-            openRouterClient: FakeOpenRouterClient(completion: "unused"),
-        )
+    func test_openrouter_route_without_key_throws_missing_key() async throws {
+        let env = makeEnv()
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "openrouter/auto"), for: .dropSmartCleanup)
+        let openRouter = FakeOpenRouterClient(completion: "unused")
 
         do {
-            _ = try await processor.process("raw", targetApp: nil)
+            _ = try await env.processor(openRouter).process("raw", targetApp: nil)
             XCTFail("Expected missing key")
         } catch let error as OpenRouterLLMError {
             XCTAssertEqual(error, .missingKey)
         }
-
+        XCTAssertNil(openRouter.lastEndpoint)
     }
 
-    @MainActor
-    func testCustomOpenAICompatibleProcessesDirectlyWithoutBackendOrRequiredKey() async throws {
-        let defaults = UserDefaults(suiteName: "post.custom-llm.\(UUID().uuidString)")!
-        let prefs = SelfKeyPreferences(defaults: defaults)
-        prefs.llmLevel = .custom
-        prefs.customLLMBaseURL = "http://localhost:8000/v1"
-        prefs.customLLMModel = "llama/local"
-
+    func testServerRouteProcessesDirectlyWithoutRequiredKey() async throws {
+        let env = makeEnv()
+        let server = env.routing.addServer(name: "Local", baseURL: "http://localhost:8000/v1")
+        env.routing.setRoute(FeatureRoute(account: .server(server.id), model: "llama/local"), for: .dropSmartCleanup)
         let openRouter = FakeOpenRouterClient(completion: "cleaned by custom llm")
 
-        let processor = PostProcessor(
-            prefs: prefs,
-            llmKeyStore: FakeOpenRouterKeyStore(key: nil),
-            customLLMKeyStore: FakeOpenRouterKeyStore(key: nil),
-            openRouterClient: openRouter,
-        )
-
-        let result = try await processor.process("raw text", targetApp: "Notes")
+        let result = try await env.processor(openRouter).process("raw text", targetApp: "Notes")
 
         XCTAssertEqual(result, "cleaned by custom llm")
         XCTAssertEqual(openRouter.lastAPIKey, nil)
@@ -94,30 +88,67 @@ final class PostProcessorOpenRouterTests: XCTestCase {
         XCTAssertEqual(openRouter.lastModel, "llama/local")
     }
 
-    @MainActor
-    func testCustomOpenAICompatibleMissingBaseURLDoesNotFallbackToBackend() async throws {
-        let defaults = UserDefaults(suiteName: "post.custom-llm.\(UUID().uuidString)")!
-        let prefs = SelfKeyPreferences(defaults: defaults)
-        prefs.llmLevel = .custom
-        prefs.customLLMModel = "llama/local"
-
-
+    func testServerWithoutBaseURLDoesNotFallbackToBackend() async throws {
+        let env = makeEnv()
+        let server = env.routing.addServer(name: "Local", baseURL: "")
+        env.routing.setRoute(FeatureRoute(account: .server(server.id), model: "llama/local"), for: .dropSmartCleanup)
         let openRouter = FakeOpenRouterClient(completion: "unused")
-        let processor = PostProcessor(
-            prefs: prefs,
-            llmKeyStore: FakeOpenRouterKeyStore(key: nil),
-            customLLMKeyStore: FakeOpenRouterKeyStore(key: nil),
-            openRouterClient: openRouter,
-        )
 
         do {
-            _ = try await processor.process("raw", targetApp: nil)
+            _ = try await env.processor(openRouter).process("raw", targetApp: nil)
             XCTFail("Expected missing base URL")
         } catch let error as OpenRouterLLMError {
             XCTAssertEqual(error, .missingBaseURL)
         }
-
         XCTAssertNil(openRouter.lastEndpoint)
+    }
+
+    func test_cleanup_without_route_throws_not_configured() async throws {
+        let env = makeEnv()
+        // Another feature's route and a stored OpenRouter key do not choose
+        // where cleanup goes.
+        try env.keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "notes"), for: .meetingNotes)
+        let openRouter = FakeOpenRouterClient(completion: "unused")
+
+        do {
+            _ = try await env.processor(openRouter).process("raw", targetApp: nil)
+            XCTFail("Expected notConfigured")
+        } catch let error as OpenRouterLLMError {
+            XCTAssertEqual(error, .notConfigured)
+        }
+        XCTAssertNil(openRouter.lastEndpoint)
+    }
+
+    func test_cleanup_uses_only_the_cleanup_route() async throws {
+        let env = makeEnv()
+        try env.keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        let server = env.routing.addServer(name: "Local", baseURL: "http://llm.local:8080/v1")
+        env.routing.setRoute(FeatureRoute(account: .server(server.id), model: "qwen"), for: .dropSmartCleanup)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "notes-model"), for: .meetingNotes)
+
+        StubURLProtocol.reset()
+        addTeardownBlock { StubURLProtocol.reset() }
+        StubURLProtocol.handler = { _ in
+            let body: [String: Any] = ["choices": [["message": ["role": "assistant", "content": "cleaned"]]]]
+            return (200, [:], try JSONSerialization.data(withJSONObject: body))
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: config)
+        addTeardownBlock { session.invalidateAndCancel() }
+
+        let result = try await env.processor(OpenRouterLLMClient(session: session, profile: .dictation))
+            .process("raw", targetApp: nil)
+
+        XCTAssertEqual(result, "cleaned")
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, 1)
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "http://llm.local:8080/v1/chat/completions")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        let body = try XCTUnwrap(StubURLProtocol.capturedBodies.first)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["model"] as? String, "qwen")
     }
 }
 
@@ -146,25 +177,5 @@ private final class FakeOpenRouterClient: OpenRouterLLMClienting {
         lastModel = model
         lastMessages = messages
         return completion
-    }
-}
-
-private final class FakeOpenRouterKeyStore: OpenRouterLLMKeyStoring {
-    var key: String?
-
-    init(key: String? = nil) {
-        self.key = key
-    }
-
-    func save(key: String) throws {
-        self.key = key
-    }
-
-    func read() throws -> String? {
-        key
-    }
-
-    func delete() throws {
-        key = nil
     }
 }

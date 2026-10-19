@@ -6,30 +6,23 @@ import Foundation
 /// `/chat/completions` endpoint the user owns (OpenRouter or a custom base
 /// URL). Nothing here talks to an Exodia server.
 struct PostProcessor {
-    let prefs: SelfKeyPreferences
-    let llmKeyStore: any OpenRouterLLMKeyStoring
-    let customLLMKeyStore: any OpenRouterLLMKeyStoring
+    let llmRoute: DirectLLMRouteResolver
     let openRouterClient: any OpenRouterLLMClienting
 
+    /// Cleanup runs on the Drop Smart cleanup route, read at every call.
     @MainActor
     init() {
         self.init(
-            prefs: .shared,
-            llmKeyStore: OpenRouterLLMKeyStore(),
-            customLLMKeyStore: CustomLLMKeyStore(),
+            llmRoute: .live(.dropSmartCleanup),
             openRouterClient: OpenRouterLLMClient(profile: .dictation)
         )
     }
 
     init(
-        prefs: SelfKeyPreferences,
-        llmKeyStore: any OpenRouterLLMKeyStoring = OpenRouterLLMKeyStore(),
-        customLLMKeyStore: any OpenRouterLLMKeyStoring = CustomLLMKeyStore(),
+        llmRoute: DirectLLMRouteResolver,
         openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(profile: .dictation)
     ) {
-        self.prefs = prefs
-        self.llmKeyStore = llmKeyStore
-        self.customLLMKeyStore = customLLMKeyStore
+        self.llmRoute = llmRoute
         self.openRouterClient = openRouterClient
     }
 
@@ -45,12 +38,7 @@ struct PostProcessor {
     /// Retry on failure; Fast bypasses this processor entirely.
     func process(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil) async throws -> String {
         _ = screenshot
-        let resolver = DirectLLMRouteResolver(
-            prefs: prefs,
-            llmKeyStore: llmKeyStore,
-            customLLMKeyStore: customLLMKeyStore
-        )
-        guard let route = try await resolver.routeIfEnabled() else {
+        guard let route = try await llmRoute.routeIfEnabled() else {
             throw OpenRouterLLMError.notConfigured
         }
         let messages = Self.openRouterMessages(

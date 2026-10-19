@@ -11,80 +11,55 @@ extension DirectLLMRoute: Equatable {
     }
 }
 
-/// Resolves the user-selected LLM route for cleanup/workflows. OpenRouter and
-/// custom OpenAI-compatible endpoints return a concrete `/chat/completions`
-/// target; without a chosen level there is no route.
+/// Resolves the route of one LLM feature (Drop Smart cleanup, Meeting notes) to
+/// a concrete `/chat/completions` target. Each feature reads only its own
+/// route in `AIRoutingStore`, so another feature's provider, model or key never
+/// leaks in; without a route there is nothing to run on.
 struct DirectLLMRouteResolver {
-    let prefs: SelfKeyPreferences
-    let llmKeyStore: any OpenRouterLLMKeyStoring
-    let customLLMKeyStore: any OpenRouterLLMKeyStoring
+    let feature: AIFeature
+    private let routing: AIRoutingStore
+    private let keys: ProviderKeyStore
 
-    init(
-        prefs: SelfKeyPreferences,
-        llmKeyStore: any OpenRouterLLMKeyStoring = OpenRouterLLMKeyStore(),
-        customLLMKeyStore: any OpenRouterLLMKeyStoring = CustomLLMKeyStore()
-    ) {
-        self.prefs = prefs
-        self.llmKeyStore = llmKeyStore
-        self.customLLMKeyStore = customLLMKeyStore
+    init(feature: AIFeature, routing: AIRoutingStore, keys: ProviderKeyStore = ProviderKeyStore()) {
+        self.feature = feature
+        self.routing = routing
+        self.keys = keys
     }
 
     @MainActor
-    static func live(
-        llmKeyStore: any OpenRouterLLMKeyStoring = OpenRouterLLMKeyStore(),
-        customLLMKeyStore: any OpenRouterLLMKeyStoring = CustomLLMKeyStore()
-    ) -> DirectLLMRouteResolver {
-        DirectLLMRouteResolver(
-            prefs: .shared,
-            llmKeyStore: llmKeyStore,
-            customLLMKeyStore: customLLMKeyStore
-        )
+    static func live(_ feature: AIFeature) -> DirectLLMRouteResolver {
+        DirectLLMRouteResolver(feature: feature, routing: .shared)
     }
 
-    /// The direct route (OpenRouter / custom), or nil when no LLM level is
-    /// chosen. Throws (`OpenRouterLLMError`) when the chosen route lacks its
-    /// key / base URL. A stored OpenRouter key alone (Settings -> Agents
-    /// shares it) never chooses a route.
+    /// The feature's route, or nil when it has none (never set, a removed
+    /// server, or a speech-to-text account that cannot serve an LLM). Read on
+    /// the main actor at every call, so a change applies to the next one.
+    /// Throws (`OpenRouterLLMError`) when the route lacks its key / base URL:
+    /// a missing or unreadable key is never a reason to use another provider.
     func routeIfEnabled() async throws -> DirectLLMRoute? {
-        let settings = await resolvedSettings()
-        guard let level = settings.level else { return nil }
-        return try directRoute(for: level, settings: settings)
-    }
-
-    private struct ResolvedSettings {
-        let level: LLMIsolationLevel?
-        let openRouterModel: String
-        let customBaseURL: String?
-        let customModel: String
-        let defaultOpenRouterModel: String
-        let defaultCustomLLMModel: String
-    }
-
-    private func resolvedSettings() async -> ResolvedSettings {
-        await MainActor.run {
-            ResolvedSettings(
-                level: prefs.llmLevel,
-                openRouterModel: prefs.openRouterModel,
-                customBaseURL: prefs.customLLMBaseURL,
-                customModel: prefs.customLLMModel,
-                defaultOpenRouterModel: SelfKeyPreferences.defaultOpenRouterModel,
-                defaultCustomLLMModel: SelfKeyPreferences.defaultCustomLLMModel
-            )
+        let snapshot = await MainActor.run { () -> Snapshot? in
+            guard let route = routing.route(for: feature) else { return nil }
+            let server: ServerEndpoint?
+            if case .server(let id) = route.account {
+                server = routing.server(id)
+            } else {
+                server = nil
+            }
+            return Snapshot(route: route, server: server, keyAccount: route.account.keychainAccount(in: routing))
         }
-    }
+        guard let snapshot else { return nil }
+        let model = snapshot.route.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { return nil }
 
-    private func directRoute(for level: LLMIsolationLevel, settings: ResolvedSettings) throws -> DirectLLMRoute {
-        switch level {
-        case .yourKey:
-            let key = try llmKeyStore.read()?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let key, !key.isEmpty else { throw OpenRouterLLMError.missingKey }
-            let model = settings.openRouterModel.trimmingCharacters(in: .whitespacesAndNewlines)
-            return DirectLLMRoute(
-                endpoint: .openRouter(apiKey: key),
-                model: model.isEmpty ? settings.defaultOpenRouterModel : model
-            )
-        case .custom:
-            let rawBaseURL = settings.customBaseURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        switch snapshot.route.account {
+        case .openRouter:
+            guard let account = snapshot.keyAccount, case .key(let key) = keys.lookup(account: account) else {
+                throw OpenRouterLLMError.missingKey
+            }
+            return DirectLLMRoute(endpoint: .openRouter(apiKey: key), model: model)
+        case .server:
+            guard let server = snapshot.server else { return nil }
+            let rawBaseURL = server.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !rawBaseURL.isEmpty else { throw OpenRouterLLMError.missingBaseURL }
             guard let baseURL = URL(string: rawBaseURL),
                   let scheme = baseURL.scheme?.lowercased(),
@@ -93,13 +68,23 @@ struct DirectLLMRouteResolver {
             else {
                 throw OpenRouterLLMError.invalidBaseURL(rawBaseURL)
             }
-            let rawKey = try customLLMKeyStore.read()?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = rawKey?.isEmpty == false ? rawKey : nil
-            let model = settings.customModel.trimmingCharacters(in: .whitespacesAndNewlines)
-            return DirectLLMRoute(
-                endpoint: .custom(baseURL: baseURL, apiKey: key),
-                model: model.isEmpty ? settings.defaultCustomLLMModel : model
-            )
+            // The key is optional, but one that exists and cannot be read is
+            // not "no key": the server may need it.
+            let key: String?
+            switch keys.lookup(account: server.keyAccount) {
+            case .key(let stored): key = stored
+            case .absent: key = nil
+            case .unreadable: throw OpenRouterLLMError.missingKey
+            }
+            return DirectLLMRoute(endpoint: .custom(baseURL: baseURL, apiKey: key), model: model)
+        case .soniox, .deepgram, .elevenLabs:
+            return nil
         }
+    }
+
+    private struct Snapshot {
+        let route: FeatureRoute
+        let server: ServerEndpoint?
+        let keyAccount: String?
     }
 }

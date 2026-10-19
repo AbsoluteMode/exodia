@@ -58,7 +58,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
             prefs: .shared,
             keyStore: BYOKKeyStore(),
             vocab: .shared,
-            llmRouteResolver: .live(),
+            llmRouteResolver: .live(.meetingNotes),
             openRouterClient: OpenRouterLLMClient(),
             fileManager: .default
         )

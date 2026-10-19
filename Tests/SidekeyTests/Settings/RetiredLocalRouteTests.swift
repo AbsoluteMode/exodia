@@ -93,12 +93,15 @@ final class RetiredLocalRouteTests: XCTestCase {
         // choose where Drop cleanup or meeting notes go.
         for defaults in [retiredLocalDefaults(), makeDefaults()] {
             let prefs = SelfKeyPreferences(defaults: defaults, isAppleSilicon: true)
-            let llmKeys = StubLLMKeyStore(key: "or-key")
+            let routing = AIRoutingStore(defaults: makeDefaults())
+            let box = InMemoryTokenStore.Box()
+            let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+            try keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+            AIRoutingMigration(prefs: prefs, defaults: defaults, routing: routing, keys: keys).run()
+
             let client = SpyLLMClient()
             let processor = PostProcessor(
-                prefs: prefs,
-                llmKeyStore: llmKeys,
-                customLLMKeyStore: StubLLMKeyStore(key: nil),
+                llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: routing, keys: keys),
                 openRouterClient: client
             )
             do {
@@ -109,12 +112,9 @@ final class RetiredLocalRouteTests: XCTestCase {
             }
             XCTAssertEqual(client.completeCalls, 0)
 
-            let resolver = DirectLLMRouteResolver(
-                prefs: prefs,
-                llmKeyStore: llmKeys,
-                customLLMKeyStore: StubLLMKeyStore(key: nil)
-            )
-            let meetingRoute = try await resolver.routeIfEnabled()
+            let meetingRoute = try await DirectLLMRouteResolver(
+                feature: .meetingNotes, routing: routing, keys: keys
+            ).routeIfEnabled()
             XCTAssertNil(meetingRoute)
         }
     }
@@ -129,9 +129,8 @@ final class RetiredLocalRouteTests: XCTestCase {
             keyStore: keys,
             vocab: VocabularyCache(defaults: makeDefaults()),
             llmRouteResolver: DirectLLMRouteResolver(
-                prefs: prefs,
-                llmKeyStore: StubLLMKeyStore(key: "or-key"),
-                customLLMKeyStore: StubLLMKeyStore(key: nil)
+                feature: .meetingNotes,
+                routing: AIRoutingStore(defaults: makeDefaults())
             )
         )
         XCTAssertFalse(processor.shouldProcessDirectly())
@@ -145,14 +144,6 @@ final class RetiredLocalRouteTests: XCTestCase {
         XCTAssertTrue(try factory.make(feature: .dropFast, language: "en") is DirectProviderStreamingSession)
         XCTAssertEqual(adapters.count, 1)
     }
-}
-
-private final class StubLLMKeyStore: OpenRouterLLMKeyStoring {
-    var key: String?
-    init(key: String?) { self.key = key }
-    func save(key: String) throws { self.key = key }
-    func read() throws -> String? { key }
-    func delete() throws { key = nil }
 }
 
 private final class SpyLLMClient: OpenRouterLLMClienting {
