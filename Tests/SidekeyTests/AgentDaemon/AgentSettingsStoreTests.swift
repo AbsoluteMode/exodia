@@ -131,4 +131,42 @@ final class AgentSettingsStoreTests: XCTestCase {
         let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
         XCTAssertEqual(s.selectedOpenCodeModel, "anthropic/claude-sonnet-5.5")
     }
+    // MARK: - OpenCode model limits from the OpenRouter catalog
+
+    private func catalogs(_ models: [CatalogModel]) throws -> ModelCatalogStore {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("catalog-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: file) }
+        let stored = [ProviderAccount.openRouter.storageID: CatalogSnapshot(models: models, fetchedAt: Date())]
+        try JSONEncoder().encode(stored).write(to: file)
+        return ModelCatalogStore(fileURL: file)
+    }
+
+    private func agentOnOpenRouter(_ name: String, model: String, catalog: [CatalogModel]) throws -> AgentSettingsStore {
+        let r = routing(name)
+        r.setRoute(FeatureRoute(account: .openRouter, model: model), for: .agent)
+        return AgentSettingsStore(defaults: freshDefaults(name + ".settings"), codexConfig: .init(), routing: r,
+                                  catalogs: try catalogs(catalog))
+    }
+
+    func test_agent_options_carry_the_catalog_spec() throws {
+        let s = try agentOnOpenRouter(#function, model: "anthropic/claude-sonnet-5.5", catalog: [
+            CatalogModel(id: "anthropic/claude-sonnet-5.5", contextLength: 1_000_000, maxOutputTokens: 128_000,
+                         supportsTools: true, supportsReasoning: true)])
+        XCTAssertEqual(s.options(for: .opencode).openCodeModelSpec,
+                       OpenCodeModelSpec(toolCall: true, reasoning: true, contextLimit: 1_000_000, outputLimit: 128_000))
+    }
+
+    func test_spec_falls_back_for_fields_the_catalog_omits() throws {
+        let s = try agentOnOpenRouter(#function, model: "vendor/model", catalog: [
+            CatalogModel(id: "vendor/model", contextLength: 200_000)])
+        XCTAssertEqual(s.options(for: .opencode).openCodeModelSpec,
+                       OpenCodeModelSpec(toolCall: true, reasoning: false, contextLimit: 200_000, outputLimit: 16_384))
+    }
+
+    func test_no_spec_without_context_length_or_catalog_entry() throws {
+        let noContext = try agentOnOpenRouter(#function + "1", model: "vendor/model", catalog: [CatalogModel(id: "vendor/model")])
+        XCTAssertNil(noContext.options(for: .opencode).openCodeModelSpec)
+        let missing = try agentOnOpenRouter(#function + "2", model: "vendor/model", catalog: [])
+        XCTAssertNil(missing.options(for: .opencode).openCodeModelSpec)
+    }
 }

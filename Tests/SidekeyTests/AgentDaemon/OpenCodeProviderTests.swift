@@ -144,6 +144,23 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertEqual((json["permission"] as? [String: String])?["*"], "allow")
     }
 
+    func testRunPassesTheCatalogSpecIntoTheEnvironment() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var capturedEnvironment: [String: String] = [:]
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { "test-key" },
+            runStreaming: { _, _, _, env, _, _, onExit in
+                capturedEnvironment = env; onExit(0)
+                return CodexProcessHandle.noop
+            })
+        let spec = OpenCodeModelSpec(toolCall: true, reasoning: false, contextLimit: 300_000, outputLimit: 8_000)
+        for await _ in provider.run(prompt: "hi", resumeSessionID: nil,
+            options: AgentRunOptions(model: "vendor/model", workingDirectory: directory, openCodeModelSpec: spec)) {}
+        let config = try XCTUnwrap(capturedEnvironment["OPENCODE_CONFIG_CONTENT"])
+        XCTAssertTrue(config.contains("300000"))
+        XCTAssertTrue(config.contains("8000"))
+    }
+
     func testReadOnlyIsOptionalAndNeverTheDefault() throws {
         XCTAssertTrue(AgentRunOptions().allowActions)
         let directory = try temporaryDirectory()

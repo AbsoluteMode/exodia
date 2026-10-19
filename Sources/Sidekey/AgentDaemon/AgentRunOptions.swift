@@ -1,5 +1,14 @@
 import Foundation
 
+/// What OpenCode needs to know about a model its own snapshot lacks, taken from
+/// the OpenRouter catalog. Without it OpenCode treats the context as 0.
+struct OpenCodeModelSpec: Equatable, Sendable {
+    let toolCall: Bool
+    let reasoning: Bool
+    let contextLimit: Int
+    let outputLimit: Int
+}
+
 /// Per-turn agent overrides chosen in Settings. A `nil` field means "send no
 /// flag" (the CLI uses its own default). Codex controls are validated against
 /// its model registry; absent capabilities leave controls to Codex.
@@ -12,10 +21,12 @@ struct AgentRunOptions: Equatable {
     var workingDirectory: URL?
     var sessionScope: String?
     var allowActions: Bool
+    var openCodeModelSpec: OpenCodeModelSpec?
 
     init(model: String? = nil, effort: String? = nil, serviceTier: String? = nil,
          projectContext: AgentProjectContext? = nil, workingDirectory: URL? = nil,
-         sessionScope: String? = nil, allowActions: Bool = true) {
+         sessionScope: String? = nil, allowActions: Bool = true,
+         openCodeModelSpec: OpenCodeModelSpec? = nil) {
         self.model = model
         self.effort = effort
         self.serviceTier = serviceTier
@@ -23,6 +34,7 @@ struct AgentRunOptions: Equatable {
         self.workingDirectory = workingDirectory
         self.sessionScope = sessionScope
         self.allowActions = allowActions
+        self.openCodeModelSpec = openCodeModelSpec
     }
 }
 

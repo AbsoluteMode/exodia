@@ -42,11 +42,15 @@ final class AgentSettingsStore: ObservableObject {
     /// `nil` means the shared store, looked up when the model is read.
     private let injectedRouting: AIRoutingStore?
     private var routing: AIRoutingStore { injectedRouting ?? .shared }
+    private let injectedCatalogs: ModelCatalogStore?
+    private var catalogs: ModelCatalogStore { injectedCatalogs ?? .shared }
 
-    init(defaults: UserDefaults = .standard, codexConfig: CodexConfigSnapshot = CodexConfigReader().read(), routing: AIRoutingStore? = nil) {
+    init(defaults: UserDefaults = .standard, codexConfig: CodexConfigSnapshot = CodexConfigReader().read(), routing: AIRoutingStore? = nil,
+         catalogs: ModelCatalogStore? = nil) {
         self.codexConfig = codexConfig
         self.defaults = defaults
         self.injectedRouting = routing
+        self.injectedCatalogs = catalogs
         self.openCodeAllowActions = defaults.object(forKey: Keys.openCodeAllowActions) as? Bool ?? true
         // Property observers do not fire on initial assignment in init, so this
         // load does not write back.
@@ -80,7 +84,8 @@ final class AgentSettingsStore: ObservableObject {
                 serviceTier: selectedCodexOption?.resolvedTier(codexServiceTier ?? codexConfig.serviceTier)
             )
         case .opencode:
-            return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions)
+            return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions,
+                                   openCodeModelSpec: selectedOpenCodeModelSpec)
         }
     }
 
@@ -92,6 +97,20 @@ final class AgentSettingsStore: ObservableObject {
         let value = OpenCodeEnvironment.normalizeModel(route.model)
         guard !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
         return value
+    }
+
+    /// The selected model's limits from the OpenRouter catalog snapshot; `nil`
+    /// when the catalog does not give a context length.
+    var selectedOpenCodeModelSpec: OpenCodeModelSpec? {
+        guard let id = selectedOpenCodeModel,
+              let entry = catalogs.snapshot(for: .openRouter)?.models.first(where: {
+                  OpenCodeEnvironment.normalizeModel($0.id) == id
+              }),
+              let context = entry.contextLength else { return nil }
+        return OpenCodeModelSpec(toolCall: entry.supportsTools ?? true,
+                                 reasoning: entry.supportsReasoning ?? false,
+                                 contextLimit: context,
+                                 outputLimit: entry.maxOutputTokens ?? 16_384)
     }
 
     func refreshOpenRouterCatalog(
