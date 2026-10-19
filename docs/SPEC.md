@@ -255,6 +255,13 @@ Qwen и локальной диаризацией. Сохранённый выб
 провайдера сам: Drop открывает Settings → Models, пока пользователь не выберет
 провайдера.
 
+**Batch-распознавание** — только запасной путь: деградировавший поток, Retry
+после «Couldn't deliver», fallback рекордера и batch-голос агента. Весь take
+уходит тому же выбранному провайдеру с его ключом из Keychain: Soniox file API
+(`stt-async-v5`), Deepgram pre-recorded, ElevenLabs speech-to-text, self-hosted
+`/v1/audio/transcriptions` на хосте realtime-endpoint. Без выбранного
+провайдера или его ключа batch недоступен; другой провайдер не подставляется.
+
 **Screenshot gating (не всегда):**
 - Включаем если: deictic words ("вот это", "там", "этот тикет") / high-context app (Slack, Linear, Notion, GitHub, Cursor) / low confidence по терминам / "screen context always" в настройках
 - Выключаем если: privacy-denylisted app / sensitive surface на экране / простая диктовка длинного текста

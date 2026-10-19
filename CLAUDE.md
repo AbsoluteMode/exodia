@@ -59,12 +59,20 @@ Voice flow (Drop / dictation):
             then rung3 raw partial, then rung4 .deliveryFailed ("Couldn't
             deliver" + Retry). .deliveryFailed is escapable: a new take
             discards it. Empty batch = silence, not offline. Production binds
-            `UnavailableBatchTranscriber` until provider batch APIs are wired:
-            the batch rung is skipped, and Retry, the recorder fallback and
-            agent batch voice have no recognizer. WHY:
+            `ProviderBatchTranscriber` (Streaming/BYOK/) for the batch rung,
+            Retry, the recorder fallback and agent batch voice: the whole
+            take goes to the provider selected in Settings -> Models with
+            that provider's own Keychain key (Soniox file API, Deepgram
+            pre-recorded, ElevenLabs speech-to-text, self-hosted
+            /v1/audio/transcriptions over https), with the realtime
+            request's language choices. No Your key level, no key for the
+            selected provider, or a self-hosted URL without a host =
+            unavailable, never another provider. Soniox polling stops after
+            30s; its file, then its job, are deleted after every outcome.
+            WHY:
             docs/decisions/2026-07-26-empty-batch-is-silence-not-offline.md,
             docs/decisions/2026-06-24-deliveryfailed-escapable-and-retry-robust.md,
-            .project-docs/decisions/2026-10-18-remove-local-models.md
+            .project-docs/decisions/2026-10-18-provider-batch-transcription.md
        Transcript join (BYOKTranscriptJoin): Soniox tokens carry their own
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
