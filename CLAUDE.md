@@ -545,6 +545,29 @@ Targets: library `Sidekey` (all app code) + thin executable `SidekeyApp`
 (product `Sidekey`, `SidekeyAppMain.run()`) and `SidekeyTests`. Flavors: `prod` (default) and `beta` (`-DBETA`: separate
 bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 
+## User artifact backup
+
+Settings → Backup keeps encrypted local settings/key history independently of
+cloud setup. Block restore or source-default reset applies before AppDelegate
+on the next normal launch. Optional complete `.exodiabackup` archives use a
+streaming authenticated format and one recovery code saved outside Exodia.
+GitHub release assets receive ciphertext; a checked completion index is published
+last. Folder copies report verified local writes, not verified cloud upload.
+
+ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
+instances, whose export methods freeze database/sidecar generations. Restore
+validates into a parked transaction and applies before any stores or jobs open,
+with durable rollback of files, preferences and provider keys. Committed
+transactions resume finalization after a crash; replaced generations and their
+encrypted before-state keys are retained. Never discard an unfinished rollback
+because Keychain retries are exhausted. The startup recovery UI accepts the
+saved code without opening stores. Case merges into the target's own vault/key. Imported
+jobs and Notify/Monitor configurations stay inert pending review. No Exodia
+backend, automatic GitHub Actions, silent source changes or forced restart.
+
+Guide: `docs/backup.md`. WHY:
+`.project-docs/decisions/2026-10-19-config-backup.md`.
+
 ## Permissions
 
 - **Accessibility** gates `NSEvent.addGlobalMonitorForEvents`
@@ -672,11 +695,14 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    a key for, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
    Check now, its official GitHub release download, `google.com` opened in the
-   browser, and the Sparkle feed on GitHub Releases.
+   browser, the Sparkle feed on GitHub Releases, and optional encrypted backups
+   to the user's own GitHub repository or selected sync folder.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
    Whytap hostname or removed cloud symbol under `Sources/`.
-2. **Keys and content never leave through logs.** BYOK keys live only in the
-   Keychain (`BuildConfig.keychainService`). `os_log` never receives
+2. **Keys and content never leave through logs.** Active BYOK keys live in
+   the Keychain (`BuildConfig.keychainService`). Optional recovery archives
+   include them only inside locally authenticated encryption under an
+   independently saved recovery credential. `os_log` never receives
    transcripts, prompts, replies or keys (`LocalPathLoggingInvariantTests`).
    Key contents read by the hotkey tap or the Brightness keys tap are never
    logged or persisted.

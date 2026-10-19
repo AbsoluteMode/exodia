@@ -20,8 +20,11 @@ is a verifiable claim rather than a slogan.
 - API keys you enter in Settings → API & Models ("Your key") are stored in the
   macOS Keychain under the app's own service name (`com.rootwise.sidekey`).
   Key values are never shown again after saving and are never written to
-  UserDefaults, files or logs. UserDefaults holds only which provider and model
-  each feature uses, plus the names and addresses of your own servers.
+  UserDefaults, plaintext files or logs. UserDefaults holds only which provider
+  and model each feature uses, plus the names and addresses of your own servers.
+  Encrypted local history and optional recovery archives can also contain the
+  Soniox, Deepgram, ElevenLabs, OpenRouter and legacy custom-endpoint keys,
+  protected by the independent backup key. No plaintext key export file is created.
 - Cached model catalogs (a file in the app's Caches folder) and the results of
   key and model checks (provider, model, status, time; never a key, audio or
   text) stay on the Mac.
@@ -64,6 +67,7 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 | Key checks | the provider of the key: a free request (model list, key or account endpoint) that sends only the key. A restricted ElevenLabs key may need a minimal paid speech request, made only when you save the key or press Check now | when you save a key, press Check now, or open API & Models and the last result is a day old |
 | Model catalogs | the public model lists of OpenRouter and Deepgram (no key), and the model lists of Soniox and Anthropic (your key); a custom server's `/models` list. Only the request itself is sent, no audio or text | when you open API & Models and the cache is a day old, save a key, or press Refresh models |
 | Model probes | the provider of the feature you are choosing a model for: 1 second of digital silence for speech models, the prompt "Reply with OK." (plus one fictitious tool for agent models) for text models. Never your audio, transcripts, prompts or notes. Costs a fraction of a cent | only when you pick a model that is not in the built-in list, or press Check now |
+| Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Exodia | after you explicitly configure and enable Backup |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
@@ -92,3 +96,19 @@ The hold-Space detector reads keyboard events only to recognise the trigger
 key and Escape. The Brightness keys tap receives only system-defined events,
 such as the brightness, volume and media keys, and acts only on the
 brightness keys. Key contents are never logged or stored.
+
+## Encrypted recovery copies
+
+Backup is optional. Exodia encrypts the portable workspace before copying or
+uploading it, including provider keys and independently recoverable Case data.
+The recovery code is saved once outside Exodia; a local Keychain copy allows
+routine backups without repeatedly requesting it. GitHub authentication is not
+the decryption key. The code is excluded from Exodia's clipboard history when
+copied through its recovery-code button, marked private for other clipboard
+applications, and cleared after two minutes if the clipboard has not changed.
+Other applications decide how they handle private clipboard markers.
+
+Restore verifies a whole archive before applying selected groups on the next
+normal launch. Imported jobs and executable configurations do not run on their
+own. External clipboard file originals, SSH keys and credentials managed by
+other applications are not silently copied. [Coverage and recovery](backup.md).

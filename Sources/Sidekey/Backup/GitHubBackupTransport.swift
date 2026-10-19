@@ -1,0 +1,401 @@
+import CryptoKit
+import Foundation
+
+/// GitHub receives only an already encrypted archive. Authentication and the
+/// recovery credential are separate; no secret enters a URL or process argv.
+actor GitHubBackupTransport {
+    static let repository = "Exodia-Backup"
+    static let partBytes = 16 * 1024 * 1024
+    // GitHub permits 1,000 assets per release. Reserve one for the index;
+    // grow individual parts for large archives while bounding memory.
+    static let maximumParts = 999
+    static let maximumPartBytes = 128 * 1024 * 1024
+    private static let marker = "exodia.encrypted-backup.v1"
+    private let session: URLSession
+    private let token: String
+    private let owner: String
+
+    enum Failure: Error, LocalizedError, Equatable {
+        case authentication, permission, publicRepository, unavailable, invalidResponse, incomplete, noCLI, noLogin
+        var errorDescription: String? {
+            switch self {
+            case .authentication: return "GitHub could not sign you in. Reconnect with a valid token or GitHub CLI login."
+            case .permission: return "GitHub needs access to Exodia-Backup. Give the token Contents read and write access; creating the private repository also requires repository creation permission."
+            case .publicRepository: return "Exodia-Backup is public. Your backups are encrypted, but automatic uploads are paused. Make the repository private, then reconnect."
+            case .unavailable: return "GitHub is unavailable or its request limit was reached. Your local copy is safe; Exodia will retry."
+            case .invalidResponse: return "GitHub returned an unexpected response. Reconnect and try again."
+            case .incomplete: return "This GitHub backup is incomplete or damaged. Choose another version."
+            case .noCLI: return "GitHub CLI was not found. Connect with an access token, or install GitHub CLI and run gh auth login."
+            case .noLogin: return "Sign in with gh auth login, or connect with an access token."
+            }
+        }
+    }
+
+    struct Repository: Decodable {
+        let name: String
+        let isPrivate: Bool
+        let permissions: Permissions?
+        struct Permissions: Decodable { let push: Bool? }
+        enum CodingKeys: String, CodingKey { case name, permissions; case isPrivate = "private" }
+    }
+    private struct User: Decodable { let login: String }
+    private struct Asset: Decodable { let id: Int; let name: String; let size: Int64; let state: String }
+    private struct Release: Decodable {
+        let id: Int
+        let draft: Bool
+        let body: String?
+        let tag_name: String
+        let created_at: String
+        let assets: [Asset]
+    }
+    private struct Part: Codable, Equatable { let name: String; let size: Int; let digest: String }
+    private struct Index: Codable, Equatable { let version: Int; let snapshotID: UUID; let byteCount: Int64; let parts: [Part] }
+
+    init(token: String, owner: String, session: URLSession = GitHubBackupNetwork.session) throws {
+        guard Self.validOwner(owner), Self.validToken(token) else { throw Failure.authentication }
+        self.token = token; self.owner = owner; self.session = session
+    }
+
+    /// Creating a destination is invoked only by an explicit Connect action.
+    static func connect(token: String, session: URLSession = GitHubBackupNetwork.session) async throws -> GitHubBackupTransport {
+        guard validToken(token) else { throw Failure.authentication }
+        var request = URLRequest(url: URL(string: "https://api.github.com/user")!)
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2026-03-10", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.timeoutInterval = 30
+        let (data, response) = try await session.data(for: request)
+        try check(response)
+        guard let user = try? JSONDecoder().decode(User.self, from: data) else { throw Failure.invalidResponse }
+        let transport = try GitHubBackupTransport(token: token, owner: user.login, session: session)
+        try await transport.ensureRepository()
+        return transport
+    }
+
+    var destinationName: String { owner + "/" + Self.repository }
+
+    func ensureRepository() async throws {
+        let (data, response) = try await session.data(for: request(path: repoPath))
+        if (response as? HTTPURLResponse)?.statusCode == 404 {
+            _ = try await json(path: "/user/repos", method: "POST", body: [
+                "name": Self.repository, "private": true, "auto_init": true,
+                "description": "Encrypted Exodia backups. Keep your recovery code in a separate password manager."
+            ])
+            try await requirePrivateRepository()
+        } else {
+            try Self.check(response)
+            try validateRepository(data)
+        }
+    }
+
+    private func requirePrivateRepository() async throws {
+        try validateRepository(try await json(path: repoPath))
+    }
+    private func validateRepository(_ data: Data) throws {
+        guard let repository = try? JSONDecoder().decode(Repository.self, from: data),
+              repository.name.lowercased() == Self.repository.lowercased() else { throw Failure.invalidResponse }
+        guard repository.isPrivate else { throw Failure.publicRepository }
+        if repository.permissions?.push == false { throw Failure.permission }
+    }
+
+    /// Upload immutable ciphertext parts into a draft. The authenticated index
+    /// is written last; only then is the release published as a complete version.
+    func upload(file: URL, summary: ArtifactBackupSummary, key: Data, resumeReleaseID: Int? = nil,
+                onDraft: (@Sendable (Int) async throws -> Void)? = nil) async throws -> Int {
+        try await requirePrivateRepository()
+        guard key.count == 32 else { throw ConfigBackupError.keyUnavailable }
+        let bytes = try Self.fileSize(file)
+        let uploadPartSize = try Self.partSize(for: bytes)
+        let tag = "exodia-backup-" + summary.id.uuidString.lowercased()
+        let release: Release
+        if let resumeReleaseID {
+            guard resumeReleaseID > 0 else { throw Failure.incomplete }
+            let data = try await json(path: repoPath + "/releases/\(resumeReleaseID)")
+            guard let existing = try? JSONDecoder().decode(Release.self, from: data) else { throw Failure.invalidResponse }
+            release = existing
+        } else {
+            let lookup = try await session.data(for: request(path: repoPath + "/releases/tags/" + tag))
+            if (lookup.1 as? HTTPURLResponse)?.statusCode == 404 {
+                // The tag endpoint returns published releases only. Drafts
+                // are discovered through the authenticated release listing.
+                if let existing = try await findDraft(tag: tag) { release = existing }
+                else {
+                    let data = try await json(path: repoPath + "/releases", method: "POST", body: [
+                        "tag_name": tag, "name": "Encrypted backup", "body": Self.marker,
+                        "draft": true, "prerelease": true, "make_latest": "false"
+                    ])
+                    guard let created = try? JSONDecoder().decode(Release.self, from: data) else { throw Failure.invalidResponse }
+                    release = created
+                }
+            } else {
+                try Self.check(lookup.1)
+                guard let existing = try? JSONDecoder().decode(Release.self, from: lookup.0) else { throw Failure.invalidResponse }
+                release = existing
+            }
+        }
+        guard release.tag_name == tag, release.body == Self.marker else { throw Failure.invalidResponse }
+        if let onDraft { try await onDraft(release.id) }
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        var parts: [Part] = []
+        while let data = try handle.read(upToCount: uploadPartSize), !data.isEmpty {
+            try Task.checkCancellation()
+            guard parts.count < Self.maximumParts else { throw ConfigBackupError.tooLarge }
+            let name = String(format: "part-%05d.bin", parts.count)
+            let asset = try await reusableAsset(data, name: name, release: release)
+            let digest = Self.digest(data)
+            guard asset.size == data.count, asset.state == "uploaded" else { throw Failure.incomplete }
+            // A successful upload response is not proof of durable bytes. Read
+            // each part back before publishing a completed snapshot.
+            let returned = try await downloadAsset(asset, maximumBytes: Self.maximumPartBytes)
+            guard returned.count == data.count, Self.digest(returned) == digest else { throw Failure.incomplete }
+            parts.append(Part(name: name, size: data.count, digest: digest))
+        }
+        guard parts.reduce(Int64(0), { $0 + Int64($1.size) }) == bytes else { throw Failure.incomplete }
+        let index = Index(version: 1, snapshotID: summary.id, byteCount: bytes, parts: parts)
+        let sealed = try AES.GCM.seal(JSONEncoder().encode(index), using: SymmetricKey(data: key),
+                                      authenticating: Data(Self.marker.utf8))
+        guard let combined = sealed.combined else { throw Failure.incomplete }
+        if let existing = release.assets.first(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) {
+            let data = try await downloadAsset(existing, maximumBytes: 2_000_000)
+            let opened: Data
+            do {
+                opened = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: SymmetricKey(data: key),
+                                          authenticating: Data(Self.marker.utf8))
+            } catch { throw Failure.incomplete }
+            guard try JSONDecoder().decode(Index.self, from: opened) == index else { throw Failure.incomplete }
+        } else {
+            guard release.draft else { throw Failure.incomplete }
+            if let starter = release.assets.first(where: { $0.name == "complete.exodia-index" }) {
+                _ = try await json(path: repoPath + "/releases/assets/\(starter.id)", method: "DELETE")
+            }
+            let indexAsset = try await uploadAsset(combined, name: "complete.exodia-index", releaseID: release.id)
+            guard try await downloadAsset(indexAsset, maximumBytes: 2_000_000) == combined else { throw Failure.incomplete }
+        }
+        try await requirePrivateRepository()
+        if release.draft {
+            _ = try await json(path: repoPath + "/releases/\(release.id)", method: "PATCH", body: ["draft": false])
+        }
+        return release.id
+    }
+
+    func versions() async throws -> [BackupVersion] {
+        var versions: [BackupVersion] = []
+        // Bounded pagination; older versions remain on GitHub and are never
+        // automatically deleted by a second Mac.
+        for page in 1...20 {
+            let data = try await json(path: repoPath + "/releases?per_page=100&page=\(page)")
+            guard let releases = try? JSONDecoder().decode([Release].self, from: data) else { throw Failure.invalidResponse }
+            for release in releases where !release.draft && release.body == Self.marker {
+                guard let uuid = Self.snapshotID(release.tag_name),
+                      release.assets.contains(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) else { continue }
+                versions.append(BackupVersion(id: uuid.uuidString, createdAt: Self.date(release.created_at),
+                    size: release.assets.filter { $0.name.hasPrefix("part-") }.reduce(0, { $0 + $1.size }),
+                    localURL: nil, remoteID: release.id, location: .github))
+            }
+            if releases.count < 100 { break }
+        }
+        return versions.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func version(id: UUID) async throws -> BackupVersion {
+        let data = try await json(path: repoPath + "/releases/tags/exodia-backup-" + id.uuidString.lowercased())
+        guard let release = try? JSONDecoder().decode(Release.self, from: data), !release.draft,
+              release.body == Self.marker, Self.snapshotID(release.tag_name) == id,
+              release.assets.contains(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) else { throw Failure.incomplete }
+        return BackupVersion(id: id.uuidString, createdAt: Self.date(release.created_at),
+            size: release.assets.filter { $0.name.hasPrefix("part-") }.reduce(0, { $0 + $1.size }), remoteID: release.id, location: .github)
+    }
+
+    func download(version: BackupVersion, to file: URL, key: Data) async throws {
+        guard let id = version.remoteID, id > 0, key.count == 32 else { throw Failure.incomplete }
+        let releaseData = try await json(path: repoPath + "/releases/\(id)")
+        guard let release = try? JSONDecoder().decode(Release.self, from: releaseData), !release.draft,
+              release.body == Self.marker, Self.snapshotID(release.tag_name)?.uuidString == version.id,
+              let marker = release.assets.first(where: { $0.name == "complete.exodia-index" }) else { throw Failure.incomplete }
+        let data = try await downloadAsset(marker, maximumBytes: 2_000_000)
+        let plaintext: Data
+        do {
+            plaintext = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: SymmetricKey(data: key),
+                                         authenticating: Data(Self.marker.utf8))
+        } catch { throw ConfigBackupError.cannotUnlock }
+        guard let index = try? JSONDecoder().decode(Index.self, from: plaintext), index.version == 1,
+              index.snapshotID.uuidString == version.id, !index.parts.isEmpty,
+              index.parts.count <= Self.maximumParts, index.byteCount > 0,
+              index.parts.allSatisfy({ $0.size > 0 && $0.size <= Self.maximumPartBytes && $0.digest.utf8.count == 64 }),
+              index.parts.reduce(Int64(0), { $0 + Int64($1.size) }) == index.byteCount,
+              Set(index.parts.map(\.name)).count == index.parts.count else { throw Failure.incomplete }
+        try ConfigBackupFiles.ensurePrivateDirectory(file.deletingLastPathComponent())
+        let temporary = file.deletingLastPathComponent().appendingPathComponent(".download-" + UUID().uuidString)
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+            throw ConfigBackupError.saveFailed
+        }
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let handle = try FileHandle(forWritingTo: temporary)
+        defer { try? handle.close() }
+        for (offset, part) in index.parts.enumerated() {
+            try Task.checkCancellation()
+            guard part.name == String(format: "part-%05d.bin", offset), part.size > 0, part.size <= Self.maximumPartBytes,
+                  let asset = release.assets.first(where: { $0.name == part.name }), asset.size == part.size else { throw Failure.incomplete }
+            let bytes = try await downloadAsset(asset, maximumBytes: Self.maximumPartBytes)
+            guard bytes.count == part.size, Self.digest(bytes) == part.digest else { throw Failure.incomplete }
+            try handle.write(contentsOf: bytes)
+        }
+        try handle.synchronize(); try handle.close()
+        guard rename(temporary.path, file.path) == 0 else { throw ConfigBackupError.saveFailed }
+    }
+
+    // MARK: HTTP. Only GitHub-owned fixed API origins receive the token.
+    private var repoPath: String { "/repos/" + owner + "/" + Self.repository }
+    private func request(path: String, method: String = "GET", upload: Bool = false) -> URLRequest {
+        var request = URLRequest(url: URL(string: (upload ? "https://uploads.github.com" : "https://api.github.com") + path)!)
+        request.httpMethod = method; request.timeoutInterval = 120
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2026-03-10", forHTTPHeaderField: "X-GitHub-Api-Version")
+        return request
+    }
+    private func json(path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
+        var req = request(path: path, method: method)
+        if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body); req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        let (data, response) = try await session.data(for: req)
+        try Self.check(response)
+        guard data.count <= 8_000_000 else { throw Failure.invalidResponse }
+        return data
+    }
+    private func reusableAsset(_ data: Data, name: String, release: Release) async throws -> Asset {
+        if let existing = release.assets.first(where: { $0.name == name }) {
+            if existing.state == "uploaded", existing.size == data.count,
+               try await downloadAsset(existing, maximumBytes: Self.maximumPartBytes) == data { return existing }
+            // GitHub documents empty starter assets after an upstream failure.
+            // Only this unfinished draft's reserved asset may be replaced.
+            guard release.draft, !release.assets.contains(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) else { throw Failure.incomplete }
+            _ = try await json(path: repoPath + "/releases/assets/\(existing.id)", method: "DELETE")
+        } else { guard release.draft else { throw Failure.incomplete } }
+        return try await uploadAsset(data, name: name, releaseID: release.id)
+    }
+    private func findDraft(tag: String) async throws -> Release? {
+        for page in 1...20 {
+            let data = try await json(path: repoPath + "/releases?per_page=100&page=\(page)")
+            guard let releases = try? JSONDecoder().decode([Release].self, from: data) else { throw Failure.invalidResponse }
+            if let draft = releases.first(where: { $0.tag_name == tag && $0.draft && $0.body == Self.marker }) { return draft }
+            if releases.count < 100 { return nil }
+        }
+        return nil
+    }
+    static func partSize(for bytes: Int64) throws -> Int {
+        guard bytes > 0, bytes <= Int64(maximumPartBytes) * Int64(maximumParts) else { throw ConfigBackupError.tooLarge }
+        let required = (bytes + Int64(maximumParts - 1)) / Int64(maximumParts)
+        let mib: Int64 = 1_048_576
+        return max(partBytes, Int(((required + mib - 1) / mib) * mib))
+    }
+    private func uploadAsset(_ data: Data, name: String, releaseID: Int) async throws -> Asset {
+        var req = request(path: repoPath + "/releases/\(releaseID)/assets?name=" + name, method: "POST", upload: true)
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        let (responseData, response) = try await session.upload(for: req, from: data)
+        try Self.check(response)
+        guard let asset = try? JSONDecoder().decode(Asset.self, from: responseData), asset.name == name else { throw Failure.invalidResponse }
+        return asset
+    }
+    private func downloadAsset(_ asset: Asset, maximumBytes: Int) async throws -> Data {
+        guard asset.id > 0, asset.state == "uploaded", asset.size > 0, asset.size <= maximumBytes else { throw Failure.incomplete }
+        var req = request(path: repoPath + "/releases/assets/\(asset.id)")
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        let (url, response) = try await session.download(for: req)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Self.check(response)
+        guard try Self.fileSize(url) == asset.size else { throw Failure.incomplete }
+        return try Data(contentsOf: url)
+    }
+    private static func check(_ response: URLResponse) throws {
+        guard let response = response as? HTTPURLResponse else { throw Failure.invalidResponse }
+        switch response.statusCode {
+        case 200..<300: return
+        case 401: throw Failure.authentication
+        case 403, 404: throw Failure.permission
+        case 429, 500...599: throw Failure.unavailable
+        default: throw Failure.invalidResponse
+        }
+    }
+    private static func validOwner(_ value: String) -> Bool {
+        value.range(of: "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$", options: .regularExpression) != nil
+    }
+    private static func validToken(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 2048 && value.unicodeScalars.allSatisfy { (33...126).contains($0.value) }
+    }
+    private static func fileSize(_ url: URL) throws -> Int64 {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true, let count = values.fileSize else { throw ConfigBackupError.unsafePath }
+        return Int64(count)
+    }
+    private static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    private static func snapshotID(_ tag: String) -> UUID? {
+        let prefix = "exodia-backup-"
+        guard tag.hasPrefix(prefix) else { return nil }
+        return UUID(uuidString: String(tag.dropFirst(prefix.count)))
+    }
+    private static func date(_ string: String) -> Date { ISO8601DateFormatter().date(from: string) ?? .distantPast }
+}
+
+/// Uses an explicit existing GitHub CLI login only when the user chooses it.
+/// The credential is returned over a pipe and later stored in the local Keychain.
+enum BackupGitHubLogin {
+    static func existingToken() async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let paths = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"]
+                    guard let path = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+                        throw GitHubBackupTransport.Failure.noCLI
+                    }
+                    let process = Process(); let output = Pipe()
+                    process.executableURL = URL(fileURLWithPath: path)
+                    process.arguments = ["auth", "token", "--hostname", "github.com"]
+                    process.environment = ["HOME": FileManager.default.homeDirectoryForCurrentUser.path,
+                        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", "GH_PROMPT_DISABLED": "1"]
+                    process.standardOutput = output; process.standardError = FileHandle.nullDevice
+                    try process.run()
+                    let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: timeout)
+                    let data = output.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit(); timeout.cancel()
+                    guard process.terminationStatus == 0, data.count <= 4096,
+                          let token = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty else {
+                        throw GitHubBackupTransport.Failure.noLogin
+                    }
+                    continuation.resume(returning: token)
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
+}
+
+/// Tokens are never cached, sent to a redirected object-storage host or
+/// downgraded to HTTP. GitHub serves private release assets through signed
+/// redirects; those downloads do not need the API credential.
+enum GitHubBackupNetwork {
+    private static let delegate = RedirectPolicy()
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil; configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    }()
+    static func redirectedRequest(_ request: URLRequest, from response: HTTPURLResponse) -> URLRequest? {
+        guard let url = request.url, url.scheme == "https", let host = url.host?.lowercased(),
+              host == "api.github.com" || host == "uploads.github.com" || host.hasSuffix(".githubusercontent.com") else { return nil }
+        var safe = request
+        if host != response.url?.host?.lowercased() {
+            safe.setValue(nil, forHTTPHeaderField: "Authorization")
+            safe.setValue(nil, forHTTPHeaderField: "Cookie")
+        }
+        return safe
+    }
+    private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+            completionHandler(GitHubBackupNetwork.redirectedRequest(request, from: response))
+        }
+    }
+}

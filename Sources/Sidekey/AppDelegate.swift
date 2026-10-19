@@ -455,6 +455,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installWorkspacePowerObservers()
 
         startReady()
+        ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore)
+        BackupViewModel.shared.start()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -474,6 +476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        BackupViewModel.shared.stop()
         // Remove the Extra overlay; Extra never changes the backlight.
         ScreenBrightnessController.shared.shutdown()
         BrightnessKeys.shared.stop()
