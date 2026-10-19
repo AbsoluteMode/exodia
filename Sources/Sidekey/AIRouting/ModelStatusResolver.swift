@@ -30,9 +30,8 @@ struct PickerOption: Equatable {
 struct PickerSection: Equatable {
     let account: ProviderAccount
     let title: String
+    /// Models the feature cannot use are left out, except the selected one.
     let options: [PickerOption]
-    /// `"Not supported yet: a, b, c +N (reason)"`, or `nil` when every model fits.
-    let notSupportedSummary: String?
     /// The latest catalog refresh failed: the list is the cached one.
     let refreshFailed: Bool
 }
@@ -156,13 +155,9 @@ struct ModelStatusResolver {
             if let selected, selected.account == account { add(selected.model) }
 
             var options: [PickerOption] = []
-            var unsupported: [(model: String, reason: String)] = []
             for id in ids {
                 let state = verdict(model: id, account: account, for: feature)
-                if case .notSupported(let reason) = state, !isSelected(id) {
-                    unsupported.append((id, reason))
-                    continue
-                }
+                if case .notSupported = state, !isSelected(id) { continue }
                 options.append(PickerOption(
                     model: id, state: state, isSelected: isSelected(id),
                     hint: hint(model: id, account: account, feature: feature, use: use)
@@ -172,7 +167,6 @@ struct ModelStatusResolver {
                 account: account,
                 title: title(of: account),
                 options: options,
-                notSupportedSummary: Self.summary(of: unsupported),
                 refreshFailed: snapshot?.lastRefreshFailed ?? false
             )
         }
@@ -325,25 +319,6 @@ struct ModelStatusResolver {
         case .dropFast, .dropSmart, .meetingNotes, .agent, .agentVoice, .voiceSearch:
             return nil
         }
-    }
-
-    private static let namesPerReason = 3
-
-    private static func summary(of unsupported: [(model: String, reason: String)]) -> String? {
-        guard !unsupported.isEmpty else { return nil }
-        var reasons: [String] = []
-        var byReason: [String: [String]] = [:]
-        for item in unsupported {
-            if byReason[item.reason] == nil { reasons.append(item.reason) }
-            byReason[item.reason, default: []].append(item.model)
-        }
-        let groups = reasons.map { reason -> String in
-            let names = byReason[reason] ?? []
-            var text = names.prefix(namesPerReason).joined(separator: ", ")
-            if names.count > namesPerReason { text += " +\(names.count - namesPerReason)" }
-            return "\(text) (\(reason))"
-        }
-        return "Not supported yet: " + groups.joined(separator: "; ")
     }
 
     private static func phrase(for kind: AIProviderKind) -> String {

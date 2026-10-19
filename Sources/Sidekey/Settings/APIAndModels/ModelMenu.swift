@@ -61,18 +61,14 @@ struct ModelMenu: View {
                     }
                 }
                 .disabled(isUnsupported(option))
-                if let hint = option.hint {
-                    Text(hint)
-                }
-            }
-            if let summary = section.notSupportedSummary {
-                Text(summary)
             }
         }
     }
 
+    /// Just the model ID; a short hint ("with speakers") stays on the same line.
+    /// A new model is still checked when picked, without saying so in every item.
     private func optionTitle(_ option: PickerOption) -> String {
-        option.state == .new ? "\(option.model)  New · checked when picked" : option.model
+        option.hint.map { "\(option.model) — \($0)" } ?? option.model
     }
 
     private func isUnsupported(_ option: PickerOption) -> Bool {

@@ -30,13 +30,17 @@ struct OpenAICompatibleLLMEndpoint: Equatable {
     let apiKey: String?
     let requiresAPIKey: Bool
     let sendsOpenRouterHeaders: Bool
+    /// OpenRouter endpoint tag the request must use, with no fallback; `nil`
+    /// lets OpenRouter pick.
+    var pinnedProvider: String? = nil
 
-    static func openRouter(apiKey: String?) -> OpenAICompatibleLLMEndpoint {
+    static func openRouter(apiKey: String?, provider: String? = nil) -> OpenAICompatibleLLMEndpoint {
         OpenAICompatibleLLMEndpoint(
             baseURL: URL(string: "https://openrouter.ai/api/v1")!,
             apiKey: apiKey,
             requiresAPIKey: true,
-            sendsOpenRouterHeaders: true
+            sendsOpenRouterHeaders: true,
+            pinnedProvider: provider
         )
     }
 
@@ -196,12 +200,7 @@ struct OpenRouterLLMClient: OpenRouterLLMClienting {
         }
         try Task.checkCancellation()
         let discoveryMs = Int((ProcessInfo.processInfo.systemUptime - discoveryStarted) * 1000)
-        struct ProviderPreferences: Encodable {
-            let sort: String
-        }
-        // WHY: docs/decisions/2026-09-07-smart-latency.md
-        let provider: ProviderPreferences? = profile == .dictation && endpoint.sendsOpenRouterHeaders
-            ? ProviderPreferences(sort: "throughput") : nil
+        let provider = providerPreferences(for: endpoint)
         struct ChatRequest: Encodable {
             let model: String
             let messages: [OpenRouterChatMessage]
@@ -267,6 +266,24 @@ struct OpenRouterLLMClient: OpenRouterLLMClienting {
             requiresAPIKey: true,
             sendsOpenRouterHeaders: true
         ), model: model, messages: messages)
+    }
+
+    struct ProviderPreferences: Encodable, Equatable {
+        var sort: String? = nil
+        var order: [String]? = nil
+        var allow_fallbacks: Bool? = nil
+    }
+
+    /// A pinned provider is used alone: a choice the user made is not quietly
+    /// swapped for another provider. Auto keeps OpenRouter's routing, sorted by
+    /// throughput for dictation.
+    func providerPreferences(for endpoint: OpenAICompatibleLLMEndpoint) -> ProviderPreferences? {
+        guard endpoint.sendsOpenRouterHeaders else { return nil }
+        if let pinned = endpoint.pinnedProvider {
+            return ProviderPreferences(order: [pinned], allow_fallbacks: false)
+        }
+        // WHY: docs/decisions/2026-09-07-smart-latency.md
+        return profile == .dictation ? ProviderPreferences(sort: "throughput") : nil
     }
 
     private static func safeDiagnosticID(_ value: String?) -> String {

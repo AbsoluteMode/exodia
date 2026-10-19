@@ -5,7 +5,7 @@ import XCTest
 final class APIAndModelsViewTests: XCTestCase {
     private let files = [
         "APIAndModelsView.swift", "ModelMenu.swift", "KeyChipPopover.swift",
-        "AddKeySheet.swift", "AssignModelsSheet.swift",
+        "AddKeySheet.swift", "AssignModelsSheet.swift", "ProviderMenu.swift",
     ]
 
     func test_tab_uses_mac_components_and_verbatim_strings() throws {
@@ -31,7 +31,7 @@ final class APIAndModelsViewTests: XCTestCase {
         XCTAssertFalse(s.contains("TextField(\"Key"))
     }
 
-    func test_tab_has_a_single_model_menu_and_no_provider_dropdown() throws {
+    func test_tab_has_a_single_model_menu_and_no_account_dropdown() throws {
         let view = try source("APIAndModelsView.swift")
         XCTAssertEqual(view.components(separatedBy: "ModelMenu(").count - 1, 1)
         XCTAssertTrue(view.contains("ScrollViewReader"))

@@ -146,8 +146,8 @@ final class ModelStatusResolverTests: XCTestCase {
         )
         let section = try XCTUnwrap(env.resolver.sections(for: .agent).first)
 
-        XCTAssertEqual(section.notSupportedSummary, "Not supported yet: x/no-tools (no tool support)")
-        XCTAssertEqual(section.options.map(\.model), ["anthropic/claude-sonnet-5.5", "x/with-tools"])
+        XCTAssertEqual(section.options.map(\.model), ["anthropic/claude-sonnet-5.5", "x/with-tools"],
+                       "a model without tools is left out of the agent picker")
         XCTAssertEqual(section.options.map(\.state), [.verified, .new])
     }
 
@@ -171,9 +171,6 @@ final class ModelStatusResolverTests: XCTestCase {
 
         XCTAssertEqual(section.options.map(\.model), ["stt-async-v5"])
         XCTAssertEqual(section.options.first?.hint, "with speakers")
-        let summary = try XCTUnwrap(section.notSupportedSummary)
-        XCTAssertTrue(summary.contains("stt-rt-v5"), summary)
-        XCTAssertTrue(summary.contains("(real-time only)"), summary)
         XCTAssertFalse(section.options.contains { $0.model == "stt-rt-v4" })
     }
 
@@ -256,13 +253,5 @@ final class ModelStatusResolverTests: XCTestCase {
         let options = try XCTUnwrap(env.resolver.sections(for: .dropSmartCleanup).first).options
         XCTAssertEqual(options.first { $0.model == "x/thinker" }?.hint, "always reasons, slower")
         XCTAssertNil(options.first { $0.model == "google/gemini-3.8-flash" }?.hint)
-    }
-
-    func test_summary_names_at_most_three_per_reason() throws {
-        let models = ["a", "b", "c", "d", "e"].map { CatalogModel(id: "x/\($0)", uses: [.chat], supportsTools: false) }
-        let env = try makeEnv(snapshots: [.openRouter: fresh(models)], keyed: [.openRouter])
-        let section = try XCTUnwrap(env.resolver.sections(for: .agent).first)
-
-        XCTAssertEqual(section.notSupportedSummary, "Not supported yet: x/a, x/b, x/c +2 (no tool support)")
     }
 }

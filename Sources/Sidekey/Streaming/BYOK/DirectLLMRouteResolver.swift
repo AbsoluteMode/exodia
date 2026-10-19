@@ -56,7 +56,7 @@ struct DirectLLMRouteResolver {
             guard let account = snapshot.keyAccount, case .key(let key) = keys.lookup(account: account) else {
                 throw OpenRouterLLMError.missingKey
             }
-            return DirectLLMRoute(endpoint: .openRouter(apiKey: key), model: model)
+            return DirectLLMRoute(endpoint: .openRouter(apiKey: key, provider: snapshot.route.provider), model: model)
         case .server:
             guard let server = snapshot.server else { return nil }
             let rawBaseURL = server.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)

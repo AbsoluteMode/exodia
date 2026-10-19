@@ -117,7 +117,6 @@ struct APIAndModelsView: View {
                 Text(chip.title)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(MacSettingsTheme.text)
-                Circle().fill(Self.color(of: chip.dot)).frame(width: 7, height: 7)
             }
             .chipBackground()
         }
@@ -141,14 +140,6 @@ struct APIAndModelsView: View {
             .chipBackground()
         }
         .buttonStyle(.plain)
-    }
-
-    private static func color(of dot: KeyDot) -> Color {
-        switch dot {
-        case .green: return MacSettingsTheme.green
-        case .yellow: return MacSettingsTheme.orange
-        case .red: return MacSettingsTheme.red
-        }
     }
 
     // MARK: - Models
@@ -209,6 +200,9 @@ struct APIAndModelsView: View {
                         onAddKey: { activeSheet = .addKey },
                         onOtherModel: { activeSheet = .otherModel(row.feature) }
                     )
+                    if let choice = row.provider {
+                        ProviderMenu(viewModel: viewModel, feature: row.feature, choice: choice)
+                    }
                 }
             }
             statusLines(for: row)
@@ -352,8 +346,8 @@ private extension View {
         self
             .padding(.horizontal, 11)
             .padding(.vertical, 6)
-            .background(MacSettingsTheme.controlBg, in: Capsule())
-            .contentShape(Capsule())
+            .background(MacSettingsTheme.controlBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 

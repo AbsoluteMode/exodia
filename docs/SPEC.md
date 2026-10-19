@@ -274,15 +274,23 @@ correction & learning loop
 recovery, и для восстановления по частичному транскрипту.
 
 **Настройки API & Models (Settings → API & Models):** вкладка из двух блоков.
-*API keys* — чипы провайдеров с точкой статуса (зелёная — ключ работает, жёлтая —
-ключ с урезанными правами или проверить не удалось, красная — ключ не принят
-или кончились деньги) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
+*API keys* — прямоугольные чипы провайдеров без цветных индикаторов (статус
+ключа — «Key works», «Limited key», «Key not accepted» и т. п. — во всплывающем
+окне чипа) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
 Anthropic (только для строки Agent) и свои OpenAI-compatible серверы. Ключи
 лежат в Keychain, на экран не возвращаются; проверка ключа — бесплатный запрос
 к провайдеру. *Models* — по строке на каждую AI-фичу и одна выпадашка
 «Provider · model-id»: Drop Fast и Drop Smart (real-time), Drop Smart cleanup
 (LLM), Meetings (recorded), Meeting notes (LLM), Agent (LLM with tools), Agent
-voice и Voice search (real-time). Модель каждой фичи читается при каждом вызове;
+voice и Voice search (real-time). В меню модели — только ID модели (короткая
+пометка вроде «with speakers» в той же строке); неподходящие модели не
+показываются. У строки на OpenRouter есть второе меню — провайдер: Auto
+(выбирает OpenRouter, для диктовки — по скорости) или один провайдер модели,
+закреплённый без подмены (`provider.order` + `allow_fallbacks: false`, так же
+для агента в конфиге OpenCode). У каждого провайдера — медианная задержка до
+первого токена и скорость (ток/с) за 30 минут из
+`GET /models/{id}/endpoints` с ключом OpenRouter; без цифр — прочерк. Новая
+модель начинается с Auto. Модель каждой фичи читается при каждом вызове;
 Exodia сам не меняет ни модель, ни провайдера. Статус показывается в строке
 только при проблеме (Not verified, Deprecated alias, Removed by provider, Not
 supported yet, Key problem, Not set). Каталоги моделей подтягиваются у
