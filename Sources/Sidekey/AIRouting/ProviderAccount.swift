@@ -10,6 +10,7 @@ enum ProviderAccount: Hashable, Codable, Sendable {
     case deepgram
     case elevenLabs
     case openRouter
+    case anthropic
     case server(UUID)
 
     private static let serverPrefix = "server:"
@@ -20,11 +21,12 @@ enum ProviderAccount: Hashable, Codable, Sendable {
         case .deepgram: return .deepgram
         case .elevenLabs: return .elevenLabs
         case .openRouter: return .openRouter
+        case .anthropic: return .anthropic
         case .server: return .openAICompatible
         }
     }
 
-    /// `"soniox"`, `"deepgram"`, `"elevenLabs"`, `"openRouter"` or
+    /// `"soniox"`, `"deepgram"`, `"elevenLabs"`, `"openRouter"`, `"anthropic"` or
     /// `"server:<uuid, lower case>"`.
     var storageID: String {
         switch self {
@@ -32,6 +34,7 @@ enum ProviderAccount: Hashable, Codable, Sendable {
         case .deepgram: return "deepgram"
         case .elevenLabs: return "elevenLabs"
         case .openRouter: return "openRouter"
+        case .anthropic: return "anthropic"
         case .server(let id): return Self.serverPrefix + id.uuidString.lowercased()
         }
     }
@@ -44,6 +47,7 @@ enum ProviderAccount: Hashable, Codable, Sendable {
         case "deepgram": parsed = .deepgram
         case "elevenLabs": parsed = .elevenLabs
         case "openRouter": parsed = .openRouter
+        case "anthropic": parsed = .anthropic
         default:
             guard storageID.hasPrefix(Self.serverPrefix),
                   let id = UUID(uuidString: String(storageID.dropFirst(Self.serverPrefix.count)))

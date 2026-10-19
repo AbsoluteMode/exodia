@@ -77,7 +77,7 @@ struct DirectLLMRouteResolver {
             case .unreadable: throw OpenRouterLLMError.missingKey
             }
             return DirectLLMRoute(endpoint: .custom(baseURL: baseURL, apiKey: key), model: model)
-        case .soniox, .deepgram, .elevenLabs:
+        case .soniox, .deepgram, .elevenLabs, .anthropic:
             return nil
         }
     }

@@ -54,6 +54,19 @@ final class ProviderKeyStoreTests: XCTestCase {
         XCTAssertEqual(ProviderAccount.server(added.id).keychainAccount(in: routing), added.keyAccount)
     }
 
+    /// Its own new account, never OpenRouter's or a server's: an Anthropic
+    /// key can only be read for an Anthropic route.
+    func test_anthropic_account_uses_its_own_keychain_item() throws {
+        let routing = makeRouting()
+        XCTAssertEqual(ProviderAccount.anthropic.keychainAccount(in: routing), "byok.anthropic.api_key")
+        XCTAssertEqual(ProviderAccount.anthropic.storageID, "anthropic")
+
+        let keys = makeKeys()
+        try keys.save("sk-ant-test", account: "byok.anthropic.api_key")
+        XCTAssertEqual(keys.lookup(account: "byok.anthropic.api_key"), .key("sk-ant-test"))
+        XCTAssertEqual(keys.lookup(account: "byok.openrouter.llm_api_key"), .absent)
+    }
+
     func test_deleted_server_has_no_keychain_account() {
         let routing = makeRouting()
         let server = routing.addServer(name: "Home GPU", baseURL: "https://gpu.local:8000")

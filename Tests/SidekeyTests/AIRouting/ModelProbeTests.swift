@@ -206,6 +206,57 @@ final class ModelProbeTests: XCTestCase {
         XCTAssertEqual(function["description"] as? String, "Probe tool. Do not call.")
     }
 
+    /// Anthropic's own Messages API: one fake tool, no `tool_choice` (forced
+    /// tool use is a 400 on current models), and a 200 cut off at `max_tokens`
+    /// still passes.
+    func test_anthropic_agent_probe_offers_one_fake_tool_without_tool_choice() async throws {
+        let cutOff = Data(#"{"type":"message","content":[],"stop_reason":"max_tokens"}"#.utf8)
+        let probe = httpProbe { _ in (200, [:], cutOff) }
+        let outcome = await probe.probe(
+            route(.anthropic, model: "claude-sonnet-5-5", key: "sk-ant", feature: .agent),
+            use: .chatWithTools, catalog: nil)
+        XCTAssertEqual(outcome, .passed)
+
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, 1)
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.absoluteString, "https://api.anthropic.com/v1/messages")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "sk-ant")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "content-type"), "application/json")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+
+        let body = try jsonBody(at: 0)
+        XCTAssertEqual(body["model"] as? String, "claude-sonnet-5-5")
+        XCTAssertEqual(body["max_tokens"] as? Int, 16)
+        XCTAssertNil(body["tool_choice"])
+        XCTAssertNil(body["stream"])
+        XCTAssertEqual(body["messages"] as? [[String: String]], [["role": "user", "content": "Reply with OK."]])
+        let tools = try XCTUnwrap(body["tools"] as? [[String: Any]])
+        XCTAssertEqual(tools.count, 1)
+        XCTAssertEqual(tools[0]["name"] as? String, "exodia_probe")
+        XCTAssertEqual(tools[0]["description"] as? String, "Probe tool. Do not call.")
+        let schema = try XCTUnwrap(tools[0]["input_schema"] as? [String: Any])
+        XCTAssertEqual(schema["type"] as? String, "object")
+        XCTAssertEqual((schema["properties"] as? [String: Any])?.isEmpty, true)
+
+        let refusal = Data(#"{"type":"error","error":{"type":"invalid_request_error","message":"model: claude-nope not found"}}"#.utf8)
+        let table: [(Int, Data, ProbeOutcome)] = [
+            (400, refusal, .failed(reason: "Provider refused: model: claude-nope not found")),
+            (404, refusal, .failed(reason: "Provider refused: model: claude-nope not found")),
+            (401, Data(), .inconclusive(reason: "Key problem")),
+            (402, Data(), .inconclusive(reason: "Key problem")),
+            (403, Data(), .inconclusive(reason: "Key problem")),
+            (429, Data(), .inconclusive(reason: "No answer from the provider")),
+            (529, Data(), .inconclusive(reason: "No answer from the provider")),
+        ]
+        for (status, data, expected) in table {
+            let probe = httpProbe { _ in (status, [:], data) }
+            let result = await probe.probe(route(.anthropic, key: "sk-ant", feature: .agent), use: .chatWithTools, catalog: nil)
+            XCTAssertEqual(result, expected, "anthropic \(status)")
+        }
+    }
+
     func test_max_tokens_rejection_retries_once_with_512() async throws {
         var calls = 0
         let probe = httpProbe { _ in

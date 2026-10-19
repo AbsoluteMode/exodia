@@ -79,32 +79,39 @@ final class AgentSettingsStore: ObservableObject {
             )
         case .opencode:
             return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions,
-                                   openCodeModelSpec: selectedOpenCodeModelSpec)
+                                   openCodeModelSpec: selectedOpenCodeModelSpec,
+                                   openCodeProvider: selectedOpenCodeProvider ?? .openRouter)
         }
     }
 
+    /// The OpenCode provider of the `Agent` route: OpenRouter or Anthropic, or
+    /// `nil` for no route or a route OpenCode cannot run.
+    var selectedOpenCodeProvider: OpenCodeModelProvider? {
+        routing.route(for: .agent).flatMap { OpenCodeModelProvider(account: $0.account) }
+    }
+
     /// The model OpenCode runs: the `Agent` feature's route when it is on
-    /// OpenRouter, else none. The old `agent.opencode.model` preference is only
-    /// read by the routing migration.
+    /// OpenRouter or Anthropic, else none. The old `agent.opencode.model`
+    /// preference is only read by the routing migration.
     var selectedOpenCodeModel: String? {
-        guard let route = routing.route(for: .agent), route.account == .openRouter else { return nil }
+        guard let route = routing.route(for: .agent), selectedOpenCodeProvider != nil else { return nil }
         let value = OpenCodeEnvironment.normalizeModel(route.model)
         guard !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
         return value
     }
 
     /// `"<provider> · <model id>"` for the agent route, or `nil` without a
-    /// usable model. New agent providers add a case to `selectedOpenCodeModel`.
+    /// usable model. New agent providers add a case to `OpenCodeModelProvider`.
     var selectedOpenCodeModelLabel: String? {
         guard let route = routing.route(for: .agent), let model = selectedOpenCodeModel else { return nil }
         return "\(route.account.kind.displayName) · \(model)"
     }
 
-    /// The selected model's limits from the OpenRouter catalog snapshot; `nil`
-    /// when the catalog does not give a context length.
+    /// The selected model's limits from the route provider's catalog snapshot;
+    /// `nil` when the catalog does not give a context length.
     var selectedOpenCodeModelSpec: OpenCodeModelSpec? {
-        guard let id = selectedOpenCodeModel,
-              let entry = catalogs.snapshot(for: .openRouter)?.models.first(where: {
+        guard let id = selectedOpenCodeModel, let provider = selectedOpenCodeProvider,
+              let entry = catalogs.snapshot(for: provider.account)?.models.first(where: {
                   OpenCodeEnvironment.normalizeModel($0.id) == id
               }),
               let context = entry.contextLength else { return nil }

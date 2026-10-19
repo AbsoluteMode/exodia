@@ -10,6 +10,8 @@ enum ModelRegistry {
     /// ElevenLabs Scribe v2 for recorded audio; `scribe_v2_realtime` is the
     /// streaming model and is not accepted by the speech-to-text endpoint.
     static let elevenLabsRecordedModel = "scribe_v2"
+    /// The agent's model on Anthropic's own API.
+    static let anthropicAgentModel = "claude-sonnet-5-5"
 }
 
 /// A model the app ships knowledge about: what it is for, and whether the
@@ -31,6 +33,7 @@ extension ModelRegistry {
         RegistryModel(kind: .elevenLabs, id: elevenLabsRecordedModel, uses: [.asyncSTT], diarization: false),
         RegistryModel(kind: .openRouter, id: "google/gemini-3.8-flash", uses: [.chat], diarization: false),
         RegistryModel(kind: .openRouter, id: "anthropic/claude-sonnet-5.5", uses: [.chat, .chatWithTools], diarization: false),
+        RegistryModel(kind: .anthropic, id: anthropicAgentModel, uses: [.chatWithTools], diarization: false),
     ]
 
     /// Smallest context window a model needs for Meeting notes (N) and for the
@@ -71,6 +74,11 @@ extension ModelRegistry {
             case .agent: return "anthropic/claude-sonnet-5.5"
             case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch: return nil
             }
+        case .anthropic:
+            switch feature {
+            case .agent: return anthropicAgentModel
+            case .dropFast, .dropSmart, .dropSmartCleanup, .meetings, .meetingNotes, .agentVoice, .voiceSearch: return nil
+            }
         case .openAICompatible:
             return nil
         }
@@ -87,7 +95,7 @@ extension ModelRegistry {
         switch kind {
         case .deepgram:
             return id.hasPrefix("flux-") ? "needs Deepgram's v2 streaming API" : nil
-        case .soniox, .elevenLabs, .openRouter, .openAICompatible:
+        case .soniox, .elevenLabs, .openRouter, .anthropic, .openAICompatible:
             return nil
         }
     }

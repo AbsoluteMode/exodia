@@ -77,22 +77,23 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
         case .realtime:
             switch kind {
             case .soniox, .deepgram, .elevenLabs, .openAICompatible: return .realtimeSTT
-            case .openRouter: return nil
+            case .openRouter, .anthropic: return nil
             }
         case .recorded:
             switch kind {
             case .soniox: return .asyncSTT
             case .deepgram, .elevenLabs, .openAICompatible: return .realtimeSTT
-            case .openRouter: return nil
+            case .openRouter, .anthropic: return nil
             }
         case .llm:
             switch kind {
             case .openRouter, .openAICompatible: return .chat
-            case .soniox, .deepgram, .elevenLabs: return nil
+            // Anthropic credits go to the agent only (decision of 19.10).
+            case .soniox, .deepgram, .elevenLabs, .anthropic: return nil
             }
         case .llmWithTools:
             switch kind {
-            case .openRouter: return .chatWithTools
+            case .openRouter, .anthropic: return .chatWithTools
             case .soniox, .deepgram, .elevenLabs, .openAICompatible: return nil
             }
         }
@@ -118,6 +119,8 @@ enum AIProviderKind: String, CaseIterable, Codable, Sendable {
     case deepgram
     case elevenLabs
     case openRouter
+    /// Anthropic's own API, for the agent only (OpenCode's `anthropic` provider).
+    case anthropic
     case openAICompatible
 
     var displayName: String {
@@ -126,6 +129,7 @@ enum AIProviderKind: String, CaseIterable, Codable, Sendable {
         case .deepgram: return "Deepgram"
         case .elevenLabs: return "ElevenLabs"
         case .openRouter: return "OpenRouter"
+        case .anthropic: return "Anthropic"
         case .openAICompatible: return "OpenAI-compatible server"
         }
     }

@@ -30,6 +30,32 @@ final class OpenCodeEnvironmentTests: XCTestCase {
         XCTAssertEqual(model["reasoning"] as? Bool, true)
     }
 
+    private func config(_ env: [String: String]) throws -> [String: Any] {
+        let content = try XCTUnwrap(env["OPENCODE_CONFIG_CONTENT"])
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any])
+    }
+
+    /// A parent `ANTHROPIC_*` never reaches OpenCode: on an OpenRouter route it
+    /// is dropped, on an Anthropic route the Keychain key replaces it.
+    func test_inherited_anthropic_env_never_reaches_opencode() throws {
+        let inherited = ["PATH": "/usr/bin", "ANTHROPIC_API_KEY": "parent-anthropic",
+                         "ANTHROPIC_BASE_URL": "https://proxy.example", "OPENROUTER_API_KEY": "parent-openrouter"]
+        let openRouter = try OpenCodeEnvironment.make(workingDirectory: try temporaryDirectory(),
+            model: "vendor/model", key: "or-keychain", allowActions: true, inherited: inherited)
+        XCTAssertNil(openRouter["ANTHROPIC_API_KEY"])
+        XCTAssertNil(openRouter["ANTHROPIC_BASE_URL"])
+        XCTAssertEqual(openRouter["OPENROUTER_API_KEY"], "or-keychain")
+        XCTAssertEqual(openRouter["PATH"], "/usr/bin")
+
+        let anthropic = try OpenCodeEnvironment.make(workingDirectory: try temporaryDirectory(),
+            model: "claude-sonnet-5-5", provider: .anthropic, key: "sk-ant-keychain", allowActions: true,
+            inherited: inherited)
+        XCTAssertEqual(anthropic["ANTHROPIC_API_KEY"], "sk-ant-keychain")
+        XCTAssertNil(anthropic["ANTHROPIC_BASE_URL"])
+        XCTAssertNil(anthropic["OPENROUTER_API_KEY"])
+        XCTAssertEqual(anthropic["OPENCODE_DISABLE_CLAUDE_CODE"], "true")
+    }
+
     func test_without_catalog_declares_the_model_as_before() throws {
         let env = try OpenCodeEnvironment.make(workingDirectory: try temporaryDirectory(),
             model: "vendor/model", key: nil, allowActions: true, inherited: [:])

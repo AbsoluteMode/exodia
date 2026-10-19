@@ -12,7 +12,7 @@ enum ProviderBatchRoute: Equatable, Sendable {
     case selfHosted(apiKey: String?, endpoint: URL, model: String)
 
     /// The batch counterpart of a resolved route; nil when the route's provider
-    /// has no batch transcription (OpenRouter), the key a hosted provider needs
+    /// has no batch transcription (OpenRouter, Anthropic), the key a hosted provider needs
     /// is missing, or the server has no usable base URL. Never another
     /// provider: the take goes where the feature's real-time stream would have
     /// gone, or nowhere.
@@ -35,7 +35,7 @@ enum ProviderBatchRoute: Equatable, Sendable {
         case .server:
             guard let server = route.server, let endpoint = selfHostedEndpoint(baseURL: server.baseURL) else { return nil }
             return .selfHosted(apiKey: key, endpoint: endpoint, model: route.model)
-        case .openRouter:
+        case .openRouter, .anthropic:
             return nil
         }
     }

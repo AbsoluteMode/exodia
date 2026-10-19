@@ -43,7 +43,7 @@ struct ModelProbe: ModelProbing {
                 let task = URLSession.shared.webSocketTask(with: SonioxBYOKAdapter.handshakeRequest(apiKey: key))
                 return URLSessionWebSocketTransport(task: task)
             })
-        case .deepgram, .elevenLabs, .openRouter, .server:
+        case .deepgram, .elevenLabs, .openRouter, .anthropic, .server:
             return try RealtimeAdapterFactory.make(route)
         }
     }
@@ -192,6 +192,8 @@ struct ModelProbe: ModelProbing {
             guard let base = Self.serverBaseURL(route.server) else { return .inconclusive(reason: "Invalid server address") }
             url = base
             isOpenRouter = false
+        case .anthropic:
+            return await probeAnthropic(route, withTools: withTools)
         case .soniox, .deepgram, .elevenLabs:
             return .inconclusive(reason: "Not supported yet")
         }
@@ -243,6 +245,89 @@ struct ModelProbe: ModelProbing {
             description: "Probe tool. Do not call.",
             parameters: .init(type: "object", properties: .init())
         )
+    )
+
+    // MARK: - Anthropic
+
+    private struct AnthropicBody: Encodable {
+        struct Message: Encodable {
+            let role: String
+            let content: String
+        }
+        struct Tool: Encodable {
+            struct Schema: Encodable {
+                let type: String
+                let properties: ChatBody.Empty
+            }
+            let name: String
+            let description: String
+            let inputSchema: Schema
+            enum CodingKeys: String, CodingKey {
+                case name, description
+                case inputSchema = "input_schema"
+            }
+        }
+
+        let model: String
+        let maxTokens: Int
+        let messages: [Message]
+        let tools: [Tool]?
+
+        enum CodingKeys: String, CodingKey {
+            case model, messages, tools
+            case maxTokens = "max_tokens"
+        }
+    }
+
+    /// Anthropic's Messages API with one fake tool and no `tool_choice`
+    /// (forced tool use is a 400 on current models). Any 2xx passes, a reply
+    /// cut off at `max_tokens` included.
+    private func probeAnthropic(_ route: ResolvedRoute, withTools: Bool) async -> ProbeOutcome {
+        guard let key = route.apiKey, !key.isEmpty else { return .inconclusive(reason: "Key problem") }
+        let body = AnthropicBody(
+            model: route.model,
+            maxTokens: 16,
+            messages: [.init(role: "user", content: "Reply with OK.")],
+            tools: withTools ? [Self.anthropicProbeTool] : nil
+        )
+        guard let encoded = try? JSONEncoder().encode(body) else { return .inconclusive(reason: "Could not build the request") }
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = Self.seconds(timeout)
+        for (name, value) in ModelCatalogFetcher.anthropicHeaders(apiKey: key) {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = encoded
+
+        let data: Data
+        let status: Int
+        do {
+            let (received, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return .inconclusive(reason: "No connection") }
+            data = received
+            status = http.statusCode
+        } catch {
+            return .inconclusive(reason: "No connection")
+        }
+        switch status {
+        case 200..<300:
+            return .passed
+        case 400, 404:
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let message = object.flatMap { Self.providerMessage($0, key: key) } ?? "HTTP \(status)"
+            return .failed(reason: "Provider refused: " + message)
+        case 401, 402, 403:
+            return .inconclusive(reason: "Key problem")
+        default:
+            return .inconclusive(reason: "No answer from the provider")
+        }
+    }
+
+    private static let anthropicProbeTool = AnthropicBody.Tool(
+        name: "exodia_probe",
+        description: "Probe tool. Do not call.",
+        inputSchema: .init(type: "object", properties: .init())
     )
 
     private static func interpretChat(status: Int, data: Data, key: String?) -> ProbeOutcome {

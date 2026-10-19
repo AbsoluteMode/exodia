@@ -97,7 +97,7 @@ struct FeatureRouteResolver {
             }
             return ResolvedRoute(feature: feature, account: route.account, model: model, apiKey: apiKey, server: server)
 
-        case .soniox, .deepgram, .elevenLabs, .openRouter:
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic:
             // A built-in provider cannot run without its own key, absent or
             // unreadable, and never borrows another provider's. (`keychainAccount`
             // answers `nil` only for a removed server.)

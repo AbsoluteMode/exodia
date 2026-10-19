@@ -114,7 +114,7 @@ struct AIRoutingMigration {
         switch account {
         case .server:
             return true
-        case .soniox, .deepgram, .elevenLabs, .openRouter:
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic:
             guard let keyAccount = account.keychainAccount(in: routing) else { return false }
             return keys.lookup(account: keyAccount) != .absent
         }

@@ -4,7 +4,10 @@ enum OpenCodeEnvironment {
     /// Separate OpenCode config, history, snapshots and caches for every project.
     /// The user's HOME remains intact for ordinary tools, but unrelated CLI
     /// credentials and global Claude memories are never imported by this runtime.
-    static func make(workingDirectory: URL, model: String, key: String?, allowActions: Bool,
+    /// `key` is the Keychain key of `provider`, set after the inherited
+    /// provider variables are dropped, so a parent's key never reaches OpenCode.
+    static func make(workingDirectory: URL, model: String, provider: OpenCodeModelProvider = .openRouter,
+                     key: String?, allowActions: Bool,
                      modelSpec: OpenCodeModelSpec? = nil,
                      inherited: [String: String] = ProcessInfo.processInfo.environment) throws -> [String: String] {
         var env = inherited.filter { name, _ in
@@ -21,7 +24,7 @@ enum OpenCodeEnvironment {
                                                     attributes: [.posixPermissions: 0o700])
             env[name] = dir.path
         }
-        env["OPENROUTER_API_KEY"] = key
+        env[provider.keyEnvironmentName] = key
         env["OPENCODE_DISABLE_CLAUDE_CODE"] = "true"
         env["OPENCODE_DISABLE_AUTOUPDATE"] = "true"
         env["OPENCODE_DISABLE_DEFAULT_PLUGINS"] = "true"
@@ -29,9 +32,9 @@ enum OpenCodeEnvironment {
         env["OPENCODE_DISABLE_TERMINAL_TITLE"] = "true"
         let normalized = normalizeModel(model)
         // Secrets stay in the child's environment, not a JSON credential file.
-        // Declaring the selected model also supports fresh OpenRouter models
-        // that have not reached OpenCode's models.dev cache yet; the catalog
-        // limits keep OpenCode from treating such a model's context as 0.
+        // Declaring the selected model also supports fresh models that have not
+        // reached OpenCode's models.dev cache yet; the catalog limits keep
+        // OpenCode from treating such a model's context as 0.
         let permissions: [String: String] = allowActions
             ? ["*": "allow", "question": "deny"]
             : ["*": "deny", "read": "allow", "glob": "allow", "grep": "allow", "webfetch": "allow"]
@@ -39,12 +42,13 @@ enum OpenCodeEnvironment {
             ["tool_call": $0.toolCall, "reasoning": $0.reasoning,
              "limit": ["context": $0.contextLimit, "output": $0.outputLimit]]
         } ?? [:]
+        let id = provider.openCodeID
         let config: [String: Any] = [
-            "$schema": "https://opencode.ai/config.json", "model": "openrouter/\(normalized)",
-            "enabled_providers": ["openrouter"], "share": "disabled", "autoupdate": false,
+            "$schema": "https://opencode.ai/config.json", "model": "\(id)/\(normalized)",
+            "enabled_providers": [id], "share": "disabled", "autoupdate": false,
             "permission": permissions,
-            "provider": ["openrouter": ["options": ["apiKey": "{env:OPENROUTER_API_KEY}"],
-                                        "models": [normalized: declaration]]]
+            "provider": [id: ["options": ["apiKey": "{env:\(provider.keyEnvironmentName)}"],
+                              "models": [normalized: declaration]]]
         ]
         env["OPENCODE_CONFIG_CONTENT"] = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
         return env

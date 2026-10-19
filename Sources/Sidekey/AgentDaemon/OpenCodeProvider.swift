@@ -1,8 +1,9 @@
 import Foundation
 import Darwin
 
-/// App-owned OpenCode runs use only OpenRouter, with the user's selected model
-/// and Keychain key. Prompts go over stdin; neither prompts nor keys are CLI
+/// App-owned OpenCode runs use the provider of the `Agent` route (OpenRouter or
+/// Anthropic), with that route's model and that provider's Keychain key; one
+/// provider's key never stands in for the other's. Prompts go over stdin; neither prompts nor keys are CLI
 /// arguments. stdout JSON is consumed in memory and stderr is never logged.
 final class OpenCodeProvider: CLIProvider {
     let id: CLIProviderID = .opencode
@@ -11,10 +12,11 @@ final class OpenCodeProvider: CLIProvider {
     typealias Runner = (URL, [String], URL, [String: String], String,
                         @escaping (String) -> Void, @escaping (Int32) -> Void) -> CodexProcessTerminating
     private let locate: () -> URL?
-    private let readKey: () throws -> String?
+    private let readKey: (OpenCodeModelProvider) throws -> String?
+    private let currentProvider: () async -> OpenCodeModelProvider
     private let runStreaming: Runner
     private let versionProbe: (URL) -> ProcessResult?
-    private let validateKey: (String) async -> ConnectOutcome
+    private let validateKey: (OpenCodeModelProvider, String) async -> ConnectOutcome
     private let sessionLock = NSLock()
     private var storedSessionID: String?
     private var currentRunID = UUID()
@@ -22,12 +24,14 @@ final class OpenCodeProvider: CLIProvider {
     var lastSessionID: String? { sessionLock.withLock { storedSessionID } }
 
     init(locate: @escaping () -> URL? = { OpenCodeBinaryLocator().locate() },
-         readKey: @escaping () throws -> String? = { try OpenRouterLLMKeyStore().read() },
+         readKey: @escaping (OpenCodeModelProvider) throws -> String? = OpenCodeProvider.readKeychainKey,
+         currentProvider: @escaping () async -> OpenCodeModelProvider = OpenCodeProvider.agentRouteProvider,
          versionProbe: @escaping (URL) -> ProcessResult? = { ClaudeCodeProvider.defaultRunOneShot(binary: $0, args: ["--version"]) },
-         validateKey: @escaping (String) async -> ConnectOutcome = OpenCodeProvider.validateOpenRouterKey,
+         validateKey: @escaping (OpenCodeModelProvider, String) async -> ConnectOutcome = OpenCodeProvider.validate,
          runStreaming: @escaping Runner = OpenCodeProvider.defaultRunStreaming) {
         self.locate = locate
         self.readKey = readKey
+        self.currentProvider = currentProvider
         self.versionProbe = versionProbe
         self.validateKey = validateKey
         self.runStreaming = runStreaming
@@ -36,10 +40,44 @@ final class OpenCodeProvider: CLIProvider {
     func discoverBinary() -> URL? { locate() }
     func respondToPermission(requestId: String, decision: PermissionDecision) {}
 
+    /// The provider's Keychain key: OpenRouter's from its LLM key store,
+    /// Anthropic's from its own item.
+    static func readKeychainKey(_ provider: OpenCodeModelProvider) throws -> String? {
+        switch provider {
+        case .openRouter: return try OpenRouterLLMKeyStore().read()
+        case .anthropic: return ProviderKeyStore().read(account: ProviderAccount.anthropicKeychainAccount)
+        }
+    }
+
+    /// The provider of the current `Agent` route; OpenRouter when none is set,
+    /// as before Anthropic existed.
+    static func agentRouteProvider() async -> OpenCodeModelProvider {
+        await MainActor.run { AgentSettingsStore.shared.selectedOpenCodeProvider ?? .openRouter }
+    }
+
+    static func validate(_ provider: OpenCodeModelProvider, key: String) async -> ConnectOutcome {
+        switch provider {
+        case .openRouter: return await validateOpenRouterKey(key)
+        case .anthropic: return await validateAnthropicKey(key)
+        }
+    }
+
+    /// Anthropic's free models list, through the API & Models key checker.
+    static func validateAnthropicKey(_ key: String) async -> ConnectOutcome {
+        switch await ProviderKeyChecker().check(.anthropic, apiKey: key, server: nil, allowPaidProbe: false) {
+        case .valid, .limited: return .connected(sessionID: nil)
+        case .rejected(.invalidKey): return .notLoggedIn
+        case .rejected(.outOfCredit): return .billing
+        case .unreachable:
+            return .failed(code: "anthropic_unavailable", message: "Couldn’t reach Anthropic. Check your connection and retry.")
+        }
+    }
+
     /// Free local handshake; it never submits a paid model request.
     func probe() async -> ConnectOutcome {
         guard let binary = locate() else { return .notInstalled }
-        guard let key = try? readKey(), !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let provider = await currentProvider()
+        guard let key = try? readKey(provider), !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .notLoggedIn
         }
         let probe = versionProbe
@@ -48,7 +86,7 @@ final class OpenCodeProvider: CLIProvider {
               Self.supportsVersion(result.stdout) else {
             return .failed(code: "unsupported_version", message: "Install OpenCode 1.17.12 or newer from Settings → Agents.")
         }
-        return await validateKey(key)
+        return await validateKey(provider, key)
     }
 
     static func validateOpenRouterKey(_ key: String) async -> ConnectOutcome {
@@ -85,8 +123,9 @@ final class OpenCodeProvider: CLIProvider {
             let runID = UUID()
             sessionLock.withLock { currentRunID = runID; storedSessionID = nil }
             guard let binary = locate() else { return fail("not_installed", "Install OpenCode in Settings → Agents.") }
-            guard let key = try? readKey(), !key.isEmpty else {
-                return fail("missing_key", "Add your OpenRouter key in Settings → API & Models.")
+            let provider = options.openCodeProvider
+            guard let key = try? readKey(provider), !key.isEmpty else {
+                return fail("missing_key", "Add your \(provider.displayName) key in Settings → API & Models.")
             }
             guard let rawModel = options.model else {
                 return fail("missing_model", "Choose a model in API & Models.")
@@ -103,18 +142,18 @@ final class OpenCodeProvider: CLIProvider {
                 } else {
                     workingDir = try options.workingDirectory ?? AgentDaemonWorkingDirectory.ensure()
                 }
-                env = try OpenCodeEnvironment.make(workingDirectory: workingDir, model: model,
+                env = try OpenCodeEnvironment.make(workingDirectory: workingDir, model: model, provider: provider,
                                                    key: key, allowActions: options.allowActions,
                                                    modelSpec: options.openCodeModelSpec)
             } catch {
                 return fail("workspace_error", "Couldn’t create the local OpenCode workspace.")
             }
-            var args = ["run", "--format", "json", "--model", "openrouter/\(model)",
+            var args = ["run", "--format", "json", "--model", "\(provider.openCodeID)/\(model)",
                         "--dir", workingDir.path, "--title", "Exodia"]
             if let session = resumeSessionID { args += ["--session", session] }
             if options.allowActions { args.append("--auto") }
             continuation.yield(.started(turnId: UUID().uuidString, requestId: "", sessionId: resumeSessionID ?? ""))
-            var mapper = OpenCodeEventMapper()
+            var mapper = OpenCodeEventMapper(provider: provider)
             let handle = runStreaming(binary, args, workingDir, env, prompt, { [weak self] line in
                 let events = mapper.map(line: line)
                 if let self, let id = mapper.sessionID {
@@ -125,7 +164,7 @@ final class OpenCodeProvider: CLIProvider {
                 events.forEach { continuation.yield($0) }
             }, { code in
                 if code != 0 && !mapper.failed {
-                    continuation.yield(.error(code: "opencode_exit", message: "OpenCode stopped before completing the request. Check your model and OpenRouter key, then retry.", retryable: true))
+                    continuation.yield(.error(code: "opencode_exit", message: "OpenCode stopped before completing the request. Check your model and \(provider.displayName) key, then retry.", retryable: true))
                 } else if code == 0 && !mapper.failed {
                     if mapper.answer.isEmpty {
                         continuation.yield(.error(code: "empty_response", message: "OpenCode returned no answer. Try another model or repeat the request.", retryable: true))

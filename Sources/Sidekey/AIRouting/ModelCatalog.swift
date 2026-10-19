@@ -9,10 +9,11 @@ struct CatalogModel: Codable, Equatable, Sendable {
     /// Soniox `aliased_model_id`: the model this one is a deprecated alias of.
     var aliasOf: String?
     var contextLength: Int?
-    /// OpenRouter `top_provider.max_completion_tokens`.
+    /// OpenRouter `top_provider.max_completion_tokens`, Anthropic `max_tokens`.
     var maxOutputTokens: Int?
     var supportsTools: Bool?
-    /// `"reasoning"` is among OpenRouter's `supported_parameters`.
+    /// `"reasoning"` is among OpenRouter's `supported_parameters`; Anthropic's
+    /// `capabilities.thinking.supported`.
     var supportsReasoning: Bool?
     var reasoning: OpenRouterReasoningCapabilities?
     var expiresAt: Date?
@@ -88,6 +89,10 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
     private static let sonioxURL = URL(string: "https://api.soniox.com/v1/models")!
     private static let deepgramURL = URL(string: "https://api.deepgram.com/v1/models")!
     private static let openRouterURL = URL(string: "https://openrouter.ai/api/v1/models")!
+    static let anthropicModelsURL = URL(string: "https://api.anthropic.com/v1/models")!
+    static let anthropicVersion = "2023-06-01"
+    /// A stop for a catalog that keeps saying `has_more`.
+    private static let anthropicMaxPages = 20
 
     func fetch(account: ProviderAccount, apiKey: String?, server: ServerEndpoint?) async throws -> [CatalogModel] {
         switch account {
@@ -104,6 +109,9 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
         case .openRouter:
             let data = try await get(Self.openRouterURL, bearer: nil)
             return try Self.parseOpenRouter(data)
+        case .anthropic:
+            guard let apiKey, !apiKey.isEmpty else { throw CatalogFetchError.http(401, code: nil) }
+            return try await fetchAnthropic(apiKey: apiKey)
         case .server:
             guard let url = server?.modelsURL else { throw CatalogFetchError.malformed }
             let data = try await get(url, bearer: apiKey)
@@ -111,15 +119,51 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
         }
     }
 
+    /// Every page of Anthropic's models list: `has_more` asks for the next
+    /// one after the page's `last_id`.
+    private func fetchAnthropic(apiKey: String) async throws -> [CatalogModel] {
+        var models: [CatalogModel] = []
+        var after: String?
+        for _ in 0..<Self.anthropicMaxPages {
+            let url = Self.anthropicModelsPage(after: after)
+            let data = try await get(url, headers: Self.anthropicHeaders(apiKey: apiKey))
+            let page = try Self.parseAnthropicPage(data)
+            models += page.models
+            guard page.hasMore, let last = page.lastID, !last.isEmpty, last != after else { break }
+            after = last
+        }
+        return models
+    }
+
+    /// `…/v1/models?limit=1000`, with `after_id` for every page but the first.
+    static func anthropicModelsPage(after: String?) -> URL {
+        var components = URLComponents(url: anthropicModelsURL, resolvingAgainstBaseURL: false)!
+        var items = [URLQueryItem(name: "limit", value: "1000")]
+        if let after { items.append(URLQueryItem(name: "after_id", value: after)) }
+        components.queryItems = items
+        return components.url!
+    }
+
+    /// Anthropic authenticates with `x-api-key`, never a Bearer token.
+    static func anthropicHeaders(apiKey: String) -> [String: String] {
+        ["x-api-key": apiKey, "anthropic-version": anthropicVersion]
+    }
+
     // MARK: - Transport
 
     private func get(_ url: URL, bearer: String?) async throws -> Data {
+        var headers: [String: String] = [:]
+        if let bearer, !bearer.isEmpty { headers["Authorization"] = "Bearer \(bearer)" }
+        return try await get(url, headers: headers)
+    }
+
+    private func get(_ url: URL, headers: [String: String]) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let bearer, !bearer.isEmpty {
-            request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        for (name, value) in headers {
+            request.setValue(value, forHTTPHeaderField: name)
         }
         let data: Data
         let response: URLResponse
@@ -284,6 +328,61 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
                 expiresAt: model.expirationDate.flatMap(parseDate)
             )
         }
+    }
+
+    private struct AnthropicResponse: Decodable {
+        struct Model: Decodable {
+            let id: String
+            let maxInputTokens: Int?
+            let maxTokens: Int?
+            let thinking: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case maxInputTokens = "max_input_tokens"
+                case maxTokens = "max_tokens"
+                case capabilities
+            }
+
+            private struct Capabilities: Decodable {
+                struct Support: Decodable { let supported: Bool? }
+                let thinking: Support?
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                id = try container.decode(String.self, forKey: .id)
+                maxInputTokens = try? container.decodeIfPresent(Int.self, forKey: .maxInputTokens)
+                maxTokens = try? container.decodeIfPresent(Int.self, forKey: .maxTokens)
+                // A capabilities object of another shape costs only the flag.
+                thinking = (try? container.decodeIfPresent(Capabilities.self, forKey: .capabilities))?.thinking?.supported
+            }
+        }
+        let data: [Model]
+        let hasMore: Bool?
+        let lastID: String?
+
+        enum CodingKeys: String, CodingKey {
+            case data
+            case hasMore = "has_more"
+            case lastID = "last_id"
+        }
+    }
+
+    /// One page of Anthropic's models list. Every Claude model takes tools.
+    static func parseAnthropicPage(_ data: Data) throws -> (models: [CatalogModel], hasMore: Bool, lastID: String?) {
+        let page = try decode(AnthropicResponse.self, from: data)
+        let models = page.data.map { model in
+            CatalogModel(
+                id: model.id,
+                uses: [.chat, .chatWithTools],
+                contextLength: model.maxInputTokens,
+                maxOutputTokens: model.maxTokens,
+                supportsTools: true,
+                supportsReasoning: model.thinking
+            )
+        }
+        return (models, page.hasMore ?? false, page.lastID)
     }
 
     private struct ServerResponse: Decodable {

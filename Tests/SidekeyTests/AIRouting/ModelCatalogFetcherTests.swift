@@ -83,6 +83,45 @@ final class ModelCatalogFetcherTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     }
 
+    /// Two pages: the second asks for `after_id=<last_id>` of the first.
+    func test_anthropic_catalog_pages_and_maps_limits() async throws {
+        let fetcher = makeFetcher()
+        StubURLProtocol.handler = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url.contains("after_id=") {
+                return (200, [:], Data(#"""
+                {"data":[{"type":"model","id":"claude-haiku-5","display_name":"Claude Haiku 5",
+                  "created_at":"2026-05-01T00:00:00Z","max_input_tokens":200000,"max_tokens":64000}],
+                 "has_more":false,"first_id":"claude-haiku-5","last_id":"claude-haiku-5"}
+                """#.utf8))
+            }
+            return (200, [:], Data(#"""
+            {"data":[{"type":"model","id":"claude-sonnet-5-5","display_name":"Claude Sonnet 5.5",
+              "created_at":"2026-09-01T00:00:00Z","max_input_tokens":1000000,"max_tokens":128000,
+              "capabilities":{"thinking":{"supported":true}}}],
+             "has_more":true,"first_id":"claude-sonnet-5-5","last_id":"claude-sonnet-5-5"}
+            """#.utf8))
+        }
+        let models = try await fetcher.fetch(account: .anthropic, apiKey: "sk-ant", server: nil)
+        XCTAssertEqual(models.map(\.id), ["claude-sonnet-5-5", "claude-haiku-5"])
+        XCTAssertEqual(models.map(\.contextLength), [1_000_000, 200_000])
+        XCTAssertEqual(models.map(\.maxOutputTokens), [128_000, 64_000])
+        XCTAssertEqual(models.map(\.supportsTools), [true, true])
+        XCTAssertEqual(models[0].supportsReasoning, true)
+        XCTAssertTrue(models.allSatisfy { $0.uses?.contains(.chatWithTools) == true })
+
+        let requests = StubURLProtocol.capturedRequests
+        XCTAssertEqual(requests.map { $0.url?.absoluteString }, [
+            "https://api.anthropic.com/v1/models?limit=1000",
+            "https://api.anthropic.com/v1/models?limit=1000&after_id=claude-sonnet-5-5",
+        ])
+        for request in requests {
+            XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "sk-ant")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        }
+    }
+
     func test_server_models_url_rules() {
         XCTAssertEqual(server("http://h:8000/v1").modelsURL?.absoluteString, "http://h:8000/v1/models")
         XCTAssertEqual(server("http://h:8000/v1/").modelsURL?.absoluteString, "http://h:8000/v1/models")

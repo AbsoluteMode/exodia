@@ -8,6 +8,13 @@ struct OpenCodeEventMapper {
     private(set) var answer = ""
     private(set) var failed = false
     private var seenParts: Set<String> = []
+    /// The Agent route's provider, named in the messages that send the user
+    /// to their key.
+    private let provider: OpenCodeModelProvider
+
+    init(provider: OpenCodeModelProvider = .openRouter) {
+        self.provider = provider
+    }
 
     mutating func map(line: String) -> [AgentSSEEvent] {
         guard let data = line.data(using: .utf8),
@@ -43,9 +50,9 @@ struct OpenCodeEventMapper {
             let error = event["error"] as? [String: Any] ?? [:]
             let name = (error["name"] as? String ?? error["type"] as? String ?? "").lowercased()
             if name.contains("auth") {
-                return [.error(code: "opencode_auth", message: "Check your OpenRouter key in Settings → API & Models.", retryable: false)]
+                return [.error(code: "opencode_auth", message: "Check your \(provider.displayName) key in Settings → API & Models.", retryable: false)]
             }
-            return [.error(code: "opencode_error", message: "OpenCode couldn’t complete the request. Check the selected model and your OpenRouter balance, then retry.", retryable: true)]
+            return [.error(code: "opencode_error", message: "OpenCode couldn’t complete the request. Check the selected model and your \(provider.displayName) balance, then retry.", retryable: true)]
         default:
             return []
         }

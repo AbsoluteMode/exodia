@@ -1,6 +1,10 @@
 import Foundation
 
 extension ProviderAccount {
+    /// The Anthropic key's Keychain account. New with Anthropic, so it was
+    /// never written to a `.token` file and needs no credential migration.
+    static let anthropicKeychainAccount = "byok.anthropic.api_key"
+
     /// The Keychain account this provider account's API key is stored under, or
     /// `nil` for a server that has been removed. The built-in providers keep
     /// the names the old Models tab wrote, so no stored key has to move; a
@@ -12,6 +16,7 @@ extension ProviderAccount {
         case .deepgram: return BYOKKeyStore.account(for: .deepgram)
         case .elevenLabs: return BYOKKeyStore.account(for: .elevenLabs)
         case .openRouter: return OpenRouterLLMKeyStore.account
+        case .anthropic: return Self.anthropicKeychainAccount
         case .server(let id): return routing.server(id)?.keyAccount
         }
     }

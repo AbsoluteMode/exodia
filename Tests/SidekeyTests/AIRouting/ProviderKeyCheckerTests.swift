@@ -128,6 +128,33 @@ final class ProviderKeyCheckerTests: XCTestCase {
         }
     }
 
+    /// The free models list, with Anthropic's own headers and no Bearer.
+    func test_anthropic_key_check_uses_x_api_key_and_version() async throws {
+        let ok = checker(status: 200, body: #"{"data":[],"has_more":false}"#)
+        let status = await check(ok, .anthropic)
+        XCTAssertEqual(status, .valid)
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, 1)
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.url?.absoluteString, "https://api.anthropic.com/v1/models?limit=1000")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "the-key")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+
+        let table: [(Int, KeyStatus)] = [
+            (401, .rejected(.invalidKey)), (403, .rejected(.outOfCredit)),
+            (429, .unreachable), (500, .unreachable), (529, .unreachable),
+        ]
+        for (code, expected) in table {
+            let result = await check(checker(status: code), .anthropic)
+            XCTAssertEqual(result, expected, "anthropic \(code)")
+        }
+        let missing = checker(status: 200)
+        let noKey = await check(missing, .anthropic, key: nil)
+        XCTAssertEqual(noKey, .rejected(.invalidKey))
+        XCTAssertTrue(StubURLProtocol.capturedRequests.isEmpty)
+    }
+
     func test_server_codes() async {
         let table: [(Int, KeyStatus)] = [
             (200, .valid), (404, .valid),

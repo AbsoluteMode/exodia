@@ -55,7 +55,7 @@ final class APIAndModelsViewModel: ObservableObject {
     @Published var proposal: AssignProposal?
 
     /// Built-in providers in the order the tab lists them and Set up picks them.
-    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter]
+    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .anthropic]
 
     private let routing: AIRoutingStore
     private let keys: ProviderKeyStore
@@ -199,7 +199,7 @@ final class APIAndModelsViewModel: ObservableObject {
         }
         switch account {
         case .server(let id): routing.removeServer(id)
-        case .soniox, .deepgram, .elevenLabs, .openRouter: routing.clearRoutes(using: account)
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic: routing.clearRoutes(using: account)
         }
         catalogs.forget(account)
         keyStatuses.forget(account)
@@ -318,7 +318,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .server(let id):
             guard let endpoint = routing.server(id) else { return "This server was removed" }
             server = endpoint
-        case .soniox, .deepgram, .elevenLabs, .openRouter:
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic:
             guard !key.isEmpty else { return "Enter a key" }
             server = nil
         }
@@ -453,7 +453,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .deepgram:
             return DeepgramLanguagePolicy.configurationError(model: route.model, language: inputLanguage())?
                 .localizedDescription
-        case .soniox, .elevenLabs, .openRouter, .server:
+        case .soniox, .elevenLabs, .openRouter, .anthropic, .server:
             return nil
         }
     }
@@ -486,7 +486,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .rejected(.invalidKey):
             switch account {
             case .soniox, .elevenLabs: return "Key not accepted. Regional keys aren't supported yet."
-            case .deepgram, .openRouter, .server: return "Key not accepted"
+            case .deepgram, .openRouter, .anthropic, .server: return "Key not accepted"
             }
         }
     }
@@ -523,7 +523,7 @@ final class APIAndModelsViewModel: ObservableObject {
             case .absent: return Access(apiKey: nil, server: server)
             case .unreadable: return nil
             }
-        case .soniox, .deepgram, .elevenLabs, .openRouter:
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic:
             guard case .key(let key) = lookup(account) else { return nil }
             return Access(apiKey: key, server: nil)
         }
@@ -540,6 +540,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .deepgram: return .deepgram
         case .elevenLabs: return .elevenLabs
         case .openRouter: return .openRouter
+        case .anthropic: return .anthropic
         case .openAICompatible: return nil
         }
     }

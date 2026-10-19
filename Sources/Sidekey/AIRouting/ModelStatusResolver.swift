@@ -62,7 +62,7 @@ extension OpenRouterLLMError {
 struct ModelStatusResolver {
     static let refusedReason = "The provider refused this model"
 
-    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter]
+    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .anthropic]
 
     private let routing: AIRoutingStore
     private let keys: ProviderKeyStore
@@ -330,7 +330,7 @@ struct ModelStatusResolver {
 
     private static func phrase(for kind: AIProviderKind) -> String {
         switch kind {
-        case .soniox, .deepgram, .elevenLabs, .openRouter: return kind.displayName
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic: return kind.displayName
         case .openAICompatible: return "an OpenAI-compatible server"
         }
     }

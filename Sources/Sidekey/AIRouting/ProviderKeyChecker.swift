@@ -81,6 +81,12 @@ struct ProviderKeyChecker: ProviderKeyChecking {
             guard let key else { return .rejected(.invalidKey) }
             let answer = await get(Self.openRouterURL, header: "Authorization", value: "Bearer \(key)")
             return Self.interpret(answer, forbidden: .rejected(.outOfCredit), paymentRequired: .rejected(.outOfCredit))
+        case .anthropic:
+            // The free models list. 403 is a permission or limit refusal.
+            guard let key else { return .rejected(.invalidKey) }
+            let answer = await get(ModelCatalogFetcher.anthropicModelsPage(after: nil),
+                                   headers: ModelCatalogFetcher.anthropicHeaders(apiKey: key))
+            return Self.interpret(answer, forbidden: .rejected(.outOfCredit), paymentRequired: .rejected(.outOfCredit))
         case .server:
             guard let url = server?.modelsURL else { return .unreachable }
             let answer = await get(url, header: key == nil ? nil : "Authorization", value: key.map { "Bearer \($0)" })
@@ -129,12 +135,18 @@ struct ProviderKeyChecker: ProviderKeyChecking {
     // MARK: - Transport
 
     private func get(_ url: URL, header: String?, value: String?) async -> Answer {
+        var headers: [String: String] = [:]
+        if let header, let value { headers[header] = value }
+        return await get(url, headers: headers)
+    }
+
+    private func get(_ url: URL, headers: [String: String]) async -> Answer {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let header, let value {
-            request.setValue(value, forHTTPHeaderField: header)
+        for (name, value) in headers {
+            request.setValue(value, forHTTPHeaderField: name)
         }
         do {
             let (data, response) = try await session.data(for: request)

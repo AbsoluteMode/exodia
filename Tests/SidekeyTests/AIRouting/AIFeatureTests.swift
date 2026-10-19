@@ -27,10 +27,10 @@ final class AIFeatureTests: XCTestCase {
     }
 
     func test_provider_kinds_carry_their_ui_names() {
-        XCTAssertEqual(AIProviderKind.allCases, [.soniox, .deepgram, .elevenLabs, .openRouter, .openAICompatible])
+        XCTAssertEqual(AIProviderKind.allCases, [.soniox, .deepgram, .elevenLabs, .openRouter, .anthropic, .openAICompatible])
         XCTAssertEqual(
             AIProviderKind.allCases.map(\.displayName),
-            ["Soniox", "Deepgram", "ElevenLabs", "OpenRouter", "OpenAI-compatible server"]
+            ["Soniox", "Deepgram", "ElevenLabs", "OpenRouter", "Anthropic", "OpenAI-compatible server"]
         )
     }
 
@@ -40,7 +40,7 @@ final class AIFeatureTests: XCTestCase {
     /// provider column holds (`nil` — the provider cannot serve the feature).
     private struct TableRow {
         let features: [AIFeature]
-        let soniox, deepgram, elevenLabs, openRouter, openAICompatible: ModelUse?
+        let soniox, deepgram, elevenLabs, openRouter, anthropic, openAICompatible: ModelUse?
 
         func use(on kind: AIProviderKind) -> ModelUse? {
             switch kind {
@@ -48,6 +48,7 @@ final class AIFeatureTests: XCTestCase {
             case .deepgram: return deepgram
             case .elevenLabs: return elevenLabs
             case .openRouter: return openRouter
+            case .anthropic: return anthropic
             case .openAICompatible: return openAICompatible
             }
         }
@@ -58,26 +59,26 @@ final class AIFeatureTests: XCTestCase {
             TableRow(
                 features: [.dropFast, .dropSmart, .agentVoice, .voiceSearch],
                 soniox: .realtimeSTT, deepgram: .realtimeSTT, elevenLabs: .realtimeSTT,
-                openRouter: nil, openAICompatible: .realtimeSTT
+                openRouter: nil, anthropic: nil, openAICompatible: .realtimeSTT
             ),
             TableRow(
                 features: [.meetings],
                 soniox: .asyncSTT, deepgram: .realtimeSTT, elevenLabs: .realtimeSTT,
-                openRouter: nil, openAICompatible: .realtimeSTT
+                openRouter: nil, anthropic: nil, openAICompatible: .realtimeSTT
             ),
             TableRow(
                 features: [.dropSmartCleanup, .meetingNotes],
                 soniox: nil, deepgram: nil, elevenLabs: nil,
-                openRouter: .chat, openAICompatible: .chat
+                openRouter: .chat, anthropic: nil, openAICompatible: .chat
             ),
             TableRow(
                 features: [.agent],
                 soniox: nil, deepgram: nil, elevenLabs: nil,
-                openRouter: .chatWithTools, openAICompatible: nil
+                openRouter: .chatWithTools, anthropic: .chatWithTools, openAICompatible: nil
             ),
         ]
         // Every feature sits in exactly one row, so the loop below visits all
-        // 8 features x 5 providers = 40 cells.
+        // 8 features x 6 providers = 48 cells.
         XCTAssertEqual(
             rows.flatMap(\.features).map(\.rawValue).sorted(),
             AIFeature.allCases.map(\.rawValue).sorted()
@@ -95,7 +96,23 @@ final class AIFeatureTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(visited, 40)
+        XCTAssertEqual(visited, 48)
+    }
+
+    /// Decision of 19.10: Anthropic credits are spent through the agent only;
+    /// Drop Smart cleanup and Meeting notes do not offer it.
+    func test_anthropic_is_offered_only_for_the_agent() {
+        for feature in AIFeature.allCases {
+            XCTAssertEqual(
+                feature.modelUse(on: .anthropic), feature == .agent ? .chatWithTools : nil,
+                feature.rawValue
+            )
+        }
+        XCTAssertEqual(AIProviderKind.anthropic.displayName, "Anthropic")
+        XCTAssertEqual(ModelRegistry.recommended(for: .agent, kind: .anthropic), "claude-sonnet-5-5")
+        for feature in AIFeature.allCases where feature != .agent {
+            XCTAssertNil(ModelRegistry.recommended(for: feature, kind: .anthropic), feature.rawValue)
+        }
     }
 
     // MARK: - ProviderAccount
@@ -106,6 +123,7 @@ final class AIFeatureTests: XCTestCase {
             (.deepgram, .deepgram, "deepgram"),
             (.elevenLabs, .elevenLabs, "elevenLabs"),
             (.openRouter, .openRouter, "openRouter"),
+            (.anthropic, .anthropic, "anthropic"),
             (.server(serverID), .openAICompatible, serverStorageID),
         ]
         for entry in expected {

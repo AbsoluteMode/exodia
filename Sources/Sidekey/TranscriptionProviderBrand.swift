@@ -57,6 +57,12 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
     /// Brand shown while Drop's LLM cleanup runs directly through OpenRouter.
     static let openRouter = TranscriptionProviderBrand(assetName: "openrouter", label: "OpenRouter")
 
+    /// The SF Symbol for Anthropic, which has no brand asset in the bundle.
+    static let anthropicSystemName = "asterisk"
+
+    /// Brand of an Agent route on Anthropic's own API.
+    static let anthropic = TranscriptionProviderBrand(systemName: anthropicSystemName, label: "Anthropic")
+
     /// Brand shown while Drop's LLM cleanup runs through a custom
     /// OpenAI-compatible endpoint.
     static let customLLM = TranscriptionProviderBrand(systemName: "server.rack", label: "Custom LLM")
@@ -75,6 +81,8 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
             return TranscriptionProviderBrand(assetName: "elevenlabs", label: "ElevenLabs")
         case .openRouter:
             return .openRouter
+        case .anthropic:
+            return .anthropic
         case .server(let id):
             return TranscriptionProviderBrand(systemName: "server.rack", label: routing.server(id)?.name ?? "Server")
         }

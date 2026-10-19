@@ -312,8 +312,8 @@ struct APIAndModelsView: View {
     }
 }
 
-/// The one place a provider kind becomes a brand mark; Anthropic is one more
-/// case here.
+/// The one place a provider kind becomes a brand mark. A kind without a brand
+/// asset (Anthropic, a user's server) shows an SF Symbol.
 @MainActor
 struct ProviderKindIcon: View {
     let kind: AIProviderKind
@@ -323,7 +323,14 @@ struct ProviderKindIcon: View {
         if let assetName = Self.assetName(for: kind) {
             ProviderBrandIcon(assetName: assetName, size: size)
         } else {
-            ProviderBrandIcon(systemName: "server.rack", size: size)
+            ProviderBrandIcon(systemName: Self.systemName(for: kind), size: size)
+        }
+    }
+
+    static func systemName(for kind: AIProviderKind) -> String {
+        switch kind {
+        case .anthropic: return TranscriptionProviderBrand.anthropicSystemName
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .openAICompatible: return "server.rack"
         }
     }
 
@@ -333,7 +340,7 @@ struct ProviderKindIcon: View {
         case .deepgram: return "deepgram"
         case .elevenLabs: return "elevenlabs"
         case .openRouter: return "openrouter"
-        case .openAICompatible: return nil
+        case .anthropic, .openAICompatible: return nil
         }
     }
 }

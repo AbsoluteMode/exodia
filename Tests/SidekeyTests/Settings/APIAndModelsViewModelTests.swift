@@ -158,7 +158,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.chips[2].statusText, "Out of credit or key limit reached")
         XCTAssertEqual(vm.chips[3].title, "Lab")
         XCTAssertEqual(vm.chips[3].dot, .yellow)
-        XCTAssertEqual(vm.addableKinds, [.deepgram, .openAICompatible])
+        XCTAssertEqual(vm.addableKinds, [.deepgram, .anthropic, .openAICompatible])
     }
 
     // MARK: - Adding keys
