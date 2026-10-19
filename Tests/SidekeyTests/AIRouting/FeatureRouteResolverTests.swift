@@ -44,12 +44,36 @@ final class FeatureRouteResolverTests: XCTestCase {
         }
     }
 
+    /// Shaped like the consumers later tasks add: the resolver is a default
+    /// argument of a main-actor init and of a main-actor static function. Tests
+    /// pass their own resolver, so the defaults are compiled but never run.
+    @MainActor
+    private struct ResolverConsumer {
+        private let resolver: FeatureRouteResolver
+
+        init(resolver: FeatureRouteResolver = FeatureRouteResolver()) {
+            self.resolver = resolver
+        }
+
+        func route(for feature: AIFeature) throws -> ResolvedRoute {
+            try resolver.resolve(feature)
+        }
+
+        @MainActor
+        static func route(for feature: AIFeature, resolver: FeatureRouteResolver = FeatureRouteResolver()) throws -> ResolvedRoute {
+            try resolver.resolve(feature)
+        }
+    }
+
     // MARK: - Provider accounts
 
     func test_unset_feature_is_not_set() {
         let env = makeEnv()
 
         assertThrows(.notSet(.dropSmart)) { try env.resolver.resolve(.dropSmart) }
+        // The same answer through consumers that take the resolver as a default argument.
+        assertThrows(.notSet(.dropSmart)) { try ResolverConsumer(resolver: env.resolver).route(for: .dropSmart) }
+        assertThrows(.notSet(.dropSmart)) { try ResolverConsumer.route(for: .dropSmart, resolver: env.resolver) }
     }
 
     func test_route_resolves_with_the_key_of_its_own_account() throws {

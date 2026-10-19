@@ -42,14 +42,18 @@ struct ResolvedRoute: Equatable, Sendable {
 /// is `missingKey`, never a reason to use another provider.
 @MainActor
 struct FeatureRouteResolver {
-    private let routing: AIRoutingStore
+    /// `nil` means the shared store, looked up when a route is resolved.
+    private let injectedRouting: AIRoutingStore?
     private let keys: ProviderKeyStore
 
-    /// `routing` defaults to the shared store. The default is resolved in the
-    /// body, not in the parameter list, so the main-actor singleton is not read
-    /// from a nonisolated default-argument context (as `DotView` does).
-    init(routing: AIRoutingStore? = nil, keys: ProviderKeyStore = ProviderKeyStore()) {
-        self.routing = routing ?? .shared
+    private var routing: AIRoutingStore { injectedRouting ?? .shared }
+
+    /// `routing` defaults to the shared store. The init touches no main-actor
+    /// state and is `nonisolated`, so `FeatureRouteResolver()` can be a default
+    /// argument of a main-actor init or function: Swift 5 evaluates default
+    /// arguments outside the actor, where a main-actor init cannot be called.
+    nonisolated init(routing: AIRoutingStore? = nil, keys: ProviderKeyStore = ProviderKeyStore()) {
+        self.injectedRouting = routing
         self.keys = keys
     }
 
