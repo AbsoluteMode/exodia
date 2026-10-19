@@ -331,6 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotifyScriptSupervisor.shared.start()
         Task { await AgentSettingsStore.shared.refreshCodexCatalog() }
         // Final-rubber-stamp diagnostic + last-resort retry. If we reach
         // `applicationDidFinishLaunching` with a non-`.accessory` policy
@@ -461,10 +462,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showRuntimeSurfaceAfterReopen() {
         refreshRuntimePermissions()
         IslandPanel.shared.show()
+        IslandNotificationPanel.shared.show()
         registerIslandHotkeyActivity()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NotifyScriptSupervisor.shared.stop()
         stopPermissionRecoveryPolling()
         permissionCaptureEndObserver?.cancel()
         permissionCaptureEndObserver = nil
@@ -482,6 +485,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         agentController?.stop()
         clipboardWatcher?.stop()
         IslandPanel.shared.hide()
+        IslandNotificationPanel.shared.hide()
         meetingsEventConsumer?.cancel()
         meetingsEventConsumer = nil
     }
@@ -630,6 +634,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         IslandPanel.shared.actions = makeIslandActions()
         configureSettingsDeps(from: IslandPanel.shared.actions)
         IslandPanel.shared.show()
+        IslandNotificationPanel.shared.show()
         installIslandIdleControllerIfNeeded()
         // Post-relaunch "Updated" indicator (variant A): if the previous
         // session installed an update and this is the new binary, surface a
@@ -838,6 +843,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // luminance window-ID bookkeeping survive the sleep.
         panel?.orderOut(nil)
         IslandPanel.shared.hide()
+        IslandNotificationPanel.shared.hide()
 
         Task { @MainActor in
             await BackgroundLuminanceObserver.shared.stop()
@@ -1227,6 +1233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindowController = SettingsWindowController(
                 screenshotProtectionChanged: { enabled in
                     IslandPanel.setScreenshotProtectionEnabled(enabled)
+                    IslandNotificationPanel.setScreenshotProtectionEnabled(enabled)
                 },
                 notesControllerProvider: { [weak self] in
                     self?.meetingsCoordinator?.settingsMeetingsContentController
@@ -3834,6 +3841,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { _ in DispatchQueue.main.async(execute: recomputeBusy) }
             .store(in: &islandIdleCancellables)
+        LocalNotificationHub.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { _ in DispatchQueue.main.async(execute: recomputeBusy) }
+            .store(in: &islandIdleCancellables)
         // Push the initial blocker state so a launch that is already busy
         // (e.g. an update pill already up) starts held.
         recomputeBusy()
@@ -3871,7 +3882,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             justUpdatedVisible: appState.justUpdatedVersion != nil,
             nowPlayingActive: appState.nowPlaying != nil,
             rightModifierHeld: appState.rightCommandHeld || appState.rightOptionHeld,
-            programmaticHoverExpansion: appState.programmaticHoverExpansion
+            programmaticHoverExpansion: appState.programmaticHoverExpansion,
+            notificationActive: LocalNotificationHub.shared.current != nil
         )
     }
 

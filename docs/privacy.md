@@ -35,6 +35,14 @@ The app runs a fixed read-only Linux metrics collector through SSH; dashboards
 cannot embed commands or executable HTML. UT/Sferyx configuration belongs to
 the user’s local files and is absent from the source repository.
 
+Notify stores notification history (up to 500 events), including text, links,
+colors and logo names, locally under Application Support. User-configured scripts
+can access the external sources required by their integration with the user's
+authorized credentials. They run with ordinary user permissions while the app is
+open and stop on quit; Exodia does not send notification content to a model or an
+Exodia server. Script output is not logged and stderr is discarded. History and
+source controls are in Notify. [Script contract](customization/notifications.md).
+
 ## What can leave the device, and only when you choose it
 
 | Route | Where data goes | When |
