@@ -14,13 +14,17 @@ enum SubtitlePhase: Equatable {
 
 /// A bounded handoff prevents a slow socket from retaining unlimited system audio.
 /// Overflow ends the session visibly; it never silently drops captured speech.
-private final class SubtitleAudioRelay: @unchecked Sendable {
+final class SubtitleAudioRelay: @unchecked Sendable {
     let stream: AsyncThrowingStream<Data, Error>
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
     private var task: Task<Void, Never>?
     struct Overflow: Error {}
 
-    init(source: SystemAudioSourceStreaming, onOverflow: @escaping @Sendable () -> Void) {
+    init(
+        source: SystemAudioSourceStreaming,
+        convert: @escaping @Sendable ([Float]) -> Data = { SubtitleSegmenter.pcm16($0) },
+        onOverflow: @escaping @Sendable () -> Void
+    ) {
         let pair = AsyncThrowingStream<Data, Error>.makeStream(bufferingPolicy: .bufferingOldest(128))
         stream = pair.stream
         continuation = pair.continuation
@@ -28,7 +32,7 @@ private final class SubtitleAudioRelay: @unchecked Sendable {
         task = Task.detached {
             for await samples in input {
                 guard !Task.isCancelled else { break }
-                if case .dropped = pair.continuation.yield(SubtitleSegmenter.pcm16(samples)) {
+                if case .dropped = pair.continuation.yield(convert(samples)) {
                     onOverflow()
                     pair.continuation.finish(throwing: Overflow())
                     return
@@ -38,7 +42,7 @@ private final class SubtitleAudioRelay: @unchecked Sendable {
         }
     }
 
-    func finish() { task?.cancel(); task = nil; continuation.finish() }
+    func cancel() { task?.cancel(); task = nil; continuation.finish() }
     deinit { task?.cancel(); continuation.finish() }
 }
 
@@ -58,7 +62,7 @@ final class LiveSubtitleModel: ObservableObject {
     private let connectionTimeout: Duration
     private var connectionWatchdog: Task<Void, Never>?
     private let flushInterval: Duration
-    private let makeAudio: () -> SystemAudioSourceStreaming
+    private let makeAudio: () -> TerminalSystemAudioSourceStreaming
     private let open: (String?) async throws -> BYOKUpstreamSession
     private let makeService: () async throws -> TextTranslating
     private var generation = UUID()
@@ -68,7 +72,7 @@ final class LiveSubtitleModel: ObservableObject {
     private var translationTask: Task<Void, Never>?
     private var timer: Task<Void, Never>?
     private var stopWatchdog: Task<Void, Never>?
-    private var source: SystemAudioSourceStreaming?
+    private var source: TerminalSystemAudioSourceStreaming?
     private var upstream: BYOKUpstreamSession?
     private var relay: SubtitleAudioRelay?
     private var segmenter = SubtitleSegmenter()
@@ -80,7 +84,7 @@ final class LiveSubtitleModel: ObservableObject {
     init(
         flushInterval: Duration = .milliseconds(250),
         connectionTimeout: Duration = .seconds(15),
-        makeAudio: @escaping () -> SystemAudioSourceStreaming = { CoreAudioSystemAudioSource() },
+        makeAudio: @escaping () -> TerminalSystemAudioSourceStreaming = { CoreAudioSystemAudioSource() },
         open: @escaping (String?) async throws -> BYOKUpstreamSession = { language in
             let resolver = FeatureRouteResolver()
             guard let route = resolver.route(for: .subtitlesAudio) else { throw FeatureRouteError.notSet(.subtitlesAudio) }
@@ -210,14 +214,12 @@ final class LiveSubtitleModel: ObservableObject {
     func stop() {
         guard phase == .listening else { cancel(); return }
         setPhase(.finishing)
-        let token = generation
         // Stop capture, then drain the bounded relay, then provider finals.
+        // The source's terminal EOF lets the producer finish naturally: cancelling
+        // it here would discard buffered and in-flight captured PCM.
         let source = self.source
-        Task { [weak self] in
-            await source?.stop()
-            guard let self, self.generation == token else { return }
-            self.relay?.finish()
-        }
+        Task { await source?.stopAndFinishStreams() }
+        let token = generation
         stopWatchdog = Task { [weak self] in
             try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled else { return }
@@ -261,7 +263,7 @@ final class LiveSubtitleModel: ObservableObject {
 
     private func releaseCapture() async {
         audioTask?.cancel(); audioTask = nil
-        relay?.finish(); relay = nil
+        relay?.cancel(); relay = nil
         let source = self.source; self.source = nil
         let upstream = self.upstream; self.upstream = nil
         await source?.stop()

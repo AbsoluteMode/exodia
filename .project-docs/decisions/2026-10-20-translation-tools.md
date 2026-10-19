@@ -54,6 +54,17 @@ credential store or app. Final-only phrase translation reduces redundant
 requests. Bounded audio and phrase queues stop visibly when a provider cannot
 keep up. Generation guards reject late responses after editing or cancellation.
 
+Graceful Stop uses an opt-in terminal system-audio source. It stops and destroys
+capture, waits for the serial IO queue, then ends stream subscriptions. Hardware
+lifecycle operations share a lock so a previously dispatched route restart
+cannot create a new capture after terminal shutdown. Queued callbacks retain
+their capture generation until the barrier. The relay consumes source EOF
+naturally, sends all retained PCM and only then calls the provider's endInput.
+Cancelling that producer on Stop was proven to lose captured tail frames.
+Immediate Cancel remains separate; ordinary meeting/VAD stop keeps subscriptions
+open for reuse. Tests gate an in-flight conversion, queued source frames, a slow
+provider send and the IO queue without creating a hardware tap.
+
 ## Sources
 
 The request and source paths above; public usage and verification limits are

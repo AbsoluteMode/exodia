@@ -54,7 +54,8 @@ depends on phrase finalization, the network and the chosen model. It does not
 use the standalone app's OpenAI translation endpoint or its credential files.
 
 **Stop** stops capture, drains queued audio, waits up to ten seconds for speech
-finals and completes queued translations. **Cancel**, closing the window or
+finals and completes queued translations. Audio already captured at Stop is sent
+before the speech provider receives its end-of-input signal. **Cancel**, closing the window or
 Mac sleep cancels immediately. Switching to Text leaves subtitles running;
 a waveform button beside the target reopens them. Updates defer app-initiated
 restart while this window is open or a translation session is active, preserving

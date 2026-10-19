@@ -17,16 +17,23 @@ struct FixtureTranslator: TextTranslating {
     func translate(_ text: String, target: TranslationTarget) async throws -> String { "Перевод: " + text }
 }
 
-final class FixtureSubtitleAudio: SystemAudioSourceStreaming, @unchecked Sendable {
+final class FixtureSubtitleAudio: TerminalSystemAudioSourceStreaming, @unchecked Sendable {
     let pair = AsyncStream<[Float]>.makeStream()
     private let lock = NSLock()
     private var starts = 0
     private var stops = 0
+    private var terminalStops = 0
     var started: Int { lock.withLock { starts } }
     var stopped: Int { lock.withLock { stops } }
+    var finished: Int { lock.withLock { terminalStops } }
     func audioBufferStream() -> AsyncStream<[Float]> { pair.stream }
     func start() async throws { lock.withLock { starts += 1 } }
-    func stop() async { lock.withLock { stops += 1 }; pair.continuation.finish() }
+    func stop() async { lock.withLock { stops += 1 } }
+    func stopAndFinishStreams() async {
+        await stop()
+        lock.withLock { terminalStops += 1 }
+        pair.continuation.finish()
+    }
 }
 
 final class FixtureSubtitleUpstream: BYOKUpstreamSession {
@@ -159,6 +166,57 @@ final class TranslationTests: XCTestCase {
         await task.value
         XCTAssertTrue(upstream.closed)
         XCTAssertEqual(audio.started, 0)
+        XCTAssertEqual(model.phase, .idle)
+    }
+
+    func testStopDrainsBufferedPCMBeforeEndingProviderInput() async throws {
+        let audio = FixtureSubtitleAudio()
+        let upstream = FixtureSubtitleUpstream()
+        var resumeSend: CheckedContinuation<Void, Never>?
+        upstream.holdAudio = {
+            guard upstream.audio.count == 1 else { return }
+            await withCheckedContinuation { resumeSend = $0 }
+        }
+        let model = LiveSubtitleModel(makeAudio: { audio }, open: { _ in upstream }, makeService: { FixtureTranslator() })
+        let task = try XCTUnwrap(model.start())
+        await waitUntil { model.phase == .listening }
+        let frames: [[Float]] = [[0.1], [0.2], [0.3]]
+        audio.pair.continuation.yield(frames[0])
+        await waitUntil { resumeSend != nil }
+        for frame in frames.dropFirst() { audio.pair.continuation.yield(frame) }
+        model.stop()
+        await waitUntil { audio.finished == 1 }
+        XCTAssertEqual(model.phase, .finishing)
+        XCTAssertEqual(upstream.endCount, 0)
+        XCTAssertFalse(upstream.closed)
+        resumeSend?.resume()
+        await task.value
+        upstream.holdAudio = nil
+        XCTAssertEqual(upstream.audio, frames.map(SubtitleSegmenter.pcm16))
+        XCTAssertEqual(upstream.endCount, 1)
+        XCTAssertTrue(upstream.closed)
+        XCTAssertEqual(model.phase, .idle)
+    }
+
+    func testCancelDiscardsPendingPCMWithoutEndingProviderInput() async throws {
+        let audio = FixtureSubtitleAudio()
+        let upstream = FixtureSubtitleUpstream()
+        var resumeSend: CheckedContinuation<Void, Never>?
+        upstream.holdAudio = { await withCheckedContinuation { resumeSend = $0 } }
+        let model = LiveSubtitleModel(makeAudio: { audio }, open: { _ in upstream }, makeService: { FixtureTranslator() })
+        let task = try XCTUnwrap(model.start())
+        await waitUntil { model.phase == .listening }
+        audio.pair.continuation.yield([0.1])
+        await waitUntil { resumeSend != nil }
+        audio.pair.continuation.yield([0.2])
+        await model.cancel().value
+        resumeSend?.resume()
+        await task.value
+        upstream.holdAudio = nil
+        XCTAssertEqual(upstream.audio, [SubtitleSegmenter.pcm16([0.1])])
+        XCTAssertEqual(upstream.endCount, 0)
+        XCTAssertEqual(audio.finished, 0)
+        XCTAssertTrue(upstream.closed)
         XCTAssertEqual(model.phase, .idle)
     }
 

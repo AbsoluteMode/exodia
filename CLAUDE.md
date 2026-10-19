@@ -196,7 +196,10 @@ Translation tools:
   go to the translation LLM route shared with typed text. Both routes start
   unset; never borrow Drop/Agent routes or migrate standalone credentials.
   Eight queued phrases, forty retained lines and a bounded audio relay stop
-  visibly on backlog. Stop drains/finalizes; Cancel, window close and sleep
+  visibly on backlog. Stop uses opt-in CoreAudio terminal EOF after capture
+  quiescence and an IO queue barrier, then naturally drains the relay before
+  provider endInput. Ordinary meeting/VAD stop keeps streams reusable; hardware
+  start/stop/route restart are serialized. Cancel, window close and sleep
   tear down capture and requests. No audio/history is saved. Visible translation work
   (including unsent input) or an active session blocks app-initiated update restart. Guide: docs/translation.md. WHY:
   .project-docs/decisions/2026-10-20-translation-tools.md
