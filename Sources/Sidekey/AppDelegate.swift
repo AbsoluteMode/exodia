@@ -56,11 +56,13 @@ enum DropCancelRoute: Equatable {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = AudioRecorder()
-    /// Batch transcriber for the recorder fallback and the resilient-delivery
-    /// batch rung. None is wired since the on-device model was removed, so
-    /// the batch rung is skipped and the recorder fallback ends at idle.
-    /// WHY: .project-docs/decisions/2026-10-18-remove-local-models.md
-    private let batchTranscriber: any BatchTranscribing = UnavailableBatchTranscriber()
+    /// Batch transcriber for the recorder fallback, the resilient-delivery
+    /// batch rung, Retry and agent batch voice: the provider and key chosen
+    /// in Settings -> Models, read on every take. Without that choice it is
+    /// unavailable and the audio goes nowhere; it never falls back to another
+    /// provider.
+    /// WHY: .project-docs/decisions/2026-10-18-provider-batch-transcription.md
+    private let batchTranscriber: any BatchTranscribing = ProviderBatchTranscriber()
     /// In-flight streaming session for the Drop flow. Both `.fast` and
     /// `.smart` open one — they share the live realtime pipeline; `.smart`
     /// differs only after the stop, when the transcript runs through the
@@ -1793,6 +1795,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             },
             resolveProjectContext: { ProjectKnowledgeStore.shared.activeProjectContext(query: $0) },
+            audioTranscriber: BatchAgentAudioTranscriber(batch: batchTranscriber),
             responseStore: responseStore,
             chatStackStore: chatStackStore,
             // Stage 2 capability gate: read the live flag on every gesture so
@@ -2436,8 +2439,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppState.shared.phase = .transcribing
 
         // Recorder fallback: transcribe the captured WAV with the batch
-        // transcriber. Without one there is nothing that can transcribe the
-        // take, so it ends here (the audio is never sent anywhere).
+        // transcriber (the user's own provider). Without one configured it
+        // throws and the take ends here (the audio is never sent anywhere).
         Task { @MainActor in
             let startedAt = Date()
             do {

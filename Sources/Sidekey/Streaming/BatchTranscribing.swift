@@ -12,13 +12,15 @@ protocol BatchTranscribing: Sendable {
     func transcribe(audio: Data, language: String?) async throws -> String
 }
 
-/// Thrown by `UnavailableBatchTranscriber`: there is no batch recognizer.
+/// There is no batch recognizer: `UnavailableBatchTranscriber`, or
+/// `ProviderBatchTranscriber` without a provider and its key chosen in
+/// Settings -> Models.
 struct BatchTranscriptionUnavailable: Error, Equatable {}
 
-/// Production binding while no batch recognizer exists. On-device Parakeet
-/// was removed and provider batch APIs are not wired yet, so the batch rung
-/// is skipped: a degraded Drop goes to the raw partial, then to
-/// "Couldn't deliver". WHY: .project-docs/decisions/2026-10-18-remove-local-models.md
+/// No batch recognizer: the default of `BatchAgentAudioTranscriber`, so a
+/// controller built without one never sends audio anywhere. Production binds
+/// `ProviderBatchTranscriber`.
+/// WHY: .project-docs/decisions/2026-10-18-provider-batch-transcription.md
 struct UnavailableBatchTranscriber: BatchTranscribing {
     func isAvailable() async -> Bool { false }
 

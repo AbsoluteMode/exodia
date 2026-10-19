@@ -11,9 +11,9 @@ enum AgentControllerState: Equatable {
 }
 
 /// Batch transcription seam for the agent's record-then-transcribe voice
-/// path (used when realtime streaming is unavailable). Production has no
-/// batch recognizer since the on-device model was removed; tests inject a
-/// fake.
+/// path (used when realtime streaming is unavailable). Production passes the
+/// provider batch transcriber (the user's own provider and key); tests
+/// inject a fake.
 protocol AgentAudioTranscribing {
     /// `language` is the ISO 639-1 code selected by the user (e.g. "ru"),
     /// or `nil` for automatic detection.
@@ -1721,7 +1721,8 @@ final class AgentController: ObservableObject {
         if let agentError = error as? AgentClientError {
             return agentError.retryable
         }
-        // Retrying cannot help while no batch recognizer exists.
+        // Retrying cannot help until a provider and its key are set in
+        // Settings -> Models.
         if error is BatchTranscriptionUnavailable {
             return false
         }
