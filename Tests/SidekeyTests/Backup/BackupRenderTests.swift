@@ -169,6 +169,13 @@ final class BackupRenderTests: XCTestCase {
             to: directory.appendingPathComponent("backup-configured.png")
         )
 
+        try render(hosted(SettingsBackupView(model: configuredModel, showManagement: true)),
+                   size: NSSize(width: 760, height: 850), to: directory.appendingPathComponent("backup-management.png"))
+        configuredModel.beginReplacingCode()
+        try render(hosted(SettingsBackupView(model: configuredModel)),
+                   size: NSSize(width: 760, height: 700), to: directory.appendingPathComponent("backup-change-code.png"))
+        configuredModel.cancelReplacingCode()
+
         // 5. Error / offline state (verifies no stale green pill is displayed)
         let errorModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("error"))
         errorModel.isEnabled = true
@@ -220,6 +227,20 @@ final class BackupRenderTests: XCTestCase {
         readyModel.statusText = "Restore is ready. Quit Whytap normally and open it again when your work is finished."
         try render(hosted(SettingsBackupView(model: readyModel)), size: NSSize(width: 760, height: 780),
                    to: directory.appendingPathComponent("backup-restore-ready.png"))
+
+        let unfinishedModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("unfinished"))
+        unfinishedModel.hasPendingMaintenance = true
+        unfinishedModel.recoverySaved = true
+        unfinishedModel.destinationName = "GitHub · octocat/Exodia-Backup"
+        unfinishedModel.statusText = "Backup management is unfinished. Resume it to finish removing old copies."
+        try render(hosted(SettingsBackupView(model: unfinishedModel)), size: NSSize(width: 760, height: 560),
+                   to: directory.appendingPathComponent("backup-management-unfinished.png"))
+
+        let stoppedModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("stopped"))
+        stoppedModel.managementWarning = "Old copies may remain at GitHub · octocat/Exodia-Backup. Remove them there separately. Kept local copies may need their previous recovery codes."
+        stoppedModel.statusText = "Backup management stopped. Automatic backup stays off. Save a new recovery code before starting again."
+        try render(hosted(SettingsBackupView(model: stoppedModel)), size: NSSize(width: 760, height: 620),
+                   to: directory.appendingPathComponent("backup-management-stopped.png"))
 
         let recoveredModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("recovered"))
         recoveredModel.recoveryCheckpoint = ArtifactRecoveryCheckpoint(id: UUID(), createdAt: fixedDate,

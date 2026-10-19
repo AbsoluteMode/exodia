@@ -622,7 +622,9 @@ ApplicationInstanceCoordinator then acquires one common prod/beta/worktree lease
 before constructing AppDelegate. A second copy offers to activate the owner and
 quits without starting permissions, providers or hotkeys. Legacy binaries launched
 later cannot honor the lease. The Settings footer shows only the actual app name
-and display version, with website and GitHub links. Detailed build identity stays
+and display version, separated from website and GitHub links by a thin rule.
+All footer text uses the same size; the links have icons, a pointing-hand cursor,
+hover/press highlights and destination tooltips. Detailed build identity stays
 in bundle metadata, outside this compact footer.
 WHY: .project-docs/decisions/2026-10-19-one-running-copy.md
 `--installation-check` loads the packaged executable and verifies resources
@@ -643,6 +645,18 @@ GitHub release assets receive ciphertext; a checked completion index is publishe
 last. Folder copies report verified local writes, not verified cloud upload.
 API & Models routes, server registrations and their provider keys are included.
 Reset leaves routes Not set; archives predating routing preserve current routes.
+The main Backup page has Back up / Restore backup; settings history and management
+are disclosures. Code replacement verifies a new standalone full copy before
+explicitly deleting old full copies locally and at the connected destination.
+Deletion without replacement leaves automatic backup off and retires the cloud
+code. Durable maintenance requests block backup/restore until cleanup finishes;
+secrets remain in Keychain. Settings history and restore checkpoints are retained.
+One idle retry resumes on reopening. Explicit Stop retains copies/keys/metadata,
+requires a fresh code for future backups and keeps a warning about remaining
+copies. Parked old-key archives never become upload candidates or delta bases.
+Downloaded copies cannot be revoked; other destinations, sync trash/version
+history and other Macs require separate cleanup. WHY:
+`.project-docs/decisions/2026-10-19-backup-management.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore

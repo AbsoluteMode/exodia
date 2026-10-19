@@ -37,6 +37,16 @@ struct SettingsBackupView: View {
     @State private var showDefaultsConfirmation = false
     @State private var shownVersionCount = 20
     @State private var activationItem: ArtifactParkedItem?
+    @State private var showManagement = false
+    @State private var showLocalHistory = false
+    @State private var showDeleteConfirmation = false
+    @State private var showReplaceConfirmation = false
+    @State private var showStopManagementConfirmation = false
+
+    init(model: BackupViewModel = .shared, showManagement: Bool = false) {
+        self.model = model
+        _showManagement = State(initialValue: showManagement)
+    }
 
     private struct PendingSectionRestore: Equatable {
         let section: ConfigBackupSection
@@ -81,22 +91,42 @@ struct SettingsBackupView: View {
                 if let errorMessage = model.errorMessage, !errorMessage.isEmpty {
                     errorBanner(errorMessage)
                 }
-
-                if let preview = model.restorePreview {
-                    restorePreviewSection(preview)
-                } else if isShowingSetup {
-                    setupSection
-                } else if isConfigured {
-                    configuredSection
-                    restoreBrowserSection(isNewMacMode: false)
-                } else {
-                    emptyStateSection
-                    if isRestoreActive || hasRestoreOnlyConnection || !model.versions.isEmpty {
-                        restoreBrowserSection(isNewMacMode: true)
+                if let warning = model.managementWarning {
+                    VStack(alignment: .leading, spacing: 8) {
+                        MacBanner(tone: .warn, systemImage: "exclamationmark.triangle",
+                            title: "Some backup copies were left behind", text: warning)
+                        HStack {
+                            MacButton(title: "Show kept local copies…", style: .default) { model.showRetainedBackups() }
+                            MacButton(title: "Dismiss warning", style: .ghost) { model.dismissManagementWarning() }
+                        }
                     }
                 }
 
-                localSettingsHistorySection
+                if let preview = model.restorePreview {
+                    restorePreviewSection(preview)
+                } else if model.isReplacingCode {
+                    replacementCodeSection
+                } else if isShowingSetup {
+                    setupSection
+                } else {
+                    emptyStateSection
+                    if model.hasPendingMaintenance { unfinishedManagementSection }
+                    if isConfigured || model.recoverySaved || !model.versions.isEmpty {
+                        DisclosureGroup("Manage backups", isExpanded: $showManagement) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                if isConfigured { configuredSection }
+                                managementActions
+                            }.padding(.top, 12)
+                        }
+                    }
+                    if isRestoreActive {
+                        restoreBrowserSection(isNewMacMode: !isConfigured)
+                    }
+                }
+
+                DisclosureGroup("Undo a settings change", isExpanded: $showLocalHistory) {
+                    localSettingsHistorySection.padding(.top, 12)
+                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 22)
@@ -125,10 +155,33 @@ struct SettingsBackupView: View {
                  ? "AI routes will become Not set and server registrations will reset at the next normal launch. Provider keys and a recovery copy of your current values are kept."
                  : "Only this settings block will return to the app defaults at the next normal launch. A copy of its current values is kept. Provider keys are kept.")
         }
+        .alert("Replace your recovery code?", isPresented: $showReplaceConfirmation) {
+            Button("Continue") {
+                verifyCodeInput = ""; verifyErrorMessage = nil
+                isGeneratedCodeRevealed = true
+                model.beginReplacingCode()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Save a new code, then Whytap will create and check a full backup before deleting older full copies, including Before restore archives, from this Mac and \(model.destinationName). Stop automatic backups on your other Macs first. Downloaded copies cannot be revoked. Copies in other destinations and your sync service's trash or version history must be removed there separately.")
+        }
+        .alert("Delete all backup copies?", isPresented: $showDeleteConfirmation) {
+            Button("Delete backups", role: .destructive) { Task { await model.deleteBackups() } }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Remove full backups, including Before restore archives, from this Mac and \(model.destinationName == "Not connected" ? "no connected destination" : model.destinationName), then turn off automatic backup. Your working data, local settings history and restore checkpoints stay on this Mac. Stop automatic backups on other Macs first. Downloaded copies, other destinations, and your sync service's trash or version history must be removed separately.")
+        }
+        .alert("Stop unfinished backup management?", isPresented: $showStopManagementConfirmation) {
+            Button("Stop and keep remaining copies", role: .destructive) { Task { await model.stopBackupManagement() } }
+            Button("Keep trying", role: .cancel) { }
+        } message: {
+            Text("Some copies may remain at \(model.destinationName). This does not revoke their recovery codes. Whytap keeps the remaining local files and keys, leaves automatic backup off and requires a new code before making more backups. Remove remote copies separately when you regain access.")
+        }
     }
 
     private func clearSensitiveInput() {
         model.hideRecoveryCode()
+        if !model.hasPendingMaintenance { model.cancelReplacingCode() }
         verifyCodeInput = ""; setupTokenInput = ""; restoreTokenInput = ""; restoreCodeInput = ""
         isConfiguredCodeRevealed = false; isSetupActive = false
         isGeneratedCodeRevealed = false; isVerifyCodeRevealed = false
@@ -274,14 +327,15 @@ struct SettingsBackupView: View {
 
     private var emptyStateSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Encrypted Backup", trailing: "No Whytap account")
             MacCard {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Keep a safe copy")
+                        Text(isConfigured ? model.destinationName : "Keep a safe copy")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(MacSettingsTheme.text)
-                        Text("Settings, provider keys, Case, meetings and saved attachments. Encrypted before they leave your Mac.")
+                        Text(isConfigured
+                             ? "Last backup: \(Self.formatDate(model.lastRemoteBackupAt, emptyText: "not copied yet"))"
+                             : "Save your settings, keys, meetings and attachments in an encrypted backup.")
                             .font(.system(size: 12.5))
                             .foregroundStyle(MacSettingsTheme.text2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -289,30 +343,32 @@ struct SettingsBackupView: View {
 
                     HStack(spacing: 10) {
                         MacButton(
-                            title: "Set up backup",
+                            title: "Back up",
                             style: .primary,
-                            isEnabled: !model.isBusy && !model.needsRestart
+                            isEnabled: !model.isBusy && !model.needsRestart && !model.hasPendingMaintenance
                         ) {
+                            if isConfigured && model.recoverySaved { Task { await model.backupNow() }; return }
                             verifyErrorMessage = nil
                             verifyCodeInput = ""
                             localRecoveryVerified = false
                             isRestoreActive = false
                             isSetupActive = true
+                            isGeneratedCodeRevealed = true
                             model.beginSetup()
                         }
-                        .accessibilityLabel("Set up backup")
+                        .accessibilityLabel("Back up")
 
                         MacButton(
-                            title: "Restore a backup",
+                            title: "Restore backup",
                             style: .default,
-                            isEnabled: !model.isBusy && !model.needsRestart
+                            isEnabled: !model.isBusy && !model.needsRestart && !model.hasPendingMaintenance
                         ) {
                             isSetupActive = false
                             isRestoreActive = true
-                            showRestoreConnectionOptions = true
+                            showRestoreConnectionOptions = !isConfigured
                             Task { await model.refreshVersions() }
                         }
-                        .accessibilityLabel("Restore a backup without existing setup")
+                        .accessibilityLabel("Restore backup")
 
                         Spacer()
                     }
@@ -320,21 +376,60 @@ struct SettingsBackupView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
 
-                MacRowSeparator()
-
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(MacSettingsTheme.text2)
-                        .padding(.top, 1)
-                    Text("Clipboard file links keep paths to external originals. Those original files are not copied. Your saved images and app-owned attachments are included.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(MacSettingsTheme.text2)
-                        .fixedSize(horizontal: false, vertical: true)
+                if isConfigured {
+                    MacRowSeparator()
+                    MacRow(title: model.isEnabled ? "Automatic backup is on" : "Automatic backup is paused") {
+                        configuredStatusPill
+                    }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+
             }
+        }
+    }
+
+    private var managementActions: some View {
+        MacCard {
+            MacRow(title: "Recovery code", subtitle: "Lost or exposed? Save a new code and replace old backup copies.") {
+                MacButton(title: "Change code…", style: .default,
+                    isEnabled: !model.isBusy && !model.needsRestart && !model.hasPendingMaintenance && isConfigured) {
+                    showReplaceConfirmation = true
+                }
+            }
+            MacRowSeparator()
+            MacRow(title: "Delete backups", subtitle: "Turn off backup and remove full copies. Keep your working data.") {
+                MacButton(title: "Delete backups…", style: .danger,
+                    isEnabled: !model.isBusy && !model.needsRestart && !model.hasPendingMaintenance) {
+                    showDeleteConfirmation = true
+                }
+            }
+        }
+    }
+
+    private var unfinishedManagementSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MacBanner(tone: .warn, systemImage: "exclamationmark.triangle",
+                title: "Old copies may still exist",
+                text: "Automatic backup is paused until removal finishes. Your working data is kept.")
+            HStack {
+                MacButton(title: "Finish backup management", style: .primary, isEnabled: !model.isBusy) {
+                    Task { await model.resumeBackupManagement() }
+                }
+                MacButton(title: "Connection…", style: .default, isEnabled: !model.isBusy) {
+                    isRestoreActive = true; showRestoreConnectionOptions = true
+                }
+                MacButton(title: "Stop…", style: .ghost, isEnabled: !model.isBusy) {
+                    showStopManagementConfirmation = true
+                }
+            }
+        }
+    }
+
+    private var replacementCodeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            MacBanner(tone: .info, systemImage: "key",
+                title: "Save your new recovery code",
+                text: "After verification, a new full backup replaces older copies on this Mac and the connected destination. Downloaded copies cannot be revoked.")
+            MacCard { setupRecoveryCodeStep }
         }
     }
 
@@ -438,7 +533,7 @@ struct SettingsBackupView: View {
                     .accessibilityLabel(isVerifyCodeRevealed ? "Hide verification input" : "Show verification input")
 
                     MacButton(
-                        title: "Verify code",
+                        title: model.isReplacingCode ? "Replace code & backups" : "Verify code",
                         style: .primary,
                         isEnabled: !model.isBusy && !model.needsRestart && !verifyCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ) {
@@ -457,6 +552,7 @@ struct SettingsBackupView: View {
                     MacButton(title: "Cancel", style: .default) {
                         isSetupActive = false
                         model.hideRecoveryCode()
+                        model.cancelReplacingCode()
                         verifyCodeInput = ""
                         verifyErrorMessage = nil
                     }
@@ -486,6 +582,11 @@ struct SettingsBackupView: View {
             return
         }
         do {
+            if model.isReplacingCode {
+                verifyErrorMessage = nil
+                Task { await model.replaceRecoveryCode(verifiedCode: trimmed); if !model.isReplacingCode { verifyCodeInput = "" } }
+                return
+            }
             try model.confirmRecoveryCode(trimmed)
             verifyErrorMessage = nil
             localRecoveryVerified = true
@@ -498,7 +599,7 @@ struct SettingsBackupView: View {
         VStack(alignment: .leading, spacing: 0) {
             MacRow(
                 title: "Recovery code verified",
-                subtitle: "Choose where Whytap should store your encrypted backup archives."
+                subtitle: "Choose where to keep encrypted copies. Saved images and app-owned attachments are included; external original files are not copied."
             ) {
                 MacPill(text: "Verified", tone: .green, showsDot: true)
             }
@@ -628,25 +729,15 @@ struct SettingsBackupView: View {
                         : "Encrypted archives are uploaded to your private GitHub repository."
                 ) {
                     HStack(spacing: 8) {
-                        configuredStatusPill
                         MacButton(
                             title: model.isEnabled ? "Pause" : (model.recoverySaved ? "Resume" : "Set up backup"),
                             style: .default,
-                            isEnabled: !model.isBusy && !model.needsRestart
+                            isEnabled: !model.isBusy && !model.needsRestart && !model.hasPendingMaintenance
                         ) {
                             if model.recoverySaved { model.setEnabled(!model.isEnabled) }
                             else { isSetupActive = true; isRestoreActive = false; model.beginSetup() }
                         }
                         .accessibilityLabel(model.isEnabled ? "Pause automatic backups" : "Resume automatic backups")
-
-                        MacButton(
-                            title: model.isBusy ? "Backing up…" : "Back up now",
-                            style: .primary,
-                            isEnabled: !model.isBusy && !model.needsRestart
-                        ) {
-                            Task { await model.backupNow() }
-                        }
-                        .accessibilityLabel("Back up now")
                     }
                 }
 
@@ -704,7 +795,7 @@ struct SettingsBackupView: View {
                             MacButton(
                                 title: "Show recovery code",
                                 style: .default,
-                                isEnabled: !model.isBusy && !model.needsRestart
+                                isEnabled: !model.isBusy && !model.needsRestart && !model.hasPendingMaintenance
                             ) {
                                 Task {
                                     await model.showRecoveryCode()
@@ -778,10 +869,14 @@ struct SettingsBackupView: View {
 
     private func restoreBrowserSection(isNewMacMode: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(
-                title: "Restore a Backup",
-                trailing: isNewMacMode ? "Works without local Keychain key" : "Encrypted versions"
-            )
+            HStack {
+                MacGroupTitle(title: "Restore backup")
+                Spacer()
+                MacButton(title: "Close", style: .ghost) {
+                    isRestoreActive = false; showRestoreConnectionOptions = false
+                    restoreCodeInput = ""; restoreTokenInput = ""
+                }.keyboardShortcut(.cancelAction)
+            }
             MacCard {
                 if isNewMacMode || showRestoreConnectionOptions {
                     VStack(alignment: .leading, spacing: 8) {
@@ -798,12 +893,6 @@ struct SettingsBackupView: View {
                             Spacer()
                             if hasRestoreOnlyConnection {
                                 MacPill(text: model.destinationName, tone: .blue, showsDot: true)
-                            }
-                            if isNewMacMode && isRestoreActive {
-                                MacButton(title: "Close", style: .default) {
-                                    isRestoreActive = false
-                                }
-                                .keyboardShortcut(.cancelAction)
                             }
                         }
 

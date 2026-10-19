@@ -103,7 +103,7 @@ struct SettingsWindowView: View {
                 .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
 
             VStack(alignment: .leading, spacing: 4) {
-                buildIdentity
+                SettingsProjectFooter(identity: .current)
                 learningCenterRow
                 quitRow
             }
@@ -112,24 +112,6 @@ struct SettingsWindowView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(width: SettingsSidebarStyle.width, alignment: .topLeading)
-    }
-
-    private var buildIdentity: some View {
-        let identity = AppBuildIdentity.current
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("\(identity.name) \(identity.version)")
-                .font(.system(size: 11, weight: .medium))
-            HStack(spacing: 8) {
-                Link("whytap.ai", destination: URL(string: "https://whytap.ai")!)
-                Text("·").accessibilityHidden(true)
-                Link("GitHub", destination: BuildConfig.landingURL)
-            }
-                .font(.system(size: 10))
-        }
-        .foregroundStyle(MacSettingsTheme.text2)
-        .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
-        .padding(.bottom, 6)
-        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder

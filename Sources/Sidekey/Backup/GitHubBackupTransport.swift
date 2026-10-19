@@ -200,6 +200,40 @@ actor GitHubBackupTransport {
         return versions.sorted { $0.createdAt > $1.createdAt }
     }
 
+    /// Explicitly requested cleanup includes unfinished drafts. It remains
+    /// available if the repository became public: that is when deletion matters
+    /// most. Never delete the repository, unrelated releases or source history.
+    func deleteBackups(except keptID: UUID? = nil) async throws {
+        let data = try await json(path: repoPath)
+        guard let repository = try? JSONDecoder().decode(Repository.self, from: data),
+              repository.name.lowercased() == Self.repository.lowercased() else { throw Failure.invalidResponse }
+        if repository.permissions?.push == false { throw Failure.permission }
+        let releases = try await managedReleases()
+        for release in releases where Self.snapshotID(release.tag_name) != keptID {
+            try Task.checkCancellation()
+            let path = repoPath + "/releases/\(release.id)"
+            let (_, response) = try await session.data(for: request(path: path, method: "DELETE"))
+            if (response as? HTTPURLResponse)?.statusCode != 404 { try Self.check(response) }
+            let (_, readback) = try await session.data(for: request(path: path))
+            guard (readback as? HTTPURLResponse)?.statusCode == 404 else { throw Failure.incomplete }
+        }
+        // Do not claim success if another Mac uploaded during the operation.
+        guard try await managedReleases().allSatisfy({ Self.snapshotID($0.tag_name) == keptID }) else { throw Failure.incomplete }
+    }
+
+    private func managedReleases() async throws -> [Release] {
+        var result: [Release] = []
+        for page in 1...100 {
+            let data = try await json(path: repoPath + "/releases?per_page=100&page=\(page)")
+            guard let releases = try? JSONDecoder().decode([Release].self, from: data),
+                  releases.allSatisfy({ $0.id > 0 }) else { throw Failure.invalidResponse }
+            result += releases.filter { $0.body == Self.marker && Self.snapshotID($0.tag_name) != nil }
+            if releases.count < 100 { return result }
+        }
+        // Exhaustion is an error, never a silently incomplete deletion.
+        throw Failure.incomplete
+    }
+
     func version(id: UUID) async throws -> BackupVersion {
         let data = try await json(path: repoPath + "/releases/tags/exodia-backup-" + id.uuidString.lowercased())
         guard let release = try? JSONDecoder().decode(Release.self, from: data), !release.draft,
