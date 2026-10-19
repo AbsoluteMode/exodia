@@ -52,6 +52,7 @@ final class IslandNotificationPanel: NSPanel {
         self.protected = protected
         let frame = IslandFrameLayout.notificationPanelFrame(on: IslandScreenResolver.currentDescriptor())
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isReleasedWhenClosed = false
         isOpaque = false; backgroundColor = .clear; hasShadow = false; isMovable = false
         hidesOnDeactivate = false; isFloatingPanel = true; ignoresMouseEvents = true
         appearance = NSAppearance(named: .darkAqua)
@@ -86,7 +87,7 @@ final class IslandNotificationPanel: NSPanel {
     static func setScreenshotProtectionEnabled(_ enabled: Bool) {
         guard storage.protected != enabled else { return }
         let wasEnabled = storage.isEnabled
-        storage.hide(); storage = IslandNotificationPanel(protected: enabled)
+        storage.hide(); storage.close(); storage = IslandNotificationPanel(protected: enabled)
         if wasEnabled { storage.show() }
     }
     @objc private func reposition() {

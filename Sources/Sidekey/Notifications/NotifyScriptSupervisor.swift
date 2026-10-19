@@ -130,11 +130,8 @@ final class NotifyScriptSupervisor: ObservableObject {
     private func launch(_ script: NotifyScript) {
         let token = UUID(); tokens[script.id] = token; decoders[script.id] = NotifyLineDecoder()
         do {
-            var environment = ProcessInfo.processInfo.environment
-            // Script-only context: provider credentials held by Exodia never enter it.
-            environment["EXODIA_NOTIFY_SOURCE"] = script.id
-            environment["EXODIA_NOTIFY_DIRECTORY"] = directory.path
-            environment["PYTHONUNBUFFERED"] = "1"
+            let environment = Self.environment(inherited: ProcessInfo.processInfo.environment,
+                                               source: script.id, directory: directory)
             processes[script.id] = try NotifyProcess(command: script.command, environment: environment,
                 onData: { [weak self] data in
                     DispatchQueue.main.sync { self?.consume(data, script: script, token: token) }
@@ -143,6 +140,14 @@ final class NotifyScriptSupervisor: ObservableObject {
                 })
             status(script.id, "Running")
         } catch { status(script.id, "Couldn’t start. Check the executable and its permissions."); retry(script, failed: true) }
+    }
+    static func environment(inherited: [String: String], source: String, directory: URL) -> [String: String] {
+        let allowed = Set(["PATH", "HOME", "TMPDIR", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "SSH_AUTH_SOCK"])
+        var values = inherited.filter { allowed.contains($0.key) }
+        values["EXODIA_NOTIFY_SOURCE"] = source
+        values["EXODIA_NOTIFY_DIRECTORY"] = directory.path
+        values["PYTHONUNBUFFERED"] = "1"
+        return values
     }
     private func consume(_ data: Data, script: NotifyScript, token: UUID) {
         guard running, tokens[script.id] == token else { return }

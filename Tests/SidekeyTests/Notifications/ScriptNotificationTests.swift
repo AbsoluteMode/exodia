@@ -91,6 +91,20 @@ final class LocalNotificationHubTests: XCTestCase {
         XCTAssertEqual(hub.current?.id, "x:1"); hub.dismiss(); XCTAssertEqual(hub.current?.id, "x:2")
         hub.setSuspended(true); XCTAssertNil(hub.current); XCTAssertEqual(hub.history.count, 2)
     }
+    func testHoverPausesRealDismissalAndResumesWithRemainingTime() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let hub = LocalNotificationHub(directory: root)
+        let script = NotifyScript(id: "hover", name: "Hover", command: ["/bin/sh"])
+        let payload = try JSONDecoder().decode(NotifyPayload.self, from: Data(#"{"title":"Test","duration":2}"#.utf8))
+        _ = await hub.receive(try LocalNotificationEvent.make(payload, script: script))
+        hub.setHovered(true)
+        try await Task.sleep(nanoseconds: 2_100_000_000)
+        XCTAssertNotNil(hub.current)
+        hub.setHovered(false)
+        XCTAssertGreaterThan(hub.deadline?.timeIntervalSinceNow ?? 0, 1.5)
+        hub.setSuspended(true)
+    }
     func testNotifyRoutingAndOriginalLeftGeometry() {
         XCTAssertEqual(HoverSlotRouter.effect(for: .notifs), .openPanel(.notifications))
         XCTAssertEqual(HoverToolRegistry.info(for: .notifs).title, "Notify")

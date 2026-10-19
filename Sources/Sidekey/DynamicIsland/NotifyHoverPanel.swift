@@ -31,10 +31,13 @@ struct NotifyHoverPanel: View {
                 .accessibilityLabel(showsSources ? "Open notification sources folder" : "Clear notification history")
             }
             .font(.system(size: 11, weight: .medium)).frame(height: 24)
-            Picker("Notify view", selection: $showsSources) {
-                Text("History\(hub.unreadCount > 0 ? " · \(hub.unreadCount)" : "")").tag(false)
-                Text("Sources").tag(true)
-            }.pickerStyle(.segmented).controlSize(.small)
+            HStack(spacing: 2) {
+                sectionButton("History", selected: !showsSources) { showsSources = false }
+                sectionButton("Sources", selected: showsSources) { showsSources = true }
+            }
+            .padding(2)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.24)))
+
 
             if let error = hub.error ?? supervisor.error {
                 Text(error).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
@@ -55,6 +58,8 @@ struct NotifyHoverPanel: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(10)
+        .foregroundStyle(Color.white)
+        .environment(\.colorScheme, .dark)
         .onAppear { Task { await hub.markRead() } }
         .onChange(of: showsSources) { _, value in if !value { Task { await hub.markRead() } } }
         .confirmationDialog("Remove this notification source?", isPresented: Binding(
@@ -67,6 +72,17 @@ struct NotifyHoverPanel: View {
             Button("Clear history", role: .destructive) { Task { await hub.clear() } }
             Button("Cancel", role: .cancel) {}
         }
+    }
+    private func sectionButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 11, weight: selected ? .semibold : .medium))
+                .foregroundStyle(Color.white.opacity(selected ? 1 : 0.6))
+                .frame(maxWidth: .infinity).frame(height: 23)
+                .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(selected ? 0.14 : 0)))
+                .contentShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
     private func empty(_ title: String, detail: String) -> some View {
         VStack(spacing: 6) {
@@ -91,7 +107,7 @@ struct NotifyHoverPanel: View {
                     .lineLimit(1).frame(maxWidth: 48)
             }
             .padding(8)
-            .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.055)))
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(red: 0.12, green: 0.12, blue: 0.14)))
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
@@ -111,7 +127,7 @@ struct NotifyHoverPanel: View {
                 .labelsHidden().toggleStyle(.switch).controlSize(.mini)
                 .accessibilityLabel("Enable \(source.script.name)")
         }
-        .padding(8).background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.055)))
+        .padding(8).background(RoundedRectangle(cornerRadius: 10).fill(Color(red: 0.12, green: 0.12, blue: 0.14)))
         .contextMenu { Button("Remove source…", role: .destructive) { pendingRemoval = source.id } }
     }
 }

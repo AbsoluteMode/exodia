@@ -37,6 +37,17 @@ final class NotifyProcessTests: XCTestCase {
 
 @MainActor
 final class NotifyScriptSupervisorTests: XCTestCase {
+    func testWorkersDoNotInheritProviderOrBuildCredentials() {
+        let environment = NotifyScriptSupervisor.environment(inherited: [
+            "PATH": "/usr/bin:/bin", "HOME": "/tmp/synthetic-home",
+            "OPENROUTER_API_KEY": "synthetic-value", "DOPPLER_TOKEN": "synthetic-value",
+            "EXODIA_COMMUNITY_SIGNING_KEY": "synthetic-value"
+        ], source: "test", directory: URL(fileURLWithPath: "/tmp/notify-fixture"))
+        XCTAssertEqual(environment["PATH"], "/usr/bin:/bin")
+        XCTAssertEqual(environment["EXODIA_NOTIFY_SOURCE"], "test")
+        XCTAssertNil(environment["OPENROUTER_API_KEY"]); XCTAssertNil(environment["DOPPLER_TOKEN"])
+        XCTAssertNil(environment["EXODIA_COMMUNITY_SIGNING_KEY"])
+    }
     func testSourceRunsWithoutOpeningDrawerAndDisableStopsPolling() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
