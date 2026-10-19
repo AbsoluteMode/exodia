@@ -24,19 +24,20 @@ enum ConfigBackupError: Error, LocalizedError, Equatable {
 }
 
 enum ConfigBackupValue: Codable, Equatable {
-    case string(String), bool(Bool), strings([String])
+    case string(String), bool(Bool), strings([String]), data(Data)
 
     var propertyListValue: Any {
         switch self {
         case .string(let value): return value
         case .bool(let value): return value
         case .strings(let value): return value
+        case .data(let value): return value
         }
     }
 }
 
 struct ConfigBackupSnapshot: Codable, Equatable, Identifiable {
-    static let version = 1
+    static let version = 2
     var schemaVersion = Self.version
     var id = UUID()
     var createdAt = Date()
@@ -120,7 +121,7 @@ enum ConfigBackupArchive {
         let snapshot: ConfigBackupSnapshot
         do { snapshot = try JSONDecoder().decode(ConfigBackupSnapshot.self, from: plaintext) }
         catch { throw ConfigBackupError.invalidArchive }
-        guard snapshot.schemaVersion == ConfigBackupSnapshot.version else { throw ConfigBackupError.unsupportedVersion }
+        guard (1...ConfigBackupSnapshot.version).contains(snapshot.schemaVersion) else { throw ConfigBackupError.unsupportedVersion }
         return snapshot
     }
 

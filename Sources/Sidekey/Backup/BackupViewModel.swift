@@ -688,7 +688,7 @@ final class BackupViewModel: ObservableObject {
             let values = try ConfigBackupRegistry.capture(defaults)
             var credentials: [String: String] = [:]
             do {
-                for account in ConfigBackupRegistry.credentialAccounts {
+                for account in try ConfigBackupRegistry.credentialAccounts(in: defaults) {
                     if let value = try providerStore(account).read() { credentials[account] = value }
                 }
             } catch { throw ConfigBackupError.keyUnavailable }

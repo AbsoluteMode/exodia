@@ -69,9 +69,11 @@ between two Macs.
 
 ## What is included
 
-- Models, languages, meeting preferences, hotkeys, vocabulary, Toolbox layout,
+- API & Models routes for every feature, registered server addresses, languages,
+  meeting preferences, hotkeys, vocabulary, Toolbox layout,
   display and feature settings, and agent preferences.
-- Exodia's saved speech and text provider keys and independently recoverable
+- Exodia's saved speech and text provider keys (including Anthropic and each
+  registered custom server), and independently recoverable
   Case items and secrets.
 - Meeting catalogs, notes and transcripts, plus retained unfinished recordings.
 - Agent, Drop and clipboard history, including app-managed image bytes.
@@ -96,6 +98,13 @@ Provider keys have a separate history selection; restoring another settings
 block leaves them untouched. **Restore defaults** uses the application's
 source defaults for the selected settings block. Both apply at the next normal
 launch, with the previous values kept for recovery.
+
+The **API & Models · languages** block restores the exact saved routes and
+server registrations. Its source reset leaves AI routes **Not set**, so the old
+Models-tab choices cannot silently reappear on relaunch. Provider keys stay in
+their separate block. Archives made before API & Models preserve any routes
+already configured on the target Mac; on a fresh Mac the normal one-time
+migration can carry over their old provider choices.
 
 If an archive is damaged, incomplete, or needs a newer version of Exodia, it
 is refused. Choose another saved version or update Exodia. Losing every copy

@@ -247,7 +247,7 @@ final class ArtifactBackupEngine {
         }
         if sections.contains(.credentials) {
             var accounts: [String: String] = [:]
-            for account in ConfigBackupRegistry.credentialAccounts.sorted() {
+            for account in try ConfigBackupRegistry.credentialAccounts(in: environment.defaults).sorted() {
                 // A Keychain read that fails is not an absent key: failing
                 // closed keeps a backup from quietly dropping a provider key.
                 let value: String?

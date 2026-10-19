@@ -67,6 +67,16 @@ release blocker. Local section restore includes a separate provider-key group
 and explicit source-default reset for ordinary settings blocks. See
 [the user guide](../../docs/backup.md).
 
+The API & Models integration preserves its binary routing document, Anthropic
+key and each registered server's canonical UUID credential account. Imported
+server definitions may reference only their matching account or the two legacy
+server accounts. Metadata rollback captures every incoming key before any write,
+including keys absent from the target's current server registry. Settings schema
+3 and local history schema 2 distinguish source resets from snapshots predating
+the routing document: a reset keeps routes unconfigured, while an older archive
+does not erase current routes. Synthetic second-device and interrupted-restore
+tests cover those boundaries.
+
 ## Baseline behavior verified before implementation
 
 - Settings use UserDefaults; provider credentials use the application's legacy
