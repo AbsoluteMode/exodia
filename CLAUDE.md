@@ -565,7 +565,9 @@ ApplicationInstanceCoordinator then acquires one common prod/beta/worktree lease
 before constructing AppDelegate. A second copy offers to activate the owner and
 quits without starting permissions, providers or hotkeys. Legacy binaries launched
 later cannot honor the lease. The Settings footer shows only the actual app name
-and display version, with website and GitHub links. Detailed build identity stays
+and display version, separated from website and GitHub links by a thin rule.
+All footer text uses the same size; the links have icons, a pointing-hand cursor,
+hover/press highlights and destination tooltips. Detailed build identity stays
 in bundle metadata, outside this compact footer.
 WHY: .project-docs/decisions/2026-10-19-one-running-copy.md
 `--installation-check` loads the packaged executable and verifies resources
