@@ -319,6 +319,9 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
   (Extra stayed off), then the Brightness, battery and hover filter passed 189
   tests and the full `swift test` 3,044 tests, 5 skipped, 0 failures
   (60.299 s).
+- After merging main 983e613 (Notify: a new hover tool and panel, quit and
+  privacy changes), keeping both sides: the full `swift test` 3,061 tests,
+  6 skipped, 0 failures (68.987 s).
 
 ## Rejected alternatives
 
