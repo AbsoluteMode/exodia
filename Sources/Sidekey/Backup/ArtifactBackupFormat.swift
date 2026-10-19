@@ -50,7 +50,7 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
         case .truncated:
             return "This backup is missing its end. The upload or copy did not finish; choose another version."
         case .tooLarge:
-            return "This backup is larger tha Whytap can process."
+            return "This backup is larger than Whytap can process."
         case .unsafeContent:
             return "This backup contains a file path Whytap will not write. Nothing has been restored."
         case .readFailed:

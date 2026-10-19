@@ -565,6 +565,8 @@ on the next normal launch. Optional complete `.exodiabackup` archives use a
 streaming authenticated format and one recovery code saved outside Whytap.
 GitHub release assets receive ciphertext; a checked completion index is published
 last. Folder copies report verified local writes, not verified cloud upload.
+API & Models routes, server registrations and their provider keys are included.
+Reset leaves routes Not set; archives predating routing preserve current routes.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore

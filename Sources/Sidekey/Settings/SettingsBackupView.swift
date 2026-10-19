@@ -121,7 +121,9 @@ struct SettingsBackupView: View {
             Button("Restore defaults") { Task { await model.restoreSettingsDefaults(selectedConfigSection) } }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Only this settings block will return to the app defaults at the next normal launch. A copy of its current values is kept. Provider keys are kept.")
+            Text(selectedConfigSection == .models
+                 ? "AI routes will become Not set and server registrations will reset at the next normal launch. Provider keys and a recovery copy of your current values are kept."
+                 : "Only this settings block will return to the app defaults at the next normal launch. A copy of its current values is kept. Provider keys are kept.")
         }
     }
 
@@ -1024,6 +1026,12 @@ struct SettingsBackupView: View {
                 MacRowSeparator()
 
                 VStack(alignment: .leading, spacing: 5) {
+                    if selectedSections.contains(.settings) && !selectedSections.contains(.credentials) {
+                        Label("This selection keeps this Mac's existing provider keys. Restored routes may need their matching keys added separately.", systemImage: "key")
+                    }
+                    if selectedSections.contains(.credentials) && !selectedSections.contains(.settings) {
+                        Label("This selection keeps your current routes. Server keys become usable with their matching server setup in API & Models.", systemImage: "key")
+                    }
                     Label(
                         "Existing data on this Mac is saved in a local recovery copy before the restore is applied.",
                         systemImage: "arrow.uturn.backward.circle"
@@ -1156,7 +1164,7 @@ struct SettingsBackupView: View {
                                 Text("Restore “\(pending.section.title)” to \(Self.formatDate(pending.snapshot.createdAt, emptyText: "selected snapshot"))?")
                                     .font(.system(size: 12.5, weight: .semibold))
                                     .foregroundStyle(MacSettingsTheme.text)
-                                Text(pending.section == .credentials ? "Provider keys in this saved copy will be restored. Other settings stay as they are." : "Only \(pending.section.title) will be restored. Other settings and provider keys stay as they are.")
+                                Text(Self.blockRestoreExplanation(pending.snapshot, section: pending.section))
                                     .font(.system(size: 11.5))
                                     .foregroundStyle(MacSettingsTheme.text2)
                             }
@@ -1262,9 +1270,9 @@ struct SettingsBackupView: View {
     private static func sectionSubtitle(_ section: ArtifactBackupSection) -> String {
         switch section {
         case .settings:
-            return "Models, hotkeys, vocabulary, Toolbox layout, display and feature preferences"
+            return "Feature routes, server setup, languages, hotkeys, vocabulary, Toolbox and display preferences"
         case .credentials:
-            return "Saved speech and text provider keys"
+            return "Saved speech, text, Anthropic agent and registered server keys"
         case .caseVault:
             return "Saved Case items and secrets"
         case .meetings:
@@ -1274,6 +1282,16 @@ struct SettingsBackupView: View {
         case .workspace:
             return "Custom Monitor dashboards, Notify sources and agent instructions (scripts stay paused until reviewed)"
         }
+    }
+
+    private static func blockRestoreExplanation(_ snapshot: ConfigBackupSnapshot, section: ConfigBackupSection) -> String {
+        if section == .credentials { return "Provider keys in this saved copy will be restored. Other settings stay as they are. Server keys need their matching server setup in API & Models." }
+        if section == .models && snapshot.preferences[ConfigBackupRegistry.aiRoutingKey] == nil {
+            return snapshot.schemaVersion < 2
+                ? "This snapshot predates API & Models. Current AI routes and provider keys stay as they are."
+                : "No AI routes were recorded in this snapshot. AI routes will become Not set; provider keys are kept."
+        }
+        return "Only \(section.title) will be restored. Other settings and provider keys stay as they are."
     }
 
     /// Summarizes only non-sensitive preference counts for the chosen section;
