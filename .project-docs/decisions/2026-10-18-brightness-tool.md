@@ -75,7 +75,7 @@ sources:
     reference: https://github.com/niklasr22/BrightIntosh (GPL, read for ideas only, no code copied) — a 1x1 trigger window one level above its full-screen overlay at the shielding level, presented five times a second, a brightness factor of 1 + 0.5 x min(headroom / 2.66, 1) on its list of 600-nit built-in panels (1 + 0.59 x min(headroom / 3.2, 1) on other built-in panels), suspension on screensaver, session and protected-data changes, and CGDisplayRestoreColorSyncSettings resetting every display's table.
     confirmed_at: 2026-10-19
   - type: trace
-    reference: Local runs on 2026-10-19/20. Each fix was written test-first. GammaBrightnessBoostTests 25, ScreenBrightnessControllerTests 32, BrightnessBoostFrameTimerTests 9, BrightnessHoverToolTests 19, BrightnessKeysTests 44, BatteryRuntimeTests 27 and BatteryRuntimeMonitorTests 5; the Brightness, battery and Toolbox filter 177 tests, 0 failures. Four mutations of the table boost and eight of the battery estimate were each caught.
+    reference: Local runs on 2026-10-19/20. Each fix was written test-first. GammaBrightnessBoostTests 25, ScreenBrightnessControllerTests 32, BrightnessBoostFrameTimerTests 9, BrightnessHoverToolTests 19, BrightnessKeysTests 44, BatteryRuntimeTests 27 and BatteryRuntimeMonitorTests 5; the Brightness, battery and Toolbox filter 177 tests, 0 failures. Four mutations of the table boost and eight of the battery estimate were each caught. After merging main d03bf65, full swift test 3,515 tests, 8 skipped, 0 failures (96.234 s).
     confirmed_at: 2026-10-20
   - type: url
     reference: https://developer.apple.com/videos/play/wwdc2022/10114/ (Display EDR content with Core Image, Metal, and SwiftUI)
@@ -512,7 +512,11 @@ Brightness keys need the Accessibility permission the hotkeys use.
   adjusted for the light and no gap check. After the table boost, before the
   battery model, the full `swift test` executed 3,446 tests, 7 skipped, with 3
   failures, all in `PackagingRebrandTests`, whose child-process pipe main
-  fixed in #57; that suite then passed 17 tests with 0 failures on its own.
+  fixed in #57; that suite then passed 17 tests with 0 failures on its own. After merging
+  main d03bf65 (hover hotkeys bound to named tools, stacked Notify cards and
+  Backup management), the full `swift test` executed 3,515 tests, 8 skipped,
+  0 failures (96.234 s), with no build warnings in the Brightness files,
+  `IslandView` or `MacSwitch`.
 
 ## Rejected alternatives
 
@@ -599,4 +603,4 @@ switched off"), and a Help window row for the keys. A live Extra check
 brightens the user's screen and needs their consent.
 
 2026-10-19 · [AbsoluteMode/exodia#30](https://github.com/AbsoluteMode/exodia/pull/30), branch `claude/brightness-tool-battery-587fda`.
-2026-10-20 · table boost, hover release, switch and battery model: branch `claude/display-extra-gamma-587fda`.
+2026-10-20 · table boost, hover release, switch and battery model: [AbsoluteMode/whytap#63](https://github.com/AbsoluteMode/whytap/pull/63), branch `claude/display-extra-gamma-587fda`.
