@@ -2,10 +2,14 @@ import Foundation
 
 /// Queue of Case Approve prompts shown in the island, one at a time (FIFO).
 ///
-/// Each prompt ignores keys and clicks for `armingDelay` after it appears, so a
-/// person typing in another app cannot answer it by accident, and is denied as
-/// `.timedOut` after `timeout`. The key tap exists only while the queue is non-empty;
-/// without it (no Accessibility) the prompt is answered by click.
+/// Each prompt ignores keys and clicks until the keyboard has been quiet for
+/// `armingDelay`: every key press seen while it is unarmed starts the wait
+/// again, so a person typing in another app cannot answer it by accident. It is
+/// denied as `.timedOut` after `timeout`. A prompt whose client went away (the
+/// broker task is cancelled) is withdrawn and denied, never granted. After a
+/// timed answer, waiting prompts of the same app and project are allowed by
+/// that grant instead of being shown. The key tap exists only while the queue
+/// is non-empty; without it (no Accessibility) the prompt is answered by click.
 @MainActor
 final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     static let armingDelay: TimeInterval = 0.3
@@ -27,6 +31,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     @Published private(set) var promptSerial = 0
 
     private struct Entry {
+        let id: UUID
         let request: CaseApprovalRequest
         let continuation: CheckedContinuation<CaseApprovalOutcome, Never>
     }
@@ -36,7 +41,8 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     private let schedule: Schedule
     private var active: Entry?
     private var queue: [Entry] = []
-    private var cancelTimers: [() -> Void] = []
+    private var cancelArming: (() -> Void)?
+    private var cancelTimeout: (() -> Void)?
     private var tapRunning = false
 
     init(keyTap: CaseApprovalKeyIntercepting? = nil,
@@ -58,13 +64,24 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     var offersTimed: Bool { (current?.timedMinutes ?? 0) > 0 }
 
     func requestApproval(_ r: CaseApprovalRequest) async -> CaseApprovalOutcome {
-        await withCheckedContinuation { continuation in
-            queue.append(Entry(request: r, continuation: continuation))
-            if active == nil {
-                showNext()
-            } else {
-                pendingCount = queue.count
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // A client that left before its prompt was queued is never asked about.
+                if Task.isCancelled {
+                    continuation.resume(returning: .deny)
+                    return
+                }
+                queue.append(Entry(id: id, request: r, continuation: continuation))
+                if active == nil {
+                    showNext()
+                } else {
+                    pendingCount = queue.count
+                }
             }
+        } onCancel: {
+            // Runs after the entry is queued: both hop through the main actor in order.
+            Task { @MainActor [weak self] in self?.withdraw(id) }
         }
     }
 
@@ -81,6 +98,9 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         clearTimers()
         active = nil
         entry.continuation.resume(returning: outcome)
+        if outcome == .allowTimed, entry.request.timedMinutes > 0 {
+            allowWaiting(coveredBy: entry.request)
+        }
         if queue.isEmpty {
             current = nil
             isArmed = false
@@ -100,9 +120,38 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         for entry in waiting { entry.continuation.resume(returning: .deny) }
     }
 
+    /// A key press seen by the tap while the prompt is not armed yet: the person
+    /// is typing, so the quiet period starts over.
+    func noteTyping() {
+        guard active != nil, !isArmed else { return }
+        scheduleArming()
+    }
+
     // MARK: - Private
 
-    /// Armed only by the arming timer, which cannot fire before `armingDelay` has passed.
+    /// The prompt's client disconnected: deny it without showing or granting anything.
+    private func withdraw(_ id: UUID) {
+        if active?.id == id {
+            resolve(.deny)
+        } else if let index = queue.firstIndex(where: { $0.id == id }) {
+            let entry = queue.remove(at: index)
+            pendingCount = queue.count
+            entry.continuation.resume(returning: .deny)
+        }
+    }
+
+    /// Waiting prompts of the app and project that just got a timed grant are
+    /// covered by it, so they are allowed instead of asking again.
+    private func allowWaiting(coveredBy granted: CaseApprovalRequest) {
+        guard let appID = granted.appID, let projectID = granted.projectID else { return }
+        let covered = queue.filter { $0.request.appID == appID && $0.request.projectID == projectID }
+        guard !covered.isEmpty else { return }
+        queue.removeAll { $0.request.appID == appID && $0.request.projectID == projectID }
+        pendingCount = queue.count
+        for entry in covered { entry.continuation.resume(returning: .allow) }
+    }
+
+    /// Armed only by the arming timer, which fires after `armingDelay` without key presses.
     private var acceptsAnswer: Bool { active != nil && isArmed }
 
     private func handleKey(_ key: CaseApprovalKey) {
@@ -127,23 +176,30 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         keyTap.setArmed(false)
         // Timers carry their prompt's serial, so a late one never touches the next prompt.
         let serial = promptSerial
-        cancelTimers = [
-            schedule(Self.armingDelay) { [weak self] in
-                guard let self, self.active != nil, self.promptSerial == serial else { return }
-                self.isArmed = true
-                self.keyTap.setArmed(true)
-            },
-            schedule(Self.timeout) { [weak self] in
-                guard let self, self.promptSerial == serial else { return }
-                self.resolve(.timedOut)
-            },
-        ]
+        cancelTimeout = schedule(Self.timeout) { [weak self] in
+            guard let self, self.promptSerial == serial else { return }
+            self.resolve(.timedOut)
+        }
+        scheduleArming()
+    }
+
+    /// (Re)starts the quiet period after which the visible prompt accepts answers.
+    private func scheduleArming() {
+        cancelArming?()
+        let serial = promptSerial
+        cancelArming = schedule(Self.armingDelay) { [weak self] in
+            guard let self, self.active != nil, self.promptSerial == serial else { return }
+            self.isArmed = true
+            self.keyTap.setArmed(true)
+        }
     }
 
     private func startTapIfNeeded() {
         guard !tapRunning else { return }
         do {
-            try keyTap.start { [weak self] key in self?.handleKey(key) }
+            try keyTap.start(
+                onKey: { [weak self] key in self?.handleKey(key) },
+                onUnarmedKeyDown: { [weak self] in self?.noteTyping() })
             tapRunning = true
             keysAvailable = true
         } catch {
@@ -159,7 +215,9 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     }
 
     private func clearTimers() {
-        cancelTimers.forEach { $0() }
-        cancelTimers = []
+        cancelArming?()
+        cancelTimeout?()
+        cancelArming = nil
+        cancelTimeout = nil
     }
 }

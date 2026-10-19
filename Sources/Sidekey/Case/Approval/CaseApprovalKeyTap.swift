@@ -17,9 +17,12 @@ enum CaseApprovalKeyTapError: Error {
 /// Intercepts the answer keys while an Approve prompt is on screen.
 @MainActor
 protocol CaseApprovalKeyIntercepting: AnyObject {
-    func start(onKey: @escaping @MainActor (CaseApprovalKey) -> Void) throws
+    /// `onUnarmedKeyDown` reports that some key went down while unarmed (which key
+    /// is never passed on), so the controller can restart its quiet period.
+    func start(onKey: @escaping @MainActor (CaseApprovalKey) -> Void,
+               onUnarmedKeyDown: @escaping @MainActor () -> Void) throws
     func stop()
-    /// Unarmed, every key goes through untouched (the 300 ms after a prompt appears).
+    /// Unarmed, every key goes through untouched (until the keyboard is quiet for 300 ms).
     func setArmed(_ armed: Bool)
 }
 
@@ -77,9 +80,10 @@ final class CaseApprovalKeyTap: CaseApprovalKeyIntercepting {
 
     private var session: CaseApprovalKeyTapSession?
 
-    func start(onKey: @escaping @MainActor (CaseApprovalKey) -> Void) throws {
+    func start(onKey: @escaping @MainActor (CaseApprovalKey) -> Void,
+               onUnarmedKeyDown: @escaping @MainActor () -> Void) throws {
         stop()
-        let session = CaseApprovalKeyTapSession(onKey: onKey)
+        let session = CaseApprovalKeyTapSession(onKey: onKey, onUnarmedKeyDown: onUnarmedKeyDown)
         session.owner = self
         activeCaseApprovalKeyTapSession.withLock { $0 = session }
         guard session.thread.installTap(callback: caseApprovalKeyTapCallback) != nil else {
@@ -119,14 +123,17 @@ private let activeCaseApprovalKeyTapSession = OSAllocatedUnfairLock<CaseApproval
 private final class CaseApprovalKeyTapSession: @unchecked Sendable {
     let thread = SpaceHoldMonitor.TapThread(queueLabel: "com.rootwise.sidekey.case-approval-tap")
     let onKey: @MainActor (CaseApprovalKey) -> Void
+    let onUnarmedKeyDown: @MainActor () -> Void
     let armed = OSAllocatedUnfairLock(initialState: false)
     let filter = OSAllocatedUnfairLock(initialState: CaseApprovalKeyFilter())
     let reenables = OSAllocatedUnfairLock(initialState: 0)
     /// Main thread only.
     weak var owner: CaseApprovalKeyTap?
 
-    init(onKey: @escaping @MainActor (CaseApprovalKey) -> Void) {
+    init(onKey: @escaping @MainActor (CaseApprovalKey) -> Void,
+         onUnarmedKeyDown: @escaping @MainActor () -> Void) {
         self.onKey = onKey
+        self.onUnarmedKeyDown = onUnarmedKeyDown
     }
 }
 
@@ -157,6 +164,11 @@ private func caseApprovalKeyTapCallback(proxy: CGEventTapProxy, type: CGEventTyp
     if let key = decision.key {
         DispatchQueue.main.async {
             MainActor.assumeIsolated { session.onKey(key) }
+        }
+    } else if type == .keyDown, !armed {
+        // Someone is typing: the prompt waits for a quiet keyboard before it arms.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { session.onUnarmedKeyDown() }
         }
     }
     return decision.swallow ? nil : unchanged

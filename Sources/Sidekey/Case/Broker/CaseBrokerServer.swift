@@ -218,10 +218,41 @@ final class CaseBrokerServer: @unchecked Sendable {
 
         let broker = self.broker
         let pid = peer.pid
-        Task.detached { [self] in
+        // While the broker works (Touch ID, an Approve prompt), a client that
+        // hangs up cancels its task: its prompt is withdrawn and nothing is
+        // granted to it. The socket is closed only by the watcher's cancel
+        // handler, so no path writes to a closed (or reused) descriptor.
+        let reply = CaseBrokerPendingReply()
+        let watch = DispatchSource.makeReadSource(fileDescriptor: fd, queue: connectionQueue)
+        let task = Task.detached { [reply] in
             let response = await broker.handle(request, peerPID: pid)
-            send(response, to: fd)
+            reply.set(response)
+            watch.cancel()
+        }
+        watch.setEventHandler { [self] in
+            if Self.peerHungUp(fd, maxBytes: maxRequestBytes) {
+                task.cancel()
+                watch.cancel()
+            }
+        }
+        watch.setCancelHandler { [self] in
+            if let response = reply.take() { send(response, to: fd) }
             finish(fd)
+        }
+        watch.resume()
+    }
+
+    /// Readable with nothing to read means EOF: the client is gone. Stray bytes
+    /// after the request are discarded; too many of them count as a hang-up.
+    private static func peerHungUp(_ fd: Int32, maxBytes: Int) -> Bool {
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        var total = 0
+        while true {
+            let n = recv(fd, &buffer, buffer.count, MSG_DONTWAIT)
+            if n == 0 { return true }
+            if n < 0 { return errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR }
+            total += n
+            if total > maxBytes { return true }
         }
     }
 
@@ -261,5 +292,20 @@ final class CaseBrokerServer: @unchecked Sendable {
         let clamped = max(seconds, 0.001)
         var tv = timeval(tv_sec: Int(clamped), tv_usec: Int32((clamped - floor(clamped)) * 1_000_000))
         setsockopt(fd, SOL_SOCKET, option, &tv, socklen_t(MemoryLayout<timeval>.size))
+    }
+}
+
+/// The broker's answer for one connection, handed from the broker task to the
+/// socket watcher's cancel handler (which runs exactly once).
+private final class CaseBrokerPendingReply: @unchecked Sendable {
+    private let lock = NSLock()
+    private var response: CaseBrokerResponse?
+
+    func set(_ value: CaseBrokerResponse) { lock.withLock { response = value } }
+    func take() -> CaseBrokerResponse? {
+        lock.withLock {
+            defer { response = nil }
+            return response
+        }
     }
 }

@@ -11,6 +11,20 @@ struct CaseApprovalRequest: Equatable {
     /// Shown to the person only; never logged.
     let command: String
     let timedMinutes: Int
+    /// The registration and project a timed answer would cover; nil in previews.
+    var appID: UUID?
+    var projectID: UUID?
+
+    init(appName: String, projectName: String, keyNames: [String], command: String, timedMinutes: Int,
+         appID: UUID? = nil, projectID: UUID? = nil) {
+        self.appName = appName
+        self.projectName = projectName
+        self.keyNames = keyNames
+        self.command = command
+        self.timedMinutes = timedMinutes
+        self.appID = appID
+        self.projectID = projectID
+    }
 }
 
 enum CaseApprovalOutcome: Equatable {
@@ -160,8 +174,13 @@ final class CaseBroker {
                 projectName: target.project.name,
                 keyNames: target.secretIDs.compactMap { id in payload.secrets.first { $0.id == id }?.name },
                 command: command,
-                timedMinutes: minutes)
-            switch await approvals.requestApproval(request) {
+                timedMinutes: minutes,
+                appID: app.id,
+                projectID: target.project.id)
+            let outcome = await approvals.requestApproval(request)
+            // The client hung up while the prompt was up: nothing is granted to it.
+            if Task.isCancelled { return .denied(reason: .userDeclined) }
+            switch outcome {
             case .allow:
                 break
             case .allowTimed:
@@ -177,6 +196,8 @@ final class CaseBroker {
             }
         }
 
+        // A client that went away during Touch ID or the prompt gets nothing.
+        if Task.isCancelled { return .denied(reason: .userDeclined) }
         // The vault may have changed while the prompt was up: read values now,
         // and only for the secrets that were approved.
         guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }

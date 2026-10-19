@@ -14,25 +14,37 @@ private final class FakeApprovalKeyTap: CaseApprovalKeyIntercepting {
     private(set) var stopCount = 0
     private(set) var armedHistory: [Bool] = []
     private var onKey: (@MainActor (CaseApprovalKey) -> Void)?
+    private var onUnarmedKeyDown: (@MainActor () -> Void)?
 
     var isRunning: Bool { onKey != nil }
     var isArmed: Bool { armedHistory.last ?? false }
 
-    func start(onKey: @escaping @MainActor (CaseApprovalKey) -> Void) throws {
+    func start(onKey: @escaping @MainActor (CaseApprovalKey) -> Void,
+               onUnarmedKeyDown: @escaping @MainActor () -> Void) throws {
         startCount += 1
         if failsToStart { throw CaseApprovalKeyTapError.unavailable }
         self.onKey = onKey
+        self.onUnarmedKeyDown = onUnarmedKeyDown
     }
 
     func stop() {
         stopCount += 1
         onKey = nil
+        onUnarmedKeyDown = nil
     }
 
     func setArmed(_ armed: Bool) { armedHistory.append(armed) }
 
-    /// A physical key press the real tap would deliver (only while running).
-    func press(_ key: CaseApprovalKey) { onKey?(key) }
+    /// A physical answer-key press as the real tap delivers it (only while running):
+    /// armed, it answers; unarmed, it passes through and only reports typing.
+    func press(_ key: CaseApprovalKey) {
+        if isArmed { onKey?(key) } else { onUnarmedKeyDown?() }
+    }
+
+    /// Any other key going down (a letter typed in the user's editor).
+    func type() {
+        if !isArmed { onUnarmedKeyDown?() }
+    }
 }
 
 /// Manual clock: scheduled work fires only when the test advances time.
@@ -112,15 +124,140 @@ final class CaseApprovalControllerTests: XCTestCase {
         clock.advance(by: 0.199)
         tap.press(.no)
         tap.press(.escape)
-        XCTAssertEqual(controller.current, request(), "nothing answered in the first 300 ms")
+        XCTAssertEqual(controller.current, request(), "nothing answered while typing")
 
-        clock.advance(by: 0.01)
+        // Every press restarted the quiet period: armed 300 ms after the last one.
+        clock.advance(by: 0.299)
+        XCTAssertFalse(controller.isArmed)
+        clock.advance(by: 0.001)
         XCTAssertTrue(controller.isArmed)
         XCTAssertTrue(tap.isArmed)
         tap.press(.yes)
         let outcome = await task.value
         XCTAssertEqual(outcome, .allow)
         XCTAssertNil(controller.current)
+    }
+
+    func test_ongoing_typing_never_arms_until_300ms_quiet() async {
+        let task = await ask(request())
+        // Keys every 100 ms for 3 s, as when someone keeps typing in another app.
+        for _ in 0..<30 {
+            tap.type()
+            clock.advance(by: 0.1)
+            XCTAssertFalse(controller.isArmed, "a typist can never answer the prompt")
+        }
+        tap.press(.yes)                    // the Y of a typed word
+        clock.advance(by: 0.29)
+        XCTAssertFalse(controller.isArmed)
+        XCTAssertNotNil(controller.current)
+
+        clock.advance(by: 0.01)            // 300 ms without a key
+        XCTAssertTrue(controller.isArmed)
+        tap.type()                         // typing after arming does not disarm
+        XCTAssertTrue(controller.isArmed)
+        tap.press(.no)
+        let outcome = await task.value
+        XCTAssertEqual(outcome, .deny)
+    }
+
+    func test_typing_does_not_postpone_the_60s_timeout() async {
+        let task = await ask(request())
+        for _ in 0..<590 {
+            tap.type()
+            clock.advance(by: 0.1)
+        }
+        XCTAssertNotNil(controller.current, "still waiting at 59 s")
+        clock.advance(by: 1.1)
+        let outcome = await task.value
+        XCTAssertEqual(outcome, .timedOut)
+    }
+
+    // MARK: - Abandoned and covered prompts
+
+    func test_disconnected_client_withdraws_its_queued_and_visible_prompts() async {
+        let first = await ask(request("Claude Code"))
+        let second = await ask(request("Codex"))
+        let third = await ask(request("Cursor"))
+        XCTAssertEqual(controller.pendingCount, 2)
+
+        // The client of a waiting prompt hangs up: it is removed, never shown.
+        second.cancel()
+        let secondOutcome = await second.value
+        XCTAssertEqual(secondOutcome, .deny)
+        XCTAssertEqual(controller.pendingCount, 1)
+        XCTAssertEqual(controller.current?.appName, "Claude Code")
+
+        // The client of the visible prompt hangs up: the next one is shown, unarmed.
+        first.cancel()
+        let firstOutcome = await first.value
+        XCTAssertEqual(firstOutcome, .deny)
+        XCTAssertEqual(controller.current?.appName, "Cursor")
+        XCTAssertFalse(controller.isArmed)
+
+        clock.advance(by: 0.3)
+        tap.press(.yes)
+        let thirdOutcome = await third.value
+        XCTAssertEqual(thirdOutcome, .allow)
+        XCTAssertNil(controller.current)
+        XCTAssertFalse(tap.isRunning)
+    }
+
+    func test_cancelled_before_queueing_is_denied_without_a_prompt() async {
+        let task = Task { () -> CaseApprovalOutcome in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await self.controller.requestApproval(self.request())
+        }
+        let outcome = await task.value
+        XCTAssertEqual(outcome, .deny)
+        await settle()
+        XCTAssertNil(controller.current)
+        XCTAssertEqual(tap.startCount, 0)
+    }
+
+    func test_timed_answer_allows_waiting_prompts_of_same_app_and_project() async {
+        let appID = UUID(), otherAppID = UUID(), alpha = UUID(), beta = UUID()
+        func r(_ app: String, _ appID: UUID, _ projectID: UUID, _ project: String) -> CaseApprovalRequest {
+            CaseApprovalRequest(appName: app, projectName: project, keyNames: ["API_TOKEN"],
+                                command: "npm test", timedMinutes: 15, appID: appID, projectID: projectID)
+        }
+        let first = await ask(r("Claude Code", appID, alpha, "alpha"))
+        let sameAgain = await ask(r("Claude Code", appID, alpha, "alpha"))
+        let otherProject = await ask(r("Claude Code", appID, beta, "beta"))
+        let otherApp = await ask(r("Codex", otherAppID, alpha, "alpha"))
+        let sameLater = await ask(r("Claude Code", appID, alpha, "alpha"))
+
+        clock.advance(by: 0.3)
+        tap.press(.timed)
+        let a = await first.value
+        let b = await sameAgain.value
+        let e = await sameLater.value
+        XCTAssertEqual(a, .allowTimed)
+        XCTAssertEqual([b, e], [.allow, .allow], "covered by the grant just given")
+
+        XCTAssertEqual(controller.current?.projectName, "beta", "another project still asks")
+        XCTAssertEqual(controller.pendingCount, 1)
+        clock.advance(by: 0.3)
+        tap.press(.yes)
+        let c = await otherProject.value
+        XCTAssertEqual(c, .allow)
+        XCTAssertEqual(controller.current?.appName, "Codex", "another app still asks")
+        controller.resolve(.deny)
+        let d = await otherApp.value
+        XCTAssertEqual(d, .deny)
+    }
+
+    func test_plain_allow_does_not_cover_waiting_prompts() async {
+        let appID = UUID(), alpha = UUID()
+        let r = CaseApprovalRequest(appName: "Claude Code", projectName: "alpha", keyNames: ["K"],
+                                    command: "true", timedMinutes: 15, appID: appID, projectID: alpha)
+        let first = await ask(r)
+        let second = await ask(r)
+        clock.advance(by: 0.3)
+        tap.press(.yes)
+        _ = await first.value
+        XCTAssertEqual(controller.current, r, "a one-time Y still asks again")
+        controller.resolve(.deny)
+        _ = await second.value
     }
 
     func test_y_allows_n_denies_a_timed_escape_denies() async {
@@ -446,5 +583,79 @@ final class CaseApprovalViewRenderTests: XCTestCase {
         }
         XCTAssertEqual(a.height, b.height, accuracy: 0.5, "long text truncates instead of wrapping")
         XCTAssertEqual(a.height, c.height, accuracy: 0.5)
+    }
+
+    func test_prompt_sits_below_the_agent_answer_card_offscreen() throws {
+        _ = NSApplication.shared
+        // Built-in OpenCode ran `whytap case run`: its answer card and the prompt are both up.
+        let island = NSRect(x: 600, y: 1_000, width: 312, height: 32)
+        let request = CaseApprovalRequest(appName: "Whytap agent", projectName: "whytap",
+                                          keyNames: ["OPENROUTER_API_KEY"],
+                                          command: "swift test --filter CaseBrokerTests", timedMinutes: 15)
+        let promptHeight = NSHostingView(rootView: CaseApprovalView(
+            request: request, width: island.width, pendingCount: 0, isArmed: true, onChoose: { _ in })).fittingSize.height
+
+        for answerHeight: CGFloat in [0, 96, 240, 480] {
+            // The answer card hangs agentWingGap under the island, right-aligned to it.
+            let card = NSRect(x: island.maxX - IslandFrameLayout.agentAnswerPanelWidth,
+                              y: island.minY - IslandFrameLayout.agentWingGap - answerHeight,
+                              width: IslandFrameLayout.agentAnswerPanelWidth, height: answerHeight)
+            let prompt = CaseApprovalPanel.frame(islandFrame: island, cardHeight: promptHeight,
+                                                 meetingNudgeVisible: false, agentAnswerHeight: answerHeight)
+            XCTAssertEqual(prompt.width, island.width)
+            XCTAssertLessThanOrEqual(prompt.maxY, island.minY)
+            if answerHeight > 0 {
+                XCTAssertFalse(prompt.intersects(card), "answer \(answerHeight): prompt covers the agent card")
+                XCTAssertLessThanOrEqual(prompt.maxY, card.minY - CaseApprovalPanel.agentCardGap + 0.5)
+            } else {
+                XCTAssertEqual(prompt.maxY, island.minY, "without a card the prompt stays flush under the island")
+            }
+            // A meeting nudge and a card: the prompt goes under the lower of the two.
+            let both = CaseApprovalPanel.frame(islandFrame: island, cardHeight: promptHeight,
+                                               meetingNudgeVisible: true, agentAnswerHeight: answerHeight)
+            XCTAssertLessThanOrEqual(both.maxY, min(prompt.maxY, island.minY - MeetingPillPanel.suggestionNudgeHeight))
+        }
+
+        // Offscreen picture of the 240 pt case (screen y-up mapped to view y-down).
+        let answerHeight: CGFloat = 240
+        let card = NSRect(x: island.maxX - IslandFrameLayout.agentAnswerPanelWidth,
+                          y: island.minY - IslandFrameLayout.agentWingGap - answerHeight,
+                          width: IslandFrameLayout.agentAnswerPanelWidth, height: answerHeight)
+        let prompt = CaseApprovalPanel.frame(islandFrame: island, cardHeight: promptHeight,
+                                             meetingNudgeVisible: false, agentAnswerHeight: answerHeight)
+        let originX = card.minX - 24, top = island.maxY + 24
+        func place(_ r: NSRect) -> CGPoint { CGPoint(x: r.midX - originX, y: top - r.midY) }
+        let size = CGSize(width: card.width + 48, height: top - prompt.minY + 24)
+        let scene = ZStack(alignment: .topLeading) {
+            Color(white: 0.8)
+            RoundedRectangle(cornerRadius: 10).fill(Color.black)
+                .frame(width: island.width, height: island.height).position(place(island))
+            RoundedRectangle(cornerRadius: 16).fill(Color(white: 0.12))
+                .overlay(Text("Agent answer card").foregroundColor(.white))
+                .frame(width: card.width, height: card.height).position(place(card))
+            CaseApprovalView(request: request, width: island.width, pendingCount: 0, isArmed: true,
+                             onChoose: { _ in })
+                .frame(width: prompt.width, height: prompt.height).position(place(prompt))
+        }
+        .frame(width: size.width, height: size.height)
+        let host = NSHostingView(rootView: scene)
+        host.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: size.width, height: size.height),
+                              styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        XCTAssertFalse(window.isVisible || window.isKeyWindow, "renders stay offscreen")
+        if let output = ProcessInfo.processInfo.environment["EXODIA_CASE_PROOF_DIR"] {
+            let directory = URL(fileURLWithPath: output, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try data.write(to: directory.appendingPathComponent("case-approval-under-agent-card.png"))
+        }
+        window.contentView = nil
+        window.close()
     }
 }

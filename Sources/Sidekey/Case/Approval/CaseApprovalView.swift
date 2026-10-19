@@ -194,7 +194,8 @@ struct CaseApprovalHostView: View {
 }
 
 /// Borderless non-activating panel that attaches the prompt directly under the
-/// island (under the meeting nudge when that is up), at the island's width. A
+/// island (under the meeting nudge or the agent answer card when one is up), at
+/// the island's width. A
 /// separate panel like `MeetingPillPanel`, so its buttons get clicks without
 /// widening the island window's hit zones. It never becomes key: the answer keys
 /// come from `CaseApprovalKeyTap`.
@@ -234,6 +235,11 @@ final class CaseApprovalPanel: NSPanel {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshFrameIfVisible() }
             .store(in: &cancellables)
+        AppState.shared.$agentAnswerCardHeight
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshFrameIfVisible() }
+            .store(in: &cancellables)
         for name in [NSApplication.didChangeScreenParametersNotification,
                      IslandScreenResolver.selectionDidChangeNotification] {
             NotificationCenter.default.publisher(for: name)
@@ -248,9 +254,18 @@ final class CaseApprovalPanel: NSPanel {
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
-    /// Where the card goes: centered under the island, below the meeting nudge if shown.
-    static func frame(islandFrame: NSRect, cardHeight: CGFloat, meetingNudgeVisible: Bool) -> NSRect {
-        let top = islandFrame.minY - (meetingNudgeVisible ? MeetingPillPanel.suggestionNudgeHeight : 0)
+    /// Gap between the agent answer card and the prompt under it.
+    static let agentCardGap: CGFloat = 6
+
+    /// Where the card goes: centered under the island, below the meeting nudge or
+    /// the agent answer card (which hangs `agentWingGap` under the island) if shown.
+    /// The built-in agent running `whytap case run` shows both at once.
+    static func frame(islandFrame: NSRect, cardHeight: CGFloat, meetingNudgeVisible: Bool,
+                      agentAnswerHeight: CGFloat = 0) -> NSRect {
+        let nudge = meetingNudgeVisible ? MeetingPillPanel.suggestionNudgeHeight : 0
+        let agent = agentAnswerHeight > 0
+            ? IslandFrameLayout.agentWingGap + agentAnswerHeight + agentCardGap : 0
+        let top = islandFrame.minY - max(nudge, agent)
         return NSRect(x: islandFrame.midX - islandFrame.width / 2, y: top - cardHeight,
                       width: islandFrame.width, height: cardHeight)
     }
@@ -275,7 +290,8 @@ final class CaseApprovalPanel: NSPanel {
         host.rootView = AnyView(CaseApprovalHostView(controller: controller, width: islandFrame.width))
         let height = ceil(host.fittingSize.height)
         let target = Self.frame(islandFrame: islandFrame, cardHeight: max(height, 1),
-                                meetingNudgeVisible: AppState.shared.meetingSuggestionActive)
+                                meetingNudgeVisible: AppState.shared.meetingSuggestionActive,
+                                agentAnswerHeight: AppState.shared.agentAnswerCardHeight)
         setFrame(target, display: true, animate: false)
         host.frame = NSRect(origin: .zero, size: target.size)
     }

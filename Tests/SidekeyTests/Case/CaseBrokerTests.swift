@@ -163,7 +163,7 @@ final class CaseBrokerTests: XCTestCase {
         XCTAssertEqual(first, .runEnvironment(["DB_URL": "fake-alpha-db-0002"]))
         XCTAssertEqual(approvals.requests, [CaseApprovalRequest(
             appName: "Claude Code", projectName: "alpha", keyNames: ["DB_URL"],
-            command: "psql \"$DB_URL\"", timedMinutes: 15)])
+            command: "psql \"$DB_URL\"", timedMinutes: 15, appID: app.id, projectID: alphaID)])
 
         // Within the 15 minutes: no prompt for the same app and project.
         approvals.outcome = .deny
@@ -504,6 +504,56 @@ final class CaseBrokerTests: XCTestCase {
         guard case .projects = response else { return XCTFail("server stopped serving") }
     }
 
+    func test_client_that_hangs_up_while_prompt_is_up_gets_nothing_and_prompt_is_withdrawn() async throws {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        let prompts = CaseApprovalController(keyTap: SilentApprovalKeyTap(), schedule: { _, _ in {} })
+        broker = CaseBroker(service: service, resolver: resolver, approvals: prompts, authenticator: auth,
+                            now: { [unowned self] in self.clock })
+        let dir = try tempSocketDir()
+        let server = makeServer(dir: dir, inspector: ServerInspector())
+        try server.start()
+        let socketURL = dir.appendingPathComponent("b.sock")
+
+        let line = try CaseBrokerCodec.encodeLine(CaseBrokerRequest.resolveRun(
+            project: "alpha", only: ["DB_URL"], command: "true", cwd: "/tmp"))
+        let fd = try await Task.detached { try Self.connectAndSend(socketURL, line) }.value
+
+        for _ in 0..<500 where prompts.current == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(prompts.current?.keyNames, ["DB_URL"], "the prompt is up")
+
+        close(fd) // the CLI was killed (Ctrl-C) while waiting
+        for _ in 0..<500 where prompts.current != nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertNil(prompts.current, "an abandoned request is never left on screen to be granted")
+        XCTAssertEqual(prompts.queuedCount, 0)
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+
+        // The server keeps serving the next client.
+        let next = Task { await self.broker.handle(.listProjects, peerPID: 900) }
+        guard case .projects = await next.value else { return XCTFail("broker stopped answering") }
+    }
+
+    /// Connects and writes `payload`, leaving the socket open for the caller.
+    private nonisolated static func connectAndSend(_ socketURL: URL, _ payload: Data) throws -> Int32 {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        var one: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &addr.sun_path) { raw in
+            for (i, b) in socketURL.path.utf8.enumerated() { raw[i] = b }
+        }
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0 else {
+            close(fd)
+            throw CaseBrokerClientError.unavailable
+        }
+        _ = payload.withUnsafeBytes { write(fd, $0.baseAddress!, payload.count) }
+        return fd
+    }
+
     /// Connects, optionally writes `send`, half-closes nothing, reads until EOF (max 5 s).
     private nonisolated static func rawExchange(_ socketURL: URL, send payload: Data?) throws -> Data {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -540,6 +590,15 @@ final class CaseBrokerTests: XCTestCase {
         }
         return result
     }
+}
+
+/// A key tap that never sees a key: the real prompt controller without Accessibility.
+@MainActor
+private final class SilentApprovalKeyTap: CaseApprovalKeyIntercepting {
+    func start(onKey: @escaping @MainActor (CaseApprovalKey) -> Void,
+               onUnarmedKeyDown: @escaping @MainActor () -> Void) throws {}
+    func stop() {}
+    func setArmed(_ armed: Bool) {}
 }
 
 /// Deletes a key while the approval prompt is showing, then allows.

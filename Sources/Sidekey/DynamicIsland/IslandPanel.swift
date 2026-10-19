@@ -1595,6 +1595,10 @@ final class IslandPanel: NSPanel {
         host?.agentWingWidth = wingWidth
         host?.agentAnswerSize = answerSize
         host?.agentRetryActive = retryActive
+        let cardHeight = active ? answerSize.height : 0
+        if AppState.shared.agentAnswerCardHeight != cardHeight {
+            AppState.shared.agentAnswerCardHeight = cardHeight
+        }
 
         refreshMouseEventRouting()
         syncAgentComposerPanel()

@@ -60,6 +60,9 @@ final class AppState: ObservableObject {
     /// A Case Approve prompt is attached under the island (`CaseApprovalController`).
     /// Holds idle-hide off and keeps the hover drawer closed while it is up.
     @Published var caseApprovalActive: Bool = false
+    /// Height of the agent answer card below the island (0 when none); the Case
+    /// prompt goes under it so both stay readable.
+    @Published var agentAnswerCardHeight: CGFloat = 0
     @Published var meetingSuggestionDeadline: Date?
 
     @Published private(set) var meetingRecordingActive: Bool = false
