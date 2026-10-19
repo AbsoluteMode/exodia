@@ -48,6 +48,13 @@ struct CaseVaultStore {
         fileURL.deletingLastPathComponent().appendingPathComponent(fileURL.lastPathComponent + ".bak")
     }
 
+    /// One-time copy of a schema-1 vault, made the first time it is saved as
+    /// schema 2 and never overwritten: `.bak` only keeps the v1 bytes until the
+    /// second save.
+    var schema1CopyURL: URL {
+        fileURL.deletingLastPathComponent().appendingPathComponent(fileURL.lastPathComponent + ".v1")
+    }
+
     func load(using key: SymmetricKey) throws -> CaseVaultPayload {
         guard fileManager.fileExists(atPath: fileURL.path) else {
             throw CaseVaultStoreError.missingFile
@@ -116,6 +123,7 @@ struct CaseVaultStore {
         )
         let envelopeData = try JSONEncoder.caseVault.encode(envelope)
         // A failed backup must not block the save itself.
+        try? keepSchema1CopyIfNeeded(using: key)
         try? keepBackupOfCurrentVault()
         try envelopeData.write(to: fileURL, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: fileURL.path)
@@ -132,6 +140,40 @@ struct CaseVaultStore {
         let aside = fileURL.deletingLastPathComponent()
             .appendingPathComponent("\(fileURL.lastPathComponent).unreadable-\(stamp)-\(suffix)")
         try fileManager.moveItem(at: fileURL, to: aside)
+    }
+
+    private func keepSchema1CopyIfNeeded(using key: SymmetricKey) throws {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              !fileManager.fileExists(atPath: schema1CopyURL.path)
+        else { return }
+        let current = try Data(contentsOf: fileURL)
+        guard try Self.schemaVersion(ofEnvelope: current, using: key) == 1 else { return }
+        // Created 0600 from the start; an existing copy is never replaced.
+        let fd = open(schema1CopyURL.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { return }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        do {
+            try handle.write(contentsOf: current)
+            try handle.synchronize()
+        } catch {
+            try? handle.close()
+            try? fileManager.removeItem(at: schema1CopyURL)
+            throw error
+        }
+        try handle.close()
+    }
+
+    /// The payload schema of an envelope, decrypted in memory only.
+    private static func schemaVersion(ofEnvelope data: Data, using key: SymmetricKey) throws -> Int {
+        struct Probe: Decodable { let schemaVersion: Int }
+        let envelope = try JSONDecoder.caseVault.decode(CaseVaultEnvelope.self, from: data)
+        guard let nonce = Data(base64Encoded: envelope.nonce),
+              let ciphertext = Data(base64Encoded: envelope.ciphertext),
+              let tag = Data(base64Encoded: envelope.tag)
+        else { throw CaseVaultStoreError.invalidEnvelope }
+        let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: ciphertext, tag: tag)
+        let plaintext = try AES.GCM.open(box, using: key, authenticating: staticAssociatedData())
+        return try JSONDecoder.caseVault.decode(Probe.self, from: plaintext).schemaVersion
     }
 
     private func keepBackupOfCurrentVault() throws {

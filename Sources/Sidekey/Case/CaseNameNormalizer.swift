@@ -61,6 +61,19 @@ enum CaseNameNormalizer {
         return String(("_" + name).prefix(maxNormalizedLength))
     }
 
+    /// `base`, or `base_2`, `base_3`… shortened to fit `maxNormalizedLength`,
+    /// whichever is not in `taken` (uppercased names).
+    static func uniqueName(_ base: String, taken: Set<String>) -> String {
+        var candidate = base
+        var n = 2
+        while taken.contains(candidate.uppercased()) {
+            let suffix = "_\(n)"
+            candidate = String(base.prefix(maxNormalizedLength - suffix.count)) + suffix
+            n += 1
+        }
+        return candidate
+    }
+
     static func isDuplicate(_ raw: String, existingNames: [String]) throws -> Bool {
         let normalized = try normalizedName(raw)
         return existingNames.contains {

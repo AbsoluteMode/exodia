@@ -1419,6 +1419,8 @@ enum ArtifactCaseMerge {
             moved.projectID = CaseProject.generalID
             secrets[id] = moved
         }
+        renameClashingProjects(&projects, target: target)
+        renameClashingSecrets(&secrets, target: target)
         var apps: [UUID: CaseAppRegistration] = [:]
         for app in source.apps { apps[app.id] = app }
         for app in target.apps { apps[app.id] = app }
@@ -1436,5 +1438,66 @@ enum ArtifactCaseMerge {
             }.sorted { $0.secretID.uuidString < $1.secretID.uuidString },
             apps: apps.values.sorted { $0.createdAt < $1.createdAt },
             timedApprovalMinutes: target.timedApprovalMinutes)
+    }
+
+    // The broker finds projects and keys by name, so names must stay unique
+    // after a merge (projects case-insensitively, keys per project). What this
+    // Mac already had keeps its name; a clashing name that came from the
+    // backup gets the same suffix migration uses: ` (2)` for projects, `_2`
+    // for keys. Ties are broken by creation date, then id, so a merge is
+    // deterministic.
+
+    /// 0: unchanged local name, 1: local item renamed by the backup, 2: new from the backup.
+    private static func origin(id: UUID, name: String, localNames: [UUID: String]) -> Int {
+        guard let local = localNames[id] else { return 2 }
+        return local == name ? 0 : 1
+    }
+
+    private static func renameClashingProjects(_ projects: inout [UUID: CaseProject], target: CaseVaultPayload) {
+        var local: [UUID: String] = [:]
+        for project in target.projects { local[project.id] = project.name }
+        local[CaseProject.generalID] = projects[CaseProject.generalID]?.name
+        let ordered = projects.values.sorted { lhs, rhs in
+            let l = origin(id: lhs.id, name: lhs.name, localNames: local)
+            let r = origin(id: rhs.id, name: rhs.name, localNames: local)
+            if l != r { return l < r }
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        // Every name that stays is reserved first, so a renamed item never takes it.
+        var taken = Set<String>()
+        var clashing: [CaseProject] = []
+        for project in ordered {
+            if taken.insert(project.name.lowercased()).inserted { continue }
+            clashing.append(project)
+        }
+        for var project in clashing {
+            project.name = CaseProject.uniqueName(project.name, taken: taken)
+            taken.insert(project.name.lowercased())
+            projects[project.id] = project
+        }
+    }
+
+    private static func renameClashingSecrets(_ secrets: inout [UUID: CaseSecret], target: CaseVaultPayload) {
+        var local: [UUID: String] = [:]
+        for secret in target.secrets { local[secret.id] = secret.name }
+        let ordered = secrets.values.sorted { lhs, rhs in
+            let l = origin(id: lhs.id, name: lhs.name, localNames: local)
+            let r = origin(id: rhs.id, name: rhs.name, localNames: local)
+            if l != r { return l < r }
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        var taken: [UUID: Set<String>] = [:]
+        var clashing: [CaseSecret] = []
+        for secret in ordered {
+            if taken[secret.projectID, default: []].insert(secret.name.uppercased()).inserted { continue }
+            clashing.append(secret)
+        }
+        for var secret in clashing {
+            secret.name = CaseNameNormalizer.uniqueName(secret.name, taken: taken[secret.projectID, default: []])
+            taken[secret.projectID, default: []].insert(secret.name.uppercased())
+            secrets[secret.id] = secret
+        }
     }
 }

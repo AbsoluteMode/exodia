@@ -61,16 +61,25 @@ enum CaseVaultMigration {
             ?? Date(timeIntervalSinceReferenceDate: 0)
         var projects = [CaseProject.general(now: earliest)]
         var groupToProject: [UUID: UUID] = [:]
+        // Groups with the same full name (any case) share a project, as before.
+        // A different group whose name only collides after truncation to 48
+        // characters gets its own, suffixed name instead.
+        var projectForFullName: [String: UUID] = [CaseProject.generalName.lowercased(): CaseProject.generalID]
+        var takenNames: Set<String> = [CaseProject.generalName.lowercased()]
 
         for group in legacy.groups {
             let name = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let existing = projects.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
-                ?? (name.isEmpty ? projects[0] : nil) {
-                groupToProject[group.id] = existing.id
+            if name.isEmpty {
+                groupToProject[group.id] = CaseProject.generalID
+            } else if let existing = projectForFullName[name.lowercased()] {
+                groupToProject[group.id] = existing
             } else {
+                let unique = CaseProject.uniqueName(name, taken: takenNames)
+                takenNames.insert(unique.lowercased())
+                projectForFullName[name.lowercased()] = group.id
                 projects.append(CaseProject(
                     id: group.id,
-                    name: String(name.prefix(CaseProject.maxNameCharacters)),
+                    name: unique,
                     description: "",
                     createdAt: group.createdAt,
                     updatedAt: group.updatedAt))
@@ -99,7 +108,8 @@ enum CaseVaultMigration {
             let project = projectID(for: secret)
             var name = secret.name
             if startsWithDigit(name) {
-                name = uniqueName(CaseNameNormalizer.repairedLegacyName(name), taken: taken[project, default: []])
+                name = CaseNameNormalizer.uniqueName(CaseNameNormalizer.repairedLegacyName(name),
+                                                     taken: taken[project, default: []])
                 taken[project, default: []].insert(name.uppercased())
             }
             return CaseSecret(
@@ -119,16 +129,5 @@ enum CaseVaultMigration {
 
     private static func startsWithDigit(_ name: String) -> Bool {
         name.unicodeScalars.first.map { $0.value >= 48 && $0.value <= 57 } ?? false
-    }
-
-    private static func uniqueName(_ base: String, taken: Set<String>) -> String {
-        var candidate = base
-        var n = 2
-        while taken.contains(candidate.uppercased()) {
-            let suffix = "_\(n)"
-            candidate = String(base.prefix(CaseNameNormalizer.maxNormalizedLength - suffix.count)) + suffix
-            n += 1
-        }
-        return candidate
     }
 }

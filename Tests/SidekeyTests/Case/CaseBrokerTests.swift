@@ -379,6 +379,32 @@ final class CaseBrokerTests: XCTestCase {
         XCTAssertEqual(store.loadCount, 1)
     }
 
+    func test_duplicate_names_are_refused_never_picked() async {
+        // A vault from before the merge fix may hold two DB_URL keys in alpha.
+        var payload = fixturePayload(apps: [])
+        let twin = secret("DB_URL", in: alphaID)
+        payload.secrets.append(twin)
+        payload.values.append(CaseSecretValue(secretID: twin.id, value: "fake-alpha-db-twin-0006"))
+        makeBroker(caller: .registered(registration(.bypass)), payload: payload)
+
+        let named = await run(project: "alpha", only: ["DB_URL"])
+        XCTAssertEqual(named, .denied(reason: .unknownKey))
+        let whole = await run(project: "alpha")
+        XCTAssertEqual(whole, .denied(reason: .unknownKey), "the environment would keep one value arbitrarily")
+        let unscoped = await run(only: ["DB_URL"])
+        XCTAssertEqual(unscoped, .denied(reason: .unknownKey))
+        // Other keys and projects still work.
+        let other = await run(project: "beta", only: ["STRIPE_KEY"])
+        XCTAssertEqual(other, .runEnvironment(["STRIPE_KEY": "fake-beta-stripe-0004"]))
+
+        // Two projects with the same exact name: neither is picked.
+        var twins = fixturePayload(apps: [])
+        twins.projects.append(project(UUID(), "alpha", "Second alpha"))
+        makeBroker(caller: .registered(registration(.bypass)), payload: twins)
+        let ambiguousProject = await run(project: "alpha", only: ["DB_URL"])
+        XCTAssertEqual(ambiguousProject, .denied(reason: .unknownProject))
+    }
+
     // MARK: Server
 
     private func tempSocketDir() throws -> URL {

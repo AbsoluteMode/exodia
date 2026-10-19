@@ -16,6 +16,19 @@ struct CaseProject: Identifiable, Codable, Equatable {
     static func general(now: Date) -> CaseProject {
         CaseProject(id: generalID, name: generalName, description: "", createdAt: now, updatedAt: now)
     }
+
+    /// `base`, or `base (2)`, `base (3)`… shortened to fit `maxNameCharacters`,
+    /// whichever is not in `taken` (lowercased names).
+    static func uniqueName(_ base: String, taken: Set<String>) -> String {
+        var candidate = String(base.prefix(maxNameCharacters))
+        var n = 2
+        while taken.contains(candidate.lowercased()) {
+            let suffix = " (\(n))"
+            candidate = String(base.prefix(maxNameCharacters - suffix.count)) + suffix
+            n += 1
+        }
+        return candidate
+    }
 }
 
 struct CaseSecret: Identifiable, Codable, Equatable {

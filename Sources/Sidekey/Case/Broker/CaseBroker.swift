@@ -218,15 +218,18 @@ final class CaseBroker {
                 return .failure(.denied(reason: .unknownProject))
             }
             let inProject = payload.secrets.filter { $0.projectID == project.id }
+            // Two keys with one name in a project (an old merge) are never
+            // resolved by picking one: the run is refused.
             guard let only else {
+                let names = inProject.map(\.name)
+                guard Set(names).count == names.count else { return .failure(.denied(reason: .unknownKey)) }
                 return .resolved(project: project, secretIDs: inProject.map(\.id))
             }
             var ids: [UUID] = []
             for name in unique(only) {
-                guard let secret = inProject.first(where: { $0.name == name }) else {
-                    return .failure(.denied(reason: .unknownKey))
-                }
-                ids.append(secret.id)
+                let hits = inProject.filter { $0.name == name }
+                guard hits.count == 1 else { return .failure(.denied(reason: .unknownKey)) }
+                ids.append(hits[0].id)
             }
             return .resolved(project: project, secretIDs: ids)
         }
@@ -241,6 +244,8 @@ final class CaseBroker {
             if hits.isEmpty { return .failure(.denied(reason: .unknownKey)) }
             if hits.count > 1 {
                 let projects = payload.projects.filter { project in hits.contains { $0.projectID == project.id } }
+                // Duplicates inside one project are refused, not offered as a choice.
+                guard projects.count == hits.count else { return .failure(.denied(reason: .unknownKey)) }
                 return .failure(.ambiguous(key: name, projects: projectInfos(projects, in: payload)))
             }
             let hit = hits[0]
@@ -278,9 +283,12 @@ final class CaseBroker {
         }
     }
 
-    /// Exact name first; otherwise a single case-insensitive match.
+    /// A single exact match first; otherwise a single case-insensitive match.
+    /// Several projects with the name are refused, never picked.
     static func findProject(_ name: String, in payload: CaseVaultPayload) -> CaseProject? {
-        if let exact = payload.projects.first(where: { $0.name == name }) { return exact }
+        let exact = payload.projects.filter { $0.name == name }
+        if exact.count == 1 { return exact[0] }
+        if exact.count > 1 { return nil }
         let folded = payload.projects.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         return folded.count == 1 ? folded[0] : nil
     }

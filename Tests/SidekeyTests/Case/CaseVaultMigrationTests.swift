@@ -115,6 +115,27 @@ final class CaseVaultMigrationTests: XCTestCase {
         XCTAssertEqual(payload.secrets.map(\.name), ["_1PASSWORD_2", "_1PASSWORD"])
     }
 
+    func test_v1_groups_equal_after_truncation_become_distinct_projects() throws {
+        let stem = String(repeating: "infrastructure-", count: 4) // 60 chars, truncated to 48
+        let g1 = UUID(), g2 = UUID(), g3 = UUID()
+        let a = s("A_KEY", group: g1), b = s("B_KEY", group: g2), c = s("C_KEY", group: g3)
+        let payload = try CaseVaultMigration.decodePayload(try v1([a, b, c], groups: [
+            (g1, stem + "prod", [a.id]), (g2, stem + "staging", [b.id]), (g3, stem + "PROD", [c.id]),
+        ]))
+
+        let names = payload.projects.map(\.name)
+        XCTAssertEqual(Set(names.map { $0.lowercased() }).count, names.count, "no duplicate project names: \(names)")
+        XCTAssertTrue(names.allSatisfy { $0.count <= CaseProject.maxNameCharacters })
+        XCTAssertEqual(payload.projects.count, 3, "General + two projects (same full name merges as before)")
+        let pa = try XCTUnwrap(payload.secrets.first { $0.id == a.id }?.projectID)
+        let pb = try XCTUnwrap(payload.secrets.first { $0.id == b.id }?.projectID)
+        let pc = try XCTUnwrap(payload.secrets.first { $0.id == c.id }?.projectID)
+        XCTAssertNotEqual(pa, pb, "different groups stay apart")
+        XCTAssertEqual(pa, pc, "group names equal ignoring case still merge")
+        XCTAssertEqual(payload.project(pa)?.name, String((stem + "prod").prefix(48)))
+        XCTAssertEqual(payload.project(pb)?.name.hasSuffix(" (2)"), true)
+    }
+
     func test_repairedLegacyName_prefixes_only_leading_digit() {
         XCTAssertEqual(CaseNameNormalizer.repairedLegacyName("1PASSWORD"), "_1PASSWORD")
         XCTAssertEqual(CaseNameNormalizer.repairedLegacyName("OPENAI"), "OPENAI")
@@ -179,6 +200,44 @@ final class CaseVaultMigrationTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.backupFileURL), v1Bytes)
         let backup = try CaseVaultMigration.decodePayload(try openPlaintext(of: store.backupFileURL, key: key))
         XCTAssertEqual(backup.secrets.first?.name, "OPENAI_KEY")
+    }
+
+    func test_first_v2_save_keeps_a_one_time_v1_copy() throws {
+        let a = s("OPENAI_KEY")
+        let (store, key) = try storeWithPlaintext(try v1([a]))
+        let v1Bytes = try Data(contentsOf: store.fileURL)
+        let v1Copy = store.fileURL.deletingLastPathComponent().appendingPathComponent("case-vault.json.enc.v1")
+
+        var loaded = try store.load(using: key)
+        try store.save(loaded, using: key)
+        XCTAssertEqual(try Data(contentsOf: v1Copy), v1Bytes)
+        let mode = try FileManager.default.attributesOfItem(atPath: v1Copy.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o600)
+
+        // Later saves rotate .bak but never touch the v1 copy.
+        loaded.timedApprovalMinutes = 30
+        try store.save(loaded, using: key)
+        try store.save(loaded, using: key)
+        XCTAssertEqual(try Data(contentsOf: v1Copy), v1Bytes)
+        XCTAssertNotEqual(try Data(contentsOf: store.backupFileURL), v1Bytes, ".bak alone loses v1 after two saves")
+        let kept = try CaseVaultMigration.decodePayload(try openPlaintext(of: v1Copy, key: key))
+        XCTAssertEqual(kept.secrets.first?.name, "OPENAI_KEY")
+
+        // A v1 copy that already exists is never overwritten.
+        try Data("older copy".utf8).write(to: v1Copy)
+        try Self.writeSealedVault(try v1([a]), key: key, to: store.fileURL)
+        try store.save(try store.load(using: key), using: key)
+        XCTAssertEqual(try Data(contentsOf: v1Copy), Data("older copy".utf8))
+    }
+
+    func test_v2_vault_never_gets_a_v1_copy() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        let store = CaseVaultStore(fileURL: dir.appendingPathComponent("case-vault.json.enc"))
+        let key = SymmetricKey(size: .bits256)
+        try store.save(CaseVaultPayload(), using: key)
+        try store.save(CaseVaultPayload(), using: key)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("case-vault.json.enc.v1").path))
     }
 
     // MARK: helpers
