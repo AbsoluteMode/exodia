@@ -39,7 +39,7 @@ sources:
     reference: Sources/Sidekey/DynamicIsland/IslandView.swift
     confirmed_at: 2026-10-19
   - type: repository
-    reference: Tests/SidekeyTests/Brightness/
+    reference: Tests/SidekeyTests/Brightness/BrightnessKeysTests.swift
     confirmed_at: 2026-10-19
   - type: trace
     reference: Read-only battery probe on the developer's MacBook (macOS 27.2, on battery), nine samples over four minutes.
@@ -86,7 +86,7 @@ SDR maximum exists only as EDR headroom that apps fill with their own content.
 
 **Tool.** `HoverTool.brightness` is an `.inlinePanel` resolved to
 `.openPanel(.brightness)`. It is offered from the Toolbox catalog and search
-(brightness, display, яркость, vivid, xdr, battery, батарея);
+(brightness, display, vivid, xdr, battery, plus the Russian aliases);
 `HoverLayoutStore.defaultSlots` and saved layouts are unchanged. Its capsule
 title is Display and shows NN% or Extra, and no status for an unreadable display.
 
