@@ -114,10 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// trio of per-mode `⌥1` / `⌥2` / `⌥3` monitors that used to live
     /// in `historyHotkeys: [CarbonHotkeyMonitor]`.
     private var historyHotkey: CarbonHotkeyMonitor?
-    /// Positional Hover-slot hotkeys (ROO-210): ⌥N (default) activates
-    /// `HoverLayoutStore.slots[N-1]`. Registered as an independent block of five
-    /// so a failure on one (or on Drop) never disables the rest. Index 0 = slot 1.
-    private var hoverSlotHotkeys: [HotkeyShortcutMonitor] = []
+    /// Independent monitors for the user's tool bindings, regardless of layout.
+    private var toolHotkeys: [HotkeyShortcutMonitor] = []
     /// Manual Meeting-record toggle (default ⌥M) — tap starts a recording
     /// bypassing the detector nudge, tap again stops it.
     private var meetingRecordHotkey: HotkeyShortcutMonitor?
@@ -934,7 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// rebuilt before `registerHotkey()` can re-create it. `registerHotkey()`
     /// and its per-monitor registrars all early-return on a non-nil / non-empty
     /// handle (`guard hotkey == nil`, `guard meetingRecordHotkey == nil`,
-    /// `guard hoverSlotHotkeys.isEmpty`), so any rebuild path that leaves a
+    /// `guard toolHotkeys.isEmpty`), so any rebuild path that leaves a
     /// stale ref behind silently no-ops that monitor. Every rebuild site (soft
     /// wake, full-wake teardown, Accessibility re-grant) funnels through here so
     /// the whole set is torn down symmetrically — a Carbon hotkey added later is
@@ -943,14 +941,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// idempotent and `start()` self-stops, so a redundant call is cheap.
     private func teardownHotkeyMonitorsForRebuild() {
         Self.teardownHotkeyMonitorsForRebuild(
-            [hotkey, helpHotkey, historyHotkey, meetingRecordHotkey] + hoverSlotHotkeys
+            [hotkey, helpHotkey, historyHotkey, meetingRecordHotkey] + toolHotkeys
         )
         hotkey = nil
         dropMonitorGeneration = UUID()
         helpHotkey = nil
         historyHotkey = nil
         meetingRecordHotkey = nil
-        hoverSlotHotkeys = []
+        toolHotkeys = []
         // The setting stays; registerHotkey installs the tap again.
         BrightnessKeys.shared.stop()
     }
@@ -1337,7 +1335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         registerHistoryHotkey()
         registerHelpHotkey()
-        registerHoverSlotHotkeys()
+        registerToolHotkeys()
         registerMeetingRecordHotkey()
         // Brightness keys install their tap only when switched on in Settings -> Toolbox.
         BrightnessKeys.shared.start(showStrip: { [weak self] in self?.showBrightnessGlance() })
@@ -1488,18 +1486,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         .store(in: &hotkeyPreferenceCancellables)
 
-        // Re-register the Hover-slot monitors whenever any of the five
-        // positional shortcuts changes (Settings → Hotkeys Save, Stage 4). Each
-        // publisher reregisters the whole block — cheap (five Carbon
-        // registrations) and keeps the registration logic in one place. The
-        // installer threads the freshly published (slot, shortcut) so the
-        // changed slot rebuilds on its NEW value, not the stale stored property
-        // observed mid-willSet (same race as Drop).
-        for cancellable in AppDelegate.observeHoverSlotShortcuts(HotkeyPreferences.shared, onResolved: { [weak self] index, shortcut in
-            self?.reregisterHoverSlotHotkeys(slotIndex: index, shortcut: shortcut)
-        }) {
-            cancellable.store(in: &hotkeyPreferenceCancellables)
-        }
+        Self.observeToolShortcuts(HotkeyPreferences.shared) { [weak self] shortcuts in
+            self?.reregisterToolHotkeys(shortcuts: shortcuts)
+        }.store(in: &hotkeyPreferenceCancellables)
 
         // Re-register the Meeting-record monitor on rebind. Same willSet
         // hazard as Drop / Hover slots: the published value is threaded
@@ -1513,34 +1502,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &hotkeyPreferenceCancellables)
     }
 
-    /// Install the synchronous re-registration sinks for the five positional
-    /// Hover-slot shortcuts, one per `$hoverSlotNShortcut` publisher. `onResolved`
-    /// receives the 1-based slot index and the freshly published shortcut.
-    ///
-    /// As with Drop, `@Published` fires in `willSet`: the registrar reads
-    /// `configuration.hoverSlotShortcuts` (all five stored properties), so
-    /// re-reading the changed slot here would observe its PRIOR value. The
-    /// published value is threaded straight through instead (ROO-234 race).
-    static func observeHoverSlotShortcuts(
+    /// Pass the published dictionary through: @Published emits before storage
+    /// changes, so rereading preferences here would register stale bindings.
+    static func observeToolShortcuts(
         _ preferences: HotkeyPreferences,
-        onResolved: @escaping (_ slotIndex: Int, _ shortcut: HotkeyShortcut) -> Void
-    ) -> [AnyCancellable] {
-        let publishers = [
-            preferences.$hoverSlot1Shortcut,
-            preferences.$hoverSlot2Shortcut,
-            preferences.$hoverSlot3Shortcut,
-            preferences.$hoverSlot4Shortcut,
-            preferences.$hoverSlot5Shortcut
-        ]
-        return publishers.enumerated().map { offset, publisher in
-            let slotIndex = offset + 1
-            return publisher
-                .dropFirst()
-                .removeDuplicates()
-                .sink { newValue in
-                    onResolved(slotIndex, newValue)
-                }
-        }
+        onResolved: @escaping ([HoverTool: HotkeyShortcut]) -> Void
+    ) -> AnyCancellable {
+        preferences.$toolShortcuts.dropFirst().removeDuplicates().sink(receiveValue: onResolved)
     }
 
     /// Install the synchronous re-registration sink for the Drop *shortcut*.
@@ -1584,64 +1552,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
     }
 
-    /// Carbon hot-key IDs for the five positional Hover-slot shortcuts, in slot
-    /// order (index 0 = slot 1). Contiguous 13..17, after `agentVoiceHotKeyID`.
-    private static let hoverSlotHotKeyIDs: [UInt32] = [
-        CarbonHotkeyMonitor.hoverSlot1HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot2HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot3HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot4HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot5HotKeyID
-    ]
-
-    /// Register one monitor per Hover slot from the configured shortcuts. Each
-    /// fires `onHoverSlotActivated(index:)` with its 1-based slot position, so
-    /// the action always tracks `HoverLayoutStore.slots[index-1]` even after a
-    /// Toolbox reorder (D1). Idempotent: a no-op while monitors are already
-    /// installed (`reregisterHoverSlotHotkeys()` tears them down first).
-    /// - Parameters:
-    ///   - overrideSlotIndex / override: when the runtime sink rebuilds after a
-    ///     single slot changed, it passes the just-published 1-based slot index
-    ///     and shortcut so that slot uses its FRESH value. The other four slots
-    ///     (not mutated in this willSet) read `shared` as usual. The launch path
-    ///     passes neither and reads all five from `shared`.
-    private func registerHoverSlotHotkeys(
-        overrideSlotIndex: Int? = nil,
-        override: HotkeyShortcut? = nil
-    ) {
-        guard hoverSlotHotkeys.isEmpty else { return }
-        var shortcuts = HotkeyPreferences.shared.configuration.hoverSlotShortcuts
-        if let overrideSlotIndex, let override,
-           overrideSlotIndex >= 1, overrideSlotIndex <= shortcuts.count {
-            shortcuts[overrideSlotIndex - 1] = override
-        }
-        var monitors: [HotkeyShortcutMonitor] = []
-        for (offset, shortcut) in shortcuts.enumerated() {
-            let position = offset + 1
+    private func registerToolHotkeys(shortcuts: [HoverTool: HotkeyShortcut]? = nil) {
+        guard toolHotkeys.isEmpty else { return }
+        let shortcuts = shortcuts ?? HotkeyPreferences.shared.toolShortcuts
+        var unavailable = Set<HoverTool>()
+        for binding in ToolHotkeyBinding.resolve(shortcuts) {
             let monitor = HotkeyShortcutMonitor(
-                shortcut: shortcut,
-                hotKeyIDValue: Self.hoverSlotHotKeyIDs[offset],
-                onHotkey: { [weak self] in self?.onHoverSlotActivated(index: position) }
+                shortcut: binding.shortcut,
+                hotKeyIDValue: binding.hotKeyID,
+                onHotkey: { [weak self] in self?.onToolHotkeyActivated(binding.tool) }
             )
             do {
                 try monitor.start()
-                monitors.append(monitor)
+                toolHotkeys.append(monitor)
             } catch {
-                // A single slot failing to register (e.g. Carbon collision with
-                // another app) must not block the rest — log and skip it.
-                os_log(
-                    "registerHoverSlotHotkey failed slot=%{public}d: %{public}@",
-                    log: Self.hotkeyLog, type: .error,
-                    position, String(describing: error)
-                )
+                unavailable.insert(binding.tool)
+                os_log("registerToolHotkey failed: %{public}@", log: Self.hotkeyLog,
+                       type: .error, String(describing: error))
             }
         }
-        hoverSlotHotkeys = monitors
+        HotkeyPreferences.shared.unavailableToolShortcuts = unavailable
     }
 
-    private func stopHoverSlotHotkeys() {
-        hoverSlotHotkeys.forEach { $0.stop() }
-        hoverSlotHotkeys = []
+    private func stopToolHotkeys() {
+        toolHotkeys.forEach { $0.stop() }
+        toolHotkeys = []
     }
 
     /// Register the manual Meeting-record toggle (default ⌥M). Idempotent —
@@ -1686,30 +1621,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func reregisterHoverSlotHotkeys(
-        slotIndex: Int? = nil,
-        shortcut: HotkeyShortcut? = nil
-    ) {
-        stopHoverSlotHotkeys()
-        registerHoverSlotHotkeys(overrideSlotIndex: slotIndex, override: shortcut)
+    private func reregisterToolHotkeys(shortcuts: [HoverTool: HotkeyShortcut]) {
+        stopToolHotkeys()
+        registerToolHotkeys(shortcuts: shortcuts)
     }
 
-    /// Activate the Hover slot at `index` (1-based) — the single entry point for
-    /// the ⌥N hotkeys. Resolves the live tool at `HoverLayoutStore.slots[index-1]`
-    /// and runs its effect through `HoverSlotRouter`, the SAME path a tile click
-    /// uses (D1). Action/navigate tools fire the matching `IslandActions`
-    /// closure WITHOUT requesting expansion — they open their own surfaces
-    /// instantly, so forcing the drawer open would flash an empty Hover (Stage 3
-    /// review fix). Only inline-panel tools (`effect.requiresExpansion`) request
-    /// programmatic Hover expansion (honoured only when
-    /// `IslandHoverPolicy.allowsExpansion`, enforced in `IslandView`, D4) plus
-    /// the specific sub-panel. Only the fact of the trigger is logged — never the
-    /// keystroke (invariant #2).
-    private func onHoverSlotActivated(index: Int) {
+    /// Shares the tile's effect, independent of visibility and layout order.
+    private func onToolHotkeyActivated(_ tool: HoverTool) {
         registerIslandHotkeyActivity()
-        let slots = HoverLayoutStore.shared.slots
-        guard index >= 1, index <= slots.count else { return }
-        let tool = slots[index - 1]
         let effect = HoverSlotRouter.effect(for: tool)
 
         switch effect {

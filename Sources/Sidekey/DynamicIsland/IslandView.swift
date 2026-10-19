@@ -2666,7 +2666,7 @@ private struct IslandDropModeHoverPanel: View {
                                         action: { activateTool(tool) }
                                     )
                                     .overlay(alignment: .top) {
-                                        hoverSlotHint(for: offset)
+                                        toolHotkeyHint(for: tool)
                                             .opacity(hoveredTool == tool ? 1 : 0)
                                             .offset(y: -IslandHoverControlsLayout.hintOffset)
                                             .animation(.easeInOut(duration: 0.15), value: hoveredTool)
@@ -2883,29 +2883,13 @@ private struct IslandDropModeHoverPanel: View {
         .islandHoverHitRegion(bridge: hoverHitBridge, surface: .result)
     }
 
-    /// Bare positional keycap overline for the Hover-slot shortcut at `offset`
-    /// (0-based), sitting ABOVE the tile. Visible only when the cursor hovers
-    /// over this tile — the callsite gates visibility via `opacity(hoveredTool
-    /// == tool ? 1 : 0)` with `easeInOut(0.15s)`, matching the description
-    /// strip animation. It overlays the tile without affecting row layout,
-    /// so its presence and opacity never move the button vertically.
-    /// Sourced from the LIVE `hotkeys.configuration` so it shows the current
-    /// binding (default ⌥1..⌥5) and updates after a Save (D1, динамика).
-    /// Built through the shared `HotkeyHintView` per `docs/hotkey.md` (glyphs
-    /// from `HotkeyGlyph`, каждый keycap side-by-side, no "+"); `.keycaps`
-    /// style gives each glyph its own mini rounded chip without an outer pill,
-    /// so the hint reads as `[⌥][N]` — two distinct keys — rather than loose
-    /// glyphs. `.tiny` size keeps the chips at ~half the compact cap height so
-    /// they sit as a light positional mark above the tile.
+    /// Show only this tool's saved shortcut, including tools beyond the first row.
     @ViewBuilder
-    private func hoverSlotHint(for offset: Int) -> some View {
-        let shortcuts = hotkeys.configuration.hoverSlotShortcuts
-        if offset < shortcuts.count {
-            HotkeyHintView(
-                contents: shortcuts[offset].contents,
-                style: .keycaps,
-                size: .tiny
-            )
+    private func toolHotkeyHint(for tool: HoverTool) -> some View {
+        let shortcut = hotkeys.configuration.toolShortcuts[tool]
+            ?? (tool == .meetingRecord ? hotkeys.configuration.meetingRecordShortcut : nil)
+        if let shortcut {
+            HotkeyHintView(contents: shortcut.contents, style: .keycaps, size: .tiny)
         }
     }
 

@@ -13,9 +13,6 @@ final class HoverLayoutStore: ObservableObject {
     static let shared = HoverLayoutStore()
 
     static let defaultsKey = "sidekey.b2b.hover.layout"
-    /// Existing positional shortcuts cover the first five tools independently
-    /// of how many tools the user adds. Extra tools remain clickable.
-    static let shortcutSlotCount = 5
     nonisolated static let columns = 3
 
     static let defaultSlots: [HoverTool] = [

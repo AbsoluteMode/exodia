@@ -105,44 +105,33 @@ final class DropReregisterRaceTests: XCTestCase {
         XCTAssertEqual(resolved.last, .tap)
     }
 
-    // MARK: - Hover-slot sinks share the same willSet stale-read class
-
-    /// The Hover-slot registrar reads `configuration.hoverSlotShortcuts` — i.e.
-    /// all five stored properties. A synchronous sink on one
-    /// `$hoverSlotNShortcut` therefore re-reads that same property mid-willSet
-    /// and sees the prior value, registering the changed slot on the stale
-    /// shortcut. Same fix: thread the published value through per slot.
-    func test_hover_slot_change_delivers_fresh_value_for_that_slot() {
+    func test_tool_change_delivers_the_fresh_dictionary_and_removal() {
         let preferences = HotkeyPreferences(defaults: makeDefaults())
-        preferences.hoverSlot2Shortcut = .combo(.optionTwo)
-
-        var resolved: [(index: Int, shortcut: HotkeyShortcut)] = []
-        let cancellables = AppDelegate.observeHoverSlotShortcuts(preferences) { index, shortcut in
-            resolved.append((index, shortcut))
-        }
-        defer { cancellables.forEach { $0.cancel() } }
-
-        preferences.hoverSlot2Shortcut = .combo(.optionD)
-
-        let last = resolved.last
-        XCTAssertEqual(last?.index, 2)
-        XCTAssertEqual(last?.shortcut, .combo(.optionD))
+        var resolved: [[HoverTool: HotkeyShortcut]] = []
+        let cancellable = AppDelegate.observeToolShortcuts(preferences) { resolved.append($0) }
+        defer { cancellable.cancel() }
+        preferences.toolShortcuts = [.brightness: .combo(.optionD)]
+        XCTAssertEqual(resolved.last, [.brightness: .combo(.optionD)])
+        preferences.toolShortcuts = [:]
+        XCTAssertEqual(resolved.last, [:])
     }
 
-    func test_hover_slot_change_reports_correct_slot_index() {
+    func test_save_releases_tools_before_core_rebind_then_installs_final_map() throws {
         let preferences = HotkeyPreferences(defaults: makeDefaults())
-
-        var resolved: [(index: Int, shortcut: HotkeyShortcut)] = []
-        let cancellables = AppDelegate.observeHoverSlotShortcuts(preferences) { index, shortcut in
-            resolved.append((index, shortcut))
+        preferences.toolShortcuts = [.brightness: .combo(.optionD)]
+        var changes: [[HoverTool: HotkeyShortcut]] = []
+        var coreAtPublish: [HotkeyShortcut] = []
+        let cancellable = AppDelegate.observeToolShortcuts(preferences) { value in
+            changes.append(value)
+            coreAtPublish.append(preferences.meetingRecordShortcut)
         }
-        defer { cancellables.forEach { $0.cancel() } }
-
-        preferences.hoverSlot4Shortcut = .combo(.optionQ)
-
-        let last = resolved.last
-        XCTAssertEqual(last?.index, 4)
-        XCTAssertEqual(last?.shortcut, .combo(.optionQ))
+        defer { cancellable.cancel() }
+        var config = preferences.configuration
+        config.meetingRecordShortcut = .combo(.optionD)
+        config.toolShortcuts = [.brightness: .combo(.optionM)]
+        try preferences.apply(config)
+        XCTAssertEqual(changes, [[:], [.brightness: .combo(.optionM)]])
+        XCTAssertEqual(coreAtPublish, [.combo(.optionM), .combo(.optionD)])
     }
 
     // MARK: - Helpers

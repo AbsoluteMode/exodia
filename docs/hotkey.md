@@ -55,7 +55,7 @@ Modifier glyphs and their VoiceOver pronunciations live on
   response panel close row, and every Help window row look
   identical at the chip level for this reason. Two styles opt out
   of the outer capsule: `.keycaps` (each cap draws its own mini
-  chip — the Hover-slot hints above the tiles) and `.bare` (loose
+  chip — the Tool hotkey hints above the tiles) and `.bare` (loose
   glyphs, an API option with no production callsites today). Both
   still route through `HotkeyHintView`.
 - **Every hotkey must appear in the Help window**
@@ -205,36 +205,37 @@ and `PermissionsSettingsViewModel`. The source correction and remaining
 installed-app checks are recorded in the
 [permission stability audit](../.project-docs/bugs/2026-10-19-permission-stability-audit.md).
 
-## Hover-slot hotkeys
+## Tool hotkeys
 
-The five Hover buttons each have a configurable **positional** hotkey
-(default ⌥1..⌥5). The binding follows the slot **position**, not the tool:
-⌥N activates whatever tool currently occupies `HoverLayoutStore.slots[N-1]`,
-so reordering tiles in the Toolbox re-points ⌥N at the new occupant. The five
-rows live in Settings → Hotkeys (`hoverSlotSection` in
-`HotkeysSettingsView.swift`) and the bindings are
-`HotkeyConfiguration.hoverSlot1Shortcut … hoverSlot5Shortcut`.
+Settings → Hotkeys → Tools lists the complete `HoverTool` catalog. Record a
+shortcut beside a named function and Save; remove it with the clear button and
+Save. Escape cancels recording, Revert discards the draft, and Reset to defaults
+clears optional tool bindings. New installs do not reserve Option 1–5.
 
-- **Keycap hint above each button.** Each Hover tile shows its hotkey as a
-  `HotkeyHintView(style: .keycaps, size: .tiny)` sitting above it — each
-  glyph in its own mini keycap chip, no outer capsule — sourced from
-  `configuration.hoverSlot<N>Shortcut.contents` (dynamic — a rebind updates
-  the hint). The hint is visible only while the cursor hovers that tile; the
-  other tiles hide theirs via `opacity` (not conditional removal), so the
-  layout slot above every tile stays reserved and tiles never jump. The fade
-  is `easeInOut(0.15s)`, riding the same `hoveredTool` value as the
-  description strip below.
-- **Activation behaviour** (`AppDelegate.onHoverSlotActivated`): for
-  inline-panel tools, ⌥N expands the Hover (only when
-  `IslandHoverPolicy.allowsExpansion` — e.g. not during a meeting) and opens
-  the tool's sub-panel; for action / navigate tools it runs the effect
-  directly without forcing the drawer open. A tile click and its ⌥N hotkey
-  share one code path (`HoverSlotRouter`).
-- **Slot 5 is the locked Settings slot** (`HoverLayoutStore.lockSlotIndex`):
-  the hotkey is editable, but the tool in that position is permanently
-  `.settings`.
-- Like every other monitor, the keystroke content is never logged — only the
-  fact of the trigger (invariant #2).
+Bindings use stable tool IDs in `HotkeyConfiguration.toolShortcuts` and
+`hotkeys.toolShortcuts.v1`. Moving or removing a tile never changes its shortcut;
+a tool need not be pinned to run from the keyboard. `ToolHotkeyBinding.resolve`
+produces registrations with independent Carbon IDs, and `AppDelegate` captures
+the tool directly. Tile clicks, search and hotkeys share `HoverSlotRouter`.
+Inline panels request the existing policy-gated hover expansion; actions and
+navigation run directly. Output Language retains its Smart Mode requirement.
+The existing Meeting record row remains the primary record toggle; Record in
+the Tools section provides an optional additional shortcut for the same action.
+
+Assigned hints above tiles and named Help rows read the same configuration.
+Unassigned tools have no hint or Help hotkey row. Conflicts use the existing
+physical-key model, including the fixed Help and History-strip shortcuts.
+If macOS cannot register a binding, its saved row shows an unavailable message
+with permission/shortcut recovery guidance.
+
+On first load, explicitly saved legacy `hotkeys.hoverSlotNShortcut` values map
+to the tools currently occupying the first five positions. Empty positions and
+invalid or Drop-only Space values are ignored. The resulting dictionary is
+saved once; an intentionally empty dictionary prevents old slots from returning
+after a clear, reset or backup restore. Existing legacy keys remain untouched
+for compatibility. Configuration backups include the new dictionary.
+
+WHY: [Feature hotkeys](decisions/2026-10-19-feature-hotkeys.md).
 
 ## Meeting-record hotkey
 
@@ -293,7 +294,7 @@ HotkeyHintView(label: "Quit", keys: [HotkeyGlyph.option, "Q"])  // response pane
 HotkeyHintView(label: "Help", keys: [HotkeyGlyph.option, "H"])  // floating Keybindings hint
 HotkeyHintView(keys: ["Space"])                                 // Drop = hold Space (Help row; title column already labels it)
 HotkeyHintView(label: "Hold", keys: [HotkeyGlyph.command])      // Help window row needing tap/hold disambiguation
-// Hover-slot hints above the tiles:
+// Tool hotkey hints above the tiles:
 HotkeyHintView(contents: shortcut.contents, style: .keycaps, size: .tiny)
 // Each glyph renders in its own mini rounded keycap (KeycapChrome.chip),
 // no outer capsule. Reads as [⌥][1] — two distinct tiny keys.
