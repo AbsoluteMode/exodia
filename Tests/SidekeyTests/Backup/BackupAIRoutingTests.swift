@@ -127,8 +127,11 @@ final class BackupAIRoutingTests: XCTestCase {
             redirected = ServerEndpoint(id: server.id, name: server.name, baseURL: server.baseURL, keyAccount: account)
             let data = try routing([redirected])
             profile.defaults.set(data, forKey: ConfigBackupRegistry.aiRoutingKey)
-            XCTAssertThrowsError(try ConfigBackupRegistry.capture(profile.defaults))
-            XCTAssertThrowsError(try ConfigBackupRegistry.credentialAccounts(in: profile.defaults))
+            let captured = try ConfigBackupRegistry.capture(profile.defaults)
+            XCTAssertNotNil(captured[ConfigBackupRegistry.aiRoutingPreservedKey])
+            XCTAssertFalse(try ConfigBackupRegistry.credentialAccounts(in: profile.defaults).contains(account)
+                           && !ConfigBackupRegistry.credentialAccounts.contains(account))
+            XCTAssertThrowsError(try ConfigBackupRegistry.validate([ConfigBackupRegistry.aiRoutingKey: .data(data)]))
         }
         for account in ["byok.server.not-a-uuid.api_key", "backup.archive-key.v1", "byok.server.\(server.id.uuidString).api_key"] {
             XCTAssertThrowsError(try ConfigBackupRegistry.validate([:], credentials: [account: "synthetic"]))
@@ -198,5 +201,60 @@ final class BackupAIRoutingTests: XCTestCase {
         try await ArtifactBackupEngine(environment: environment).stageRestore(from: newFile, key: key, sections: [.settings])
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
         XCTAssertEqual(target.defaults.data(forKey: ConfigBackupRegistry.aiRoutingKey), saved)
+    }
+
+    func testBrokenRoutingDoesNotBlockOtherArtifactsAndKeepsEveryRawCopy() async throws {
+        let source = try ArtifactBackupTestProfile(); defer { source.tearDown() }
+        let target = try ArtifactBackupTestProfile(); defer { target.tearDown() }
+        source.defaults.set("unreadable original routing", forKey: ConfigBackupRegistry.aiRoutingKey)
+        source.defaults.set(Data([9, 8, 7]), forKey: ConfigBackupRegistry.aiRoutingPreservedKey)
+        try source.write("synthetic persistent instructions", to: source.locations.agentMemory)
+        let file = source.root.appendingPathComponent("broken-routing.exodiabackup"), key = ConfigBackupArchive.makeKey()
+        let sourceEngine = ArtifactBackupEngine(environment: source.environment())
+        _ = try await sourceEngine.createArchive(at: file, key: key, sections: [.settings, .workspace])
+        let preview = try await sourceEngine.inspectArchive(at: file, key: key)
+        XCTAssertTrue(preview.warnings.contains { $0.contains("unreadable server") })
+        let environment = target.environment()
+        try await ArtifactBackupEngine(environment: environment).stageRestore(from: file, key: key, sections: [.settings, .workspace])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
+        let preserved = try XCTUnwrap(target.defaults.dictionary(forKey: ConfigBackupRegistry.aiRoutingPreservedKey))
+        XCTAssertEqual(preserved["routing"] as? String, "unreadable original routing")
+        XCTAssertEqual(preserved["previousCopy"] as? Data, Data([9, 8, 7]))
+        XCTAssertEqual(target.contents(of: target.locations.agentMemory), "synthetic persistent instructions")
+        XCTAssertEqual(source.defaults.string(forKey: ConfigBackupRegistry.aiRoutingKey), "unreadable original routing")
+        XCTAssertTrue(AIRoutingStore(defaults: target.defaults).isMigrated)
+    }
+
+    func testPartlyUnreadableServerListStillCapturesValidServerKeys() throws {
+        let profile = try ArtifactBackupTestProfile(); defer { profile.tearDown() }
+        let good = server()
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: routing([good])) as? [String: Any])
+        var servers = try XCTUnwrap(object["servers"] as? [Any])
+        servers.append(["id": "unknown-new-server-shape", "keyAccount": "backup.archive-key.v1"])
+        object["servers"] = servers
+        let raw = try JSONSerialization.data(withJSONObject: object)
+        profile.defaults.set(raw, forKey: ConfigBackupRegistry.aiRoutingKey)
+        var warnings: [String] = []
+        let captured = try ConfigBackupRegistry.capture(profile.defaults, warnings: &warnings)
+        XCTAssertFalse(warnings.isEmpty)
+        XCTAssertTrue(try ConfigBackupRegistry.credentialAccounts(in: profile.defaults).contains(good.keyAccount))
+        XCTAssertFalse(try ConfigBackupRegistry.credentialAccounts(in: profile.defaults).contains("backup.archive-key.v1"))
+        XCTAssertNotNil(captured[ConfigBackupRegistry.aiRoutingPreservedKey])
+    }
+
+    func testUnmigratedImportedRoutingCannotSilentlySwitchToLegacyRoutes() throws {
+        let profile = try ArtifactBackupTestProfile(); defer { profile.tearDown() }
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: routing([server()])) as? [String: Any])
+        object["migrationVersion"] = 0
+        let raw = try JSONSerialization.data(withJSONObject: object)
+        XCTAssertThrowsError(try ConfigBackupRegistry.apply([ConfigBackupRegistry.aiRoutingKey: .data(raw)], sections: [.models], to: profile.defaults))
+        XCTAssertNil(profile.defaults.object(forKey: ConfigBackupRegistry.aiRoutingKey))
+        profile.defaults.set(raw, forKey: ConfigBackupRegistry.aiRoutingKey)
+        let captured = try ConfigBackupRegistry.capture(profile.defaults)
+        try ConfigBackupRegistry.apply(captured, sections: [.models], to: profile.defaults)
+        let routing = AIRoutingStore(defaults: profile.defaults)
+        XCTAssertTrue(routing.isMigrated)
+        XCTAssertEqual(routing.route(for: .agent)?.account, .anthropic)
+        XCTAssertNotNil(profile.defaults.object(forKey: ConfigBackupRegistry.aiRoutingPreservedKey))
     }
 }

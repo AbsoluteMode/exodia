@@ -76,6 +76,13 @@ including keys absent from the target's current server registry. Settings schema
 the routing document: a reset keeps routes unconfigured, while an older archive
 does not erase current routes. Synthetic second-device and interrupted-restore
 tests cover those boundaries.
+Unreadable routing values are preserved as typed property lists together with
+any older unreadable copy; export uses only individually validated server
+accounts and reports exclusions. Apply rejects an unmigrated routing document
+so legacy migration cannot silently replace restored choices. The UI explains
+source resets and independent route/key selection. Credential-only restores
+retain imported server keys for a separately restored matching server setup;
+they do not silently discard the user's explicitly selected keys.
 
 ## Baseline behavior verified before implementation
 

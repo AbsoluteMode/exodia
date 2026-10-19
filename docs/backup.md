@@ -106,6 +106,15 @@ their separate block. Archives made before API & Models preserve any routes
 already configured on the target Mac; on a fresh Mac the normal one-time
 migration can carry over their old provider choices.
 
+If a routing document is damaged or partly unreadable, its original value and
+any older unreadable copy are preserved inside the encrypted backup. Readable
+servers and all other artifact groups can still be saved. The preview warns
+when keys for unreadable server entries could not be included. Restored routes
+never rerun migration from old choices. Reset keeps the preserved values in the
+local recovery checkpoint before clearing the block. Settings-history snapshots
+are bounded to 1 MB of plaintext in total; unusually large configurations are
+refused with an error instead of being truncated.
+
 If an archive is damaged, incomplete, or needs a newer version of Exodia, it
 is refused. Choose another saved version or update Exodia. Losing every copy
 of the data or every recovery method cannot be repaired by encryption.

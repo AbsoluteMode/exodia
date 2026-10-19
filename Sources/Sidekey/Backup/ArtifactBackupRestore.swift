@@ -1146,7 +1146,7 @@ struct ArtifactRestoreTransaction {
         try payload.validate()
         // Only the blocks this payload restores are rewritten; everything else
         // the user changed meanwhile stays as it is.
-        let preserve: Set<String> = payload.schema < 3 ? [ConfigBackupRegistry.aiRoutingKey] : []
+        let preserve: Set<String> = payload.schema < 3 ? [ConfigBackupRegistry.aiRoutingKey, ConfigBackupRegistry.aiRoutingPreservedKey] : []
         try ConfigBackupRegistry.apply(payload.values, sections: payload.appliedSections,
                                        preservingMissingKeys: preserve, to: defaults)
     }
