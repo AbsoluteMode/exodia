@@ -141,7 +141,8 @@ final class OpenCodeProvider: CLIProvider {
                 env = try OpenCodeEnvironment.make(workingDirectory: workingDir, model: model, provider: provider,
                                                    key: key, allowActions: options.allowActions,
                                                    modelSpec: options.openCodeModelSpec,
-                                                   caseMCPCommand: options.caseMCPCommand)
+                                                   caseMCPCommand: options.caseMCPCommand,
+                                                   openRouterProvider: options.openRouterProvider)
             } catch {
                 return fail("workspace_error", "Couldn’t create the local OpenCode workspace.")
             }

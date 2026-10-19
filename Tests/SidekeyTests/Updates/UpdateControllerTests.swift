@@ -33,6 +33,7 @@ final class UpdateControllerTests: XCTestCase {
         AppState.shared.updateController = nil
         AppState.shared.phase = .idle
         AppState.shared.agentPhase = .idle
+        AppState.shared.translationActive = false
         AppState.shared.clearMeetingRecordingState()
     }
 
@@ -41,6 +42,7 @@ final class UpdateControllerTests: XCTestCase {
         AppState.shared.updateController = nil
         AppState.shared.phase = .idle
         AppState.shared.agentPhase = .idle
+        AppState.shared.translationActive = false
         AppState.shared.clearMeetingRecordingState()
         super.tearDown()
     }
@@ -228,6 +230,23 @@ final class UpdateControllerTests: XCTestCase {
         XCTAssertEqual(installs, 0)
         XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("agent") == true)
         AppState.shared.agentPhase = .idle
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 1)
+    }
+
+    func test_translationAndSubtitlesDeferUpdateUntilExplicitRestart() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        AppState.shared.updateAvailable?.startDownload()
+        AppState.shared.translationActive = true
+        controller.applyDriverStage(.readyToInstall)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 0)
+        XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
+        XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("translation") == true)
+        AppState.shared.translationActive = false
+        XCTAssertEqual(installs, 0)
         AppState.shared.updateAvailable?.install()
         XCTAssertEqual(installs, 1)
     }

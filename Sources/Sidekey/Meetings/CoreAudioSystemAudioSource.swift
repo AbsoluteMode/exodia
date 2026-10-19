@@ -5,17 +5,21 @@ import os.log
 /// Audio-only capture of the system mix via CoreAudio Process Tap.
 /// Recording meetings through this path lights audio privacy surfaces,
 /// not the macOS screen-observation indicator.
-final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked Sendable {
+final class CoreAudioSystemAudioSource: TerminalSystemAudioSourceStreaming, @unchecked Sendable {
     private static let log = OSLog(subsystem: "com.sidekey.meetings", category: "system-audio")
 
     private let stateLock = NSLock()
-    private let ioQueue = DispatchQueue(label: "com.sidekey.meetings.coreaudio.tap", qos: .userInitiated)
+    // Serialize hardware lifecycle, including an already dispatched route restart,
+    // so terminal EOF cannot race a new capture into existence.
+    private let lifecycleLock = NSLock()
+    private var terminal = false
+    private let ioQueue: DispatchQueue
+    private let buffers: SystemAudioBufferBroadcast
     private let defaultOutputListenerQueue = DispatchQueue(
         label: "com.sidekey.meetings.coreaudio.default-output",
         qos: .userInitiated
     )
 
-    private var continuations: [UUID: AsyncStream<[Float]>.Continuation] = [:]
     private var isRunning = false
     private var tapID = AudioObjectID(0)
     private var aggregateID = AudioObjectID(0)
@@ -52,6 +56,16 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         await self?.restartAfterDefaultOutputChange()
     }
 
+    init(
+        ioQueue: DispatchQueue = DispatchQueue(label: "com.sidekey.meetings.coreaudio.tap", qos: .userInitiated),
+        buffers: SystemAudioBufferBroadcast = SystemAudioBufferBroadcast()
+    ) {
+        self.ioQueue = ioQueue
+        self.buffers = buffers
+    }
+
+    enum CaptureEnded: Error { case terminal }
+
     /// Current value of the output-route-change counter. Thread-safe read
     /// via `stateLock`.
     var outputRouteChangeCount: Int {
@@ -62,19 +76,16 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
     }
 
     func audioBufferStream() -> AsyncStream<[Float]> {
-        let id = UUID()
-        let (stream, continuation) = AsyncStream<[Float]>.makeStream()
-        stateLock.lock()
-        continuations[id] = continuation
-        stateLock.unlock()
-
-        continuation.onTermination = { @Sendable [weak self] _ in
-            self?.removeContinuation(id)
-        }
-        return stream
+        buffers.stream()
     }
 
     func start() async throws {
+        try lifecycleLock.withLock { try startCapture() }
+    }
+
+    /// Caller holds lifecycleLock. No suspension while hardware is being changed.
+    private func startCapture() throws {
+        guard !terminal else { throw CaptureEnded.terminal }
         guard !runningSnapshot() else { return }
 
         let excludedProcessIDs = Self.currentProcessObjectID().map { [$0] } ?? []
@@ -177,10 +188,26 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
     }
 
     func stop() async {
+        lifecycleLock.withLock { stopCapture() }
+    }
+
+    // WHY: .project-docs/decisions/2026-10-20-translation-tools.md
+    func stopAndFinishStreams() async {
+        lifecycleLock.withLock {
+            terminal = true
+            // Keep the generation/format valid for callbacks already queued.
+            stopCapture(preservePendingCallbacks: true)
+            ioQueue.sync {}
+            clearCaptureState()
+            buffers.finish()
+        }
+    }
+
+    private func stopCapture(preservePendingCallbacks: Bool = false) {
         restartMonitor.setActive(false)
         removeDefaultOutputDeviceListener()
         removeOutputDevicePropertyListeners()
-        let resources = takeRunningResources()
+        let resources = takeRunningResources(preservePendingCallbacks: preservePendingCallbacks)
         stopAndDestroy(resources: resources)
         os_log("CoreAudio process tap stopped", log: Self.log, type: .info)
     }
@@ -191,9 +218,7 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         removeOutputDevicePropertyListeners()
         let resources = takeRunningResources()
         stopAndDestroy(resources: resources)
-        for continuation in continuations.values {
-            continuation.finish()
-        }
+        buffers.finish()
     }
 
     private func runningSnapshot() -> Bool {
@@ -222,7 +247,7 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         stateLock.unlock()
     }
 
-    private func takeRunningResources() -> (
+    private func takeRunningResources(preservePendingCallbacks: Bool = false) -> (
         aggregateID: AudioObjectID,
         tapID: AudioObjectID,
         ioProcID: AudioDeviceIOProcID?
@@ -232,13 +257,21 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         aggregateID = 0
         tapID = 0
         ioProcID = nil
+        if !preservePendingCallbacks { clearCaptureStateLocked() }
+        isRunning = false
+        stateLock.unlock()
+        return resources
+    }
+
+    private func clearCaptureState() {
+        stateLock.withLock { clearCaptureStateLocked() }
+    }
+
+    private func clearCaptureStateLocked() {
         captureFormat = nil
         activeGeneration = nil
         callbackRateMonitor.reset()
         callbackRateMismatchWindows = 0
-        isRunning = false
-        stateLock.unlock()
-        return resources
     }
 
     private func stopAndDestroy(resources: (
@@ -259,7 +292,11 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
     }
 
     private func restartAfterDefaultOutputChange() async {
-        guard runningSnapshot() else { return }
+        lifecycleLock.withLock { restartCapture() }
+    }
+
+    private func restartCapture() {
+        guard !terminal, runningSnapshot() else { return }
         restartMonitor.setActive(false)
         os_log(
             "default output device changed; restarting CoreAudio process tap",
@@ -272,7 +309,7 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         stopAndDestroy(resources: resources)
 
         do {
-            try await start()
+            try startCapture()
             os_log(
                 "CoreAudio process tap restarted after default output device change",
                 log: Self.log,
@@ -434,12 +471,6 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         }
     }
 
-    private func removeContinuation(_ id: UUID) {
-        stateLock.lock()
-        continuations[id] = nil
-        stateLock.unlock()
-    }
-
     /// Increments the output-route-change counter. Called from the default
     /// output device listener block, which fires on
     /// `defaultOutputListenerQueue` — `stateLock` synchronizes against reads
@@ -515,12 +546,7 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
         let outputSamples = resampler.process(inputSamples, sourceSampleRate: sourceSampleRate)
         guard !outputSamples.isEmpty else { return }
 
-        stateLock.lock()
-        let sinks = Array(continuations.values)
-        stateLock.unlock()
-        for sink in sinks {
-            sink.yield(outputSamples)
-        }
+        buffers.yield(outputSamples)
     }
 
     private static func monoFloatSamples(

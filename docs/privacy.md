@@ -45,9 +45,18 @@ cannot embed commands or executable HTML. UT/Sferyx configuration belongs to
 the user’s local files and is absent from the source repository.
 
 The Display tool reads and sets the display backlight through macOS DisplayServices
-and reads the battery charge and load through IOKit, only while its hover strip
-is open (plus one level read when hover opens with Display pinned). Nothing
-is stored, logged or sent, and it requests no macOS permissions.
+while its hover strip is open (each Brightness keys press opens it), and reads the
+level once when hover opens with Display pinned and when Settings -> Toolbox ->
+Display appears. While Extra is on, it also reads the selected display's level
+every half second with the strip closed, so any decrease turns Extra off.
+For the time left on battery it reads the battery charge and load
+through IOKit, and the built-in display's backlight level through DisplayServices,
+once a minute from launch and every 5 seconds while the strip is open, and keeps
+the last half hour of readings in memory only: they are never written to disk,
+logged or sent. While Extra is on, it scales the display's
+transfer table through Quartz; macOS gives the display its own table back when
+Whytap quits, crashes included. Only the Brightness keys switch is saved. The
+tool requests no macOS permissions; Brightness keys use Accessibility (below).
 
 Notify stores notification history (up to 500 events), including text, links,
 colors and logo names, locally under Application Support. User-configured scripts
@@ -66,6 +75,7 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 | Agent (OpenCode) | the provider chosen for the Agent row (OpenRouter or Anthropic) and its selected model, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
 | Key checks | the provider of the key: a free request (model list, key or account endpoint) that sends only the key. A restricted ElevenLabs key may need a minimal paid speech request, made only when you save the key or press Check now | when you save a key, press Check now, or open API & Models and the last result is a day old |
 | Model catalogs | the public model lists of OpenRouter and Deepgram (no key), and the model lists of Soniox and Anthropic (your key); a custom server's `/models` list. Only the request itself is sent, no audio or text | when you open API & Models and the cache is a day old, save a key, or press Refresh models |
+| OpenRouter providers | OpenRouter, with your key: the list of providers serving the model selected for an OpenRouter feature, with their latency and throughput. Only the request itself is sent, no audio or text. A pinned provider then receives that feature's requests alone, with no fallback | when an OpenRouter row is shown in API & Models (reused for 5 minutes) |
 | Model probes | the provider of the feature you are choosing a model for: 1 second of digital silence for speech models, the prompt "Reply with OK." (plus one fictitious tool for agent models) for text models. Never your audio, transcripts, prompts or notes. Costs a fraction of a cent | only when you pick a model that is not in the built-in list, or press Check now |
 | Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Whytap | after you explicitly configure and enable Backup |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
@@ -124,3 +134,12 @@ Restore verifies a whole archive before applying selected groups on the next
 normal launch. Imported jobs and executable configurations do not run on their
 own. External clipboard file originals, SSH keys and credentials managed by
 other applications are not silently copied. [Coverage and recovery](backup.md).
+
+## Translation and subtitles
+
+Translate sends submitted text to the chosen Translation LLM route. Subtitles
+sends system audio to the chosen Subtitles audio speech provider and committed
+phrases to the Translation route. It never opens the microphone or creates a
+recording/meeting note. Forty recent lines stay in memory, with no automatic
+history saved. Copy writes translations only after a click. Window close,
+Cancel and sleep stop capture and cancel requests. See [translation](translation.md).

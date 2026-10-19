@@ -388,7 +388,9 @@ final class AIRoutingMigrationTests: XCTestCase {
         try env.keys.save("openrouter-key", account: Account.openRouter)
         migrate(env, appleSilicon: true)
         let afterFirstRun = env.routing.state
-        XCTAssertEqual(afterFirstRun.routes.count, AIFeature.allCases.count)
+        XCTAssertEqual(afterFirstRun.routes.count, 8)
+        XCTAssertNil(env.routing.route(for: .translation))
+        XCTAssertNil(env.routing.route(for: .subtitlesAudio))
 
         // The old settings change later (a rollback and back, say), and a key
         // turns up. The next launch must not look at any of it.

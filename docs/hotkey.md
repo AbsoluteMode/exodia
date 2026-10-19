@@ -272,6 +272,9 @@ Whytap take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
 - Two brightness-up presses at the maximum within 1.5 s, timed when the tap
   sees them, turn Extra on; the press that reaches the maximum and repeats
   from holding the key do not count.
+- Lowering brightness turns Extra off. This also applies to native macOS
+  brightness changes, automatic brightness and idle dimming with the strip
+  closed; outside changes are detected about every half second.
 - ⌘, ⌃, ⌥ or ⇧ (other than ⌥⇧), hidden hover widgets and an unadjustable
   display leave the keys with macOS; ⌥ still opens Displays settings. Fn and
   Caps Lock do not matter. A press belongs wholly to whoever got its first

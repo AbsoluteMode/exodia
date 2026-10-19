@@ -332,6 +332,22 @@ struct IslandView: View {
         )
     }
 
+    /// The drawer itself, below the gap or the music strip.
+    private var hoverDrawerHeight: CGFloat {
+        visibleHoverPanelHeight
+            // Subtract the ACTUAL top gap used above (the music-strip case uses
+            // the smaller `musicStripTopGap`), so the panel reclaims those pixels
+            // and the VStack still sums to `visibleHoverPanelHeight`.
+            - (showsHoverMusicStrip
+                ? IslandDropModeControl.musicStripTopGap
+                : IslandDropModeControl.detachedPanelGap)
+            // Strip + the gap below it that separates the player card from this
+            // panel (both counted into the band height), so the panel keeps full size.
+            - (showsHoverMusicStrip
+                ? IslandDropModeControl.musicStripHeight + IslandDropModeControl.musicStripBottomGap
+                : 0)
+    }
+
     /// Hover zone and host band: the drawer, or a still-held taller height.
     private var activeHoverPanelHeight: CGFloat {
         Self.heldHoverPanelHeight(visibleHoverPanelHeight, hold: hoverPanelHeightHold)
@@ -427,6 +443,13 @@ struct IslandView: View {
         over mode: IslandHoverPanelMode, hovering: Bool, searchFocused: Bool, vocabularyFocused: Bool = false
     ) -> Bool {
         !searchFocused && !vocabularyFocused && (!hovering || mode == .controls || mode == .brightness)
+    }
+
+    /// The held zone goes once the pointer is over the drawer's final frame. While the
+    /// drawer shrinks, its animated frame still covers the held zone, and releasing there
+    /// closed the drawer under a pointer still moving up to the strip.
+    static func releasesHeldHoverZone(pointerY: CGFloat, drawerHeight: CGFloat) -> Bool {
+        (0...max(0, drawerHeight)).contains(pointerY)
     }
 
     /// A glance opened without the pointer crossing the pill, so reaching its strip from below
@@ -1188,6 +1211,8 @@ struct IslandView: View {
                             historyPasteTargetName: actions.historyPasteTargetName,
                             onOpenNotes: actions.openMeetings,
                             onOpenMonitor: actions.openMonitor,
+                            onOpenTranslate: actions.openTranslate,
+                            onOpenSubtitles: actions.openSubtitles,
                             onOpenHelp: actions.openHelp,
                             onQuit: actions.quitApplication,
                             onToggleMeetingRecord: actions.toggleMeetingRecord,
@@ -1202,31 +1227,16 @@ struct IslandView: View {
                                 hoverPanelMode = .controls
                             }
                         )
-                        .frame(
-                            width: compactWidth,
-                            height: visibleHoverPanelHeight
-                                // Subtract the ACTUAL top gap used above (the
-                                // music-strip case uses the smaller
-                                // `musicStripTopGap`), so the panel reclaims
-                                // those pixels and the VStack still sums to
-                                // `visibleHoverPanelHeight`.
-                                - (showsHoverMusicStrip
-                                    ? IslandDropModeControl.musicStripTopGap
-                                    : IslandDropModeControl.detachedPanelGap)
-                                // Strip + the gap below it that separates the
-                                // player card from this panel (both counted into
-                                // the band height), so the panel keeps full size.
-                                - (showsHoverMusicStrip
-                                    ? IslandDropModeControl.musicStripHeight
-                                        + IslandDropModeControl.musicStripBottomGap
-                                    : 0)
-                        )
+                        .frame(width: compactWidth, height: hoverDrawerHeight)
                         .islandHoverGlassSurface(
                             showGlass: hoverPanelMode != .history || IslandHoverGlass.usesNativeLiquidGlass
                         )
                         // The pointer reached the shorter strip: the held zone below it can go.
                         .onContinuousHover { phase in
-                            guard case .active = phase, hoverPanelHeightHold != nil else { return }
+                            // Local space: the drawer's top stays put while it shrinks.
+                            guard case .active(let location) = phase, hoverPanelHeightHold != nil,
+                                  Self.releasesHeldHoverZone(pointerY: location.y, drawerHeight: hoverDrawerHeight)
+                            else { return }
                             hoverPanelHeightHold = nil
                             onHoverPanelBandHeightChange(visibleHoverPanelHeight)
                         }
@@ -2459,6 +2469,8 @@ private struct IslandDropModeHoverPanel: View {
     let historyPasteTargetName: () -> String?
     let onOpenNotes: () -> Void
     var onOpenMonitor: () -> Void = {}
+    var onOpenTranslate: () -> Void = {}
+    var onOpenSubtitles: () -> Void = {}
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
     /// Manual meeting-record toggle (the "Record" tile). Defaults to a
@@ -2787,6 +2799,8 @@ private struct IslandDropModeHoverPanel: View {
         case .openNotes: onOpenNotes()
         case .toggleMeetingRecord: onToggleMeetingRecord()
         case .openMonitor: onOpenMonitor()
+        case .openTranslate: onOpenTranslate()
+        case .openSubtitles: onOpenSubtitles()
         case .quit: onQuit()
         case .openPanel(let panel):
             switch panel {

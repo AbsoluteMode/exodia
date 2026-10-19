@@ -1,21 +1,76 @@
 import AppKit
 import MetalKit
 
-/// A click-through EDR multiplier over one screen. No screen capture, gamma-table
-/// changes or shader compilation. Removing the window removes the multiplier immediately.
+/// Extra on one display: `GammaBrightnessBoost` scales the display's table into the headroom
+/// that `BrightnessHeadroomTrigger` keeps engaged. Ends reach the controller after the
+/// current call, never from inside its own.
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
-final class BrightnessBoostOverlay: BrightnessOverlay {
-    private let window: BrightnessOverlayWindow
+final class NativeBrightnessBoost: BrightnessBoost {
+    private var engine: GammaBrightnessBoost?
+    private var trigger: BrightnessHeadroomTrigger?
+    private let workspaceCenter: NotificationCenter
+    private var observers: [NSObjectProtocol] = []
+
+    var gammaFactor: Double { engine?.appliedFactor ?? 1 }
+
+    init?(display id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void,
+          workspaceCenter: NotificationCenter = NSWorkspace.shared.notificationCenter) {
+        let engine = GammaBrightnessBoost(display: id, gamma: QuartzDisplayGamma(), headroom: {
+            let screen = NSScreen.screens.first { $0.brightnessDisplayID == id }
+            return Double(screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1)
+        }, onEnd: { reason in
+            DispatchQueue.main.async { onEnd(reason) }
+        })
+        // A trigger failure is already reported asynchronously.
+        guard let trigger = BrightnessHeadroomTrigger(display: id, onFailure: { onEnd(.unavailable) },
+                                                      check: { engine.tick() }) else { return nil }
+        self.engine = engine
+        self.trigger = trigger
+        self.workspaceCenter = workspaceCenter
+        observers = [
+            workspaceCenter.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification,
+                                        object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.engine?.suspend() }
+            },
+            workspaceCenter.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification,
+                                        object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.engine?.resume() }
+            },
+        ]
+    }
+
+    func refresh() { trigger?.followScreen() }
+
+    /// The table goes back before the trigger drops the headroom, so white never clips.
+    func close() {
+        for token in observers { workspaceCenter.removeObserver(token) }
+        observers.removeAll()
+        engine?.close()
+        engine = nil
+        trigger?.close()
+        trigger = nil
+    }
+}
+
+/// A click-through 1×1 pt EDR window in the display's top-right corner, where a built-in
+/// display's rounded corner hides it, as Vivid places its own (2026-10-19). Its frames keep
+/// WindowServer's EDR headroom raised; it composites nothing over the desktop.
+// WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
+@MainActor
+final class BrightnessHeadroomTrigger {
+    private let display: CGDirectDisplayID
+    private let window: BrightnessTriggerWindow
     private let view: BrightnessMetalView
-    private var multiplier: Double?
     private var frames: BrightnessBoostFrameTimer?
 
-    init?(screen: NSScreen, multiplier: Double, onFailure: @escaping () -> Void) {
-        guard let device = MTLCreateSystemDefaultDevice(),
+    init?(display id: CGDirectDisplayID, onFailure: @escaping () -> Void, check: @escaping @MainActor () -> Void) {
+        guard let screen = Self.screen(for: id), let device = MTLCreateSystemDefaultDevice(),
               let view = BrightnessMetalView(device: device, onFailure: onFailure) else { return nil }
+        display = id
         self.view = view
-        window = BrightnessOverlayWindow(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
+        window = BrightnessTriggerWindow(contentRect: Self.frame(on: screen),
+                                         styleMask: [.borderless, .nonactivatingPanel],
                                          backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.isOpaque = false
@@ -23,44 +78,45 @@ final class BrightnessBoostOverlay: BrightnessOverlay {
         window.hasShadow = false
         window.ignoresMouseEvents = true
         window.hidesOnDeactivate = false
-        // Above full-screen apps and the menu bar, so the whole display is boosted.
+        // Above full-screen apps and the menu bar, so nothing hides it.
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         window.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary,
                                      .stationary, .ignoresCycle]
-        // Screenshots and screen sharing show the ordinary desktop, not a white multiplier.
         window.sharingType = .none
         window.animationBehavior = .none
         window.alphaValue = 0
-        view.frame = NSRect(origin: .zero, size: screen.frame.size)
+        view.frame = NSRect(origin: .zero, size: window.frame.size)
         view.autoresizingMask = [.width, .height]
         window.contentView = view
-        // Reveal only a successfully rendered frame, avoiding an opaque white flash.
+        // Reveal only a successfully rendered frame.
         view.onFirstFrame = { [weak window] in window?.alphaValue = 1 }
         window.orderFrontRegardless()
-        // Without focus, WindowServer keeps the boost only briefly after the last frame,
+        // Without focus, WindowServer keeps the headroom only briefly after the last frame,
         // so frames keep coming while the strip is closed and another app is in front.
         frames = BrightnessBoostFrameTimer(canPresent: { [weak self] in self?.canPresent ?? false },
-                                           present: { [weak self] in self?.view.draw() })
+                                           present: { [weak self] in self?.view.draw() }, check: check)
+    }
+
+    private static func screen(for id: CGDirectDisplayID) -> NSScreen? {
+        NSScreen.screens.first { $0.brightnessDisplayID == id }
+    }
+
+    private static func frame(on screen: NSScreen) -> NSRect {
+        NSRect(x: screen.frame.maxX - 1, y: screen.frame.maxY - 1, width: 1, height: 1)
     }
 
     /// A sleeping display does not consume frames; drawing then could wait for a drawable.
     /// Until its first frame the window is transparent, so it keeps trying: four misses report a failure.
     private var canPresent: Bool { view.onFirstFrame != nil || window.occlusionState.contains(.visible) }
 
-    func update(multiplier next: Double) {
-        guard let screen = window.screen else {
+    /// Keeps the corner after a resolution or arrangement change.
+    func followScreen() {
+        guard let screen = Self.screen(for: display) else {
             view.reportFailure()
             return
         }
-        var changed = next != multiplier
-        if window.frame != screen.frame {
-            window.setFrame(screen.frame, display: false)
-            changed = true
-        }
-        guard changed else { return }
-        multiplier = next
-        view.clearColor = MTLClearColor(red: next, green: next, blue: next, alpha: 1)
-        view.draw()
+        let frame = Self.frame(on: screen)
+        if window.frame != frame { window.setFrame(frame, display: false) }
     }
 
     func close() {
@@ -77,23 +133,19 @@ final class BrightnessBoostOverlay: BrightnessOverlay {
     }
 }
 
-/// Presents the boost on its own while the overlay exists, independent of the strip.
-/// Without focus, WindowServer keeps a layer's EDR headroom only about 0.8 s after its last frame.
+/// Presents the trigger on its own while it exists, independent of the strip, then lets the
+/// boost check its table. Without focus, WindowServer keeps a layer's EDR headroom only about
+/// 0.8 s after its last frame.
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
 final class BrightnessBoostFrameTimer {
-    /// Five frames a second, as BrightIntosh presents the same overlay.
+    /// Five frames a second, as BrightIntosh presents its trigger.
     nonisolated static let interval: TimeInterval = 0.2
-    /// Every ⌘Tab dimmed the boost for a moment while WindowServer kept its headroom
-    /// (2026-10-19), so an app switch gets a frame at once and then a quarter second of them.
-    nonisolated static let switchBurst = (count: 15, interval: 1.0 / 60)
     private let canPresent: @MainActor () -> Bool
     private let present: @MainActor () -> Void
+    private let check: @MainActor () -> Void
     private let center: NotificationCenter
     private var timer: Timer?
-    private let switchBurst: (count: Int, interval: TimeInterval)
-    private var burst: Timer?
-    private var burstFramesLeft = 0
     private var observers: [NSObjectProtocol] = []
     /// Sleeping displays, a sleeping Mac and another user's session take no frames, and the
     /// next drawable would block the main thread up to a second. Extra stays on through all three.
@@ -106,17 +158,13 @@ final class BrightnessBoostFrameTimer {
     private var activePauses: Set<Notification.Name> = []
 
     init(interval: TimeInterval = BrightnessBoostFrameTimer.interval,
-         switchBurst: (count: Int, interval: TimeInterval) = BrightnessBoostFrameTimer.switchBurst,
          center: NotificationCenter = NSWorkspace.shared.notificationCenter,
-         canPresent: @escaping @MainActor () -> Bool, present: @escaping @MainActor () -> Void) {
+         canPresent: @escaping @MainActor () -> Bool, present: @escaping @MainActor () -> Void,
+         check: @escaping @MainActor () -> Void = {}) {
         self.canPresent = canPresent
         self.present = present
-        self.switchBurst = switchBurst
+        self.check = check
         self.center = center
-        observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
-                                            object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.presentSwitchBurst() }
-        })
         for pause in Self.pauses {
             observers.append(center.addObserver(forName: pause.start, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { _ = self?.activePauses.insert(pause.start) }
@@ -132,7 +180,10 @@ final class BrightnessBoostFrameTimer {
                     timer.invalidate()
                     return
                 }
-                if self.mayPresent { self.present() }
+                guard self.activePauses.isEmpty else { return }
+                if self.canPresent() { self.present() }
+                // A hidden trigger loses the headroom too, and the table must follow it.
+                self.check()
             }
         }
         self.timer = timer
@@ -142,41 +193,12 @@ final class BrightnessBoostFrameTimer {
     func stop() {
         timer?.invalidate()
         timer = nil
-        burst?.invalidate()
-        burst = nil
         for token in observers { center.removeObserver(token) }
         observers.removeAll()
     }
-
-    private var mayPresent: Bool { activePauses.isEmpty && canPresent() }
-
-    /// Another switch during a burst restarts its count.
-    private func presentSwitchBurst() {
-        guard mayPresent else { return }
-        present()
-        burstFramesLeft = switchBurst.count
-        guard burst == nil, burstFramesLeft > 0 else { return }
-        let burst = Timer(timeInterval: switchBurst.interval, repeats: true) { [weak self] timer in
-            MainActor.assumeIsolated {
-                guard let self, self.burstFramesLeft > 0 else {
-                    timer.invalidate()
-                    self?.burst = nil
-                    return
-                }
-                self.burstFramesLeft -= 1
-                if self.mayPresent { self.present() }
-                if self.burstFramesLeft == 0 {
-                    timer.invalidate()
-                    self.burst = nil
-                }
-            }
-        }
-        self.burst = burst
-        RunLoop.main.add(burst, forMode: .common)
-    }
 }
 
-private final class BrightnessOverlayWindow: NSPanel {
+private final class BrightnessTriggerWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
@@ -195,19 +217,17 @@ private final class BrightnessMetalView: MTKView, MTKViewDelegate {
         super.init(frame: .zero, device: device)
         colorPixelFormat = .rgba16Float
         colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
-        // One uniform pixel stretched over the screen gives the same multiplier
-        // without a full-resolution half-float drawable.
         autoResizeDrawable = false
         drawableSize = CGSize(width: 1, height: 1)
+        // Any white above SDR engages the panel's whole headroom: the former full-screen layer
+        // drew 2 and WindowServer still raised the headroom to the panel's 2.67 (2026-10-19).
+        clearColor = MTLClearColor(red: 2, green: 2, blue: 2, alpha: 1)
         isPaused = true
         enableSetNeedsDisplay = false
         delegate = self
         guard let metalLayer = layer as? CAMetalLayer else { return nil }
         metalLayer.wantsExtendedDynamicRangeContent = true
         metalLayer.isOpaque = false
-        // WindowServer multiplies the underlying desktop by the EDR white.
-        // This is an OS-dependent compositing technique, not an Apple brightness API.
-        metalLayer.compositingFilter = "multiply"
     }
 
     required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

@@ -6,7 +6,7 @@ summary: Keep large left cards and add temporary branded icons with click-throug
 status: confirmed
 tags: [notify, notifications, island, accessibility]
 canonical_for: [icon-notifications]
-verified_at: 2026-10-19
+verified_at: 2026-10-20
 sources:
   - type: user-confirmed
     reference: User requested two notification types, automatic disappearance after five seconds, hover enlargement and a small close button; clarified that small icons cover the right wing above hints, meetings and music.
@@ -17,6 +17,9 @@ sources:
   - type: user-confirmed
     reference: On 2026-10-19 the user requested a count for consecutive events, overlapping icons that fan apart on hover, Clear All, and a red attention dot only on Notify when returning to the hover drawer.
     confirmed_at: 2026-10-19
+  - type: user-confirmed
+    reference: On 2026-10-20 the user requested removing the trash icon and Clear All confirmation because the dimmed dialog was difficult to click and the hover closed.
+    confirmed_at: 2026-10-20
 related: [2026-10-19-script-notifications.md]
 ---
 
@@ -61,8 +64,9 @@ still archived.
 The archive retains the newest 500 events. Unseen events leave a red dot only on
 Notify in the hover drawer and search, even after temporary expiry or relaunch.
 Opening history marks it seen; new events while history is visible are marked
-seen as well. Monitor has no attention indicator. Clear All is a labelled action
-with confirmation; it clears history, current burst and queue, preserving sources.
+seen as well. Monitor has no attention indicator. Clear All is a text-only action
+that immediately clears history, current burst and queue without confirmation,
+preserving sources.
 
 ## Rationale
 
@@ -77,6 +81,11 @@ The dated user clarification and implementation path in the frontmatter.
 
 The user explicitly corrected the location: inside the right wing, above its
 existing contents, rather than beside the island or in a screen corner.
+
+On 2026-10-20 the user reported that the Clear All confirmation dimmed the
+screen and the hover closed while trying to click it. They requested removing
+both the confirmation and the trash icon. Clear All now acts directly inside
+the hover panel.
 
 ## Resolution
 

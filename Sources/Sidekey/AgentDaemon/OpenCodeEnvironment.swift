@@ -11,6 +11,7 @@ enum OpenCodeEnvironment {
                      key: String?, allowActions: Bool,
                      modelSpec: OpenCodeModelSpec? = nil,
                      caseMCPCommand: [String]? = nil,
+                     openRouterProvider: String? = nil,
                      inherited: [String: String] = ProcessInfo.processInfo.environment) throws -> [String: String] {
         var env = inherited.filter { name, _ in
             !name.hasPrefix("OPENCODE_") && !name.hasPrefix("OPENROUTER_")
@@ -43,10 +44,14 @@ enum OpenCodeEnvironment {
         // Case MCP only lists project and key names, so it stays usable with
         // actions off; running commands still follows the bash permission.
         if caseMCPCommand != nil { permissions["case_*"] = "allow" }
-        let declaration: [String: Any] = modelSpec.map {
+        var declaration: [String: Any] = modelSpec.map {
             ["tool_call": $0.toolCall, "reasoning": $0.reasoning,
              "limit": ["context": $0.contextLimit, "output": $0.outputLimit]]
         } ?? [:]
+        // A pinned provider is used alone, as for the app's own OpenRouter calls.
+        if provider == .openRouter, let pinned = openRouterProvider {
+            declaration["options"] = ["provider": ["order": [pinned], "allow_fallbacks": false]]
+        }
         let id = provider.openCodeID
         var config: [String: Any] = [
             "$schema": "https://opencode.ai/config.json", "model": "\(id)/\(normalized)",

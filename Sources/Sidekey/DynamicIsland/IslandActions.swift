@@ -69,6 +69,8 @@ struct IslandActions {
     var openMeetings: () -> Void
     /// Open the local monitoring dashboard chooser.
     var openMonitor: () -> Void = {}
+    var openTranslate: () -> Void = {}
+    var openSubtitles: () -> Void = {}
     /// Open Settings on its default tab.
     var openSettings: () -> Void
     /// Open the Help / Hotkeys window
