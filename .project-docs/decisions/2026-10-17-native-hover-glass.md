@@ -152,7 +152,7 @@ sources:
   - type: url
     reference: https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views
     confirmed_at: 2026-10-17
-related: [../project.md, 2026-10-17-hover-tool-search.md]
+related: [../project.md, 2026-10-17-hover-tool-search.md, 2026-10-18-brightness-tool.md]
 ---
 
 # Native hover glass
