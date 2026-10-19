@@ -19,7 +19,7 @@ final class IslandCaseVaultPanelTests: XCTestCase {
         let source = try caseVaultPanelSource()
 
         XCTAssertTrue(source.contains("moveSecret"))
-        XCTAssertTrue(source.contains("secretRows(inProject:"))
+        XCTAssertTrue(source.contains("projectSections"))
         XCTAssertTrue(source.contains("CaseDragAutoScrollPolicy.velocity"))
         XCTAssertTrue(source.contains("UTType.text"))
     }

@@ -97,6 +97,19 @@ struct CaseDisplayRow: Equatable, Identifiable {
     let projectID: UUID
 }
 
+/// One collapsible project in the island list: header data plus the keys
+/// shown under it (every key, or only the matches while searching).
+struct CaseProjectSection: Equatable, Identifiable {
+    let id: UUID
+    let name: String
+    let description: String
+    /// All keys of the project, regardless of the query.
+    let keyCount: Int
+    let secrets: [CaseDisplayRow]
+
+    var isGeneral: Bool { id == CaseProject.generalID }
+}
+
 enum CaseViewModelError: Error, Equatable {
     case locked
     case unlockFailed
@@ -331,6 +344,59 @@ final class CaseViewModel: ObservableObject {
             .map {
                 CaseDisplayRow(id: $0.id, kind: .secret, displayName: $0.name, description: $0.description, projectID: $0.projectID)
             }
+    }
+
+    var isSearching: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// General first, then the other projects by name. Without a query every
+    /// project is listed with all its keys (by name); a query keeps projects
+    /// with matching keys (in ranked order) or a matching name/description.
+    var projectSections: [CaseProjectSection] {
+        guard let payload, unlockState == .unlocked else {
+            return []
+        }
+        let ordered = payload.projects.sorted { lhs, rhs in
+            if lhs.id == CaseProject.generalID { return rhs.id != CaseProject.generalID }
+            if rhs.id == CaseProject.generalID { return false }
+            let comparison = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+            return comparison == .orderedSame ? lhs.name < rhs.name : comparison == .orderedAscending
+        }
+        let searching = isSearching
+        let matchedProjectIDs = Set(rows.filter { $0.kind == .project }.map(\.id))
+        let matchedSecrets = rows.filter { $0.kind == .secret }
+
+        return ordered.compactMap { project in
+            let all = payload.secrets
+                .filter { $0.projectID == project.id }
+                .map {
+                    CaseDisplayRow(id: $0.id, kind: .secret, displayName: $0.name, description: $0.description, projectID: $0.projectID)
+                }
+                .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+            var shown = all
+            if searching {
+                let matches = matchedSecrets.filter { $0.projectID == project.id }
+                if !matches.isEmpty {
+                    shown = matches
+                } else if !matchedProjectIDs.contains(project.id) {
+                    return nil
+                }
+            }
+            return CaseProjectSection(
+                id: project.id,
+                name: project.name,
+                description: project.description,
+                keyCount: all.count,
+                secrets: shown
+            )
+        }
+    }
+
+    /// Display names of the apps registered for key access (access screen).
+    var registeredAppNames: [String] {
+        guard unlockState == .unlocked else { return [] }
+        return payload?.apps.map(\.displayName) ?? []
     }
 
     func copySecret(_ secretID: UUID) throws {
