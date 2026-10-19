@@ -176,5 +176,5 @@ without changing its rule that no route is turned on only because a key exists.
 
 ## Сноски
 
-Date: 2026-10-19. PR: pending. Spec: `docs/specs/api-and-models.md`. Plan:
+Date: 2026-10-19. PR: https://github.com/AbsoluteMode/exodia/pull/43. Spec: `docs/specs/api-and-models.md`. Plan:
 `docs/plans/api-and-models.md`.
