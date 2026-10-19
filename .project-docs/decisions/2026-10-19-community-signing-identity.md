@@ -41,6 +41,9 @@ sources:
   - type: repository
     reference: Resources/community-signing-certificate.pem
     confirmed_at: 2026-10-19
+  - type: trace
+    reference: Production candidate build 90003 from 2040de9, signed with the committed certificate; its designated requirement pins SHA-1 39da3636 and provenance verification passed. Full local swift test on 2040de9, 2,895 tests, 5 skipped, 0 failures in 55.518 seconds.
+    confirmed_at: 2026-10-19
 related: [../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md]
 ---
 
@@ -188,6 +191,19 @@ does not depend on Apple Developer membership.
   - RSA-3072, sha256WithRSAEncryption;
   - CA:false, critical code-signing extended key usage;
   - valid 2026-10-19 to 2056-10-11, SHA-1 `39da3636…`.
+- Production candidate: build 90003 from `2040de9`, made by the real
+  `build-dmg.sh`. Doppler supplied only `EXODIA_COMMUNITY_SIGNING_KEY`.
+  - The app's designated requirement is `identifier "com.rootwise.sidekey"
+    and certificate leaf = H"39da3636…"`, with `TeamIdentifier=not set`. The
+    nested Sparkle framework and the DMG carry the same certificate.
+  - `codesign --verify --strict --deep --all-architectures -R` with that
+    requirement passes.
+  - The manifest seals `certificate:39da3636…` for `2040de9`.
+    `release-provenance.py verify` passes with the committed identity and
+    refuses the archive when `adhoc` is expected (exit 1).
+  - `--installation-check` passes on arm64 and x86_64. The candidate was
+    never launched or uploaded, and it was deleted afterwards.
+- Full suite on `2040de9`: 2,895 tests, 5 skipped, 0 failures (55.518 s).
 - Not tested:
   - a real Sparkle install from the installed app to a certificate-signed
     build;
