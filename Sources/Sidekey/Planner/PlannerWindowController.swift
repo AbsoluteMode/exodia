@@ -12,18 +12,19 @@ final class PlannerNavigation: ObservableObject {
 
 @MainActor
 final class PlannerWindowController: NSWindowController {
-    static let shared = PlannerWindowController()
+    static let shared = PlannerWindowController(store: .shared, connections: .shared)
     private let navigation = PlannerNavigation()
 
-    private init() {
+    init(store: PlannerStore, connections: CalendarConnections) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Exodia Planner"
         window.minSize = NSSize(width: 820, height: 560)
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("ExodiaPlanner")
+        SidekeyWindowChrome.configureHoverOverlayPolicy(window)
         window.contentViewController = NSHostingController(rootView:
-            PlannerView(store: .shared, navigation: navigation))
+            PlannerView(store: store, navigation: navigation, connections: connections))
         super.init(window: window)
     }
 

@@ -17,6 +17,9 @@ Changes persist atomically before appearing in the interface. Unreadable or
 unsupported archives block writes and retain the original file; Retry loads a
 restored file. A failed save keeps the editor/draft and reports an error.
 Local tasks and events are not uploaded by calendar connections.
+The existing encrypted-backup allowlist does not yet include the Planner archive,
+calendar account settings or OAuth credentials; do not rely on that feature to
+restore Planner data on another Mac.
 
 ## Unified calendar
 

@@ -69,6 +69,10 @@ between two Macs.
 
 ## What is included
 
+Planner tasks, Exodia calendar events, calendar-connection settings and OAuth
+credentials are not yet included in the portable backup allowlist. They remain
+on this Mac and are not restored by these archives.
+
 - Models, languages, meeting preferences, hotkeys, vocabulary, Toolbox layout,
   display and feature settings, and agent preferences.
 - Exodia's saved speech and text provider keys and independently recoverable

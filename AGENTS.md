@@ -484,7 +484,8 @@ view is visible, and matching UID/occurrence bounds collapse duplicate sources.
 OAuth uses browser S256 PKCE/state, a numeric loopback listener (Microsoft redirects
 to localhost), and Keychain credentials with durable refresh-token rotation. No
 shared OAuth registrations ship yet; live accounts require provider setup and
-separate acceptance. Tests use fake providers and temporary stores. Guide:
+separate acceptance. Planner data and OAuth credentials are outside the current
+backup allowlists. Tests use fake providers and temporary stores. Guide:
 docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md
 
 Customization: any local coding harness can use the same source checkout.

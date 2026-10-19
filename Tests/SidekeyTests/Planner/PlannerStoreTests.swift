@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Sidekey
 
@@ -115,5 +116,20 @@ final class PlannerStoreTests: XCTestCase {
         XCTAssertEqual(IslandHoverToolSearch.results(for: "calendar").first, .calendar)
         XCTAssertFalse(HoverLayoutStore.defaultSlots.contains(.tasks))
         XCTAssertFalse(HoverLayoutStore.defaultSlots.contains(.calendar))
+    }
+
+    func testPlannerWindowUsesSharedHoverPolicyWithoutShowingOrReadingUserData() throws {
+        _ = NSApplication.shared
+        let suite = "test.planner-window." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = PlannerWindowController(store: PlannerStore(url: url), connections: CalendarConnections(defaults: defaults))
+        let window = try XCTUnwrap(controller.window)
+        defer { window.contentViewController = nil; window.close() }
+        XCTAssertEqual(window.level, .statusBar)
+        XCTAssertTrue(window.collectionBehavior.contains(.fullScreenAuxiliary))
+        XCTAssertTrue(window.collectionBehavior.contains(.canJoinAllSpaces))
+        XCTAssertFalse(window.isVisible)
+        XCTAssertFalse(window.isKeyWindow)
     }
 }

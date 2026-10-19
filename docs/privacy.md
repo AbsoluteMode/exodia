@@ -25,6 +25,12 @@ is a verifiable claim rather than a slogan.
   `com.rootwise.sidekey`). They never contain transcripts, prompts, replies
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
   enforces that for the provider paths that carry this content.
+- Planner tasks and local Exodia events stay in a private atomic JSON archive
+  under Application Support/Sidekey/Planner. External calendar events are held
+  in memory while using the unified calendar, without a persistent event cache.
+  Calendar OAuth tokens and Google desktop client configuration are stored in
+  Keychain; they are not logged. The current encrypted-backup allowlist does not
+  yet include Planner content, calendar settings or these credentials.
 
 The Projects feature has been removed. The app does not open the old project
 catalog or index, scan registered folders, or attach saved project notes and
@@ -58,6 +64,7 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 | Your key: speech (Soniox, Deepgram, ElevenLabs, or a self-hosted endpoint speaking the OpenAI Realtime protocol) and text (OpenRouter or a custom OpenAI-compatible endpoint) | the provider or endpoint you selected, with your key (a custom text endpoint may need none) | while the selected route is in use |
 | Agent (OpenCode) | OpenRouter and the selected model provider, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
 | Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Exodia | after you explicitly configure and enable Backup |
+| Connected calendars | the Google, Microsoft or Zoom account provider you explicitly connect; OAuth authorization and event queries for the displayed date range | sign-in in your browser, then while the calendar view is visible or refreshing; local tasks/events are not uploaded |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
@@ -81,6 +88,10 @@ Data-use policies depend on the selected provider and its account settings.
   at stop.
 - Post Event (part of Accessibility on current macOS): the synthetic
   Command-V used to paste.
+- Calendars: only after choosing Apple Calendar in Planner's Connect account.
+  macOS requires full event access to read selected system calendars; Exodia's
+  current native calendar adapter only reads events. Direct Google, Microsoft
+  and Zoom connections use their provider's OAuth consent instead.
 
 The hold-Space detector reads keyboard events only to recognise the trigger
 key and Escape. The Brightness keys tap receives only system-defined events,

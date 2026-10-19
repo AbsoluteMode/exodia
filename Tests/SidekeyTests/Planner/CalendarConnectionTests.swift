@@ -151,19 +151,21 @@ final class CalendarConnectionTests: XCTestCase {
     }
 
     func testBrowserCallbackUsesLoopbackAndCanFinishWithoutOpeningBrowser() async throws {
+        for provider in [CalendarProvider.google, .microsoft, .zoom] {
         let opened = expectation(description: "browser authorization")
         var authorization: URL?
         let browser = CalendarBrowserSignIn(timeoutSeconds: 3) { url in authorization = url; opened.fulfill(); return true }
-        let task = Task { try await browser.authorize(provider: .google, clientID: "fixture", state: "expected", verifier: CalendarPKCE.random()) }
+        let task = Task { try await browser.authorize(provider: provider, clientID: "fixture", state: "expected", verifier: CalendarPKCE.random()) }
         await fulfillment(of: [opened], timeout: 2)
         let query = try XCTUnwrap(URLComponents(url: XCTUnwrap(authorization), resolvingAgainstBaseURL: false)?.queryItems)
         let redirect = try XCTUnwrap(query.first { $0.name == "redirect_uri" }?.value)
-        XCTAssertTrue(redirect.hasPrefix("http://127.0.0.1:"))
+        XCTAssertTrue(redirect.hasPrefix(provider == .microsoft ? "http://localhost:" : "http://127.0.0.1:"))
         let url = try XCTUnwrap(URL(string: redirect + "?state=expected&code=fixture-code"))
         let (_, response) = try await URLSession.shared.data(from: url)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         let result = try await task.value
         XCTAssertEqual(result.code, "fixture-code"); XCTAssertEqual(result.redirect, redirect)
+        }
     }
 
     func testBrowserCancellationAndTimeoutReleasePendingSignIn() async throws {
