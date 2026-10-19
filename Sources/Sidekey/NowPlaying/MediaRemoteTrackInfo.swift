@@ -28,6 +28,7 @@ struct MediaRemoteTrackInfo: Decodable {
     let playbackRate: Double?
     let bundleIdentifier: String?
     let processIdentifier: Int?
+    let contentItemIdentifier: String?
     /// Decoded artwork. `nil` when absent or the base64/bytes were not a
     /// valid image. Kept as a decoded `NSImage` (not raw bytes).
     let artwork: NSImage?
@@ -43,6 +44,7 @@ struct MediaRemoteTrackInfo: Decodable {
         case playbackRate
         case bundleIdentifier
         case processIdentifier
+        case contentItemIdentifier
         case artworkData
     }
 
@@ -58,6 +60,7 @@ struct MediaRemoteTrackInfo: Decodable {
         playbackRate = try c.decodeIfPresent(Double.self, forKey: .playbackRate)
         bundleIdentifier = try c.decodeIfPresent(String.self, forKey: .bundleIdentifier)
         processIdentifier = try c.decodeIfPresent(Int.self, forKey: .processIdentifier)
+        contentItemIdentifier = try c.decodeIfPresent(String.self, forKey: .contentItemIdentifier)
 
         if let base64 = try c.decodeIfPresent(String.self, forKey: .artworkData),
             let bytes = Data(base64Encoded: base64) {
@@ -80,6 +83,7 @@ struct MediaRemoteTrackInfo: Decodable {
         playbackRate: Double?,
         bundleIdentifier: String?,
         processIdentifier: Int?,
+        contentItemIdentifier: String? = nil,
         artwork: NSImage?
     ) {
         self.title = title
@@ -92,6 +96,7 @@ struct MediaRemoteTrackInfo: Decodable {
         self.playbackRate = playbackRate
         self.bundleIdentifier = bundleIdentifier
         self.processIdentifier = processIdentifier
+        self.contentItemIdentifier = contentItemIdentifier
         self.artwork = artwork
     }
 

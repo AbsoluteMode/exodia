@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Sidekey
 
@@ -33,6 +34,159 @@ final class MediaRemoteNowPlayingSourceTests: XCTestCase {
             makeAppleScript: { AppleScriptNowPlayingSource() }
         )
         XCTAssertEqual(selection.kind, .appleScript)
+    }
+
+    // MARK: - Artwork recovery
+
+    private final class ArtworkReader {
+        private let lock = NSLock()
+        private var reads = 0
+        private var time: TimeInterval = 0
+        var result: MediaRemoteTrackInfo?
+        let release = DispatchSemaphore(value: 0)
+        var shouldWait = false
+
+        var count: Int { lock.lock(); defer { lock.unlock() }; return reads }
+        var now: TimeInterval { lock.lock(); defer { lock.unlock() }; return time }
+        func advance() { lock.lock(); time += 5; lock.unlock() }
+        func read(_ script: URL, _ framework: URL) -> MediaRemoteTrackInfo? {
+            lock.lock(); reads += 1; lock.unlock()
+            if shouldWait { _ = release.wait(timeout: .now() + 5) }
+            return result
+        }
+    }
+
+    private func trackLine(
+        title: String = "Song", item: String = "song:1", elapsed: Int = 1,
+        artwork: Bool = false
+    ) -> String {
+        var fields: [String: Any] = [
+            "bundleIdentifier": "com.spotify.client", "processIdentifier": 123,
+            "contentItemIdentifier": item, "title": title, "artist": "Artist",
+            "album": "Album", "playing": true, "elapsedTimeMicros": elapsed * 1_000_000
+        ]
+        if artwork {
+            fields["artworkData"] = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+nmioAAAAASUVORK5CYII="
+        }
+        return String(decoding: try! JSONSerialization.data(withJSONObject: fields), as: UTF8.self) + "\n"
+    }
+
+    private func withArtworkSource(_ body: (MediaRemoteNowPlayingSource, ArtworkReader) throws -> Void) throws {
+        let assets = try makeStandInStream()
+        defer { try? FileManager.default.removeItem(at: assets.dir) }
+        let reader = ArtworkReader()
+        let source = MediaRemoteNowPlayingSource(
+            runScript: assets.script, framework: assets.framework,
+            artworkReader: reader.read, uptime: { reader.now }
+        )
+        _ = try startAndResolvePIDs(source)
+        defer { reader.release.signal(); source.shutdown() }
+        try body(source, reader)
+    }
+
+    func test_missingArtwork_recoversWithoutAnotherStreamEvent() throws {
+        try withArtworkSource { source, reader in
+            reader.result = MediaRemoteStreamLine.decode(trackLine(artwork: true))
+            source.ingestForTesting(Data(trackLine().utf8))
+            XCTAssertTrue(waitUntil(timeout: 2) { source.currentSnapshot()?.artwork != nil })
+            source.ingestForTesting(Data(trackLine(elapsed: 8).utf8))
+            XCTAssertNotNil(source.currentSnapshot()?.artwork, "later artless events keep the recovered cover")
+            XCTAssertEqual(source.currentSnapshot()?.elapsed, 8)
+            reader.advance()
+            _ = source.currentSnapshot()
+            XCTAssertEqual(reader.count, 1, "no more probes once the cover is restored")
+        }
+    }
+
+    func test_recoveryKeepsNewerPlaybackPosition_andDoesNotOverlapRequests() throws {
+        try withArtworkSource { source, reader in
+            reader.shouldWait = true
+            reader.result = MediaRemoteStreamLine.decode(trackLine(artwork: true))
+            source.ingestForTesting(Data(trackLine().utf8))
+            XCTAssertTrue(waitUntil(timeout: 2) { reader.count == 1 })
+            source.ingestForTesting(Data(trackLine(elapsed: 20).utf8))
+            reader.advance()
+            for _ in 0..<10 { _ = source.currentSnapshot() }
+            XCTAssertEqual(reader.count, 1)
+            reader.release.signal()
+            XCTAssertTrue(waitUntil(timeout: 2) { source.currentSnapshot()?.artwork != nil })
+            XCTAssertEqual(source.currentSnapshot()?.elapsed, 20, "recovery adds only artwork, never stale timing")
+        }
+    }
+
+    func test_failedRecovery_retriesAfterCooldown_withoutAnotherStreamEvent() throws {
+        try withArtworkSource { source, reader in
+            source.ingestForTesting(Data(trackLine().utf8))
+            XCTAssertTrue(waitUntil(timeout: 2) { reader.count == 1 })
+            for _ in 0..<10 { _ = source.currentSnapshot() }
+            // Synchronize queued polls before advancing the injected monotonic clock.
+            source.ingestForTesting(Data())
+            XCTAssertEqual(reader.count, 1)
+            reader.advance()
+            XCTAssertTrue(waitUntil(timeout: 2) { _ = source.currentSnapshot(); return reader.count == 2 })
+        }
+    }
+
+    func test_djInterludeRejectsInFlightCover_evenWhenOriginalSongReturns() throws {
+        try withArtworkSource { source, reader in
+            reader.shouldWait = true
+            reader.result = MediaRemoteStreamLine.decode(trackLine(artwork: true))
+            source.ingestForTesting(Data(trackLine().utf8))
+            XCTAssertTrue(waitUntil(timeout: 2) { reader.count == 1 })
+            source.ingestForTesting(Data(trackLine(title: "DJ", item: "dj:1").utf8))
+            source.ingestForTesting(Data(trackLine().utf8))
+            reader.release.signal()
+            source.finishArtworkRefreshForTesting()
+            XCTAssertNil(source.currentSnapshot()?.artwork, "A → DJ → A must invalidate the old request")
+        }
+    }
+
+    func test_recoveryRejectsDifferentTrack() throws {
+        try withArtworkSource { source, reader in
+            reader.result = MediaRemoteStreamLine.decode(trackLine(title: "Other", item: "other:2", artwork: true))
+            source.ingestForTesting(Data(trackLine().utf8))
+            source.finishArtworkRefreshForTesting()
+            XCTAssertNil(source.currentSnapshot()?.artwork)
+        }
+    }
+
+    func test_recoveryStopsOnShutdown() throws {
+        try withArtworkSource { source, reader in
+            reader.shouldWait = true
+            reader.result = MediaRemoteStreamLine.decode(trackLine(title: "Other", item: "other:2", artwork: true))
+            source.ingestForTesting(Data(trackLine().utf8))
+            XCTAssertTrue(waitUntil(timeout: 2) { reader.count == 1 })
+            source.shutdown()
+            reader.release.signal()
+            source.finishArtworkRefreshForTesting()
+            XCTAssertNil(source.currentSnapshot(), "a late refresh cannot republish after shutdown")
+        }
+    }
+
+    func test_refreshOnlyRunsForSupportedTrack_withoutArtwork() throws {
+        try withArtworkSource { source, reader in
+            source.ingestForTesting(Data(trackLine(artwork: true).utf8))
+            source.ingestForTesting(Data("null\n".utf8))
+            source.ingestForTesting(Data("{\"title\":\"Browser\",\"bundleIdentifier\":\"com.apple.Safari\"}\n".utf8))
+            source.ingestForTesting(Data())
+            XCTAssertEqual(reader.count, 0)
+        }
+    }
+
+    func test_artworkProbe_readsLargeOutput_andBoundsHungProcess() throws {
+        let assets = try makeStandInStream()
+        defer { try? FileManager.default.removeItem(at: assets.dir) }
+        let line = trackLine(title: String(repeating: "a", count: 200_000), artwork: true)
+        try "print '\(line)';\n".write(to: assets.script, atomically: true, encoding: .utf8)
+        let info = MediaRemoteNowPlayingSource.readArtworkSnapshot(runScript: assets.script, framework: assets.framework)
+        XCTAssertNotNil(info?.artwork, "drain stdout while running, even beyond the pipe capacity")
+        // Closing stdout must not let waitUntilExit escape the shared deadline.
+        try "close STDOUT; sleep 600;\n".write(to: assets.script, atomically: true, encoding: .utf8)
+        let start = Date()
+        XCTAssertNil(MediaRemoteNowPlayingSource.readArtworkSnapshot(
+            runScript: assets.script, framework: assets.framework, timeout: 0.1
+        ))
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1)
     }
 
     // MARK: - Termination
