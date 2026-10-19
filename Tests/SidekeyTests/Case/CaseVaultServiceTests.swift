@@ -56,14 +56,67 @@ final class CaseVaultServiceTests: XCTestCase {
         XCTAssertEqual(store.payload.timedApprovalMinutes, 30)
         XCTAssertEqual(service.payload?.timedApprovalMinutes, 30)
     }
+
+    func test_reset_is_refused_while_a_valid_vault_is_loaded() throws {
+        let store = MemoryStore(payload: CaseVaultPayload())
+        let service = CaseVaultService(store: store, keyProvider: FixedKeys())
+        try service.loadIfNeeded()
+
+        // A stale needsReset view must not set a readable vault aside.
+        XCTAssertThrowsError(try service.reset()) {
+            XCTAssertEqual($0 as? CaseVaultServiceError, .resetWhileLoaded)
+        }
+        XCTAssertEqual(store.resetCount, 0)
+        XCTAssertNotNil(service.payload)
+    }
+
+    func test_reset_sets_unreadable_vault_aside_when_nothing_is_loaded() throws {
+        let store = MemoryStore(payload: CaseVaultPayload())
+        store.loadError = CaseVaultStoreError.missingFile
+        let service = CaseVaultService(store: store, keyProvider: FixedKeys())
+
+        try service.reset()
+
+        XCTAssertEqual(store.resetCount, 1)
+        XCTAssertNil(service.payload)
+    }
+
+    func test_reload_from_disk_picks_up_external_changes() throws {
+        let store = MemoryStore(payload: CaseVaultPayload())
+        let service = CaseVaultService(store: store, keyProvider: FixedKeys())
+        try service.loadIfNeeded()
+        store.payload.timedApprovalMinutes = 42
+
+        XCTAssertEqual(try service.loadIfNeeded().timedApprovalMinutes, 15, "cached payload is reused")
+        XCTAssertEqual(store.loadCount, 1)
+
+        let reloaded = try service.reloadFromDisk()
+
+        XCTAssertEqual(reloaded.timedApprovalMinutes, 42)
+        XCTAssertEqual(service.payload?.timedApprovalMinutes, 42)
+        XCTAssertEqual(store.loadCount, 2)
+    }
+
+    func test_failed_reload_forgets_cached_values() throws {
+        let store = MemoryStore(payload: CaseVaultPayload())
+        let service = CaseVaultService(store: store, keyProvider: FixedKeys())
+        try service.loadIfNeeded()
+        store.loadError = CaseVaultStoreError.invalidEnvelope
+
+        XCTAssertThrowsError(try service.reloadFromDisk())
+        XCTAssertNil(service.payload, "an unreadable disk must not leave stale values served")
+    }
 }
 
 private final class MemoryStore: CaseVaultStoring {
     var payload: CaseVaultPayload
     var loadError: Error?
     private(set) var saveCount = 0
+    private(set) var loadCount = 0
+    private(set) var resetCount = 0
     init(payload: CaseVaultPayload) { self.payload = payload }
     func load(using key: SymmetricKey) throws -> CaseVaultPayload {
+        loadCount += 1
         if let loadError { throw loadError }
         return payload
     }
@@ -72,7 +125,10 @@ private final class MemoryStore: CaseVaultStoring {
         self.payload = payload
         loadError = nil
     }
-    func reset() throws { loadError = CaseVaultStoreError.missingFile }
+    func reset() throws {
+        resetCount += 1
+        loadError = CaseVaultStoreError.missingFile
+    }
 }
 
 private struct FixedKeys: CaseVaultKeyProviding {

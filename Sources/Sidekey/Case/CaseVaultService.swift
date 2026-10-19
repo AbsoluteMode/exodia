@@ -7,6 +7,9 @@ enum CaseVaultServiceError: Error, Equatable {
     /// (missing General, duplicate project IDs, secret in an unknown project).
     /// Nothing is saved.
     case invalidPayload
+    /// `reset()` was asked while a readable vault is loaded (e.g. from a stale
+    /// needsReset view). Nothing is set aside.
+    case resetWhileLoaded
 }
 
 /// Single owner of the decrypted vault payload for the process. The island
@@ -70,9 +73,21 @@ final class CaseVaultService: ObservableObject {
         payload = working
     }
 
+    /// Re-reads key and vault from disk, replacing the cached payload (for
+    /// when another writer, such as a backup restore, changed the file).
+    /// On failure the cache is cleared so stale values are never served.
+    @discardableResult
+    func reloadFromDisk() throws -> CaseVaultPayload {
+        payload = nil
+        key = nil
+        return try loadIfNeeded()
+    }
+
     /// Sets the unreadable vault aside and forgets cached state; the next
-    /// `loadIfNeeded()` starts a fresh vault.
+    /// `loadIfNeeded()` starts a fresh vault. Refused while a payload is
+    /// loaded: a readable vault is never set aside.
     func reset() throws {
+        guard payload == nil else { throw CaseVaultServiceError.resetWhileLoaded }
         try store.reset()
         payload = nil
         key = nil
