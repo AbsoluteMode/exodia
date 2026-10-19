@@ -24,14 +24,11 @@ is a verifiable claim rather than a slogan.
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
   enforces that for the provider paths that carry this content.
 
-Project folders are indexed only after you select them in Settings → Projects.
-The catalog, notes and SQLite text index stay in the app’s local Application
-Support directory. Search is lexical and requires explicit reindexing. The
-selected project’s notes and matching source excerpts are included in that
-project’s agent requests and can therefore reach OpenRouter and its provider.
-Each project has a separate agent workspace and session store. Hidden files,
-symlinks, build folders and common credential filenames are excluded from the
-index; this is not a complete secret detector. Do not add secrets to notes.
+The Projects feature has been removed. The app does not open the old project
+catalog or index, scan registered folders, or attach saved project notes and
+source excerpts to agent requests. Existing project-library files and separate
+project-agent workspaces are left on disk, unused; they are not migrated into
+the regular agent workspace.
 
 Monitor dashboard snapshots and server connection references also stay locally.
 The app runs a fixed read-only Linux metrics collector through SSH; dashboards

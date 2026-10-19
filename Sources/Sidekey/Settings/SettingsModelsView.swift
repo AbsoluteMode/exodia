@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct SettingsModelsView: View {
     @ObservedObject var viewModel: SettingsModelsViewModel
+    @State private var selectedInputLanguage: AppLanguage? = PrivacyPreferences.shared.selectedLanguage
     private var displayedProviders: [BYOKProvider] { BYOKProvider.selectable }
 
     /// Canonical user-facing name for the user-supplied OpenAI-compatible
@@ -19,6 +20,10 @@ struct SettingsModelsView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .onAppear { selectedInputLanguage = PrivacyPreferences.shared.selectedLanguage }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            selectedInputLanguage = PrivacyPreferences.shared.selectedLanguage
         }
     }
 
@@ -113,6 +118,10 @@ struct SettingsModelsView: View {
                 fieldLabel("Model")
                 modelField(provider)
 
+                if provider == .deepgram {
+                    deepgramLanguageControls
+                }
+
                 if provider == .selfHosted {
                     fieldLabel("Base URL")
                     MacField(placeholder: "https://…", text: $viewModel.selfHostedBaseURL)
@@ -164,11 +173,57 @@ struct SettingsModelsView: View {
             // Single fixed model for this provider — show it as text, not an
             // illusory one-option dropdown (Deepgram / Soniox / ElevenLabs each
             // offer exactly one realtime model).
-            Text(viewModel.models.first ?? viewModel.selectedModel)
+            Text(provider == .deepgram ? viewModel.selectedModel : (viewModel.models.first ?? viewModel.selectedModel))
                 .font(.system(size: 13))
                 .foregroundStyle(MacSettingsTheme.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var deepgramLanguageControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            caption(DeepgramLanguagePolicy.automaticLanguageDescription(for: viewModel.selectedModel))
+
+            fieldLabel("Input language")
+            Menu {
+                if let codes = DeepgramLanguagePolicy.automaticLanguageCodes(for: viewModel.selectedModel) {
+                    Button("Auto (\(codes.count) languages)") { setInputLanguage(nil) }
+                    Divider()
+                }
+                ForEach(deepgramInputLanguages, id: \.code) { language in
+                    Button(language.displayName) { setInputLanguage(language) }
+                }
+            } label: {
+                Text(selectedInputLanguage?.displayName ?? "Auto")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Input language")
+
+            if let error = DeepgramLanguagePolicy.configurationError(
+                model: viewModel.selectedModel, language: selectedInputLanguage?.code
+            ) {
+                MacBanner(tone: .warn, systemImage: "exclamationmark.triangle", text: error.localizedDescription)
+            }
+            if !viewModel.models.contains(viewModel.selectedModel) {
+                MacButton(title: "Choose nova-3", style: .default) {
+                    viewModel.selectedModel = "nova-3"
+                }
+                caption("Press Save to apply a model change. Input language applies immediately to all voice features.")
+            }
+        }
+    }
+
+    private var deepgramInputLanguages: [AppLanguage] {
+        guard let supported = DeepgramLanguagePolicy.supportedLanguageCodes(for: viewModel.selectedModel) else {
+            return AppLanguage.all
+        }
+        return AppLanguage.all.filter { supported.contains($0.code) }
+    }
+
+    private func setInputLanguage(_ language: AppLanguage?) {
+        selectedInputLanguage = language
+        PrivacyPreferences.shared.selectedLanguage = language
     }
 
     @ViewBuilder

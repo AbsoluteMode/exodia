@@ -27,8 +27,7 @@
 #   ./scripts/dev-run.sh --run          # build then launch
 #
 # There is only one dev flavor (= beta bundle id + beta appcast).
-# Production builds go through scripts/build-dmg.sh (release pipeline +
-# Developer ID).
+# Production builds go through scripts/build-dmg.sh (community certificate).
 #
 # If TCC permissions still get reset after using this script:
 #   Re-grant once in System Settings → Privacy & Security
@@ -98,25 +97,6 @@ for arg in "$@"; do
     esac
 done
 
-stop_conflicting_sidekey_processes() {
-    while IFS= read -r pid; do
-        [ -n "${pid}" ] || continue
-        command="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
-        case "${command}" in
-            */Contents/MacOS/${EXECUTABLE_NAME}*)
-                bundle_path="${command%%/Contents/MacOS/${EXECUTABLE_NAME}*}"
-                bundle_id="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${bundle_path}/Contents/Info.plist" 2>/dev/null || true)"
-                if [ "${bundle_id}" = "${BUNDLE_ID}" ]; then
-                    echo "▶ Stopping existing ${BUNDLE_DISPLAY_NAME} dev process (${pid}, ${bundle_path})..."
-                    kill "${pid}" 2>/dev/null || true
-                fi
-                ;;
-        esac
-    done < <(pgrep -x "${EXECUTABLE_NAME}" 2>/dev/null || true)
-}
-
-mkdir -p "${PROJECT_DIR}/build"
-
 echo "▶ Building dev debug binary (swift build)..."
 cd "${PROJECT_DIR}"
 swift build "${SWIFT_BUILD_ARGS[@]}"
@@ -126,6 +106,22 @@ if [ ! -f "${BUILD_DIR}/${APP_NAME}" ]; then
     exit 1
 fi
 
+mkdir -p "${PROJECT_DIR}/build"
+# Check immediately before assembly, after the potentially long compilation.
+# Never stop another copy merely to build. Keep an active target untouched.
+while IFS= read -r pid; do
+    [ -n "${pid}" ] || continue
+    command="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
+    case "${command}" in
+        "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"*)
+            CANDIDATE_DIRECTORY="$(mktemp -d "${PROJECT_DIR}/build/dev-candidate.XXXXXX")"
+            APP_BUNDLE="${CANDIDATE_DIRECTORY}/${APP_BUNDLE_NAME}"
+            echo "▶ Existing dev app stays running; building candidate at ${APP_BUNDLE}"
+            break
+            ;;
+    esac
+done < <(pgrep -x "${EXECUTABLE_NAME}" 2>/dev/null || true)
+
 # Note: pre-#NN the dev build also compiled `Sources/Sidekey/OrbShader.metal`
 # via `xcrun metal` + `metallib` into the SPM resource bundle, then dittoed
 # that bundle into Contents/Resources/. The orb is now drawn with SwiftUI
@@ -133,15 +129,8 @@ fi
 # assets below are copied as normal app resources.
 
 echo "▶ Assembling app bundle at build/${APP_BUNDLE_NAME}..."
-# Stop beta processes before removing old bundles so their Info.plist identity
-# remains readable during conflict detection. Never stop the production flavor.
-stop_conflicting_sidekey_processes
-# Clean up old dev bundles so stale pre-rebrand apps do not linger in build/
-# and accidentally launch with the same bundle identifier.
-rm -rf "${PROJECT_DIR}/build/Sidekey-OrbMetal-dev.app" \
-       "${PROJECT_DIR}/build/Sidekey-dev.app" \
-       "${PROJECT_DIR}/build/Sidekey-Beta-dev.app" \
-       "${PROJECT_DIR}/build/Whytap-Beta-dev.app"
+# The selected destination is not in use; legacy and other worktree bundles
+# are left untouched. No app is stopped merely to assemble a candidate.
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
@@ -194,6 +183,8 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     -e "s|__APPCAST_URL__|${DEV_APPCAST_URL}|g" \
     -e "s|__SPARKLE_PUBLIC_ED_KEY__|${SPARKLE_PUBLIC_ED_KEY}|g" \
     "${INFO_PLIST_TEMPLATE}" > "${APP_BUNDLE}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ExodiaInstanceLeaseVersion integer 1" \
+    "${APP_BUNDLE}/Contents/Info.plist"
 
 if [ -f "${APP_ICON}" ]; then
     cp "${APP_ICON}" "${APP_BUNDLE}/Contents/Resources/${BUNDLE_ICON_FILE}.icns"
@@ -401,14 +392,8 @@ codesign \
 echo "▶ Verifying signature..."
 codesign --verify --deep --strict "${APP_BUNDLE}"
 
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-if [ -x "${LSREGISTER}" ]; then
-    echo "▶ Refreshing LaunchServices registration..."
-    "${LSREGISTER}" -f "${APP_BUNDLE}" >/dev/null 2>&1 || true
-fi
-touch "${APP_BUNDLE}"
-qlmanage -r cache >/dev/null 2>&1 || true
-killall iconservicesagent >/dev/null 2>&1 || true
+# Build-only does not register a worktree in LaunchServices, purge global
+# icon caches, or stop processes. Explicit launch registers its exact URL.
 
 echo ""
 echo "✓ Built: ${APP_BUNDLE}"
@@ -427,14 +412,11 @@ if [ "${RUN_AFTER_BUILD}" -eq 1 ]; then
     #   launchctl unsetenv KEY
     # so the value lives in the launchd context only long enough for `open`
     # to spawn the child, then is removed from the global namespace.
-    stop_conflicting_sidekey_processes
-    sleep 0.5
-
     echo "▶ Launching ${BUNDLE_DISPLAY_NAME}..."
     if [ "${#LAUNCH_ARGS[@]}" -gt 0 ]; then
-        open "${APP_BUNDLE}" --args "${LAUNCH_ARGS[@]}"
+        open -n "${APP_BUNDLE}" --args "${LAUNCH_ARGS[@]}"
     else
-        open "${APP_BUNDLE}"
+        open -n "${APP_BUNDLE}"
     fi
 else
     echo "To launch:"

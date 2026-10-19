@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
 # user-release.sh - community binary build and Sparkle release pipeline.
-# Default ad-hoc signing needs no Apple Developer account or notarization.
-# Optional Developer-ID mode: EXODIA_LEGACY_SIGNED_RELEASE=1.
+# Default community signing needs no Apple Developer account or notarization:
+# Exodia's self-signed certificate when Resources/community-signing-certificate.pem
+# is committed, otherwise ad-hoc. Optional Developer-ID mode:
+# EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
-# One command: build and ad-hoc sign the DMG on a Mac, then publish it as
+# One command: build and sign the DMG on a Mac, then publish it as
 # a GitHub Release with archive EdDSA signatures in the Sparkle appcast so that
 # installed copies get the in-app update. No CI runners are involved.
 #
@@ -21,6 +23,8 @@
 #
 # Publication credentials come from the environment:
 #   TEAM_ID / ASC_API_KEY_*      optional legacy Developer-ID mode only
+#   EXODIA_COMMUNITY_SIGNING_KEY PEM key of the community certificate (build step;
+#                                see community-signing-bootstrap.sh)
 #   SPARKLE_ED_PRIVATE_KEY       base64 Ed25519 seed (see sparkle-keys-bootstrap.sh)
 #   GITHUB_REPO                  owner/name (default: AbsoluteMode/exodia)
 #   plus an authenticated `gh` CLI.
@@ -36,7 +40,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
     cat <<'EOF2'
-Exodia community binary pipeline (ad-hoc DMG -> GitHub -> Sparkle-verified updates).
+Exodia community binary pipeline (community-signed DMG -> GitHub -> Sparkle-verified updates).
 No Apple Developer account or notarization is required by the default mode.
 
 Usage:
@@ -48,6 +52,8 @@ Usage:
   FLAVOR=prod SHORT_VERSION=2.0.1 BUILD_VERSION=1450 \
     ./scripts/user-release.sh --upload-only
 
+Required for building with the committed community certificate:
+  EXODIA_COMMUNITY_SIGNING_KEY or EXODIA_COMMUNITY_SIGNING_KEY_FILE
 Required only for publication:
   SPARKLE_ED_PRIVATE_KEY or SPARKLE_ED_PRIVATE_KEY_FILE, an authenticated gh CLI
 Optional legacy mode EXODIA_LEGACY_SIGNED_RELEASE=1 additionally requires:
@@ -133,6 +139,19 @@ esac
 
 if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
     exec /bin/bash "${PROJECT_DIR}/scripts/build-dmg.sh" --preflight-only
+fi
+
+# Mirrors build-dmg.sh: the committed community certificate unless opted out.
+# WHY: .project-docs/decisions/2026-10-19-community-signing-identity.md
+COMMUNITY_SIGNING_CERTIFICATE="${EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE:-${PROJECT_DIR}/Resources/community-signing-certificate.pem}"
+CERTIFICATE_SIGNING=0
+if [ "${LEGACY_SIGNED_RELEASE}" = "0" ] && [ "${EXODIA_COMMUNITY_SIGNING:-auto}" = "auto" ] && \
+   [ -f "${COMMUNITY_SIGNING_CERTIFICATE}" ]; then
+    CERTIFICATE_SIGNING=1
+fi
+if [ "$BUILD_STEP" -eq 1 ] && [ "$UPLOAD_STEP" -eq 1 ] && [ "$DRY_RUN" -eq 0 ] && \
+   { [ -n "${EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE:-}" ] || [ "${EXODIA_COMMUNITY_SIGNING:-auto}" != "auto" ]; }; then
+    die "EXODIA_COMMUNITY_SIGNING and EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE are for local builds; unset them to publish"
 fi
 
 [ -x /usr/bin/python3 ] || die "missing /usr/bin/python3"
@@ -271,6 +290,8 @@ echo "Repository: ${GITHUB_REPO}"
 echo "Flavor: ${FLAVOR}"
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "Distribution: Developer ID + notarization (explicit legacy mode)"
+elif [ "${CERTIFICATE_SIGNING}" -eq 1 ]; then
+    echo "Distribution: community (Exodia certificate, no Apple notarization)"
 else
     echo "Distribution: community (ad-hoc, no Apple notarization)"
 fi
@@ -293,6 +314,11 @@ if [ "$BUILD_STEP" -eq 1 ] && [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     for var in TEAM_ID ASC_API_KEY_ID ASC_API_KEY_ISSUER_ID ASC_API_KEY_P8; do
         [ -n "${!var:-}" ] || missing+=("$var")
     done
+fi
+if [ "$BUILD_STEP" -eq 1 ] && [ "${CERTIFICATE_SIGNING}" -eq 1 ]; then
+    if [ -z "${EXODIA_COMMUNITY_SIGNING_KEY:-}" ] && [ -z "${EXODIA_COMMUNITY_SIGNING_KEY_FILE:-}" ]; then
+        missing+=("EXODIA_COMMUNITY_SIGNING_KEY")
+    fi
 fi
 if [ "$UPLOAD_STEP" -eq 1 ]; then
     if [ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ] && [ -z "${SPARKLE_ED_PRIVATE_KEY_FILE:-}" ]; then

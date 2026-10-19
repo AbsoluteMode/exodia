@@ -11,6 +11,45 @@ identifiers are still `Sidekey`. The public source repository is
 services and Application Support paths so existing settings and permissions
 survive the rename. WHY: .project-docs/decisions/2026-10-17-exodia-name.md
 
+## Parallel development and the shared application
+
+Read `.project-docs/processes/shared-app-development.md` for every feature task
+and before integrating or updating the user's app. The user approved parallel
+feature sessions with regular checked integration and one working application.
+
+- Each feature uses its own branch/worktree. Workers build/test without
+  launching, registering or installing their bundles. Do not run `dev-run.sh`
+  or `customize.py build/run` from feature sessions; even build-only dev
+  packaging on some branches stops other dev processes.
+- Keep `/Applications/Exodia.app` (`com.rootwise.sidekey`) as the user's one
+  working app, preserving signing identity, permissions and data. Source for
+  shared updates is checked `origin/main`; first reconcile any fixes already
+  installed from a feature branch. Do not replace them with older main code.
+- Run exactly one Exodia instance across all channels: beta shares meetings,
+  staging and clipboard history with production and competes for hotkeys.
+  Production app/DMG packaging is reserved for the integrator under the lock.
+- Any session may integrate ready work, but only one holds the shared
+  `exodia-integration.lock` in `git rev-parse --git-common-dir`. Follow the
+  runbook's owner/recovery protocol. Preserve all other sessions' WIP; use a
+  clean integration worktree when the primary checkout is occupied.
+- Review overlaps, validate the final combined candidate and merge through a
+  PR with exact head/base checks. Routine checked integration/local refresh
+  needs no repeated approval. Public publishing remains a separate action.
+- Build a production candidate without interrupting the installed app. Verify
+  its signature/identity against the installed app and require a newer build
+  number without downgrading the display version. Keep the last working
+  bundle. Recording, dictation, agent work, unsaved work or
+  unknown activity defers replacement; never force-quit to install a feature.
+- Maintain build/CURRENT_BUILD.md in the primary checkout with separate
+  ready, merged, pending and verified-running states, source SHA, included
+  features and 1–3 acceptance steps. Report what actually runs and what to
+  check after promotion. A merge alone does not update the running app.
+- Before integration/app actions, fetch and reread current `origin/main`'s
+  guidance even in older worktrees. Resolve technical overlaps from accepted
+  requirements; report incompatible product choices or unresolved risks.
+
+WHY: .project-docs/decisions/2026-10-19-shared-working-app.md
+
 ## Architecture
 
 ```
@@ -41,9 +80,16 @@ Voice flow (Drop / dictation):
        finished=true also completes it. The 10s watchdog remains the backstop.
        -> cleanup (PostProcessor, level = LLMIsolationLevel):
             OpenRouter with the user's key / custom OpenAI-compatible endpoint
-            (Ollama, LM Studio, vLLM) / none (raw transcript + Filler
-            stripping). An unconfigured route, including the retired Local
-            one, degrades to the no-LLM output; the paste never fails on it.
+            (Ollama, LM Studio, vLLM). The mode is captured at take start:
+            Fast bypasses the LLM; Smart requires processed text and never
+            silently pastes raw speech after a cleanup error or empty result.
+            Smart failures retain the transcript in memory and show Retry with
+            the original mode and target; configuration errors open Models.
+            Full, batch-recovered and partial transcripts use the same rule.
+            A new take discards the old retry. The island observes persisted
+            mode changes from every control. The cleanup provider mark appears
+            only while processing; paste shows “pasting…” without a provider. WHY:
+            .project-docs/decisions/2026-10-19-strict-drop-modes.md
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting
@@ -95,11 +141,12 @@ Agent flow (OpenCode + OpenRouter):
   Actions are allowed by default so the agent can edit and run tests; the user
   can turn them off in Settings. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
-  AgentDaemonWorkingDirectory uses neutral agent/ or sibling
-  project-agents/<UUID>/ under Application Support/whytap. Each project has its
-  own AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
-  AgentController adds selected project evidence to each turn and uses scoped
-  resume IDs. Evidence is untrusted content, never executable instructions.
+  AgentDaemonWorkingDirectory uses agent/ under Application Support/whytap
+  with AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
+  Projects, folder indexing and automatic project evidence are removed. Old
+  project catalogs, indexes and project-agent workspaces remain unused on disk;
+  never migrate their content or resume IDs into the neutral workspace. WHY:
+  .project-docs/decisions/2026-10-19-remove-projects.md
   WhytapCustomizationContext.promptInstructions exposes resolved local Monitor
   paths, dashboard/collector contracts and source-kit discovery to the runtime
   agent, so creating a dashboard does not require finding the source checkout.
@@ -127,6 +174,18 @@ Meeting Notes:
           WHY: .project-docs/decisions/2026-10-18-silent-meetings.md,
           .project-docs/decisions/2026-10-18-remove-local-models.md
        -> MeetingsStore (local SQLite) -> notes window (BlockNote in WKWebView)
+  Delete: a finished meeting (ready or failed) has "Delete…" in its row
+  context menu behind a confirmation whose default button is Cancel.
+  MeetingsCoordinator.deleteMeeting removes the staged recording first (while
+  its manifest exists, launch recovery would bring the meeting back), then the
+  row and its note and transcript files; a meeting still processing is
+  refused. The row's delete commits only after the transcript and then the
+  note are gone, so a failed Delete leaves the meeting listed with its note.
+  A note save that lands after Delete writes nothing (MeetingsStore.update
+  checks the row first). Launch recovery frees the whole staged directory of
+  a meeting that already has a note, and keeps the audio when the note is
+  missing. Remote Soniox resources are not cleaned by Delete. WHY:
+  .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
   Manual start: Option M (configurable), the Record hover tile, or Settings ->
   Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
@@ -356,10 +415,14 @@ Update flow (download-on-action):
   crashes, process kills or power loss. A final Sparkle delegate guard rechecks
   activity before an app-initiated relaunch. Feed = GitHub Releases
   (`BuildConfig.appcastURL`).
-  Community archives use our independent Sparkle Ed25519 signature and ad-hoc
-  app code signing, without Apple Developer/notarization. Source dev builds
-  (9999 / -dev) do not start the binary updater. WHY:
+  Community archives use our independent Sparkle Ed25519 signature, without
+  Apple Developer/notarization. The app is signed with Exodia's self-signed
+  community certificate when Resources/community-signing-certificate.pem is
+  committed (stable designated requirement, so TCC grants survive updates),
+  otherwise ad hoc. Source dev builds (9999 / -dev) do not start the binary
+  updater. WHY:
   .project-docs/decisions/2026-10-17-community-updates.md,
+  .project-docs/decisions/2026-10-19-community-signing-identity.md,
   docs/decisions/2026-06-17-update-download-on-action.md,
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
@@ -380,16 +443,6 @@ Settings -> Models. Settings opens on Models; screenshot protection is in
 Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
-
-Project knowledge: Settings -> Projects registers a user-selected folder and
-manual notes. ProjectKnowledgeStore keeps a local catalog and SQLite FTS5
-index, with explicit reindexing and path/line citations. Hidden files,
-symlinks, build directories and common credential filenames are excluded;
-indexing is bounded to 5,000 files and 32 MB of text. It does not scan the
-home directory automatically or use semantic embeddings. Retrieval requires
-an explicitly selected project. Matching excerpts and notes become context
-for that project's agent request and may go to its configured API provider.
-This is a knowledge foundation, not live meeting-question detection.
 
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change
@@ -412,6 +465,11 @@ WHY: .project-docs/decisions/2026-10-18-clipboard-retention.md
 Installation: SidekeyAppMain checks InstallationGuard before constructing the
 app delegate. A read-only or AppTranslocation copy shows Finder installation
 instructions and quits before permissions, provider discovery or updates.
+ApplicationInstanceCoordinator then acquires one common prod/beta/worktree lease
+before constructing AppDelegate. A second copy offers to activate the owner and
+quits without starting permissions, providers or hotkeys. Legacy binaries launched
+later cannot honor the lease. Settings shows actual channel/version/build/path/revision.
+WHY: .project-docs/decisions/2026-10-19-one-running-copy.md
 `--installation-check` loads the packaged executable and verifies resources
 without starting the app runtime. User guide: `docs/install.md`. Policy:
 `.project-docs/decisions/2026-09-10-public-installation.md`.
@@ -444,6 +502,12 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
   rebuilds it at every recording start.
 - **Microphone** for Drop, agent voice and meetings.
 
+Drop reconciles failed installations and permission changes on activation,
+reopen, Settings Refresh/Retry and a bounded quiet polling session. Carbon tap
+shortcuts remain registered without AX so invocation can show permission repair.
+Permission checks guard Start only; Stop is always available. Rebuilding active
+capture monitors waits until capture ends. Background polling never asks for a grant.
+
 ## Commands
 
 ```bash
@@ -464,8 +528,9 @@ SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 
 # Community binary: local universal build, no Apple Developer
 FLAVOR=prod ./scripts/user-release.sh --preflight-only
-# Commit relevant build inputs before the build; retain the adjacent DMG manifest
-FLAVOR=prod ./scripts/user-release.sh --build-only
+# Commit relevant build inputs before the build; retain the adjacent DMG manifest.
+# Doppler supplies the community certificate's private key.
+doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh --build-only
 # Publishing also needs the project's Sparkle signing key and GitHub access
 FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
@@ -476,13 +541,19 @@ Developer membership, Developer ID or notarization; publishing requires our
 independent Sparkle Ed25519 signing key and GitHub access. Keep archive signature
 verification and app integrity checks. The former Apple-signed mode remains
 optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
-other OS protections. First downloads may require user approval and macOS
-permissions can require regranting. WHY:
-`.project-docs/decisions/2026-10-17-community-updates.md`.
+other OS protections. First downloads may require user approval. The community
+certificate is public; its private key lives only in Doppler
+(`EXODIA_COMMUNITY_SIGNING_KEY`, `sidekey/dev`) and is never committed or
+printed. Never replace the certificate except for a leaked key: its SHA-1 is in
+every build's designated requirement, so a new one makes every install regrant
+macOS permissions. WHY:
+`.project-docs/decisions/2026-10-17-community-updates.md`,
+`.project-docs/decisions/2026-10-19-community-signing-identity.md`.
 
 Release provenance is required: commit and clean Sources, Resources, Package.swift,
 Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
-seal archive SHA-256/size, version, build and flavor in `<DMG>.manifest.json`.
+seal archive SHA-256/size, version, build, flavor and code-signing identity in
+`<DMG>.manifest.json`.
 Upload-only requires the adjacent manifest. Reject missing/inconsistent
 provenance, changed HEAD or archive bytes before signing-key access/uploads, and
 target the release at the verified manifest's build commit. Rebuild after changing

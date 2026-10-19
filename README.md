@@ -23,8 +23,10 @@ Choose the `Exodia-latest.dmg` asset from an Exodia release. Whytap-named assets
 are historical builds. If no Exodia asset is listed yet, use the source-build
 instructions under [Development](#development).
 
-Community builds use ad-hoc code signing, without Apple notarization. macOS may
-warn on the first download; see [installation and permissions](docs/install.md).
+Community builds are signed with Exodia's own self-signed certificate and are not
+notarized by Apple. macOS may warn on the first download; see
+[installation and permissions](docs/install.md). The stable signature lets macOS
+keep permissions such as Microphone across updates.
 Updates use the existing island **Update** button and verify the archive with
 Exodia's Sparkle Ed25519 key, which is independent of Apple signing. An update
 will not force a restart during a meeting recording, dictation or agent task.
@@ -48,8 +50,10 @@ Source and custom builds remain available; see [Development](#development).
 
 Exodia no longer ships on-device speech or text models. If you used **Local**
 before, Exodia does not switch you to a provider on its own: dictation opens
-**Settings, Models** until you choose a speech provider, Smart cleanup is
-skipped until you choose an LLM, and recorded meetings wait for both.
+**Settings, Models** until you choose a speech provider, and recorded meetings
+wait for both speech and an LLM. Fast uses no cleanup LLM. Smart requires the
+LLM you chose: if it fails, Exodia keeps the transcript in memory and shows
+Retry instead of silently inserting unprocessed text.
 
 Keys you enter are stored in the macOS Keychain and sent only to the
 provider you selected. Transcripts, notes and history are SQLite files under
@@ -81,18 +85,7 @@ The connection check itself does not submit a paid model request.
 
 The agent can edit files and run tests by default. **Allow agent actions** can
 be turned off in Settings. Its model configuration, memory and conversation
-sessions stay local and are separated by active project.
-
-## Local project knowledge
-
-In **Settings, Projects**, add a project folder, index it and select the active
-project. Keep project notes there too. The local search returns code and document
-excerpts with file and line references for the agent's question; it does not
-send the entire folder to a provider. Reindex explicitly after source changes.
-There is no automatic live meeting copilot yet.
-
-The catalog and text index stay on your Mac. Selected excerpts and notes can be
-sent to the model provider you configure when you ask the agent a question.
+sessions stay local in the agent workspace.
 
 ## Hotkeys
 

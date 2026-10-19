@@ -14,16 +14,20 @@ sources:
   - type: repository
     reference: Sources/Sidekey/AppDelegate.swift
     confirmed_at: 2026-10-17
-  - type: repository
-    reference: Sources/Sidekey/Knowledge/ProjectKnowledgeStore.swift
+  - type: commit
+    reference: 2cc4caa786e4a36052ae940929ffbc518d52e33f (Sources/Sidekey/Knowledge/ProjectKnowledgeStore.swift, historical implementation)
     confirmed_at: 2026-10-17
   - type: repository
     reference: scripts/customize.py
     confirmed_at: 2026-10-17
-related: [../project.md, 2026-09-10-onboarding-models.md]
+related: [2026-10-19-remove-projects.md, ../project.md, 2026-09-10-onboarding-models.md]
 ---
 
 # Local workspace and direct launch
+
+The project-library portion of this decision is superseded by
+[removal of Projects](2026-10-19-remove-projects.md). Direct launch and source
+customization remain current.
 
 ## Context
 

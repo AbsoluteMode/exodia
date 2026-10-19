@@ -17,11 +17,24 @@ final class DropDeliveryResolverTests: XCTestCase {
         /// Whether the simulated raw-partial paste lands. False models a
         /// pasteboard-write / modifier-timeout failure (AutoPasteEngine.paste → false).
         var pasteRawSucceeds = true
+        var processingSucceeds = true
+        var requiresProcessingForPartial = false
+        var processingAttempts: [String] = []
 
         func sink() -> AppDelegate.DropBatchRecoverySink {
             AppDelegate.DropBatchRecoverySink(
                 setPhase: { [weak self] in self?.phases.append($0) },
-                deliver: { [weak self] t in self?.delivered.append(t); self?.phases.append(.idle) },
+                deliver: { [weak self] text in
+                    guard let self else { return false }
+                    self.processingAttempts.append(text)
+                    guard self.processingSucceeds else {
+                        self.phases.append(.deliveryFailed)
+                        return false
+                    }
+                    self.delivered.append(text)
+                    self.phases.append(.idle)
+                    return true
+                },
                 retainForRetry: { [weak self] pcm in self?.retainedAudio = pcm },
                 clearPendingRetry: { [weak self] in self?.clearedPending = true },
                 failTelemetry: { [weak self] r in self?.failureReasons.append(r) },
@@ -31,11 +44,53 @@ final class DropDeliveryResolverTests: XCTestCase {
                     // Mirror production: only a successful paste parks `.idle`.
                     if self.pasteRawSucceeds { self.phases.append(.idle); return true }
                     return false
-                }
+                },
+                requiresProcessingForPartial: requiresProcessingForPartial
             )
         }
     }
     private let pcm = Data([0x01, 0x02, 0x03, 0x04])
+
+    func testSmartRealtimeProcessingFailureNeverSalvagesRawOrClearsRetry() async {
+        let rec = Recorder()
+        rec.processingSucceeds = false
+        rec.requiresProcessingForPartial = true
+        await AppDelegate.resolveDelivery(
+            result: .transcript("full speech"), capturedPCM: pcm, lastPartial: "partial",
+            hasBatchTranscriber: true, transcribe: { _ in "unused" }, sink: rec.sink()
+        )
+        XCTAssertEqual(rec.processingAttempts, ["full speech"])
+        XCTAssertTrue(rec.delivered.isEmpty)
+        XCTAssertTrue(rec.pastedRaw.isEmpty)
+        XCTAssertFalse(rec.clearedPending)
+        XCTAssertEqual(rec.phases.last, .deliveryFailed)
+    }
+
+    func testSmartPartialWithoutBatchMustRunProcessing() async {
+        let rec = Recorder()
+        rec.requiresProcessingForPartial = true
+        await AppDelegate.resolveDelivery(
+            result: .degraded, capturedPCM: Data(), lastPartial: "partial speech",
+            hasBatchTranscriber: false, transcribe: { _ in "unused" }, sink: rec.sink()
+        )
+        XCTAssertEqual(rec.processingAttempts, ["partial speech"])
+        XCTAssertEqual(rec.delivered, ["partial speech"])
+        XCTAssertTrue(rec.pastedRaw.isEmpty)
+    }
+
+    func testSmartPartialProcessingFailureRetainsFailureEvenWithoutAudio() async {
+        let rec = Recorder()
+        rec.requiresProcessingForPartial = true
+        rec.processingSucceeds = false
+        await AppDelegate.resolveDelivery(
+            result: .degraded, capturedPCM: Data(), lastPartial: "partial speech",
+            hasBatchTranscriber: false, transcribe: { _ in "unused" }, sink: rec.sink()
+        )
+        XCTAssertTrue(rec.delivered.isEmpty)
+        XCTAssertTrue(rec.pastedRaw.isEmpty)
+        XCTAssertFalse(rec.clearedPending)
+        XCTAssertEqual(rec.phases.last, .deliveryFailed)
+    }
 
     func test_full_realtime_transcript_delivers_via_process() async {
         let rec = Recorder()

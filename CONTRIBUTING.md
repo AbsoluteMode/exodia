@@ -22,6 +22,12 @@ Pull requests that preserve this independence from Exodia services are welcome.
 
 ## Building
 
+Maintainer sessions developing features in parallel follow
+[the shared application procedure](.project-docs/processes/shared-app-development.md).
+They compile/test in separate worktrees and leave app packaging, installation
+and launch to the single current integrator. The standalone commands below
+must not be run from a parallel feature session.
+
 Use macOS 14.2 or newer and Xcode 26 or newer with a Swift 6 toolchain
 (`swift-tools-version:6.0`, Swift 5 language mode). No Apple Developer
 account, Developer ID certificate or notarization is required.
@@ -46,16 +52,23 @@ rebuild with the same script.
 
 1. Branch from `main`.
 2. Keep the change focused; add or update tests next to the code you touch.
-3. `swift build` and `swift test` must pass locally.
+3. For runtime changes, `swift build` and `swift test` must pass locally on the
+   final integrated candidate. Documentation-only changes run the relevant
+   documentation/link/guidance checks and mark Swift checks not applicable.
 4. Describe what changed and why in the PR body. Note any docs you updated
    (`CLAUDE.md` architecture notes, `docs/hotkey.md`, `docs/build-and-release.md`).
 5. Maintainers squash-merge.
+6. Include dependencies/overlaps, the reviewed head/base and 1–3 concrete
+   acceptance steps. State separately whether the feature is ready, merged,
+   waiting in a candidate or verified in the user's working app. A merge alone
+   never means that app was updated.
 
 Builds and tests run locally. GitHub Actions is disabled to avoid hosted-runner
 costs. Include the local validation result in the PR. Ready-made community
 builds and in-app updates are the main distribution path; source customization
-remains supported. The default release pipeline uses ad-hoc code signing and
-Exodia's Sparkle archive signatures, without an Apple Developer account
+remains supported. The default release pipeline signs with Exodia's self-signed
+community certificate, whose private key only maintainers hold, and Exodia's
+Sparkle archive signatures, without an Apple Developer account
 (see `docs/build-and-release.md`).
 
 By contributing you agree that your contribution is licensed under the MIT

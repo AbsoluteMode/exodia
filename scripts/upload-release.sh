@@ -100,11 +100,25 @@ case "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" in
     1) DISTRIBUTION_MODE="developer-id" ;;
     *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 1 ;;
 esac
+# A community archive must carry the identity committed with its source: the
+# community certificate when present, otherwise ad-hoc. Test certificate
+# overrides and ad-hoc opt-outs therefore cannot be published.
+# WHY: .project-docs/decisions/2026-10-19-community-signing-identity.md
+COMMUNITY_SIGNING_CERTIFICATE="${PROJECT_DIR}/Resources/community-signing-certificate.pem"
+if [ "${DISTRIBUTION_MODE}" = "developer-id" ]; then
+    EXPECTED_CODE_SIGNING="developer-id"
+elif [ -f "${COMMUNITY_SIGNING_CERTIFICATE}" ]; then
+    EXPECTED_CODE_SIGNING="certificate:$(/usr/bin/openssl x509 -in "${COMMUNITY_SIGNING_CERTIFICATE}" \
+        -noout -fingerprint -sha1 | sed 's/^.*=//; s/://g' | tr 'A-F' 'a-f')"
+else
+    EXPECTED_CODE_SIGNING="adhoc"
+fi
 verify_archive_provenance() {
     /usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" verify \
         --project-root "${PROJECT_DIR}" --archive "$1" --manifest "${DMG_MANIFEST}" \
         --version "${SHORT_VERSION}" --build "${BUILD_VERSION}" \
-        --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}"
+        --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}" \
+        --code-signing "${EXPECTED_CODE_SIGNING}"
 }
 # Validate before key access or any GitHub operation. Never infer provenance from a filename.
 SOURCE_SHA="$(verify_archive_provenance "${DMG_LOCAL}")"

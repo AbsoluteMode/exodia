@@ -61,7 +61,7 @@ struct SettingsWindowView: View {
     }
 
     var body: some View {
-        SidekeyAuroraWindow(title: "Settings") {
+        SidekeyAuroraWindow(title: AppBuildIdentity.current.settingsTitle) {
             settingsShell
         }
     }
@@ -102,6 +102,7 @@ struct SettingsWindowView: View {
                 .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
 
             VStack(alignment: .leading, spacing: 4) {
+                buildIdentity
                 learningCenterRow
                 quitRow
             }
@@ -109,6 +110,30 @@ struct SettingsWindowView: View {
                 .padding(.vertical, 10)
         }
         .frame(width: SettingsSidebarStyle.width, alignment: .topLeading)
+    }
+
+    private var buildIdentity: some View {
+        let identity = AppBuildIdentity.current
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("\(identity.name) · \(identity.channel)")
+                .font(.system(size: 11, weight: .medium))
+            Text(identity.versionDescription)
+                .font(.system(size: 10))
+            if let revision = identity.shortRevision {
+                Text("Source \(revision)")
+                    .font(.system(size: 9, design: .monospaced))
+            }
+            Text(identity.bundlePath)
+                .font(.system(size: 9))
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .help(identity.bundlePath)
+                .textSelection(.enabled)
+        }
+        .foregroundStyle(MacSettingsTheme.text2)
+        .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -180,7 +205,7 @@ struct SettingsWindowView: View {
             NSApp.terminate(nil)
         } label: {
             HStack(spacing: 0) {
-                Text("Quit Exodia")
+                Text(AppBuildIdentity.current.quitActionTitle)
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
                     .layoutPriority(1)
@@ -197,7 +222,7 @@ struct SettingsWindowView: View {
             .animation(.easeOut(duration: 0.2), value: isHighlighted)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Quit Exodia")
+        .accessibilityLabel(AppBuildIdentity.current.quitActionTitle)
     }
 
     @ViewBuilder
@@ -247,8 +272,6 @@ struct SettingsWindowView: View {
                 selection: selection,
                 deps: toolboxDeps
             )
-        case .projects:
-            ProjectsSettingsView()
         }
     }
 }

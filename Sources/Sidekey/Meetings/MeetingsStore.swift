@@ -33,6 +33,18 @@ enum MeetingProgressStatus: String, Sendable, Codable, Equatable {
         case .failed: return "Failed"
         }
     }
+
+    /// A finished meeting (ready or failed) can be deleted. One that is still
+    /// waiting, uploading or being transcribed cannot: its processor would
+    /// store the row again when it finishes.
+    var canBeDeleted: Bool {
+        switch self {
+        case .ready, .failed:
+            return true
+        case .waitingToReconnect, .uploading, .transcribing, .generatingProtocol:
+            return false
+        }
+    }
 }
 
 /// Flat row type for the meetings list: the recording timestamps plus the
@@ -319,26 +331,34 @@ actor MeetingsStore: MeetingsStoring {
         return (MeetingProgressStatus(rawValue: String(cString: raw)) ?? .ready, failureReason)
     }
 
+    /// Deletes the meeting for good: its row AND its note and transcript
+    /// files. The row's delete commits only once the transcript and then the
+    /// note are gone, so a delete that fails on the row or on a file leaves
+    /// the meeting listed with its note and can be retried. Safe to repeat,
+    /// and for rows that never had a note (a failed meeting).
+    /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
     func delete(id: UUID) throws {
-        let sql = "DELETE FROM meetings WHERE id = ?"
-        var stmt: OpaquePointer?
-        let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
-        defer { sqlite3_finalize(stmt) }
-        guard prepareResult == SQLITE_OK else {
-            throw MeetingsStoreError.sqlitePrepareFailed(code: prepareResult, message: lastErrorMessage())
-        }
-        try bindText(stmt: stmt, position: 1, value: id.uuidString)
-        let step = sqlite3_step(stmt)
-        guard step == SQLITE_DONE else {
-            throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+        try execute("BEGIN IMMEDIATE")
+        do {
+            try deleteRow(id: id)
+            try removeSidecars(of: id)
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
         }
     }
 
     /// Replaces an existing meeting's markdown body and bumps its
-    /// `server_version`. Used by Stage 8c's edit sync path.
-    func update(id: UUID, markdown: String, version: Int) throws {
+    /// `server_version`. Used by the note editor's save path. `false` when the
+    /// meeting is no longer stored (a save that lands after Delete): the row
+    /// is checked first, so nothing is written and the deleted note does not
+    /// come back.
+    @discardableResult
+    func update(id: UUID, markdown: String, version: Int) throws -> Bool {
+        guard try updateRow(id: id, version: version) else { return false }
         try writeMarkdown(id, markdown: markdown)
-        try updateRow(id: id, version: version)
+        return true
     }
 
     /// Persists `title` for the matching row. Called by the manual
@@ -655,7 +675,8 @@ actor MeetingsStore: MeetingsStoring {
         }
     }
 
-    private func updateRow(id: UUID, version: Int) throws {
+    /// `false` when no row has this id.
+    private func updateRow(id: UUID, version: Int) throws -> Bool {
         let sql = "UPDATE meetings SET server_version = ? WHERE id = ?"
         var stmt: OpaquePointer?
         let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
@@ -675,6 +696,29 @@ actor MeetingsStore: MeetingsStoring {
                 message: lastErrorMessage()
             )
         }
+        return sqlite3_changes(db) > 0
+    }
+
+    private func deleteRow(id: UUID) throws {
+        let sql = "DELETE FROM meetings WHERE id = ?"
+        var stmt: OpaquePointer?
+        let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+        defer { sqlite3_finalize(stmt) }
+        guard prepareResult == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: prepareResult, message: lastErrorMessage())
+        }
+        try bindText(stmt: stmt, position: 1, value: id.uuidString)
+        let step = sqlite3_step(stmt)
+        guard step == SQLITE_DONE else {
+            throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+        }
+    }
+
+    private func execute(_ sql: String) throws {
+        guard let db else {
+            throw MeetingsStoreError.sqliteStepFailed(code: SQLITE_MISUSE, message: "no db handle")
+        }
+        try Self.executeRaw(db: db, sql: sql)
     }
 
     private static func decodeRow(stmt: OpaquePointer?) throws -> MeetingMetaWithLocalState {
@@ -790,6 +834,22 @@ actor MeetingsStore: MeetingsStoring {
 
     private func transcriptURL(for id: UUID) -> URL {
         rootDirectory.appendingPathComponent("\(id.uuidString)-transcript.json")
+    }
+
+    /// Removes `<uuid>-transcript.json`, then `<uuid>.md`. A missing file is
+    /// fine. The first other failure stops it, so the note goes last and a
+    /// delete that fails on a file keeps the note.
+    private func removeSidecars(of id: UUID) throws {
+        for url in [transcriptURL(for: id), markdownURL(for: id)] {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                throw MeetingsStoreError.filesystem(
+                    "Could not remove \(url.lastPathComponent): \(error)"
+                )
+            }
+        }
     }
 
     private func writeMarkdown(_ id: UUID, markdown: String) throws {

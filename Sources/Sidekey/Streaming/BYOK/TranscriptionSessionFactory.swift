@@ -6,6 +6,7 @@ enum TranscriptionFactoryError: Error, Equatable {
     /// No transcription provider has been chosen yet (Settings -> Models).
     /// A former on-device user lands here too: their audio never left the Mac.
     case notConfigured
+    case invalidLanguageConfiguration(DeepgramLanguageConfigurationError)
 }
 
 /// Turns the current isolation-level config into a `StreamingSessionRunning`:
@@ -32,12 +33,16 @@ struct TranscriptionSessionFactory {
             throw TranscriptionFactoryError.notConfigured
         case .yourKey:
             let provider = prefs.selectedProvider
+            let model = prefs.transcriptionModel(for: provider)
+            if provider == .deepgram,
+               let error = DeepgramLanguagePolicy.configurationError(model: model, language: language) {
+                throw TranscriptionFactoryError.invalidLanguageConfiguration(error)
+            }
             guard let key = (try? keyStore.read(for: provider)), !key.isEmpty else {
                 throw TranscriptionFactoryError.missingKey
             }
             // The user's per-provider model selection (Models UI); falls back to
             // the provider default, and to `selfHostedModel` for self-hosted.
-            let model = prefs.transcriptionModel(for: provider)
             let adapter: BYOKTranscriptionAdapter
             switch provider {
             case .openAI, .selfHosted:

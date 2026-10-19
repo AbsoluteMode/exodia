@@ -11,6 +11,7 @@ public enum SidekeyAppMain {
             exit(valid ? 0 : 1)
         }
         guard InstallationGuard.canLaunch() else { return }
+        guard ApplicationInstanceCoordinator.shared.canLaunch() else { return }
         AppDelegate.main()
     }
 }
