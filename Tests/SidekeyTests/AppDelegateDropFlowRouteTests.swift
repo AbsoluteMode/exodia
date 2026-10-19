@@ -590,7 +590,7 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
         )
 
         // It still binds the batch transcribe of the retained PCM …
-        XCTAssertTrue(body.contains("let transcriber = batchTranscriber"))
+        XCTAssertTrue(body.contains("let transcriber = dropBatchTranscriber"))
         XCTAssertTrue(body.contains("transcriber.transcribe("))
 
         // … and delivers through the SHARED `dropDeliverySink` (the same sink the

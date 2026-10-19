@@ -1,35 +1,41 @@
 import Foundation
 import OSLog
 
-/// Where a batch take goes: the provider and key the user chose in
-/// Settings -> Models for realtime dictation, or nowhere.
+/// Where a batch take goes: the provider, model and key of the route of the
+/// feature the take belongs to (API & Models), or nowhere.
 /// WHY: .project-docs/decisions/2026-10-18-provider-batch-transcription.md
 enum ProviderBatchRoute: Equatable, Sendable {
-    case soniox(apiKey: String)
+    case soniox(apiKey: String, model: String)
     case deepgram(apiKey: String, model: String)
-    case elevenLabs(apiKey: String)
-    case selfHosted(apiKey: String, endpoint: URL, model: String)
+    case elevenLabs(apiKey: String, model: String)
+    /// A server's key is optional: without one no `Authorization` is sent.
+    case selfHosted(apiKey: String?, endpoint: URL, model: String)
 
-    /// The selected provider with its own stored key; nil when nothing is
-    /// chosen or that key is missing. Never another provider's key: the take
-    /// goes where the realtime stream would have gone, or nowhere.
-    @MainActor
-    static func current(prefs: SelfKeyPreferences, keyStore: BYOKKeyStore) -> ProviderBatchRoute? {
-        guard prefs.transcriptionLevel == .yourKey else { return nil }
-        let provider = prefs.selectedProvider
-        guard let key = try? keyStore.read(for: provider), !key.isEmpty else { return nil }
-        switch provider {
+    /// The batch counterpart of a resolved route; nil when the route's provider
+    /// has no batch transcription (OpenRouter), the key a hosted provider needs
+    /// is missing, or the server has no usable base URL. Never another
+    /// provider: the take goes where the feature's real-time stream would have
+    /// gone, or nowhere.
+    ///
+    /// Soniox and ElevenLabs real-time routes name a streaming model that their
+    /// file APIs do not accept, so recorded audio uses the registry model of the
+    /// same provider. Deepgram and a server use the model of the route.
+    static func make(for route: ResolvedRoute) -> ProviderBatchRoute? {
+        let key = route.apiKey.flatMap { $0.isEmpty ? nil : $0 }
+        switch route.account {
         case .soniox:
-            return .soniox(apiKey: key)
+            guard let key else { return nil }
+            return .soniox(apiKey: key, model: ModelRegistry.sonioxRecordedModel)
         case .deepgram:
-            return .deepgram(apiKey: key, model: prefs.transcriptionModel(for: .deepgram))
+            guard let key else { return nil }
+            return .deepgram(apiKey: key, model: route.model)
         case .elevenLabs:
-            return .elevenLabs(apiKey: key)
-        case .selfHosted:
-            guard let endpoint = selfHostedEndpoint(baseURL: prefs.selfHostedBaseURL) else { return nil }
-            return .selfHosted(apiKey: key, endpoint: endpoint, model: prefs.selfHostedModel)
-        case .openAI:
-            // Not selectable: `selectedProvider` reads a stored OpenAI as Soniox.
+            guard let key else { return nil }
+            return .elevenLabs(apiKey: key, model: ModelRegistry.elevenLabsRecordedModel)
+        case .server:
+            guard let server = route.server, let endpoint = selfHostedEndpoint(baseURL: server.baseURL) else { return nil }
+            return .selfHosted(apiKey: key, endpoint: endpoint, model: route.model)
+        case .openRouter:
             return nil
         }
     }
@@ -89,9 +95,7 @@ struct ProviderBatchTranscriber: BatchTranscribing {
     /// deadline (recorder fallback, agent voice) and the retried deletion of
     /// a job that is still processing.
     init(
-        route: @escaping @MainActor @Sendable () -> ProviderBatchRoute? = {
-            ProviderBatchRoute.current(prefs: .shared, keyStore: BYOKKeyStore())
-        },
+        route: @escaping @MainActor @Sendable () -> ProviderBatchRoute?,
         session: URLSession = .shared,
         pollInterval: Duration = .milliseconds(500),
         jobTimeout: Duration = .seconds(30)
@@ -114,12 +118,12 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         do {
             let result: String
             switch route {
-            case .soniox(let apiKey):
-                result = try await soniox(wav, apiKey: apiKey, language: language)
+            case .soniox(let apiKey, let model):
+                result = try await soniox(wav, apiKey: apiKey, model: model, language: language)
             case .deepgram(let apiKey, let model):
                 result = try await deepgram(wav, apiKey: apiKey, model: model, language: language)
-            case .elevenLabs(let apiKey):
-                result = try await elevenLabs(wav, apiKey: apiKey, language: language)
+            case .elevenLabs(let apiKey, let model):
+                result = try await elevenLabs(wav, apiKey: apiKey, model: model, language: language)
             case .selfHosted(let apiKey, let endpoint, let model):
                 result = try await selfHosted(wav, apiKey: apiKey, endpoint: endpoint, model: model, language: language)
             }
@@ -167,11 +171,12 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         return best.transcript
     }
 
-    /// ElevenLabs speech-to-text with Scribe v2 (`scribe_v2_realtime` is the
-    /// realtime model), without audio-event tags or filler words.
-    private func elevenLabs(_ wav: Data, apiKey: String, language: String?) async throws -> String {
+    /// ElevenLabs speech-to-text with the recorded model (Scribe v2;
+    /// `scribe_v2_realtime` is the realtime model), without audio-event tags or
+    /// filler words.
+    private func elevenLabs(_ wav: Data, apiKey: String, model: String, language: String?) async throws -> String {
         var form = MultipartFormBody()
-        form.field("model_id", "scribe_v2")
+        form.field("model_id", model)
         if let language { form.field("language_code", language) }
         form.field("tag_audio_events", "false")
         form.field("no_verbatim", "true")
@@ -184,9 +189,10 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         return try Self.text(in: data)
     }
 
-    /// OpenAI-compatible `/v1/audio/transcriptions` with the user's model.
+    /// OpenAI-compatible `/v1/audio/transcriptions` with the user's model. The
+    /// key is optional: without one there is no `Authorization` header.
     private func selfHosted(
-        _ wav: Data, apiKey: String, endpoint: URL, model: String, language: String?
+        _ wav: Data, apiKey: String?, endpoint: URL, model: String, language: String?
     ) async throws -> String {
         var form = MultipartFormBody()
         form.field("model", model)
@@ -195,7 +201,9 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         form.wav(wav)
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        if let apiKey, !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
         let data = try await send(request, body: form.finished())
         return try Self.text(in: data)
@@ -203,7 +211,7 @@ struct ProviderBatchTranscriber: BatchTranscribing {
 
     /// Soniox file API: upload, job, poll, transcript. The file and the job
     /// are deleted afterwards, whatever the outcome.
-    private func soniox(_ wav: Data, apiKey: String, language: String?) async throws -> String {
+    private func soniox(_ wav: Data, apiKey: String, model: String, language: String?) async throws -> String {
         var form = MultipartFormBody()
         form.wav(wav)
         var upload = SonioxFileAPI.request(path: "files", method: "POST", apiKey: apiKey)
@@ -218,7 +226,7 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         // The realtime request's hints: the chosen language, then English.
         var hints = language.map { [$0] } ?? []
         if !hints.contains("en") { hints.append("en") }
-        let job: [String: Any] = ["model": SonioxFileAPI.asyncModel, "file_id": fileID, "language_hints": hints]
+        let job: [String: Any] = ["model": model, "file_id": fileID, "language_hints": hints]
         var create = SonioxFileAPI.request(path: "transcriptions", method: "POST", apiKey: apiKey)
         create.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let created = try await send(create, body: JSONSerialization.data(withJSONObject: job))
@@ -334,6 +342,53 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         if error is CancellationError { return "cancelled" }
         if let urlError = error as? URLError { return "url_error_\(urlError.code.rawValue)" }
         return "other"
+    }
+}
+
+/// The transcribers the app binds: one per feature route, never a shared one.
+extension ProviderBatchTranscriber {
+    /// A Drop take's batch path (recorder fallback, resilient-delivery batch
+    /// rung, Retry). It goes to the route latched in `take` when the take began
+    /// for the take's feature, not to the route the feature has now, so a mode
+    /// or route change mid-take cannot move the audio to another provider. The
+    /// key is read when the call is made; without it, or without a latched
+    /// route, there is no batch path.
+    @MainActor
+    static func forDrop(
+        take: DropTake? = nil,
+        resolver: FeatureRouteResolver = FeatureRouteResolver(),
+        session: URLSession = .shared,
+        pollInterval: Duration = .milliseconds(500)
+    ) -> ProviderBatchTranscriber {
+        let take = take ?? .shared
+        return ProviderBatchTranscriber(
+            route: {
+                guard let latched = take.route,
+                      let resolved = try? resolver.resolve(latched, for: take.feature) else { return nil }
+                return ProviderBatchRoute.make(for: resolved)
+            },
+            session: session,
+            pollInterval: pollInterval
+        )
+    }
+
+    /// The batch path of a feature that has no take of its own (Agent voice):
+    /// the feature's current route and key, read on every call.
+    @MainActor
+    static func forFeature(
+        _ feature: AIFeature,
+        resolver: FeatureRouteResolver = FeatureRouteResolver(),
+        session: URLSession = .shared,
+        pollInterval: Duration = .milliseconds(500)
+    ) -> ProviderBatchTranscriber {
+        ProviderBatchTranscriber(
+            route: {
+                guard let resolved = try? resolver.resolve(feature) else { return nil }
+                return ProviderBatchRoute.make(for: resolved)
+            },
+            session: session,
+            pollInterval: pollInterval
+        )
     }
 }
 
