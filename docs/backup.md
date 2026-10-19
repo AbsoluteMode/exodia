@@ -59,7 +59,15 @@ you remove them. A failed rollback preserves its transaction for retry and
 keeps the workspace closed until its state can be proven safe.
 
 Case items are merged with the target Mac's vault and encrypted using that
-Mac's own local vault key. Unrelated existing Case items are retained. Imported
+Mac's own local vault key. Unrelated existing Case items are retained. When a
+project or key name from the backup is already used by a different item on
+this Mac, the restored one is renamed (`alpha (2)`, `DB_URL_2`); this Mac's
+names stay as they are. Restoring also brings back the backup's Case app
+registrations (which AI apps may ask for keys, Approve or Bypass) and adds
+them without asking for Touch ID, including Bypass: an app registered with
+Bypass in the backup can receive keys without a prompt after the restore.
+Registrations this Mac already has keep their own settings. Review them in
+Case -> access after restoring a backup you did not make yourself. Imported
 notification sources and monitoring connections stay disabled until reviewed.
 Unprocessed recordings are recovered without automatically resuming another
 Mac's remote provider jobs.

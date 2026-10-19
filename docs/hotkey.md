@@ -295,8 +295,9 @@ any layout (Russian «н», «т», «ф» are the same keys):
   (needs Accessibility), exists only while a prompt is queued. Only those
   four keys are swallowed (with their repeats and key-up); every other key,
   and the four with ⌘, ⌃ or ⌥, go to the app underneath.
-- For 300 ms after each prompt appears nothing is swallowed or answered
-  (keys and clicks), so typing in another app cannot answer by accident.
+- Nothing is swallowed or answered (keys and clicks) until the keyboard has
+  been quiet for 300 ms: every key press while the prompt is unarmed starts
+  the wait again, so ongoing typing in another app cannot answer it.
   Autorepeat of a key held before that passes through.
 - 60 s without an answer denies. Several requests queue; one is shown at a
   time with a «+N» badge for the rest, and each gets its own arming delay.

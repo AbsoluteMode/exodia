@@ -6,7 +6,7 @@ summary: Names-only MCP, a CLI run inside the AI's own terminal, a Unix-socket b
 status: confirmed
 tags: [case, secrets, mcp, broker, security]
 canonical_for: [case-ai-access]
-verified_at: 2026-10-19
+verified_at: 2026-10-20
 sources:
   - type: user-confirmed
     reference: Design approved with Maxim in docs/superpowers/specs/2026-10-19-case-secrets-manager-design.md (2026-10-19).
@@ -56,18 +56,52 @@ without ever receiving its value.
 - **Modes.** Each registered app is Approve or Bypass, with optional per-project
   override. Approve shows a prompt under the island: Y allow once, N/Escape
   deny, A allow this app and project for N minutes (default 15, memory only,
-  cleared on restart). Keys are matched by physical key code so they work on any
-  layout; for 300 ms after appearing nothing is accepted, 60 s denies, requests
-  queue. `CaseApprovalKeyTap` exists only while a prompt is queued and swallows
-  only those four keys (see docs/hotkey.md).
+  cleared on restart, not on the panel's idle lock because the broker keeps
+  serving then). Keys are matched by physical key code so they work on any
+  layout. **Arming:** a prompt accepts nothing until the keyboard has been
+  quiet for 300 ms; every key press the tap sees while it is unarmed starts
+  the wait again, so someone typing in another app can never answer it.
+  60 s denies (typing does not extend it), requests queue. A prompt whose
+  client disconnects (Ctrl-C, a killed agent) is withdrawn and denied, and
+  no timed grant is made for it. After an A answer, prompts already waiting
+  for the same app and project are allowed by that grant instead of shown.
+  The prompt sits under the agent answer card when both are visible (the
+  built-in agent running `whytap case run`). `CaseApprovalKeyTap` exists only
+  while a prompt is queued and swallows only those four keys (see
+  docs/hotkey.md).
+- **Touch ID text** for a person's `whytap case run` names the nearest app in
+  the helper's parent chain (Terminal, iTerm2…) or "неизвестный процесс" when
+  the walk reaches pid 1 without one (ssh, cron, a launchd job), and the
+  command on one line, whitespace collapsed, at most 80 characters with the
+  middle cut. It never contains a value.
+- **Names are unique.** The broker refuses (never picks) when a project
+  holds two keys with one name or two projects share a name. A backup merge
+  renames a clashing incoming project to `name (2)` and key to `NAME_2`, the
+  same suffixes migration uses; names already on this Mac are kept. Migration
+  dedupes project names after truncation to 48 characters.
+- **Schema-1 copy.** The first time a schema-1 vault is saved as schema 2 the
+  old file is copied once to `case-vault.json.enc.v1` (0600, created
+  exclusively, never overwritten); `.bak` alone held the v1 bytes only until
+  the second save.
 - **Registration** also writes the MCP entry into the client's own config
   (`claude mcp add -s user`, `codex mcp add`, `~/.cursor/mcp.json`, the built-in
   OpenCode config) with the absolute helper path (GUI-launched agents often lack
-  `~/.local/bin` on PATH). No secret is ever written there.
+  `~/.local/bin` on PATH). No secret is ever written there. An existing MCP
+  server named `case` that is not a `whytap`/`whytap-*` helper serving
+  `case mcp` is reported as a conflict and never replaced or removed. JSON
+  configs that are symlinks (dotfiles repos) are written through the link: the
+  real file is replaced atomically, keeps its permission bits and is backed up
+  as `<real file>.bak`; the link stays a link.
 - **Masking.** Exact value, base64 (three shifts, standard and URL-safe), hex
   (both cases), URL and JSON escaping, multi-line values whole and per line,
-  with a carry-over buffer across chunk boundaries. Values shorter than 4 bytes
-  are not masked and the UI says so. MCP output is never masked-wrapped.
+  with a carry-over buffer across chunk boundaries. Only the end of the output
+  that is the beginning of some variant is held back; everything else is
+  written at once, so a dev server's "listening" line or a `[y/N]` prompt
+  appears immediately (holding a fixed longest-variant tail hid them). Values
+  shorter than 4 bytes are not masked and their row says «не скрываются в
+  выводе». MCP output is never masked-wrapped.
+- **CLI options** `-p` and `--only` are read only before the command:
+  `whytap case run grep --only x f` passes `--only x` to grep.
 
 ## Why
 
@@ -86,6 +120,19 @@ without ever receiving its value.
   released on quit and on reset. Touch ID is still asked for any human use.
 
 ## Threat model and masking limits
+
+Built-in OpenCode commands inherit Whytap's TCC responsibility: macOS
+attributes a process to the app that started it, and Whytap starts OpenCode,
+so a command the built-in agent runs (including `whytap case run`) uses the
+privacy grants Whytap holds (microphone, accessibility, files the user allowed
+Whytap to read). This predates Case and Case does not widen it: the values
+still reach only the child of the helper, never the app process, and the
+broker treats the built-in agent like any other registered app. External
+clients (Claude Code, Codex, Cursor) run under their own TCC identity.
+
+A restored backup brings back its app registrations, Bypass included, without
+Touch ID (see docs/backup.md); a backup someone else made should be reviewed
+in Case -> access after restoring.
 
 Case protects against **accidental** leaks of values into transcripts and
 against unregistered programs. It does not protect against an AI that
@@ -116,6 +163,19 @@ Masking is best effort and bytes-based; it is not a security boundary.
   CLIs, Touch ID, the NSOpenPanel from the island, the prompt keys and Russian
   layout, the packaged helper's cdhash trust path, OpenCode's MCP entry and
   permission wildcard. These need acceptance by the integrator.
+
+- Final-review fix wave (2026-10-20), each with tests: typing every 100 ms
+  never arms the prompt and 300 ms of quiet does; a client closing its socket
+  while its prompt is up withdraws the prompt over a real socket; queued
+  same-app/project prompts are allowed after A; a secret-free line and a
+  `[y/N]` prompt are emitted at once with a 680-byte secret configured, and
+  every two-chunk split of text around a secret masks like the whole text;
+  merge of same names with different ids; duplicate names refused by the
+  broker; 48-character truncation collision in migration; the one-time `.v1`
+  copy; a symlinked Cursor config; foreign `case` entries in all three
+  clients; options after the command; Touch ID text; a logging guard over
+  the Case, WhytapCaseKit and WhytapCLI sources. Offscreen render of the
+  prompt under a 240 pt agent card.
 
 ## Rejected
 
@@ -151,12 +211,11 @@ Masking is best effort and bytes-based; it is not a security boundary.
   is reinstalled on every registration; a missing helper leaves the registration
   standing without client config; with actions off the built-in agent gets only
   the `case_*` listing tools.
-- Deferred minors: v1 `.bak` is kept only until the second save; migrated
-  project names deduped before 48-char truncation can collide; the socket path
-  can exceed 104 bytes for a very long home; the prompt overlaps the top of an
-  agent answer card; Russian labels vs English errors (ask Maxim); rewrites of
+- Deferred minors: the socket path can exceed 104 bytes for a very long home;
+  Russian labels vs English errors (ask Maxim); rewrites of
   `~/.claude/settings.json` and `~/.cursor/mcp.json` re-sort keys (content kept,
   `.bak` saved); built-in OpenCode PIDs depend on process plumbing.
 
 2026-10-19. Commits: 0fee034..225df91 on branch claude/sad-nobel-2aaef9, final
-packaging and docs commit follows.
+packaging and docs commit follows. Fix wave 2026-10-20: 084e293..4511f84 and
+the docs commit after it.

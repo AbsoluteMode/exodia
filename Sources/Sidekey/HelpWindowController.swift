@@ -88,7 +88,7 @@ enum HelpWindowContent {
                 contents: [.text("Esc")]
             ),
             // Case Approve prompt: fixed physical keys (any layout), taken only
-            // while a prompt is on screen, from 300 ms after it appears. One row
+            // while a prompt is on screen, after 300 ms without key presses. One row
             // per answer so the caps never read as a chord.
             HelpHotkeyRowSpec(
                 title: "Case — allow",
