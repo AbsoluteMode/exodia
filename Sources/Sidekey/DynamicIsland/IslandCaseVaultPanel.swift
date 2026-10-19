@@ -24,8 +24,6 @@ struct IslandCaseVaultPanel: View {
     @State private var editValue = ""
     @State private var addingGroupID: UUID?
     @State private var expandedGroupIDs: Set<UUID> = []
-    @State private var pendingGroupCreation: PendingGroupCreation?
-    @State private var groupNameDraft = ""
     @State private var dragContext: DragContext?
     @State private var lastError: String?
     @FocusState private var inputFocused: Bool
@@ -135,10 +133,7 @@ struct IslandCaseVaultPanel: View {
                 .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
                 .padding(.top, IslandCaseVaultStyle.topPadding)
 
-            if let pendingGroupCreation {
-                groupCreationPrompt(pendingGroupCreation)
-                    .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
-            } else if let lastError {
+            if let lastError {
                 Text(lastError)
                     .font(.system(size: IslandCaseVaultStyle.errorFontSize, weight: .medium))
                     .foregroundStyle(Color.red.opacity(0.78))
@@ -239,7 +234,7 @@ struct IslandCaseVaultPanel: View {
                                     .onDrop(of: [UTType.text], isTargeted: nil) { _ in
                                         handleSecretDrop(on: row.id)
                                     }
-                            case .group:
+                            case .project:
                                 groupRow(row)
                             }
                         }
@@ -281,11 +276,6 @@ struct IslandCaseVaultPanel: View {
 
                 Spacer(minLength: 4)
 
-                iconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy all keys in group") {
-                    runCaseAction { try viewModel.copyAll(row.id) }
-                }
-                .help("Copy all")
-
                 iconButton(systemImage: "plus", accessibilityLabel: "Add key to group") {
                     addingGroupID = row.id
                     valueDraft = ""
@@ -313,7 +303,7 @@ struct IslandCaseVaultPanel: View {
 
             if expandedGroupIDs.contains(row.id) {
                 VStack(spacing: 3) {
-                    ForEach(viewModel.childRows(forGroupID: row.id)) { child in
+                    ForEach(viewModel.secretRows(inProject: row.id)) { child in
                         secretRow(child, groupID: row.id)
                             .padding(.leading, 12)
                             .onDrop(of: [UTType.text], isTargeted: nil) { _ in
@@ -409,31 +399,6 @@ struct IslandCaseVaultPanel: View {
         .padding(.leading, 18)
     }
 
-    private func groupCreationPrompt(_ pending: PendingGroupCreation) -> some View {
-        HStack(spacing: 6) {
-            TextField("Group name", text: $groupNameDraft)
-                .textFieldStyle(.plain)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.90))
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(Capsule().fill(Color.white.opacity(0.11)))
-                .onSubmit {
-                    confirmGroupCreation(pending)
-                }
-
-            iconButton(systemImage: "checkmark", accessibilityLabel: "Create group") {
-                confirmGroupCreation(pending)
-            }
-
-            iconButton(systemImage: "xmark", accessibilityLabel: "Cancel group") {
-                pendingGroupCreation = nil
-                groupNameDraft = ""
-                lastError = nil
-            }
-        }
-    }
-
     private func iconButton(
         systemImage: String,
         accessibilityLabel: String,
@@ -500,7 +465,7 @@ struct IslandCaseVaultPanel: View {
         do {
             switch viewModel.inputMode {
             case .name:
-                try viewModel.submitName(viewModel.query, groupID: addingGroupID)
+                try viewModel.submitName(viewModel.query, projectID: addingGroupID ?? CaseProject.generalID)
                 valueDraft = ""
                 // Name accepted -> inputMode flips to .value and the field
                 // rebuilds as a SecureField. Re-assert focus on the next runloop
@@ -529,36 +494,17 @@ struct IslandCaseVaultPanel: View {
         }
     }
 
-    private func confirmGroupCreation(_ pending: PendingGroupCreation) {
-        runCaseAction {
-            let groupID = try viewModel.createGroup(
-                sourceSecretID: pending.sourceSecretID,
-                targetSecretID: pending.targetSecretID,
-                name: groupNameDraft
-            )
-            expandedGroupIDs.insert(groupID)
-            pendingGroupCreation = nil
-            groupNameDraft = ""
-        }
-    }
-
     private func handleSecretDrop(on targetSecretID: UUID) -> Bool {
         defer { dragContext = nil }
         guard let dragContext, dragContext.secretID != targetSecretID else {
             return false
         }
 
-        if dragContext.startedInsideGroup {
-            runCaseAction { try viewModel.removeSecretFromGroup(dragContext.secretID) }
-            return true
+        // Dropping a key from a project onto a General key returns it to General.
+        guard dragContext.startedInsideGroup else {
+            return false
         }
-
-        pendingGroupCreation = PendingGroupCreation(
-            sourceSecretID: dragContext.secretID,
-            targetSecretID: targetSecretID
-        )
-        groupNameDraft = ""
-        lastError = nil
+        runCaseAction { try viewModel.moveSecret(dragContext.secretID, toProject: CaseProject.generalID) }
         return true
     }
 
@@ -568,13 +514,8 @@ struct IslandCaseVaultPanel: View {
             return false
         }
 
-        if dragContext.startedInsideGroup {
-            runCaseAction { try viewModel.removeSecretFromGroup(dragContext.secretID) }
-            return true
-        }
-
         runCaseAction {
-            try viewModel.addSecretToGroup(secretID: dragContext.secretID, groupID: groupID)
+            try viewModel.moveSecret(dragContext.secretID, toProject: groupID)
             expandedGroupIDs.insert(groupID)
         }
         return true
@@ -586,7 +527,7 @@ struct IslandCaseVaultPanel: View {
             return false
         }
 
-        runCaseAction { try viewModel.removeSecretFromGroup(dragContext.secretID) }
+        runCaseAction { try viewModel.moveSecret(dragContext.secretID, toProject: CaseProject.generalID) }
         return true
     }
 
@@ -641,21 +582,20 @@ struct IslandCaseVaultPanel: View {
             return "Value is required"
         case CaseViewModelError.valueTooLong:
             return "Value is too long"
-        case CaseViewModelError.invalidGroupName:
-            return "Group name is invalid"
-        case CaseViewModelError.invalidGroupOperation:
-            return "Cannot move this key"
+        case CaseViewModelError.invalidProjectName:
+            return "Project name is invalid"
+        case CaseViewModelError.invalidProjectOperation:
+            return "Cannot change this project"
+        case CaseViewModelError.descriptionTooLong:
+            return "Description is too long"
+        case CaseViewModelError.missingProject:
+            return "Project not found"
         case CaseViewModelError.locked:
             return "Case is locked"
         default:
             return "Action failed"
         }
     }
-}
-
-private struct PendingGroupCreation: Equatable {
-    let sourceSecretID: UUID
-    let targetSecretID: UUID
 }
 
 private struct DragContext: Equatable {

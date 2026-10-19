@@ -97,6 +97,31 @@ final class CaseRankerTests: XCTestCase {
         XCTAssertEqual(sorted.first?.displayName, "Stale group")
     }
 
+    func test_query_matches_names_and_descriptions_across_projects() {
+        let projectID = UUID()
+        var byName = secret(name: "STRIPE_KEY", groupID: projectID, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        byName.description = "payments"
+        var byDescription = secret(name: "TOKEN_A", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        byDescription.description = "used for stripe webhooks"
+        let unrelated = secret(name: "OTHER", groupID: projectID, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let project = CaseProject(id: projectID, name: "billing", description: "", createdAt: now.addingTimeInterval(-30 * 86_400), updatedAt: now)
+
+        let sorted = CaseRanker.sortedEntries(secrets: [unrelated, byDescription, byName], projects: [project], query: "stripe", now: now)
+
+        XCTAssertEqual(sorted.map(\.displayName), ["STRIPE_KEY", "TOKEN_A"])
+        XCTAssertEqual(sorted.first?.projectID, projectID)
+        XCTAssertEqual(sorted.last?.description, "used for stripe webhooks")
+    }
+
+    func test_query_matches_project_description() {
+        let project = CaseProject(id: UUID(), name: "billing", description: "Stripe and invoices", createdAt: now, updatedAt: now)
+
+        let sorted = CaseRanker.sortedEntries(secrets: [], projects: [project], query: "invoices", now: now)
+
+        XCTAssertEqual(sorted.map(\.displayName), ["billing"])
+        XCTAssertEqual(sorted.first?.kind, .project)
+    }
+
     private func secret(
         name: String,
         groupID: UUID? = nil,

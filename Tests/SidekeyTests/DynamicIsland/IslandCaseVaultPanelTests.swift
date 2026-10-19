@@ -8,7 +8,7 @@ final class IslandCaseVaultPanelTests: XCTestCase {
         XCTAssertTrue(source.contains("SecureField"))
         XCTAssertTrue(source.contains("submitValue"))
         XCTAssertTrue(source.contains("copySecret"))
-        XCTAssertTrue(source.contains("copyAll"))
+        XCTAssertFalse(source.contains("copyAll"))
         XCTAssertTrue(source.contains("replaceSecret"))
         XCTAssertTrue(source.contains("deleteSecret"))
         XCTAssertFalse(source.contains("CaseSecretValue"))
@@ -18,10 +18,8 @@ final class IslandCaseVaultPanelTests: XCTestCase {
     func test_caseVaultPanelSupportsGroupsAndDragAutoScroll() throws {
         let source = try caseVaultPanelSource()
 
-        XCTAssertTrue(source.contains("createGroup"))
-        XCTAssertTrue(source.contains("addSecretToGroup"))
-        XCTAssertTrue(source.contains("removeSecretFromGroup"))
-        XCTAssertTrue(source.contains("childRows(forGroupID:"))
+        XCTAssertTrue(source.contains("moveSecret"))
+        XCTAssertTrue(source.contains("secretRows(inProject:"))
         XCTAssertTrue(source.contains("CaseDragAutoScrollPolicy.velocity"))
         XCTAssertTrue(source.contains("UTType.text"))
     }

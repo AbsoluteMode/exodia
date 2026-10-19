@@ -80,18 +80,21 @@ enum CaseUnlockState: Equatable {
 
 enum CaseInputMode: Equatable {
     case name
-    case value(name: String, groupID: UUID?)
+    case value(name: String, projectID: UUID)
 }
 
 struct CaseDisplayRow: Equatable, Identifiable {
     enum Kind: Equatable {
+        case project
         case secret
-        case group
     }
 
     let id: UUID
     let kind: Kind
     let displayName: String
+    let description: String
+    /// For a secret, its project; for a project, its own ID.
+    let projectID: UUID
 }
 
 enum CaseViewModelError: Error, Equatable {
@@ -100,11 +103,12 @@ enum CaseViewModelError: Error, Equatable {
     case duplicateName
     case missingSecret
     case missingValue
-    case missingGroup
+    case missingProject
     case emptyValue
     case valueTooLong
-    case invalidGroupName
-    case invalidGroupOperation
+    case invalidProjectName
+    case invalidProjectOperation
+    case descriptionTooLong
     /// resetVault() called without a prior armResetVault() call. Prevents
     /// accidental single-click destruction of vault data.
     case resetNotArmed
@@ -116,7 +120,8 @@ final class CaseViewModel: ObservableObject {
 
     nonisolated private static let defaultUnlockedSessionSeconds = 15 * 60
     private static let maxValueBytes = 16 * 1024
-    private static let maxGroupNameCharacters = CaseProject.maxNameCharacters
+    private static let maxDescriptionCharacters = 200
+    private static let maxProjectNameCharacters = CaseProject.maxNameCharacters
     private static let sanitizedUnlockFailureMessage = "Unable to unlock Case"
     private static let needsResetMessage = "Couldn't unlock this Case. Reset starts a new one and keeps the old file."
     private static let needsNewerAppMessage = "Update the app to open this Case."
@@ -130,6 +135,8 @@ final class CaseViewModel: ObservableObject {
     /// second. Published because the panel keys its "Confirm Reset" label and
     /// warning copy off this — arming must trigger a SwiftUI re-render.
     @Published private(set) var isResetArmed = false
+    /// Projects whose keys the UI shows; General starts expanded.
+    @Published var expandedProjectIDs: Set<UUID> = [CaseProject.generalID]
     @Published var query = "" {
         didSet {
             refreshRows()
@@ -139,35 +146,38 @@ final class CaseViewModel: ObservableObject {
         }
     }
 
-    private let store: CaseVaultStoring
-    private let keyProvider: CaseVaultKeyProviding
+    private let service: CaseVaultService
     private let authenticator: CaseAuthenticating
     private let pasteboard: CasePasteboardWriting
     private let now: () -> Date
     private let unlockedSessionSeconds: Int
     private let scheduleIdleLockHandler: IdleLockScheduler
-    private var key: SymmetricKey?
-    private var payload: CaseVaultPayload?
     private var idleLockCancellable: CaseIdleLockCancellable?
     private var idleLockGeneration = 0
+    private var serviceSubscription: AnyCancellable?
 
     init(
-        store: CaseVaultStoring = CaseVaultStore(),
-        keyProvider: CaseVaultKeyProviding = CaseVaultKeyStore(),
+        service: CaseVaultService = .shared,
         authenticator: CaseAuthenticating = LocalCaseAuthenticator(),
         pasteboard: CasePasteboardWriting = SystemCasePasteboard(),
         now: @escaping () -> Date = Date.init,
         unlockedSessionSeconds: Int = CaseViewModel.defaultUnlockedSessionSeconds,
         scheduleIdleLock: IdleLockScheduler? = nil
     ) {
-        self.store = store
-        self.keyProvider = keyProvider
+        self.service = service
         self.authenticator = authenticator
         self.pasteboard = pasteboard
         self.now = now
         self.unlockedSessionSeconds = unlockedSessionSeconds
         self.scheduleIdleLockHandler = scheduleIdleLock ?? Self.defaultScheduleIdleLock
+        // Another view model (or the broker) may change the shared payload.
+        // `$payload` emits in willSet, so use the emitted value, not service.payload.
+        self.serviceSubscription = service.$payload.dropFirst().sink { [weak self] payload in
+            self?.refreshRows(with: payload)
+        }
     }
+
+    private var payload: CaseVaultPayload? { service.payload }
 
     var unlockedSessionSecondsForTesting: Int {
         unlockedSessionSeconds
@@ -182,28 +192,17 @@ final class CaseViewModel: ObservableObject {
     }
 
     func unlock() async throws {
-        // Auth + key are transient failures (retry). A vault that exists but
-        // can't be decrypted is a distinct, non-transient state -> .needsReset.
-        let vaultKey: SymmetricKey
+        // Touch ID is only the UI gate. The service reads key + vault itself
+        // and never authenticates, so the broker can share it.
         do {
             try await authenticator.authenticate(reason: Self.unlockReason)
-            vaultKey = try keyProvider.readOrCreateKey()
         } catch {
             failUnlock()
             throw CaseViewModelError.unlockFailed
         }
 
-        let loadedPayload: CaseVaultPayload
         do {
-            loadedPayload = try store.load(using: vaultKey)
-        } catch CaseVaultStoreError.missingFile {
-            loadedPayload = CaseVaultPayload()
-            do {
-                try store.save(loadedPayload, using: vaultKey)
-            } catch {
-                failUnlock()
-                throw CaseViewModelError.unlockFailed
-            }
+            try service.loadIfNeeded()
         } catch CaseVaultStoreError.needsNewerApp {
             // Vault decrypted successfully but was written by a newer build.
             // The data is intact — do NOT offer Reset. Direct the user to update.
@@ -220,8 +219,6 @@ final class CaseViewModel: ObservableObject {
             throw CaseViewModelError.unlockFailed
         }
 
-        key = vaultKey
-        payload = loadedPayload
         unlockState = .unlocked
         refreshRows()
         scheduleIdleLock()
@@ -253,7 +250,7 @@ final class CaseViewModel: ObservableObject {
             throw CaseViewModelError.resetNotArmed
         }
         isResetArmed = false
-        try store.reset()
+        try service.reset()
         unlockState = .locked
     }
 
@@ -261,54 +258,55 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        key = nil
-        payload = nil
         rows = []
         inputMode = .name
         unlockState = .locked
     }
 
-    func submitName(_ raw: String, groupID: UUID? = nil) throws {
+    func submitName(_ raw: String, projectID: UUID = CaseProject.generalID) throws {
         let payload = try unlockedPayload()
         let normalized = try CaseNameNormalizer.normalizedName(raw)
-        guard !payload.secrets.contains(where: { $0.name.caseInsensitiveCompare(normalized) == .orderedSame }) else {
+        guard payload.project(projectID) != nil else {
+            throw CaseViewModelError.missingProject
+        }
+        guard !Self.hasSecret(named: normalized, inProject: projectID, in: payload, excluding: nil) else {
             throw CaseViewModelError.duplicateName
         }
-        if let groupID {
-            guard Self.isGroupProject(groupID, in: payload) else {
-                throw CaseViewModelError.missingGroup
-            }
-        }
-        inputMode = .value(name: normalized, groupID: groupID)
+        inputMode = .value(name: normalized, projectID: projectID)
         scheduleIdleLock()
     }
 
     func submitValue(_ value: String) throws {
-        guard case let .value(name, groupID) = inputMode else {
+        guard case let .value(name, projectID) = inputMode else {
             throw CaseNameValidationError.empty
         }
         try validateValue(value)
+        _ = try unlockedPayload()
 
-        var payload = try unlockedPayload()
         let timestamp = now()
         let secretID = UUID()
-        let secret = CaseSecret(
-            id: secretID,
-            name: name,
-            projectID: groupID ?? CaseProject.generalID,
-            description: "",
-            copyCount: 0,
-            lastCopiedAt: nil,
-            createdAt: timestamp,
-            updatedAt: timestamp
-        )
-        payload.secrets.append(secret)
-        payload.values.append(CaseSecretValue(secretID: secretID, value: value))
-        if let groupID, let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID }) {
-            payload.projects[projectIndex].updatedAt = timestamp
+        try service.mutate { payload in
+            guard payload.project(projectID) != nil else {
+                throw CaseViewModelError.missingProject
+            }
+            guard !Self.hasSecret(named: name, inProject: projectID, in: payload, excluding: nil) else {
+                throw CaseViewModelError.duplicateName
+            }
+            payload.secrets.append(CaseSecret(
+                id: secretID,
+                name: name,
+                projectID: projectID,
+                description: "",
+                copyCount: 0,
+                lastCopiedAt: nil,
+                createdAt: timestamp,
+                updatedAt: timestamp
+            ))
+            payload.values.append(CaseSecretValue(secretID: secretID, value: value))
+            if let index = payload.projects.firstIndex(where: { $0.id == projectID }) {
+                payload.projects[index].updatedAt = timestamp
+            }
         }
-
-        try save(payload)
         inputMode = .name
         query = ""
         refreshRows()
@@ -324,200 +322,222 @@ final class CaseViewModel: ObservableObject {
         }
     }
 
-    func childRows(forGroupID groupID: UUID) -> [CaseDisplayRow] {
-        guard let payload, unlockState == .unlocked, Self.isGroupProject(groupID, in: payload) else {
+    func secretRows(inProject projectID: UUID) -> [CaseDisplayRow] {
+        guard let payload, unlockState == .unlocked, payload.project(projectID) != nil else {
             return []
         }
         return payload.secrets
-            .filter { $0.projectID == groupID }
-            .map { CaseDisplayRow(id: $0.id, kind: .secret, displayName: $0.name) }
+            .filter { $0.projectID == projectID }
+            .map {
+                CaseDisplayRow(id: $0.id, kind: .secret, displayName: $0.name, description: $0.description, projectID: $0.projectID)
+            }
     }
 
     func copySecret(_ secretID: UUID) throws {
-        var payload = try unlockedPayload()
+        let payload = try unlockedPayload()
         guard let value = payload.value(for: secretID) else {
             throw CaseViewModelError.missingValue
         }
-        guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
+        guard payload.secrets.contains(where: { $0.id == secretID }) else {
             throw CaseViewModelError.missingSecret
         }
 
         pasteboard.writeString(value)
         let timestamp = now()
-        payload.secrets[secretIndex].copyCount += 1
-        payload.secrets[secretIndex].lastCopiedAt = timestamp
-        payload.secrets[secretIndex].updatedAt = timestamp
-        try save(payload)
+        try service.mutate { payload in
+            guard let index = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
+                throw CaseViewModelError.missingSecret
+            }
+            payload.secrets[index].copyCount += 1
+            payload.secrets[index].lastCopiedAt = timestamp
+            payload.secrets[index].updatedAt = timestamp
+        }
         refreshRows()
         scheduleIdleLock()
     }
 
     @discardableResult
-    func createGroup(sourceSecretID: UUID, targetSecretID: UUID, name: String) throws -> UUID {
-        guard sourceSecretID != targetSecretID else {
-            throw CaseViewModelError.invalidGroupOperation
-        }
-        let trimmedName = try validatedGroupName(name)
-        var payload = try unlockedPayload()
-        guard let sourceIndex = payload.secrets.firstIndex(where: { $0.id == sourceSecretID }),
-              let targetIndex = payload.secrets.firstIndex(where: { $0.id == targetSecretID })
-        else {
-            throw CaseViewModelError.missingSecret
-        }
-        guard payload.secrets[sourceIndex].projectID == CaseProject.generalID,
-              payload.secrets[targetIndex].projectID == CaseProject.generalID
-        else {
-            throw CaseViewModelError.invalidGroupOperation
-        }
-
+    func createProject(name: String, description: String) throws -> UUID {
+        let trimmedName = try validatedProjectName(name)
+        let trimmedDescription = try validatedDescription(description)
+        _ = try unlockedPayload()
         let timestamp = now()
         let projectID = UUID()
-        payload.projects.append(CaseProject(
-            id: projectID,
-            name: trimmedName,
-            description: "",
-            createdAt: timestamp,
-            updatedAt: timestamp
-        ))
-        payload.secrets[sourceIndex].projectID = projectID
-        payload.secrets[sourceIndex].updatedAt = timestamp
-        payload.secrets[targetIndex].projectID = projectID
-        payload.secrets[targetIndex].updatedAt = timestamp
-
-        try save(payload)
+        try service.mutate { payload in
+            guard !Self.hasProject(named: trimmedName, in: payload, excluding: nil) else {
+                throw CaseViewModelError.duplicateName
+            }
+            payload.projects.append(CaseProject(
+                id: projectID,
+                name: trimmedName,
+                description: trimmedDescription,
+                createdAt: timestamp,
+                updatedAt: timestamp
+            ))
+        }
+        expandedProjectIDs.insert(projectID)
         refreshRows()
         scheduleIdleLock()
         return projectID
     }
 
-    func addSecretToGroup(secretID: UUID, groupID: UUID) throws {
-        var payload = try unlockedPayload()
-        guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
-            throw CaseViewModelError.missingSecret
+    func renameProject(_ id: UUID, name: String) throws {
+        guard id != CaseProject.generalID else {
+            throw CaseViewModelError.invalidProjectOperation
         }
-        guard payload.secrets[secretIndex].projectID == CaseProject.generalID else {
-            throw CaseViewModelError.invalidGroupOperation
-        }
-        guard Self.isGroupProject(groupID, in: payload),
-              let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID })
-        else {
-            throw CaseViewModelError.missingGroup
-        }
-
+        let trimmedName = try validatedProjectName(name)
+        _ = try unlockedPayload()
         let timestamp = now()
-        payload.secrets[secretIndex].projectID = groupID
-        payload.secrets[secretIndex].updatedAt = timestamp
-        payload.projects[projectIndex].updatedAt = timestamp
-
-        try save(payload)
-        refreshRows()
-        scheduleIdleLock()
-    }
-
-    func removeSecretFromGroup(_ secretID: UUID) throws {
-        var payload = try unlockedPayload()
-        guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
-            throw CaseViewModelError.missingSecret
-        }
-        let groupID = payload.secrets[secretIndex].projectID
-        guard Self.isGroupProject(groupID, in: payload),
-              let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID })
-        else {
-            throw CaseViewModelError.missingGroup
-        }
-
-        let timestamp = now()
-        payload.secrets[secretIndex].projectID = CaseProject.generalID
-        payload.secrets[secretIndex].updatedAt = timestamp
-        payload.projects[projectIndex].updatedAt = timestamp
-
-        try save(payload)
-        refreshRows()
-        scheduleIdleLock()
-    }
-
-    func copyAll(_ groupID: UUID) throws {
-        var payload = try unlockedPayload()
-        guard Self.isGroupProject(groupID, in: payload),
-              let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID })
-        else {
-            throw CaseViewModelError.missingGroup
-        }
-
-        var lines: [String] = []
-        var secretIndices: [Int] = []
-        for secretIndex in payload.secrets.indices where payload.secrets[secretIndex].projectID == groupID {
-            let secretID = payload.secrets[secretIndex].id
-            guard let value = payload.value(for: secretID) else {
-                throw CaseViewModelError.missingValue
+        try service.mutate { payload in
+            guard let index = payload.projects.firstIndex(where: { $0.id == id }) else {
+                throw CaseViewModelError.missingProject
             }
-            secretIndices.append(secretIndex)
-            lines.append("\(payload.secrets[secretIndex].name)=\(value)")
+            guard !Self.hasProject(named: trimmedName, in: payload, excluding: id) else {
+                throw CaseViewModelError.duplicateName
+            }
+            payload.projects[index].name = trimmedName
+            payload.projects[index].updatedAt = timestamp
         }
+        refreshRows()
+        scheduleIdleLock()
+    }
 
-        pasteboard.writeString(lines.joined(separator: "\n"))
+    func setProjectDescription(_ id: UUID, _ text: String) throws {
+        let trimmed = try validatedDescription(text)
+        _ = try unlockedPayload()
         let timestamp = now()
-        payload.projects[projectIndex].updatedAt = timestamp
-        for secretIndex in secretIndices {
-            payload.secrets[secretIndex].copyCount += 1
-            payload.secrets[secretIndex].lastCopiedAt = timestamp
-            payload.secrets[secretIndex].updatedAt = timestamp
+        try service.mutate { payload in
+            guard let index = payload.projects.firstIndex(where: { $0.id == id }) else {
+                throw CaseViewModelError.missingProject
+            }
+            payload.projects[index].description = trimmed
+            payload.projects[index].updatedAt = timestamp
         }
+        refreshRows()
+        scheduleIdleLock()
+    }
 
-        try save(payload)
+    /// Explicit delete only: removes the project with its keys and values.
+    func deleteProject(_ id: UUID) throws {
+        guard id != CaseProject.generalID else {
+            throw CaseViewModelError.invalidProjectOperation
+        }
+        _ = try unlockedPayload()
+        try service.mutate { payload in
+            guard payload.project(id) != nil else {
+                throw CaseViewModelError.missingProject
+            }
+            let removed = Set(payload.secrets.filter { $0.projectID == id }.map(\.id))
+            payload.secrets.removeAll { $0.projectID == id }
+            payload.values.removeAll { removed.contains($0.secretID) }
+            payload.projects.removeAll { $0.id == id }
+            for index in payload.apps.indices {
+                payload.apps[index].projectModes[id] = nil
+            }
+        }
+        expandedProjectIDs.remove(id)
+        refreshRows()
+        scheduleIdleLock()
+    }
+
+    func moveSecret(_ secretID: UUID, toProject projectID: UUID) throws {
+        let current = try unlockedPayload()
+        guard let secret = current.secrets.first(where: { $0.id == secretID }) else {
+            throw CaseViewModelError.missingSecret
+        }
+        guard current.project(projectID) != nil else {
+            throw CaseViewModelError.missingProject
+        }
+        guard secret.projectID != projectID else {
+            return
+        }
+        let timestamp = now()
+        try service.mutate { payload in
+            guard let index = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
+                throw CaseViewModelError.missingSecret
+            }
+            guard payload.project(projectID) != nil else {
+                throw CaseViewModelError.missingProject
+            }
+            guard !Self.hasSecret(named: payload.secrets[index].name, inProject: projectID, in: payload, excluding: secretID) else {
+                throw CaseViewModelError.duplicateName
+            }
+            let oldProjectID = payload.secrets[index].projectID
+            payload.secrets[index].projectID = projectID
+            payload.secrets[index].updatedAt = timestamp
+            for touched in [oldProjectID, projectID] {
+                if let projectIndex = payload.projects.firstIndex(where: { $0.id == touched }) {
+                    payload.projects[projectIndex].updatedAt = timestamp
+                }
+            }
+        }
+        refreshRows()
+        scheduleIdleLock()
+    }
+
+    func setSecretDescription(_ secretID: UUID, _ text: String) throws {
+        let trimmed = try validatedDescription(text)
+        _ = try unlockedPayload()
+        let timestamp = now()
+        try service.mutate { payload in
+            guard let index = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
+                throw CaseViewModelError.missingSecret
+            }
+            payload.secrets[index].description = trimmed
+            payload.secrets[index].updatedAt = timestamp
+        }
         refreshRows()
         scheduleIdleLock()
     }
 
     func replaceSecret(_ secretID: UUID, rawName: String, newValue: String) throws {
         try validateValue(newValue)
-        var payload = try unlockedPayload()
-        guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
-            throw CaseViewModelError.missingSecret
-        }
+        _ = try unlockedPayload()
         let normalized = try CaseNameNormalizer.normalizedName(rawName)
-        guard !payload.secrets.contains(where: { secret in
-            secret.id != secretID && secret.name.caseInsensitiveCompare(normalized) == .orderedSame
-        }) else {
-            throw CaseViewModelError.duplicateName
+        let timestamp = now()
+        try service.mutate { payload in
+            guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
+                throw CaseViewModelError.missingSecret
+            }
+            guard !Self.hasSecret(named: normalized, inProject: payload.secrets[secretIndex].projectID, in: payload, excluding: secretID) else {
+                throw CaseViewModelError.duplicateName
+            }
+            payload.secrets[secretIndex].name = normalized
+            payload.secrets[secretIndex].updatedAt = timestamp
+            if let valueIndex = payload.values.firstIndex(where: { $0.secretID == secretID }) {
+                payload.values[valueIndex] = CaseSecretValue(secretID: secretID, value: newValue)
+            } else {
+                payload.values.append(CaseSecretValue(secretID: secretID, value: newValue))
+            }
         }
-
-        payload.secrets[secretIndex].name = normalized
-        payload.secrets[secretIndex].updatedAt = now()
-        if let valueIndex = payload.values.firstIndex(where: { $0.secretID == secretID }) {
-            payload.values[valueIndex] = CaseSecretValue(secretID: secretID, value: newValue)
-        } else {
-            payload.values.append(CaseSecretValue(secretID: secretID, value: newValue))
-        }
-        try save(payload)
         refreshRows()
         scheduleIdleLock()
     }
 
     func renameSecret(_ secretID: UUID, rawName: String) throws {
-        var payload = try unlockedPayload()
-        guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
-            throw CaseViewModelError.missingSecret
-        }
+        _ = try unlockedPayload()
         let normalized = try CaseNameNormalizer.normalizedName(rawName)
-        guard !payload.secrets.contains(where: { secret in
-            secret.id != secretID && secret.name.caseInsensitiveCompare(normalized) == .orderedSame
-        }) else {
-            throw CaseViewModelError.duplicateName
+        let timestamp = now()
+        try service.mutate { payload in
+            guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
+                throw CaseViewModelError.missingSecret
+            }
+            guard !Self.hasSecret(named: normalized, inProject: payload.secrets[secretIndex].projectID, in: payload, excluding: secretID) else {
+                throw CaseViewModelError.duplicateName
+            }
+            payload.secrets[secretIndex].name = normalized
+            payload.secrets[secretIndex].updatedAt = timestamp
         }
-
-        payload.secrets[secretIndex].name = normalized
-        payload.secrets[secretIndex].updatedAt = now()
-        try save(payload)
         refreshRows()
         scheduleIdleLock()
     }
 
     func deleteSecret(_ secretID: UUID) throws {
-        var payload = try unlockedPayload()
-        payload.secrets.removeAll { $0.id == secretID }
-        payload.values.removeAll { $0.secretID == secretID }
-        try save(payload)
+        _ = try unlockedPayload()
+        try service.mutate { payload in
+            payload.secrets.removeAll { $0.id == secretID }
+            payload.values.removeAll { $0.secretID == secretID }
+        }
         refreshRows()
         scheduleIdleLock()
     }
@@ -527,18 +547,10 @@ final class CaseViewModel: ObservableObject {
     }
 
     private func unlockedPayload() throws -> CaseVaultPayload {
-        guard let payload, key != nil, unlockState == .unlocked else {
+        guard unlockState == .unlocked, let payload else {
             throw CaseViewModelError.locked
         }
         return payload
-    }
-
-    private func save(_ payload: CaseVaultPayload) throws {
-        guard let key else {
-            throw CaseViewModelError.locked
-        }
-        try store.save(payload, using: key)
-        self.payload = payload
     }
 
     private func validateValue(_ value: String) throws {
@@ -550,22 +562,47 @@ final class CaseViewModel: ObservableObject {
         }
     }
 
-    /// Interim group model: a non-General project is shown as a group. A
-    /// project is never removed implicitly; it keeps its name and description
-    /// even with 0 or 1 keys.
-    private static func isGroupProject(_ id: UUID, in payload: CaseVaultPayload) -> Bool {
-        id != CaseProject.generalID && payload.projects.contains { $0.id == id }
-    }
-
-    private func validatedGroupName(_ name: String) throws -> String {
+    private func validatedProjectName(_ name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= Self.maxGroupNameCharacters else {
-            throw CaseViewModelError.invalidGroupName
+        guard !trimmed.isEmpty, trimmed.count <= Self.maxProjectNameCharacters else {
+            throw CaseViewModelError.invalidProjectName
         }
         return trimmed
     }
 
+    private func validatedDescription(_ text: String) throws -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count <= Self.maxDescriptionCharacters else {
+            throw CaseViewModelError.descriptionTooLong
+        }
+        return trimmed
+    }
+
+    /// Key names are unique per project (case-insensitive), not globally.
+    private static func hasSecret(
+        named name: String,
+        inProject projectID: UUID,
+        in payload: CaseVaultPayload,
+        excluding excludedID: UUID?
+    ) -> Bool {
+        payload.secrets.contains { secret in
+            secret.id != excludedID
+                && secret.projectID == projectID
+                && secret.name.caseInsensitiveCompare(name) == .orderedSame
+        }
+    }
+
+    private static func hasProject(named name: String, in payload: CaseVaultPayload, excluding excludedID: UUID?) -> Bool {
+        payload.projects.contains { project in
+            project.id != excludedID && project.name.caseInsensitiveCompare(name) == .orderedSame
+        }
+    }
+
     private func refreshRows() {
+        refreshRows(with: payload)
+    }
+
+    private func refreshRows(with payload: CaseVaultPayload?) {
         guard let payload, unlockState == .unlocked else {
             rows = []
             return
@@ -580,8 +617,10 @@ final class CaseViewModel: ObservableObject {
         .map { entry in
             CaseDisplayRow(
                 id: entry.id,
-                kind: entry.kind == .secret ? .secret : .group,
-                displayName: entry.displayName
+                kind: entry.kind == .secret ? .secret : .project,
+                displayName: entry.displayName,
+                description: entry.description,
+                projectID: entry.projectID
             )
         }
     }
@@ -606,8 +645,6 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        key = nil
-        payload = nil
         rows = []
         inputMode = .name
         unlockState = .failed(Self.sanitizedUnlockFailureMessage)
@@ -617,8 +654,6 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        key = nil
-        payload = nil
         rows = []
         inputMode = .name
         unlockState = .needsReset(Self.needsResetMessage)
@@ -628,8 +663,6 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        key = nil
-        payload = nil
         rows = []
         inputMode = .name
         unlockState = .needsNewerApp(Self.needsNewerAppMessage)

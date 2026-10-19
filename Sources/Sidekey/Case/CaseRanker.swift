@@ -3,12 +3,15 @@ import Foundation
 struct CaseListEntry: Equatable, Identifiable {
     enum Kind: Equatable {
         case secret
-        case group
+        case project
     }
 
     let id: UUID
     let kind: Kind
     let displayName: String
+    let description: String
+    /// For a secret, its project; for a project, its own ID.
+    let projectID: UUID
     let score: Double
 }
 
@@ -27,12 +30,16 @@ enum CaseRanker {
         let normalizedQuery = try? CaseNameNormalizer.normalizedName(trimmedQuery)
         let searchText = normalizedQuery ?? trimmedQuery.uppercased()
 
-        // Interim list model until the project UI lands: General's keys are
-        // listed individually, every other project is a collapsible row.
+        // Interim list model until the project UI lands: without a query,
+        // General's keys are listed individually and every other project is a
+        // collapsible row. A query searches every key (any project) by name and
+        // description, plus project names and descriptions.
         let groupProjects = projects.filter { $0.id != CaseProject.generalID }
+        let isSearching = !searchText.isEmpty
         let individualEntries = secrets
             .filter { secret in
-                secret.projectID == CaseProject.generalID
+                isSearching
+                    || secret.projectID == CaseProject.generalID
                     || !groupProjects.contains { $0.id == secret.projectID }
             }
             .map { secret in
@@ -40,6 +47,8 @@ enum CaseRanker {
                     id: secret.id,
                     kind: .secret,
                     displayName: secret.name,
+                    description: secret.description,
+                    projectID: secret.projectID,
                     score: score(copyCount: secret.copyCount, lastCopiedAt: secret.lastCopiedAt, createdAt: secret.createdAt, now: now)
                 )
             }
@@ -52,20 +61,22 @@ enum CaseRanker {
             let ownScore = score(copyCount: 0, lastCopiedAt: nil, createdAt: project.createdAt, now: now)
             return CaseListEntry(
                 id: project.id,
-                kind: .group,
+                kind: .project,
                 displayName: project.name,
+                description: project.description,
+                projectID: project.id,
                 score: max(ownScore, childScore)
             )
         }
 
         let entries = groupEntries + individualEntries
         let filtered = searchText.isEmpty ? entries : entries.filter {
-            matchBucket(name: $0.displayName, query: searchText) != .none
+            matchBucket(entry: $0, query: searchText, rawQuery: trimmedQuery) != .none
         }
 
         return filtered.sorted { lhs, rhs in
-            let lhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(name: lhs.displayName, query: searchText)
-            let rhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(name: rhs.displayName, query: searchText)
+            let lhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: lhs, query: searchText, rawQuery: trimmedQuery)
+            let rhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: rhs, query: searchText, rawQuery: trimmedQuery)
             if lhsBucket.sortOrder != rhsBucket.sortOrder {
                 return lhsBucket.sortOrder < rhsBucket.sortOrder
             }
@@ -99,6 +110,7 @@ enum CaseRanker {
         case prefix
         case contains
         case firstTokenPrefix
+        case description
         case none
 
         var sortOrder: Int {
@@ -107,9 +119,20 @@ enum CaseRanker {
             case .prefix: return 1
             case .contains: return 2
             case .firstTokenPrefix: return 3
-            case .none: return 4
+            case .description: return 4
+            case .none: return 5
             }
         }
+    }
+
+    private static func matchBucket(entry: CaseListEntry, query: String, rawQuery: String) -> MatchBucket {
+        let byName = matchBucket(name: entry.displayName, query: query)
+        if byName != .none { return byName }
+        if !rawQuery.isEmpty,
+           entry.description.range(of: rawQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+            return .description
+        }
+        return .none
     }
 
     private static func matchBucket(name: String, query: String) -> MatchBucket {

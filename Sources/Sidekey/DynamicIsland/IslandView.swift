@@ -240,7 +240,7 @@ struct IslandView: View {
             wrappedValue: IslandFillerViewModel()
         )
         self._caseViewModel = StateObject(
-            wrappedValue: CaseViewModel()
+            wrappedValue: CaseViewModel(service: .shared)
         )
     }
 

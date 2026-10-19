@@ -32,7 +32,7 @@ struct ToolboxSettingsView: View {
         _vocabVM = StateObject(wrappedValue: IslandVocabularyViewModel(
             vocabulary: deps.vocabulary()))
         _fillerVM = StateObject(wrappedValue: IslandFillerViewModel())
-        _caseVM = StateObject(wrappedValue: CaseViewModel())
+        _caseVM = StateObject(wrappedValue: CaseViewModel(service: .shared))
         _dropMode = State(initialValue: deps.currentDropMode())
         _selectedInputLanguage = State(initialValue: deps.currentLanguage())
         _selectedOutputLanguage = State(initialValue: deps.currentTargetLanguage())
