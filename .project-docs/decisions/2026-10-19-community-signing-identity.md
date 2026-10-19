@@ -176,4 +176,4 @@ Refines the 2026-10-17 community-updates decision: community builds sign with
 the committed certificate, ad hoc only without it. The rest of that decision
 stays current.
 
-2026-10-19, PR pending.
+2026-10-19, PR https://github.com/AbsoluteMode/exodia/pull/33.
