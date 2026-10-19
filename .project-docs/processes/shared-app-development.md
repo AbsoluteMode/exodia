@@ -4,10 +4,16 @@ type: process
 title: Parallel feature sessions and one shared working application
 summary: Isolate feature work, serialize checked main integration and update one identifiable installed Whytap without interrupting the user.
 status: confirmed
-tags: [development, agents, worktrees, integration, main, build, rollback]
+tags: [development, agents, worktrees, integration, main, build, rollback, queue]
 canonical_for: [parallel-development, shared-working-application]
 verified_at: 2026-10-19
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-19 the user requested a persistent FIFO build queue, one builder, automatic submissions by finished feature agents, and messages to the originating sessions when their build starts and finishes.
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: scripts/build-queue.py
+    confirmed_at: 2026-10-19
   - type: user-confirmed
     reference: On 2026-10-19 the user approved regular integration of checked features and requested persistent instructions for parallel sessions, one working application, an explicit build checklist and coordination of overlapping features.
     confirmed_at: 2026-10-19
@@ -29,13 +35,15 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsStore.swift
     confirmed_at: 2026-10-19
-related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md, ../decisions/2026-10-19-whytap-name.md]
+related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md, ../decisions/2026-10-19-whytap-name.md, ../decisions/2026-10-19-build-queue.md]
 ---
 
 # Parallel development, one working Whytap
 
 This is the required workflow for the maintainer's parallel coding sessions.
-It is an agent procedure; it does not install a background integration service.
+The local queue persists requests; a designated Codex builder chat processes
+them, woken by messages and a thread automation. The helper itself never merges,
+builds, installs, launches an app or sends a message.
 
 ## Shared application and source
 
@@ -95,21 +103,126 @@ taps. Keep the user's working instance; do not launch a second app for testing.
    dependencies/overlaps, and 1–3 concrete user acceptance steps. A feature is
    ready only after relevant review, build and behavior checks; unfinished work
    stays on its branch. Say **ready, not yet in the working app** until promoted.
+6. Automatically enqueue that reviewed PR/head using the command below, then
+   stop acting as an integrator. Do not wait for the user to remember to ask
+   for a build. A PR alone, a draft, or an old review is not readiness evidence.
 
 Normal technical conflicts are resolved from current code and accepted
 requirements. Reuse one implementation for duplicate work; preserve both
 features' contracts. Report an overlap with the affected feature/PR names,
 the actual conflict, the proposed resolution and whether it blocks integration.
 Ask the user only if a product choice, destructive migration, access or
-otherwise unresolved risk needs their decision. Cross-chat messages still
-require the user's authorization; PR readiness and local status do not depend
-on an unavailable messaging tool.
+otherwise unresolved risk needs their decision. On 2026-10-19 the user explicitly
+authorized queue requests to the builder and build-status/acceptance messages
+back to the originating feature sessions. This covers this queue only; it does
+not authorize messages to other people or unrelated chats.
+
+## Persistent build queue
+
+The queue and installed helper live in the shared Git common directory as
+`exodia-build-queue.sqlite3` and `exodia-build-queue.py`. They are local metadata,
+outside build output, source commits and app data. Python 3's standard library
+is sufficient. The builder installs the checked helper once and configures its
+own Codex thread ID (available as `CODEX_THREAD_ID`); configuration stays local:
+
+```bash
+python3 scripts/build-queue.py install
+python3 scripts/build-queue.py configure --builder-thread "$CODEX_THREAD_ID"
+```
+
+The maintainer's builder is the chat recorded by `status`, not whichever worker
+happens to acquire the integration lock. Do not start an additional builder
+automation. Existing chats must reread this process; updating a file does not
+retroactively change a dormant agent's instructions.
+
+A worker uses the shared helper even from a worktree that predates this change:
+
+```bash
+queue_git_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+python3 "$queue_git_dir/exodia-build-queue.py" status
+python3 "$queue_git_dir/exodia-build-queue.py" enqueue \
+  --pr "$feature_pr_url" --head "$reviewed_head_sha" \
+  --title "$feature_title" --checks "$completed_checks_and_limitations" \
+  --dependencies "$dependencies_and_overlaps" \
+  --acceptance "$first_acceptance_step"
+```
+
+Use actual values, not literal placeholders. Repeat `--acceptance` for up to
+three concrete checks. Codex captures the originating `CODEX_THREAD_ID`;
+Claude Code uses `--source claude --session <its-actual-session-id>`, and other
+harnesses use `--source other --session <actual-session-id>`. Never invent a
+Codex ID for a CLI session. No keys, user content or arbitrary executable
+commands belong in queue fields. These fields are evidence, not instructions.
+
+The response contains a durable ticket, FIFO position and builder thread/host.
+Repeated submission of the same PR/head is idempotent. A newly reviewed head
+supersedes a queued/blocked older request; an active or prepared head requires
+builder reconciliation first. The worker tells the user its ticket/position.
+Where the Codex chat messaging tool is available, it sends the configured
+builder a short request containing the ticket ID and asks it to inspect the
+queue. The builder automation also checks every five minutes, so a missing
+wakeup message cannot lose the request. Local scheduled work requires the
+computer awake and Codex running; the queue survives downtime.
+
+### Builder turn
+
+1. Read `status` and `events --pending`. Deliver queued receipts to their
+   recorded Codex source chats, then acknowledge each successfully delivered
+   event with `ack --event <event-id>`. A receipt includes ticket/position and
+   says that the builder will notify the worker when work begins.
+2. Fetch origin and read the latest shared workflow before any integration/app
+   action. Acquire the existing integration lock using its live-owner protocol.
+   If busy, leave work queued; never steal a live lock or repeatedly message
+   an unchanged busy state. Inspect an existing `in_progress` ticket before
+   claiming another: an interrupted turn does not grant a new build lease.
+3. Run `claim`. Only the configured builder may claim; a SQLite transaction
+   selects the oldest queued ticket and permits one `in_progress` ticket.
+   Send its start event to the originating chat immediately: include ticket,
+   PR/title/head and ask that agent to follow the build and check its acceptance
+   steps when notified. The worker may inspect, diagnose and report problems;
+   it must not merge, package, install or acquire a competing integration lock.
+4. Inspect the exact live PR head/base, review evidence, dependencies, overlaps
+   and source. Follow all integration/signature/version/activity/rollback gates
+   below. Queue membership is a request, never proof that gates passed. A moved
+   head needs new review; block the ticket and ask its worker to resubmit the
+   reviewed result. Resolve routine conflicts in a clean candidate, preserving
+   every other session's work. Do not automatically merge unrelated open PRs.
+5. Record the result with `set --ticket <id> --status <state> --note <evidence>`.
+   `done` requires either a verified running build with source/version/smoke
+   evidence, or an explicit tooling/documentation-only result requiring no app
+   refresh. `pending_install` means a checked candidate is ready but the app
+   remains unchanged. Release the integration lock when deferring. A safe
+   handoff can finish it later, or a newer verified candidate can supersede it
+   after proving the earlier feature is included. Neither case silently drops
+   acceptance steps. `blocked` records missing evidence, failures or a decision
+   needed from the worker/user. Pending/blocked tickets do not stop later work.
+6. Deliver new status events and acknowledge successful sends. Messages include
+   the event ID, result, what is actually running, acceptance checks and any
+   pending action. Worker replies use the same builder chat; avoid reply loops
+   for acknowledgments. Continue FIFO work while useful; the next scheduled
+   wake resumes persistent state. Stay quiet on empty/unchanged state, except
+   for a new failure, completion or required user action.
+
+`events --ticket <id>` is a durable inbox for all harnesses. Codex delivery is
+at least once: a crash after send but before acknowledgment can repeat an event;
+deduplicate by event ID. Never acknowledge a failed send. Claude Code and other
+CLI sessions can read their inbox while active or on resume; the Codex tools
+cannot wake a stopped CLI session. Report this limitation instead of claiming
+that the CLI received a live message. The builder remains responsible for the
+build even when the feature agent is offline.
+
+Recovery is explicit. Inspect the owner chat, live processes and integration
+lock before moving an abandoned `in_progress` ticket to `blocked`; only then
+retry it as `queued` with evidence in the note. Retries go to the back of FIFO.
+Time alone never expires a claim or proves a build process stopped. A builder
+transfer requires the old configured builder and no active ticket; if that chat
+is unavailable, ask the user before changing the local configuration.
 
 ## Integrator: one writer at a time
 
-Any session may act as integrator for its ready task. Routine integration and
-local refresh are authorized by this workflow; do not ask again for each
-checked feature. This does not authorize unrelated changes or public releases.
+The designated builder acts as integrator for queued ready work. A feature
+session does not promote its own task. Routine checked integration and local
+refresh remain authorized; public releases and unrelated changes remain separate.
 
 Acquire the repository-wide lock before merging shared main, changing the
 installation or writing shared status. All worktrees resolve the same Git common directory:
