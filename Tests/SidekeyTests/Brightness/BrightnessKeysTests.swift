@@ -130,6 +130,48 @@ final class BrightnessKeysTests: XCTestCase {
         XCTAssertFalse(filter.shouldSwallow(key(.down, isDown: false), intercepting: true))
     }
 
+    func testAPressExodiaDidNotSeeBeginStaysWithMacOS() {
+        // The tap was installed while the key was held, so macOS got the press.
+        var filter = BrightnessKeyFilter()
+        XCTAssertFalse(filter.shouldSwallow(key(.up, isRepeat: true), intercepting: true))
+        XCTAssertFalse(filter.shouldSwallow(key(.up, isRepeat: true), intercepting: true))
+        XCTAssertFalse(filter.shouldSwallow(key(.up, isDown: false), intercepting: true))
+        XCTAssertTrue(filter.shouldSwallow(key(.up), intercepting: true))
+    }
+
+    func testAPressHeldThroughTheHotkeyRebuildKeepsItsOwner() {
+        var filter = BrightnessKeyFilter()
+        XCTAssertTrue(filter.shouldSwallow(key(.up), intercepting: true))
+        // The rebuild installs the next tap within milliseconds.
+        filter.stopWatching(at: 10)
+        filter.resumeWatching(at: 10.05)
+        XCTAssertTrue(filter.shouldSwallow(key(.up, isRepeat: true), intercepting: true))
+        XCTAssertTrue(filter.shouldSwallow(key(.up, isDown: false), intercepting: true))
+    }
+
+    func testAfterALongerGapThePressesInProgressFinishWithMacOS() {
+        // Long enough to release the key and press it again unseen.
+        var filter = BrightnessKeyFilter()
+        XCTAssertTrue(filter.shouldSwallow(key(.up), intercepting: true))
+        filter.stopWatching(at: 10)
+        // Stopping again does not shorten the gap.
+        filter.stopWatching(at: 10.45)
+        filter.resumeWatching(at: 10.5)
+        XCTAssertFalse(filter.shouldSwallow(key(.up, isRepeat: true), intercepting: true))
+        XCTAssertFalse(filter.shouldSwallow(key(.up, isDown: false), intercepting: true))
+        XCTAssertTrue(filter.shouldSwallow(key(.up), intercepting: true))
+    }
+
+    func testAfterMacOSDisablesTheTapThePressesInProgressFinishWithMacOS() {
+        // Events went past the disabled tap until it was enabled again.
+        var filter = BrightnessKeyFilter()
+        XCTAssertTrue(filter.shouldSwallow(key(.up), intercepting: true))
+        filter.forgetPresses()
+        // Released unseen and pressed again with Option, which is macOS's.
+        XCTAssertFalse(filter.shouldSwallow(key(.up, isRepeat: true, step: nil), intercepting: true))
+        XCTAssertFalse(filter.shouldSwallow(key(.up, isDown: false, step: nil), intercepting: true))
+    }
+
     func testAKeptPressStaysKeptWhenInterceptionEnds() {
         var filter = BrightnessKeyFilter()
         XCTAssertTrue(filter.shouldSwallow(key(.up), intercepting: true))
@@ -157,10 +199,10 @@ final class BrightnessKeysTests: XCTestCase {
 
     func testAPressStepsTheIslandDisplayAndShowsTheStrip() {
         let f = KeyFixture(level: 0.5)
-        f.handler.handle(key(.up))
+        f.press(key(.up))
         XCTAssertEqual(f.controller.level, 0.5625)
         f.clock.advance(0.1)
-        f.handler.handle(key(.down))
+        f.press(key(.down))
         XCTAssertEqual(f.device.writes, [0.5625, 0.5])
         XCTAssertEqual(f.shown.count, 2)
     }
@@ -168,27 +210,27 @@ final class BrightnessKeysTests: XCTestCase {
     func testPressesInARowStepFromTheLastWrittenLevel() {
         let f = KeyFixture(level: 0.5)
         f.device.appliesWrites = false
-        f.handler.handle(key(.up))
+        f.press(key(.up))
         f.clock.advance(0.1)
-        f.handler.handle(key(.up, isRepeat: true))
+        f.press(key(.up, isRepeat: true))
         XCTAssertEqual(f.device.writes, [0.5625, 0.625])
     }
 
     func testAPressStartsFromALevelChangedElsewhere() {
         let f = KeyFixture(level: 0.5)
-        f.handler.handle(key(.up))
+        f.press(key(.up))
         f.clock.advance(5)
         f.device.level = 0.25
-        f.handler.handle(key(.up))
+        f.press(key(.up))
         XCTAssertEqual(f.device.writes, [0.5625, 0.3125])
     }
 
     func testTwoPressesAtTheMaximumTurnExtraOn() {
         let f = KeyFixture(level: 1)
-        f.handler.handle(key(.up))
+        f.press(key(.up))
         XCTAssertFalse(f.controller.isExtraOn)
         f.clock.advance(0.4)
-        f.handler.handle(key(.up))
+        f.press(key(.up))
         XCTAssertTrue(f.controller.isExtraOn)
         XCTAssertEqual(f.device.writes, [], "The backlight is already at its maximum.")
         XCTAssertEqual(f.shown.count, 2)
@@ -198,15 +240,15 @@ final class BrightnessKeysTests: XCTestCase {
         let f = KeyFixture(level: 1)
         f.controller.refresh()
         f.controller.setExtra(true)
-        f.handler.handle(key(.down))
+        f.press(key(.down))
         XCTAssertTrue(f.controller.isExtraOn)
         XCTAssertEqual(f.device.writes, [0.9375])
     }
 
     func testWithoutHeadroomTwoPressesOnlyShowTheStrip() {
         let f = KeyFixture(level: 1, headroom: 1)
-        f.handler.handle(key(.up))
-        f.handler.handle(key(.up))
+        f.press(key(.up))
+        f.press(key(.up))
         XCTAssertFalse(f.controller.isExtraOn)
         XCTAssertEqual(f.device.overlays, 0)
         XCTAssertEqual(f.shown.count, 2)
@@ -214,8 +256,8 @@ final class BrightnessKeysTests: XCTestCase {
 
     func testReleasesAndModifierRepeatsChangeNothing() {
         let f = KeyFixture(level: 0.5)
-        f.handler.handle(key(.up, isDown: false))
-        f.handler.handle(key(.up, isRepeat: true, step: nil))
+        f.press(key(.up, isDown: false))
+        f.press(key(.up, isRepeat: true, step: nil))
         XCTAssertEqual(f.device.writes, [])
         XCTAssertEqual(f.shown.count, 0)
     }
@@ -258,10 +300,21 @@ final class BrightnessKeysTests: XCTestCase {
         k.device.level = 1
         k.keys.start(showStrip: {})
         k.keys.setEnabled(true)
-        k.tap.deliver?(key(.up))
+        k.tap.deliver?(key(.up), start)
         k.keys.start(showStrip: {})
-        k.tap.deliver?(key(.up))
+        k.tap.deliver?(key(.up), start)
         XCTAssertTrue(k.controller.isExtraOn)
+    }
+
+    func testTheTwoPressesCountWhenTheyHappenedNotWhenTheyAreHandled() {
+        // A busy main thread hands presses 2 s apart over late and together.
+        let k = KeysFixture(self)
+        k.device.level = 1
+        k.keys.start(showStrip: {})
+        k.keys.setEnabled(true)
+        k.tap.deliver?(key(.up), start)
+        k.tap.deliver?(key(.up), start + 2)
+        XCTAssertFalse(k.controller.isExtraOn)
     }
 
     func testTurningThemOffRemovesTheTap() {
@@ -331,7 +384,7 @@ final class BrightnessKeysTests: XCTestCase {
         let shown = Counter()
         k.keys.start(showStrip: { shown.count += 1 })
         k.keys.setEnabled(true)
-        k.tap.deliver?(key(.up))
+        k.tap.deliver?(key(.up), start)
         XCTAssertEqual(k.device.writes, [0.5625])
         XCTAssertEqual(shown.count, 1)
     }
@@ -419,7 +472,11 @@ private final class KeyFixture {
         device = KeyBrightnessDevice(level: level, headroom: headroom)
         controller = ScreenBrightnessController(device: device, selectedDisplayID: { 1 }, observeSystem: false,
                                                 extraAllowed: { true }, now: { clock.now })
-        handler = BrightnessKeyHandler(controller: controller, showStrip: { shown.count += 1 }, now: { clock.now })
+        handler = BrightnessKeyHandler(controller: controller, showStrip: { shown.count += 1 })
+    }
+
+    func press(_ event: BrightnessKeyEvent) {
+        handler.handle(event, at: clock.now)
     }
 }
 
@@ -454,10 +511,10 @@ final class FakeKeyTap: BrightnessKeyTapping {
     private(set) var starts = 0
     private(set) var stops = 0
     private(set) var intercepting: Bool?
-    private(set) var deliver: (@MainActor (BrightnessKeyEvent) -> Void)?
+    private(set) var deliver: (@MainActor (BrightnessKeyEvent, Date) -> Void)?
     private(set) var onFailure: (@MainActor () -> Void)?
 
-    func start(deliver: @escaping @MainActor (BrightnessKeyEvent) -> Void,
+    func start(deliver: @escaping @MainActor (BrightnessKeyEvent, Date) -> Void,
                onFailure: @escaping @MainActor () -> Void) -> Bool {
         starts += 1
         guard accepts else { return false }

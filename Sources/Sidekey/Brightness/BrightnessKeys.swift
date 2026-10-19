@@ -83,16 +83,38 @@ struct BrightnessExtraKeyGesture {
 
 /// Decides on the tap thread which events Exodia keeps from macOS. A press belongs wholly
 /// to Exodia or to macOS: its repeats and its release follow its first event, so macOS
-/// never sees half a press. A combination macOS keeps is never taken.
+/// never sees half a press. A press Exodia did not see begin stays with macOS. A
+/// combination macOS keeps is never taken. The presses outlive each tap, so one held while
+/// the hotkeys are rebuilt keeps its owner. After a longer gap, or once macOS disabled the
+/// tap, a new press may have begun unseen: the presses in progress finish with macOS.
 struct BrightnessKeyFilter {
+    /// The rebuild installs the next tap within milliseconds.
+    static let rebuildGap: TimeInterval = 0.1
     private var kept: [BrightnessKeyEvent.Direction: Bool] = [:]
+    private var unwatchedSince: TimeInterval?
 
     mutating func shouldSwallow(_ event: BrightnessKeyEvent, intercepting: Bool) -> Bool {
         guard event.isDown else { return kept.removeValue(forKey: event.direction) ?? false }
-        if event.isRepeat, let owner = kept[event.direction] { return owner }
+        if event.isRepeat { return kept[event.direction] ?? false }
         let mine = intercepting && event.step != nil
         kept[event.direction] = mine
         return mine
+    }
+
+    /// Events went past Exodia unseen, as while macOS disabled the tap.
+    mutating func forgetPresses() {
+        kept = [:]
+    }
+
+    /// The tap was removed, at a system uptime.
+    mutating func stopWatching(at uptime: TimeInterval) {
+        if unwatchedSince == nil { unwatchedSince = uptime }
+    }
+
+    /// A tap is about to be installed again, at a system uptime.
+    mutating func resumeWatching(at uptime: TimeInterval) {
+        if let since = unwatchedSince, uptime - since > Self.rebuildGap { forgetPresses() }
+        unwatchedSince = nil
     }
 }
 
@@ -102,24 +124,23 @@ struct BrightnessKeyFilter {
 final class BrightnessKeyHandler {
     private let controller: ScreenBrightnessController
     private let showStrip: @MainActor () -> Void
-    private let now: () -> Date
     private var gesture = BrightnessExtraKeyGesture()
 
-    init(controller: ScreenBrightnessController, showStrip: @escaping @MainActor () -> Void,
-         now: @escaping () -> Date = Date.init) {
+    init(controller: ScreenBrightnessController, showStrip: @escaping @MainActor () -> Void) {
         self.controller = controller
         self.showStrip = showStrip
-        self.now = now
     }
 
-    func handle(_ event: BrightnessKeyEvent) {
+    /// `date` is when the tap saw the press, so the two presses at the top count as they
+    /// happened, however late a busy main thread handles them.
+    func handle(_ event: BrightnessKeyEvent, at date: Date) {
         guard event.isDown, let step = event.step else { return }
         // A closed strip does not follow the backlight, so read it. Right after a write the
         // controller keeps the written level, so presses in a row add up.
         controller.refresh()
         let before = controller.level
         let asksForExtra = gesture.register(event.direction, isRepeat: event.isRepeat, levelBefore: before,
-                                            at: now())
+                                            at: date)
         if asksForExtra, controller.supportsExtra, !controller.isExtraOn {
             controller.setExtra(true)
         } else {
@@ -134,8 +155,9 @@ final class BrightnessKeyHandler {
 @MainActor
 protocol BrightnessKeyTapping: AnyObject {
     /// Installs the tap. False when macOS refuses it (no Accessibility permission).
-    /// `deliver` receives each kept key-down; `onFailure` reports that macOS stopped the tap.
-    func start(deliver: @escaping @MainActor (BrightnessKeyEvent) -> Void,
+    /// `deliver` receives each kept key-down with the time the tap saw it; `onFailure`
+    /// reports that macOS stopped the tap.
+    func start(deliver: @escaping @MainActor (BrightnessKeyEvent, Date) -> Void,
                onFailure: @escaping @MainActor () -> Void) -> Bool
     func stop()
     /// Whether new presses go to Exodia instead of macOS.
@@ -161,7 +183,6 @@ final class BrightnessKeys: ObservableObject {
     private let defaults: UserDefaults
     private let controller: ScreenBrightnessController
     private let tap: BrightnessKeyTapping
-    private let now: () -> Date
     private var handler: BrightnessKeyHandler?
     private var displayAvailable = false
     private var hoverWidgetsHidden = false
@@ -171,13 +192,11 @@ final class BrightnessKeys: ObservableObject {
     init(defaults: UserDefaults = .standard,
          controller: ScreenBrightnessController? = nil,
          tap: BrightnessKeyTapping? = nil,
-         hoverHidden: AnyPublisher<Bool, Never>? = nil,
-         now: @escaping () -> Date = Date.init) {
+         hoverHidden: AnyPublisher<Bool, Never>? = nil) {
         self.defaults = defaults
         let controller = controller ?? .shared
         self.controller = controller
         self.tap = tap ?? BrightnessKeyEventTap()
-        self.now = now
         isEnabled = defaults.bool(forKey: Self.defaultsKey)
         // @Published delivers the new value before the property changes, so keep the delivered one.
         controller.$isAvailable
@@ -199,7 +218,7 @@ final class BrightnessKeys: ObservableObject {
     /// second while Drop is not installed, and a new handler would forget a press at the top.
     func start(showStrip: @escaping @MainActor () -> Void) {
         if handler == nil {
-            handler = BrightnessKeyHandler(controller: controller, showStrip: showStrip, now: now)
+            handler = BrightnessKeyHandler(controller: controller, showStrip: showStrip)
         }
         guard isEnabled, !isListening else { return }
         listen()
@@ -227,7 +246,7 @@ final class BrightnessKeys: ObservableObject {
         // Without a handler a kept press would do nothing, so the keys stay with macOS.
         guard handler != nil else { return }
         controller.refresh()
-        isListening = tap.start(deliver: { [weak self] event in self?.handler?.handle(event) },
+        isListening = tap.start(deliver: { [weak self] event, date in self?.handler?.handle(event, at: date) },
                                 onFailure: { [weak self] in self?.stopListening() })
         updateInterception()
     }

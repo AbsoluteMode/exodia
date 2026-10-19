@@ -12,18 +12,25 @@ final class BrightnessKeyEventTap: BrightnessKeyTapping {
     static let maxConsecutiveReenables = 3
 
     private let intercepting = OSAllocatedUnfairLock(initialState: false)
+    /// The presses outlive each installed tap: the hotkeys' rebuild replaces it while a key
+    /// can be held.
+    private let presses = OSAllocatedUnfairLock(initialState: BrightnessKeyFilter())
     private var session: BrightnessKeyTapSession?
 
-    func start(deliver: @escaping @MainActor (BrightnessKeyEvent) -> Void,
+    func start(deliver: @escaping @MainActor (BrightnessKeyEvent, Date) -> Void,
                onFailure: @escaping @MainActor () -> Void) -> Bool {
         stop()
-        let session = BrightnessKeyTapSession(deliver: deliver, onFailure: onFailure, intercepting: intercepting)
+        let session = BrightnessKeyTapSession(deliver: deliver, onFailure: onFailure, intercepting: intercepting,
+                                              presses: presses)
         session.owner = self
-        // The callback can run as soon as the tap exists.
+        // The callback can run as soon as the tap exists, so the presses are settled first.
+        presses.withLock { $0.resumeWatching(at: ProcessInfo.processInfo.systemUptime) }
         activeBrightnessKeyTapSession.withLock { $0 = session }
         guard session.thread.installTap(mask: CGEventMask(1) << systemDefinedEventType,
                                         callback: brightnessKeyTapCallback) != nil else {
             activeBrightnessKeyTapSession.withLock { if $0 === session { $0 = nil } }
+            // Without a tap the presses in progress finish with macOS.
+            presses.withLock { $0.forgetPresses() }
             return false
         }
         self.session = session
@@ -35,6 +42,7 @@ final class BrightnessKeyEventTap: BrightnessKeyTapping {
         self.session = nil
         activeBrightnessKeyTapSession.withLock { if $0 === session { $0 = nil } }
         session.thread.enableTap(false)
+        presses.withLock { $0.stopWatching(at: ProcessInfo.processInfo.systemUptime) }
     }
 
     func setIntercepting(_ intercepting: Bool) {
@@ -70,27 +78,25 @@ private let systemDefinedEventType: UInt32 = 14
 /// The installed tap, for the C callback, which cannot capture it.
 private let activeBrightnessKeyTapSession = OSAllocatedUnfairLock<BrightnessKeyTapSession?>(initialState: nil)
 
-/// One installed tap. The callbacks it was started with never change; its filter is locked
-/// because a callback can still be finishing on a stopped tap's thread.
+/// One installed tap. The callbacks it was started with never change. The interception and
+/// the presses belong to the tap object; like the reenable count they are locked because a
+/// callback can still be finishing on a stopped tap's thread.
 private final class BrightnessKeyTapSession: @unchecked Sendable {
-    struct TapState {
-        var filter = BrightnessKeyFilter()
-        var reenables = 0
-    }
-
     let thread = SpaceHoldMonitor.TapThread(queueLabel: "com.rootwise.sidekey.brightness-keys-tap")
-    let deliver: @MainActor (BrightnessKeyEvent) -> Void
+    let deliver: @MainActor (BrightnessKeyEvent, Date) -> Void
     let onFailure: @MainActor () -> Void
     let intercepting: OSAllocatedUnfairLock<Bool>
-    let state = OSAllocatedUnfairLock(initialState: TapState())
+    let presses: OSAllocatedUnfairLock<BrightnessKeyFilter>
+    let reenables = OSAllocatedUnfairLock(initialState: 0)
     /// Main thread only.
     weak var owner: BrightnessKeyEventTap?
 
-    init(deliver: @escaping @MainActor (BrightnessKeyEvent) -> Void, onFailure: @escaping @MainActor () -> Void,
-         intercepting: OSAllocatedUnfairLock<Bool>) {
+    init(deliver: @escaping @MainActor (BrightnessKeyEvent, Date) -> Void, onFailure: @escaping @MainActor () -> Void,
+         intercepting: OSAllocatedUnfairLock<Bool>, presses: OSAllocatedUnfairLock<BrightnessKeyFilter>) {
         self.deliver = deliver
         self.onFailure = onFailure
         self.intercepting = intercepting
+        self.presses = presses
     }
 }
 
@@ -99,9 +105,11 @@ private func brightnessKeyTapCallback(proxy: CGEventTapProxy, type: CGEventType,
     let unchanged = Unmanaged.passUnretained(event)
     guard let session = activeBrightnessKeyTapSession.withLock({ $0 }) else { return unchanged }
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        let attempt = session.state.withLock { state in
-            state.reenables += 1
-            return state.reenables
+        // Events go past the disabled tap until it is enabled again.
+        session.presses.withLock { $0.forgetPresses() }
+        let attempt = session.reenables.withLock { count in
+            count += 1
+            return count
         }
         DispatchQueue.main.async {
             MainActor.assumeIsolated { session.owner?.tapWasDisabled(session, attempt: attempt) }
@@ -109,17 +117,16 @@ private func brightnessKeyTapCallback(proxy: CGEventTapProxy, type: CGEventType,
         return unchanged
     }
     guard type.rawValue == systemDefinedEventType else { return unchanged }
-    let key = BrightnessKeyEvent(systemDefined: event)
+    // Events arrive, so the tap works.
+    session.reenables.withLock { $0 = 0 }
+    guard let key = BrightnessKeyEvent(systemDefined: event) else { return unchanged }
     let intercepting = session.intercepting.withLock { $0 }
-    let swallow = session.state.withLock { state in
-        // Events arrive, so the tap works.
-        state.reenables = 0
-        return key.map { state.filter.shouldSwallow($0, intercepting: intercepting) } ?? false
-    }
-    guard swallow, let key else { return unchanged }
+    guard session.presses.withLock({ $0.shouldSwallow(key, intercepting: intercepting) }) else { return unchanged }
     if key.isDown {
+        // The main thread can be busy, so the press keeps the time it happened.
+        let pressedAt = Date()
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { session.deliver(key) }
+            MainActor.assumeIsolated { session.deliver(key, pressedAt) }
         }
     }
     return nil

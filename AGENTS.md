@@ -316,11 +316,13 @@ Brightness inside hover:
   tap for system-defined events on a SpaceHoldMonitor.TapThread, takes the
   brightness key presses from macOS, so its indicator does not show: sixteenth
   steps (Option-Shift: 64ths), two brightness-up presses at the maximum within
-  1.5 s turn Extra on, and each press opens the strip as a glance (2 s, no
-  keyboard focus, never over another panel under the pointer or a focused
-  search; a pointer reaching it holds the drawer). Other modifier
-  combinations, hidden hover widgets and an unadjustable display leave the
-  keys with macOS; a press is decided on its first event. The tap needs
+  1.5 s (timed when the tap sees them) turn Extra on, and each press opens the
+  strip as a glance (2 s, no keyboard focus, never over another panel under
+  the pointer or a focused search; a pointer reaching it holds the drawer).
+  Other modifier combinations, hidden hover widgets and an unadjustable
+  display leave the keys with macOS. A press stays with whoever got its first
+  event, also across the hotkeys' rebuild; after a gap over 0.1 s or a tap
+  macOS disabled, the presses in progress finish with macOS. The tap needs
   Accessibility, is reinstalled with the hotkeys and retried when the Settings
   pane appears. They are the Mac's keys, not an Exodia hotkey: no Help row.
   BatteryRuntimeMonitor reads IOKit

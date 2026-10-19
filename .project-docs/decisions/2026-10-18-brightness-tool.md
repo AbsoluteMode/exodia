@@ -152,22 +152,29 @@ display's backlight to the next sixteenth of the range, or sixty-fourth with
 Option-Shift, at least a quarter step away. A brightness-up press at the
 maximum followed by another within 1.5 seconds turns Extra on; the press that
 reaches the maximum does not count, and repeats from holding the key neither
-count nor cancel. A brightness-down press keeps Extra. Each press shows the
-strip as a glance: it closes after 2 seconds instead of the 4 of a positional
-hotkey and leaves keyboard focus with the user's app. A glance replaces the
-tools or the strip itself; it never opens over another panel under the
-pointer or a search being typed, which leave the level changed without it.
-Under the pointer the strip opens as from its tile, with focus, and a pointer
-that reaches a glance from below holds the drawer and takes focus. While a
-meeting suggestion, a recording or the agent blocks expansion, the level
-changes without the strip. The keys stay with macOS while hover widgets are
-hidden, while the island display is not adjustable, and with Command,
-Control, Option or Shift other than Option-Shift; Fn and Caps Lock do not
-matter. Whether a press goes to Exodia or to macOS is decided on its first
-event, and its repeats and release follow it. The tap is installed again with
-the hotkeys (wake, an Accessibility change) and given up when macOS disables
-it a fourth time in a row without an event, or at once without Accessibility.
-Drop's permission repair starts the keys again every second while Drop is not
+count nor cancel. The window uses the time the tap saw each press, not the
+time a busy main thread handled it. A brightness-down press keeps Extra. Each
+press shows the strip as a glance: it closes after 2 seconds instead of the 4
+of a positional hotkey and leaves keyboard focus with the user's app. A glance
+replaces the tools or the strip itself; it never opens over another panel
+under the pointer or a search being typed, which leave the level changed
+without it. Under the pointer the strip opens as from its tile, with focus,
+and a pointer that reaches a glance from below holds the drawer and takes
+focus. While a meeting suggestion, a recording or the agent blocks expansion,
+the level changes without the strip. The keys stay with macOS while hover
+widgets are hidden, while the island display is not adjustable, and with
+Command, Control, Option or Shift other than Option-Shift; Fn and Caps Lock do
+not matter. A press belongs to whoever received its first event, Exodia or
+macOS, and its repeats and release follow it; a press Exodia did not see
+begin, such as one held while the tap is installed, stays with macOS. The
+presses outlive each tap, so one held while the hotkeys are rebuilt keeps its
+owner. After more than 0.1 seconds without a tap, or once macOS disabled it, a
+press may have ended and another begun unseen, so the presses in progress
+finish with macOS. Turning the setting off removes the tap at once; the rest
+of a held press goes to macOS. The tap is installed again with the hotkeys
+(wake, an Accessibility change) and given up when macOS disables it a fourth
+time in a row without an event, or at once without Accessibility. Drop's
+permission repair starts the keys again every second while Drop is not
 installed; the first key handler stays, so the gesture keeps its first press.
 
 **Battery.** IOKit power sources give the percentage, power state and macOS's
@@ -221,7 +228,18 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
   the user.
 - Brightness keys are off by default because they take keys from macOS and
   need Accessibility.
-- A press is decided on its first event so macOS never receives half of one.
+- A press follows its first event so macOS never receives half of one Exodia
+  took and Exodia never takes the rest of one macOS began. Codex found both
+  halves broken at a tap boundary (round 3).
+- The presses survive 0.1 seconds without a tap because the hotkeys' rebuild
+  installs the next tap within milliseconds. A longer gap or a disabled tap
+  can hide a release and a new press, and the old owner would then take a
+  press macOS began, for example one with Option.
+- Turning Brightness keys off does not wait for a held key: the switch gives
+  the keys back to macOS.
+- The gesture is timed at the tap because a busy main thread hands presses
+  over late and together; two presses 2 seconds apart then counted as one
+  gesture.
 - Combinations stay with macOS because they are its own shortcuts (Option
   opens Displays settings); Option-Shift is the Mac's fine step.
 - A glance takes no keyboard focus so a key press while typing leaves the text
@@ -322,6 +340,19 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
 - After merging main 983e613 (Notify: a new hover tool and panel, quit and
   privacy changes), keeping both sides: the full `swift test` 3,061 tests,
   6 skipped, 0 failures (68.987 s).
+- Codex review round 3 (static, at 539689e) reported four defects in press
+  ownership and timing. Three were reproduced by tests that failed first: a
+  repeat of a press Exodia did not see begin was taken (3 assertions), the
+  presses in progress kept their owner after a longer gap and after macOS
+  disabled the tap (4 assertions), and two presses 2 seconds apart handed
+  over together turned Extra on. The fourth, stopping the tap during a press,
+  is now covered for the rebuild: a press held through a 50-millisecond gap
+  keeps its owner (this test guards the gap and passed before the change).
+  The presses moved from each tap session to the tap object; the tap itself
+  has no unit test because tests install no real tap. Turning the setting off
+  during a press still gives its rest to macOS, by design. The Brightness keys
+  and hover filter passed 60 tests (44 + 16) and the full `swift test` 3,066
+  tests, 6 skipped, 0 failures (69.548 s).
 
 ## Rejected alternatives
 

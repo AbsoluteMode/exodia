@@ -269,12 +269,14 @@ Exodia take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
   sixty-fourth) and opens the Display strip as a glance: about 2 s, no
   keyboard focus, never over another panel under the pointer or a focused
   search.
-- Two brightness-up presses at the maximum within 1.5 s turn Extra on; the
-  press that reaches the maximum and repeats from holding the key do not count.
+- Two brightness-up presses at the maximum within 1.5 s, timed when the tap
+  sees them, turn Extra on; the press that reaches the maximum and repeats
+  from holding the key do not count.
 - ⌘, ⌃, ⌥ or ⇧ (other than ⌥⇧), hidden hover widgets and an unadjustable
   display leave the keys with macOS; ⌥ still opens Displays settings. Fn and
-  Caps Lock do not matter. A press belongs wholly to Exodia or to macOS from
-  its first event.
+  Caps Lock do not matter. A press belongs wholly to whoever got its first
+  event, Exodia or macOS, also across the hotkeys' rebuild. After a longer
+  gap or a tap macOS disabled, the presses in progress finish with macOS.
 - The tap is reinstalled with the other monitors after wake or an
   Accessibility change. As with every monitor, key contents are never logged
   or stored (invariant #2).
