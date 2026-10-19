@@ -11,6 +11,9 @@ sources:
   - type: user-confirmed
     reference: User requested preparation before the next day's calls, source timestamp mapping and low latency in the 2026-10-19 Meeting Assistant conversation.
     confirmed_at: 2026-10-19
+  - type: user-confirmed
+    reference: After inspecting build 1480, the user requested that this test mode not appear in the interface. Keep the internal opt-in and remove both Settings rows.
+    confirmed_at: 2026-10-19
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingLiveTestCapture.swift
     confirmed_at: 2026-10-19
@@ -39,8 +42,10 @@ kept only as context, and preparation before the next day's real calls.
 
 ## Decision
 
-Settings → Other exposes **Meeting Assistant test capture**, off by default
-and available only with Meeting Notes and Soniox selected for Meetings. It adds
+The internal local `sidekey.meetings.liveTestCapture` flag defaults to off
+and requires Meeting Notes and Soniox selected for Meetings. It has no Settings
+switch or test-files row, following the user's correction after build 1480.
+Removing these controls preserves an explicitly enabled flag. It adds
 one Soniox `stt-rt-v5` stream with diarization on and endpoint detection off,
 alongside unchanged recorded-audio notes. This separate testing request does
 not change the saved Meetings model/provider or generate suggestions.
@@ -86,8 +91,9 @@ call before evaluating question detection. No accuracy target is claimed.
 ## Consequences
 
 Testing adds streaming ASR usage and retains private audio/text until deleted.
-Settings states this and opens the folder. Normal note deletion does not remove
-test bundles. Test opt-in is excluded from backup so restore cannot enable it.
+The maintainer's testing guide states this and documents the local folder.
+Normal note deletion does not remove test bundles. Test opt-in is excluded from
+backup so restore cannot enable it. Enable only for explicitly authorized tests.
 Existing meeting permissions are sufficient; capture does not open another mic.
 
 ## Supersedes / superseded by

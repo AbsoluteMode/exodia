@@ -366,8 +366,9 @@ speech-to-text (`scribe_v2`), self-hosted `/v1/audio/transcriptions` на хос
 
 ## Meeting Notes
 
-**Live-assistant test preparation (2026-10-19):** Settings → Other offers an
-opt-in **Meeting Assistant test capture** when Meeting Notes uses Soniox.
+**Live-assistant test preparation (2026-10-19):** Internal opt-in capture uses
+the local `sidekey.meetings.liveTestCapture` flag when Meeting Notes uses Soniox.
+The user requested no test-mode controls or test-files row in Settings.
 It adds a separate live diarization stream, stores private source tracks and
 timing locally, and preserves ordinary notes processing. No automatic
 suggestions are enabled. Real-call source attribution and latency remain

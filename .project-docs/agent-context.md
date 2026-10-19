@@ -237,8 +237,9 @@ Meeting Notes:
   the next launch). WHY:
   .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
 
-  Opt-in research: Settings -> Other -> Meeting Assistant test capture adds a
-  separate Soniox stt-rt-v5 stream only when Meetings uses Soniox. It saves
+  Internal opt-in research (no Settings controls): the local
+  sidekey.meetings.liveTestCapture flag adds a separate Soniox stt-rt-v5 stream
+  only when Meetings uses Soniox. Preserve its explicitly chosen value. It saves
   private aligned source PCM, signal activity, final diarized tokens and receipt
   times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
   no automatic suggestions are enabled. The independent 100ms test mixer uses
