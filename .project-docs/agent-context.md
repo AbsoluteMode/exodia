@@ -186,8 +186,8 @@ Meeting Notes:
   a meeting that already has a note, and keeps the audio when the note is
   missing. Remote Soniox resources are not cleaned by Delete. WHY:
   .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
-  Manual start: Option M (configurable), the Record hover tile, or Settings ->
-  Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the
+  Manual start: Option M (configurable) or the Record hover tile; both
+  converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
   enable-prompt. Auto-end when the system mic is released for 3s (not before
   the 30s startup grace); an auto-ended recording waits 45 seconds as
@@ -456,7 +456,10 @@ selected screen and screenshot-protection preference. Hover pauses dismissal.
 LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
 presentation in history; unreadable history is never silently overwritten. Notify
 opens through hover search, Toolbox and existing positional hotkeys without
-changing saved layouts. Agents get a resolved setup-guide path on every turn.
+changing saved layouts. Settings -> Notifications lists connected sources with
+their name, logo, runtime status and individual persistent enable switches.
+Disabling stops the source and keeps its setup/history for re-enabling.
+Agents get a resolved setup-guide path on every turn.
 Guide: docs/customization/notifications.md. WHY:
 .project-docs/decisions/2026-10-19-script-notifications.md
 

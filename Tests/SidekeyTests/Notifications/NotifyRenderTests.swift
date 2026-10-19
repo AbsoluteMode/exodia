@@ -31,6 +31,32 @@ final class NotifyRenderTests: XCTestCase {
         let supervisor = NotifyScriptSupervisor(directory: temporary, hub: hub)
         try render(NotifyHoverPanel(hub: hub, supervisor: supervisor, onBack: {}),
                    size: NSSize(width: 312, height: 235), to: directory.appendingPathComponent("history.png"))
+
+        try render(settings(supervisor), size: NSSize(width: 760, height: 560),
+                   to: directory.appendingPathComponent("settings-empty.png"))
+        let registry = temporary.appendingPathComponent("sources")
+        try FileManager.default.createDirectory(at: registry, withIntermediateDirectories: true)
+        let sources = [
+            NotifyScript(id: "telegram", name: "Telegram · selected chats", command: ["/bin/sleep", "30"], tint: "#299FD6", logo: "paperplane.fill"),
+            NotifyScript(id: "builds", name: "Build results", command: ["/bin/sleep", "30"], enabled: false, tint: "#F2A03B", logo: "hammer.fill")
+        ]
+        for source in sources {
+            try JSONEncoder().encode(source).write(to: registry.appendingPathComponent(source.id + ".json"))
+        }
+        supervisor.start()
+        defer { supervisor.stop() }
+        for _ in 0..<100 where supervisor.sources.count != 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(supervisor.sources.count, 2)
+        try render(settings(supervisor), size: NSSize(width: 760, height: 560),
+                   to: directory.appendingPathComponent("settings-sources.png"))
+        supervisor.setEnabled(false, id: "telegram")
+        XCTAssertFalse(try JSONDecoder().decode(NotifyScript.self, from: Data(contentsOf: registry.appendingPathComponent("telegram.json"))).enabled)
+        try render(settings(supervisor), size: NSSize(width: 760, height: 560),
+                   to: directory.appendingPathComponent("settings-disabled.png"))
+    }
+    private func settings(_ supervisor: NotifyScriptSupervisor) -> some View {
+        SettingsNotificationsView(supervisor: supervisor)
+            .background(Color(white: 0.12)).environment(\.colorScheme, .dark)
     }
     private func render<V: View>(_ view: V, size: NSSize, to url: URL) throws {
         let host = NSHostingView(rootView: view)

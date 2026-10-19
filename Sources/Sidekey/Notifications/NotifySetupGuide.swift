@@ -8,6 +8,7 @@ enum NotifySetupGuide {
         Notifications appear as the existing compact pill LEFT of the island.
         History (including each event's color and logo) and source controls are in
         Notify. Find Notify with Search all tools or add it through Settings > Toolbox.
+        Settings > Notifications lists all connected sources with individual on/off switches.
         No Exodia server or model request is needed to deliver a notification.
 
         ## Configure a source
@@ -79,7 +80,8 @@ enum NotifySetupGuide {
         Tell the user which source/filter was connected and what was verified.
         Don't claim a Telegram connection from a synthetic test alone.
 
-        Notify > Sources shows runtime/configuration errors and an enable switch.
+        Settings > Notifications and Notify > Sources show runtime/configuration
+        errors and an enable switch. Disabling keeps the setup and event history.
         Removing a source deletes only its manifest and stops it; script files,
         credential-manager entries and notification history are preserved.
         """

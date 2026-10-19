@@ -235,6 +235,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             break
         case .toolbox:
             break
+        case .notifications:
+            break
         case .other:
             break
         }
