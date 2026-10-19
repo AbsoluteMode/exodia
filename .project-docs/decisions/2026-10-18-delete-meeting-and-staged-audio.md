@@ -159,3 +159,5 @@ writable.
   decision) than deleted.
 
 2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/20.
+2026-10-19, row committed after the files and no late note saves: PR
+https://github.com/AbsoluteMode/exodia/pull/32.
