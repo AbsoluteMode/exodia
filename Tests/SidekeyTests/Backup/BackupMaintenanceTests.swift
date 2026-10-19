@@ -213,7 +213,7 @@ final class BackupMaintenanceTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: unrelated), "keep")
     }
 
-    func testStartupBlocksOrdinaryActionsBeforeLoadingPendingRequest() async throws {
+    func testStartupBlocksActionsThenResumesPendingRequestAndKeepsHistory() async throws {
         let oldFile = try await seedBackup()
         let newKey = ConfigBackupArchive.makeKey()
         try pending.save(newKey.base64EncodedString())
@@ -224,14 +224,16 @@ final class BackupMaintenanceTests: XCTestCase {
         defer { model.stop() }
         XCTAssertTrue(model.isBusy)
         await model.backupNow()
-        for _ in 0..<100 where model.isBusy { try await Task.sleep(nanoseconds: 5_000_000) }
-        XCTAssertTrue(model.hasPendingMaintenance); XCTAssertFalse(model.isEnabled)
+        for _ in 0..<200 {
+            if !model.isBusy && !model.hasPendingMaintenance && !model.localSettingsVersions.isEmpty { break }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertFalse(model.hasPendingMaintenance); XCTAssertFalse(model.isEnabled)
         XCTAssertFalse(model.localSettingsVersions.isEmpty, "Local settings history continues while cloud management is paused")
-        await model.restoreSettingsDefaults(.models)
         XCTAssertFalse(model.needsRestart)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: oldFile.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldFile.path))
         let records = try await local.records()
-        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.count, 0)
     }
 
     func testActiveKeySaveFailureKeepsPublishedReplacementAndResumesCleanup() async throws {
@@ -255,5 +257,102 @@ final class BackupMaintenanceTests: XCTestCase {
         XCTAssertEqual(current.value, try ConfigBackupArchive.key(from: code).base64EncodedString())
         let localCopy = await local.fileURL(replacement.id)
         XCTAssertEqual(try Data(contentsOf: folderCopy), try Data(contentsOf: localCopy))
+    }
+
+    func testStoppedRequestKeepsCopiesAndCannotUploadThemUnderExposedCode() async throws {
+        let oldFile = try await seedBackup(); createFails = true
+        let model = makeModel(); model.isEnabled = true; model.recoverySaved = true
+        model.beginReplacingCode()
+        let stagedKey = try ConfigBackupArchive.key(from: model.recoveryCode)
+        await model.replaceRecoveryCode(verifiedCode: model.recoveryCode)
+        await model.stopBackupManagement()
+        XCTAssertFalse(model.hasPendingMaintenance); XCTAssertFalse(model.isEnabled); XCTAssertFalse(model.recoverySaved)
+        XCTAssertNotNil(model.managementWarning)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldFile.path))
+        XCTAssertEqual(archived[ConfigBackupArchive.keyID(stagedKey)]?.value, stagedKey.base64EncodedString())
+        let remaining = try await local.pendingCopies(destinationID: "isolated-folder")
+        XCTAssertTrue(remaining.isEmpty, "Retained old-key copies must never be uploaded by future backup setup")
+        model.beginSetup()
+        XCTAssertNotEqual(try ConfigBackupArchive.key(from: model.recoveryCode), oldKey)
+        try model.confirmRecoveryCode(model.recoveryCode)
+        createFails = false
+        await model.backupNow()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNotNil(model.managementWarning, "Successful new backups cannot claim abandoned copies were removed")
+    }
+
+    func testStoppedRequestCanParkDamagedCatalogWithoutDiscardingArchives() async throws {
+        let oldFile = try await seedBackup(); createFails = true
+        let model = makeModel(); model.recoverySaved = true
+        model.beginReplacingCode()
+        await model.replaceRecoveryCode(verifiedCode: model.recoveryCode)
+        let catalog = local.root.appendingPathComponent("catalog.json")
+        let damaged = Data("keep this damaged catalog".utf8)
+        try damaged.write(to: catalog)
+        await model.stopBackupManagement()
+        XCTAssertFalse(model.hasPendingMaintenance); XCTAssertNil(model.errorMessage)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldFile.path))
+        let parked = try FileManager.default.contentsOfDirectory(at: local.root, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("kept-catalog-") }
+        XCTAssertEqual(parked.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(parked.first)), damaged)
+        model.beginSetup(); try model.confirmRecoveryCode(model.recoveryCode)
+        createFails = false
+        await model.backupNow()
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testDeleteFinalizationAfterDisconnectDoesNotNeedThePreviousDestination() async throws {
+        let newKey = ConfigBackupArchive.makeKey()
+        try pending.save(newKey.base64EncodedString())
+        try current.save(newKey.base64EncodedString())
+        defaults.removeObject(forKey: "backup.destination-id.v1")
+        defaults.removeObject(forKey: "backup.destination-kind.v1")
+        defaults.removeObject(forKey: "backup.folder-bookmark.v1")
+        defaults.removeObject(forKey: "backup.recovery-verified.v1")
+        try await local.saveMaintenance(.init(kind: .deleteBackups, phase: .finalizing,
+            destinationID: "isolated-folder", newKeyID: ConfigBackupArchive.keyID(newKey), resumeAutomatic: true))
+        let model = makeModel(); model.hasPendingMaintenance = true
+        await model.resumeBackupManagement()
+        XCTAssertFalse(model.hasPendingMaintenance); XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.destinationName, "Not connected")
+        let plan = try await local.maintenance()
+        XCTAssertNil(plan)
+    }
+
+    func testHistoryKeyLimitExplainsKeyRetentionInsteadOfArchiveSize() async throws {
+        _ = try await seedBackup()
+        defaults.set(Array(repeating: String(repeating: "a", count: 64), count: 32), forKey: "backup.archived-key-ids.v1")
+        let model = makeModel(); model.isEnabled = true
+        await model.deleteBackups()
+        XCTAssertTrue(model.errorMessage?.contains("recovery key") == true)
+        XCTAssertFalse(model.isEnabled); XCTAssertFalse(model.hasPendingMaintenance)
+    }
+
+    func testInterruptedStopRetainsTheTemporaryHistoryKeyBeforeResumingOriginalRequest() async throws {
+        _ = try await seedBackup(); createFails = true
+        let model = makeModel(); model.recoverySaved = true
+        model.beginReplacingCode()
+        await model.replaceRecoveryCode(verifiedCode: model.recoveryCode)
+        let catalog = local.root.appendingPathComponent("catalog.json")
+        let originalCatalog = try Data(contentsOf: catalog)
+        let untouched = root.appendingPathComponent("unrelated.json")
+        try Data("keep".utf8).write(to: untouched)
+        try FileManager.default.removeItem(at: catalog)
+        try FileManager.default.createSymbolicLink(at: catalog, withDestinationURL: untouched)
+        await model.stopBackupManagement()
+        XCTAssertTrue(model.hasPendingMaintenance)
+        let temporaryKey = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(current.value)))
+        let snapshot = ConfigBackupSnapshot(reason: "Saved during interrupted Stop", preferences: [:])
+        _ = try await settings.save(ConfigBackupArchive.seal(snapshot, key: temporaryKey), id: snapshot.id)
+        try FileManager.default.removeItem(at: catalog)
+        try originalCatalog.write(to: catalog)
+        createFails = false
+        await model.resumeBackupManagement()
+        XCTAssertNil(model.errorMessage); XCTAssertFalse(model.hasPendingMaintenance)
+        XCTAssertEqual(archived[ConfigBackupArchive.keyID(temporaryKey)]?.value, temporaryKey.base64EncodedString())
+        let recovered = try await settings.load(key: temporaryKey)
+        XCTAssertEqual(recovered, [snapshot])
+        XCTAssertEqual(try String(contentsOf: untouched), "keep")
     }
 }

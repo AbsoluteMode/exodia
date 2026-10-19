@@ -82,6 +82,13 @@ Forgotten codes can be replaced from a working Mac's cached key. Losing that
 key and the saved code still prevents decryption of existing copies. An
 unfinished request keeps automatic backup paused and blocks ordinary backup,
 restore and destination changes until cleanup can be resumed.
+On reopening, one idle retry continues the original request without blocking
+the panel on an unrelated remote-version listing. A failed request can be
+explicitly stopped: keep its files, keys and raw metadata, retire the active
+code for future setup, exclude retained archives from uploads/delta bases, and
+persist a warning about remaining copies. This preserves an exit when a
+destination is permanently lost or the catalog is damaged. A durable finalizing
+phase removes credentials and connection metadata before forgetting completion.
 
 ## Supersedes / superseded by
 

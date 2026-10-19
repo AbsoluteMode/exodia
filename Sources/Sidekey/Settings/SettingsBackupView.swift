@@ -41,6 +41,7 @@ struct SettingsBackupView: View {
     @State private var showLocalHistory = false
     @State private var showDeleteConfirmation = false
     @State private var showReplaceConfirmation = false
+    @State private var showStopManagementConfirmation = false
 
     init(model: BackupViewModel = .shared, showManagement: Bool = false) {
         self.model = model
@@ -89,6 +90,16 @@ struct SettingsBackupView: View {
 
                 if let errorMessage = model.errorMessage, !errorMessage.isEmpty {
                     errorBanner(errorMessage)
+                }
+                if let warning = model.managementWarning {
+                    VStack(alignment: .leading, spacing: 8) {
+                        MacBanner(tone: .warn, systemImage: "exclamationmark.triangle",
+                            title: "Some backup copies were left behind", text: warning)
+                        HStack {
+                            MacButton(title: "Show kept local copies…", style: .default) { model.showRetainedBackups() }
+                            MacButton(title: "Dismiss warning", style: .ghost) { model.dismissManagementWarning() }
+                        }
+                    }
                 }
 
                 if let preview = model.restorePreview {
@@ -152,13 +163,19 @@ struct SettingsBackupView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Save a new code, then Whytap will create and check a full backup before deleting older copies from this Mac and \(model.destinationName). Stop automatic backups on your other Macs first. Downloaded copies cannot be revoked. Copies in other destinations and your sync service's trash or version history must be removed there separately.")
+            Text("Save a new code, then Whytap will create and check a full backup before deleting older full copies, including Before restore archives, from this Mac and \(model.destinationName). Stop automatic backups on your other Macs first. Downloaded copies cannot be revoked. Copies in other destinations and your sync service's trash or version history must be removed there separately.")
         }
         .alert("Delete all backup copies?", isPresented: $showDeleteConfirmation) {
             Button("Delete backups", role: .destructive) { Task { await model.deleteBackups() } }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Remove full backups from this Mac and \(model.destinationName == "Not connected" ? "no connected destination" : model.destinationName), then turn off automatic backup. Your working data and local settings history stay on this Mac. Stop automatic backups on other Macs first. Downloaded copies, other destinations, and your sync service's trash or version history must be removed separately.")
+            Text("Remove full backups, including Before restore archives, from this Mac and \(model.destinationName == "Not connected" ? "no connected destination" : model.destinationName), then turn off automatic backup. Your working data, local settings history and restore checkpoints stay on this Mac. Stop automatic backups on other Macs first. Downloaded copies, other destinations, and your sync service's trash or version history must be removed separately.")
+        }
+        .alert("Stop unfinished backup management?", isPresented: $showStopManagementConfirmation) {
+            Button("Stop and keep remaining copies", role: .destructive) { Task { await model.stopBackupManagement() } }
+            Button("Keep trying", role: .cancel) { }
+        } message: {
+            Text("Some copies may remain at \(model.destinationName). This does not revoke their recovery codes. Whytap keeps the remaining local files and keys, leaves automatic backup off and requires a new code before making more backups. Remove remote copies separately when you regain access.")
         }
     }
 
@@ -399,6 +416,9 @@ struct SettingsBackupView: View {
                 }
                 MacButton(title: "Connection…", style: .default, isEnabled: !model.isBusy) {
                     isRestoreActive = true; showRestoreConnectionOptions = true
+                }
+                MacButton(title: "Stop…", style: .ghost, isEnabled: !model.isBusy) {
+                    showStopManagementConfirmation = true
                 }
             }
         }

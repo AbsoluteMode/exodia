@@ -79,7 +79,8 @@ automatic backups, creates a standalone full archive with the new key, checks
 it locally and at the connected destination, then removes older full backups
 from this Mac and that destination. A failed upload keeps the old copies. A
 failed deletion remains visible and paused; **Finish backup management** resumes
-the durable request, including after reopening Whytap. The new key stays in
+the durable request. Reopening Whytap attempts it once when idle; a failed
+attempt stays paused with an explicit retry. The new key stays in
 Keychain; the operation journal never contains it. Your previous automatic
 backup preference is restored only after cleanup succeeds.
 
@@ -89,8 +90,26 @@ It retires the exposed code for future setup without asking you to save another
 one. Your working data, automatic local settings history and existing restore
 transaction checkpoints stay on this Mac. History keys remain only in this
 Mac's Keychain so a code change does not destroy the ability to undo settings.
-The GitHub repository, source history and unrelated releases/files are kept.
+The GitHub repository, tags, source history and unrelated releases/files are kept.
 Explicit deletion also works if the backup repository became public.
+
+If a destination is permanently lost or a catalog cannot be read, **Stop…**
+ends the unfinished request after confirmation. It does not claim deletion:
+a persistent warning identifies copies that may remain. Remaining local files,
+keys and the original request/catalog are kept; **Show kept local copies…**
+opens their folder. Automatic backup stays off and a fresh code must be saved
+before starting again. Kept old-key copies are excluded from future automatic
+uploads and delta bases. The warning stays until you dismiss it, including if
+you start using a different destination.
+Parked request/catalog metadata and its staged key remain for manual recovery,
+even after later archive deletion. The request records the key identifier;
+the secret itself stays in Keychain. These records contain no archive content
+and remain until you remove them separately.
+
+Both management actions include full **Before restore** archives. The separate
+restore transaction checkpoints described above are retained. Credential and
+connection removal has a durable finalization phase, so interruption after
+disconnect does not require access to the previous destination to finish.
 
 Stop automatic backups on other Macs before either action. Copies in previous
 destinations, sync-provider trash/version history and exported or downloaded

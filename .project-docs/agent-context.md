@@ -583,6 +583,9 @@ explicitly deleting old full copies locally and at the connected destination.
 Deletion without replacement leaves automatic backup off and retires the cloud
 code. Durable maintenance requests block backup/restore until cleanup finishes;
 secrets remain in Keychain. Settings history and restore checkpoints are retained.
+One idle retry resumes on reopening. Explicit Stop retains copies/keys/metadata,
+requires a fresh code for future backups and keeps a warning about remaining
+copies. Parked old-key archives never become upload candidates or delta bases.
 Downloaded copies cannot be revoked; other destinations, sync trash/version
 history and other Macs require separate cleanup. WHY:
 `.project-docs/decisions/2026-10-19-backup-management.md`.

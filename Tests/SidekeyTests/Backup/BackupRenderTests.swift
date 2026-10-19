@@ -236,6 +236,12 @@ final class BackupRenderTests: XCTestCase {
         try render(hosted(SettingsBackupView(model: unfinishedModel)), size: NSSize(width: 760, height: 560),
                    to: directory.appendingPathComponent("backup-management-unfinished.png"))
 
+        let stoppedModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("stopped"))
+        stoppedModel.managementWarning = "Old copies may remain at GitHub · octocat/Exodia-Backup. Remove them there separately. Kept local copies may need their previous recovery codes."
+        stoppedModel.statusText = "Backup management stopped. Automatic backup stays off. Save a new recovery code before starting again."
+        try render(hosted(SettingsBackupView(model: stoppedModel)), size: NSSize(width: 760, height: 620),
+                   to: directory.appendingPathComponent("backup-management-stopped.png"))
+
         let recoveredModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("recovered"))
         recoveredModel.recoveryCheckpoint = ArtifactRecoveryCheckpoint(id: UUID(), createdAt: fixedDate,
             sections: [.settings, .credentials], fileCount: 4, bytes: 1_024,

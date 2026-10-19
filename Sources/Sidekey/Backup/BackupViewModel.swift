@@ -27,6 +27,7 @@ final class BackupViewModel: ObservableObject {
     @Published var canCancelOperation = false
     @Published var hasPendingMaintenance = false
     @Published var isReplacingCode = false
+    @Published var managementWarning: String?
 
     private let defaults: UserDefaults
     private let keyStore: TokenStore
@@ -61,6 +62,7 @@ final class BackupViewModel: ObservableObject {
     private var destinationRevision = 0
     private var captureTask: Task<Void, Never>?
     private var replacementKey: Data?
+    private var maintenanceRetryAttempted = false
 
     init(defaults: UserDefaults = .standard,
          keyStore: TokenStore = KeychainStore(account: BackupViewModel.keyAccount),
@@ -92,6 +94,7 @@ final class BackupViewModel: ObservableObject {
         guard !started else { return }; started = true
         // Resolve a durable management request before exposing backup actions.
         isBusy = true
+        managementWarning = defaults.string(forKey: "backup.management-warning.v1")
         recoverySaved = defaults.bool(forKey: "backup.recovery-verified.v1")
         isEnabled = defaults.bool(forKey: "backup.enabled.v1")
         destinationName = defaults.string(forKey: "backup.destination-name.v1") ?? "Not connected"
@@ -140,7 +143,8 @@ final class BackupViewModel: ObservableObject {
                 github = try GitHubBackupTransport(token: token, owner: owner)
             } catch { fail(error) }
         }
-        await refreshVersionsQuietly()
+        do { versions = try await local.versions(destinationID: defaults.string(forKey: "backup.destination-id.v1")) }
+        catch { fail(error) }
         isBusy = false
         await poll()
     }
@@ -279,7 +283,7 @@ final class BackupViewModel: ObservableObject {
     private func retainHistoryKey() throws {
         let oldKey = try key(create: false), id = ConfigBackupArchive.keyID(oldKey)
         var ids = defaults.stringArray(forKey: "backup.archived-key-ids.v1") ?? []
-        guard ids.contains(id) || ids.count < 32 else { throw ConfigBackupError.tooLarge }
+        guard ids.contains(id) || ids.count < 32 else { throw BackupManagementError.historyKeyLimit }
         try archivedKeyStore(id).save(oldKey.base64EncodedString())
         if !ids.contains(id) {
             ids.append(id); defaults.set(ids, forKey: "backup.archived-key-ids.v1")
@@ -287,8 +291,41 @@ final class BackupViewModel: ObservableObject {
     }
 
     func resumeBackupManagement() async {
-        await retainOperation(.maintenance) { await self.performBackupManagement() }
+        await retainOperation(.maintenance) {
+            self.maintenanceRetryAttempted = true
+            await self.performBackupManagement()
+        }
     }
+
+    func stopBackupManagement() async {
+        guard hasPendingMaintenance, !isBusy, !needsRestart else { return }
+        isBusy = true; defer { isBusy = false }
+        do {
+            // Keep both the active history key and any staged replacement.
+            // Retiring the active code prevents future setup reusing exposure.
+            try retainHistoryKey()
+            if let encoded = try pendingKeyStore.read(), let pending = Data(base64Encoded: encoded), pending.count == 32 {
+                try archivedKeyStore(ConfigBackupArchive.keyID(pending)).save(encoded)
+            }
+            let fresh = ConfigBackupArchive.makeKey()
+            try keyStore.save(fresh.base64EncodedString()); keyCache = fresh
+            recoverySaved = false; defaults.removeObject(forKey: "backup.recovery-verified.v1")
+            isEnabled = false; defaults.set(false, forKey: "backup.enabled.v1")
+            let warning = "Old copies may remain at \(destinationName). Remove them there separately. Kept local copies may need their previous recovery codes."
+            managementWarning = warning; defaults.set(warning, forKey: "backup.management-warning.v1")
+            try await local.abandonMaintenance()
+            hasPendingMaintenance = false; errorMessage = nil
+            try? pendingKeyStore.delete()
+            versions = (try? await local.versions(destinationID: defaults.string(forKey: "backup.destination-id.v1"))) ?? []
+            statusText = "Backup management stopped. Automatic backup stays off. Save a new recovery code before starting again."
+        } catch { fail(error) }
+    }
+
+    func dismissManagementWarning() {
+        managementWarning = nil; defaults.removeObject(forKey: "backup.management-warning.v1")
+    }
+
+    func showRetainedBackups() { NSWorkspace.shared.activateFileViewerSelecting([local.root]) }
 
     private func performBackupManagement() async {
         guard !isBusy, !needsRestart, hasPendingMaintenance else { return }
@@ -297,88 +334,94 @@ final class BackupViewModel: ObservableObject {
         defer { isBusy = false }
         do {
             guard var plan = try await local.maintenance(),
-                  plan.destinationID == defaults.string(forKey: "backup.destination-id.v1"),
+                  (plan.phase == .finalizing || plan.destinationID == defaults.string(forKey: "backup.destination-id.v1")),
                   let encoded = try pendingKeyStore.read(), let newKey = Data(base64Encoded: encoded),
                   newKey.count == 32, ConfigBackupArchive.keyID(newKey) == plan.newKeyID else { throw ConfigBackupError.keyUnavailable }
-            if plan.kind == .replaceCode {
-                statusText = "Saving and checking a full backup with your new code…"
-                if plan.replacement == nil {
-                    let file = try await local.archiveURL()
-                    defer { try? FileManager.default.removeItem(at: file) }
-                    let summary = try await engine.create(file, newKey)
+            if plan.phase != .finalizing {
+                if plan.kind == .replaceCode {
+                    statusText = "Saving and checking a full backup with your new code…"
+                    if plan.replacement == nil {
+                        let file = try await local.archiveURL()
+                        defer { try? FileManager.default.removeItem(at: file) }
+                        let summary = try await engine.create(file, newKey)
+                        guard try await engine.inspect(file, newKey).summary.matchesArchive(summary) else { throw ConfigBackupError.invalidArchive }
+                        _ = try await local.record(summary, from: file)
+                        plan.replacement = summary
+                        try await local.saveMaintenance(plan)
+                    }
+                    guard let summary = plan.replacement else { throw ConfigBackupError.invalidArchive }
+                    let file = await local.fileURL(summary.id)
                     guard try await engine.inspect(file, newKey).summary.matchesArchive(summary) else { throw ConfigBackupError.invalidArchive }
-                    _ = try await local.record(summary, from: file)
-                    plan.replacement = summary
+                    if destinationKind == "github" {
+                        guard let github else { throw GitHubBackupTransport.Failure.authentication }
+                        // Always standalone: no dependency encrypted with the old code.
+                        let store = local, destination = plan.destinationID!
+                        let record = try await local.records().first { $0.summary.id == summary.id }
+                        if record?.preparation == nil {
+                            try await local.recordPreparation(id: summary.id, preparation: .init(destinationID: destination, depth: 0))
+                        }
+                        let remoteID = try await github.upload(file: file, summary: summary, key: newKey,
+                            resumeReleaseID: record?.preparation?.draftID,
+                            onDraft: { try await store.recordDraft(id: summary.id, destinationID: destination, draftID: $0) })
+                        try await local.markCopied(id: summary.id, destinationID: destination, remoteID: remoteID)
+                    } else if destinationKind == "folder" {
+                        let folder = try backupFolder()
+                        let access = folder.startAccessingSecurityScopedResource()
+                        defer { if access { folder.stopAccessingSecurityScopedResource() } }
+                        let copy = Task.detached(priority: .utility) {
+                            try BackupLocalStore.copyArchive(file, to: folder.appendingPathComponent(summary.id.uuidString.lowercased() + ".exodiabackup"), replaceDamagedCopy: true)
+                        }
+                        try await withTaskCancellationHandler(operation: { try await copy.value }, onCancel: { copy.cancel() })
+                        try await local.markCopied(id: summary.id, destinationID: plan.destinationID!)
+                    } else { throw ConfigBackupError.saveFailed }
+                    try Task.checkCancellation()
+                    plan.phase = .cleanup
                     try await local.saveMaintenance(plan)
                 }
-                guard let summary = plan.replacement else { throw ConfigBackupError.invalidArchive }
-                let file = await local.fileURL(summary.id)
-                guard try await engine.inspect(file, newKey).summary.matchesArchive(summary) else { throw ConfigBackupError.invalidArchive }
+                // The journal is durable before the active key changes. Repeating
+                // this save after interruption is safe and preserves the new code.
+                if plan.kind == .replaceCode {
+                    if try key(create: false) != newKey { try retainHistoryKey() }
+                    try keyStore.save(newKey.base64EncodedString()); keyCache = newKey
+                    recoverySaved = true; defaults.set(true, forKey: "backup.recovery-verified.v1")
+                }
+                statusText = "Removing old backup copies…"
+                let keep = plan.replacement?.id
                 if destinationKind == "github" {
                     guard let github else { throw GitHubBackupTransport.Failure.authentication }
-                    // Always standalone: no dependency encrypted with the old code.
-                    let store = local, destination = plan.destinationID!
-                    let record = try await local.records().first { $0.summary.id == summary.id }
-                    if record?.preparation == nil {
-                        try await local.recordPreparation(id: summary.id, preparation: .init(destinationID: destination, depth: 0))
-                    }
-                    let remoteID = try await github.upload(file: file, summary: summary, key: newKey,
-                        resumeReleaseID: record?.preparation?.draftID,
-                        onDraft: { try await store.recordDraft(id: summary.id, destinationID: destination, draftID: $0) })
-                    try await local.markCopied(id: summary.id, destinationID: destination, remoteID: remoteID)
+                    try await github.deleteBackups(except: keep)
                 } else if destinationKind == "folder" {
                     let folder = try backupFolder()
                     let access = folder.startAccessingSecurityScopedResource()
                     defer { if access { folder.stopAccessingSecurityScopedResource() } }
-                    let copy = Task.detached(priority: .utility) {
-                        try BackupLocalStore.copyArchive(file, to: folder.appendingPathComponent(summary.id.uuidString.lowercased() + ".exodiabackup"), replaceDamagedCopy: true)
-                    }
-                    try await withTaskCancellationHandler(operation: { try await copy.value }, onCancel: { copy.cancel() })
-                    try await local.markCopied(id: summary.id, destinationID: plan.destinationID!)
-                } else { throw ConfigBackupError.saveFailed }
+                    let cleanup = Task.detached(priority: .utility) { try BackupLocalStore.deleteArchiveFiles(in: folder, except: keep) }
+                    try await withTaskCancellationHandler(operation: { try await cleanup.value }, onCancel: { cleanup.cancel() })
+                }
                 try Task.checkCancellation()
-                plan.phase = .cleanup
+                try await local.deleteFullBackups(except: keep)
+                if plan.kind == .deleteBackups {
+                    // Retire the exposed code for future setup too. The old key is
+                    // retained only on this Mac for its automatic settings history.
+                    if try key(create: false) != newKey { try retainHistoryKey() }
+                    try keyStore.save(newKey.base64EncodedString()); keyCache = newKey
+                    recoverySaved = false; defaults.removeObject(forKey: "backup.recovery-verified.v1")
+                } else {
+                    lastBackupAt = plan.replacement?.createdAt; lastRemoteBackupAt = Date()
+                    defaults.set(lastBackupAt, forKey: "backup.last-local.v1")
+                    defaults.set(lastRemoteBackupAt, forKey: "backup.last-copied.v1")
+                }
+                plan.phase = .finalizing
                 try await local.saveMaintenance(plan)
             }
-            // The journal is durable before the active key changes. Repeating
-            // this save after interruption is safe and preserves the new code.
-            if plan.kind == .replaceCode {
-                try keyStore.save(newKey.base64EncodedString()); keyCache = newKey
-                recoverySaved = true; defaults.set(true, forKey: "backup.recovery-verified.v1")
-            }
-            statusText = "Removing old backup copies…"
-            let keep = plan.replacement?.id
-            if destinationKind == "github" {
-                guard let github else { throw GitHubBackupTransport.Failure.authentication }
-                try await github.deleteBackups(except: keep)
-            } else if destinationKind == "folder" {
-                let folder = try backupFolder()
-                let access = folder.startAccessingSecurityScopedResource()
-                defer { if access { folder.stopAccessingSecurityScopedResource() } }
-                let cleanup = Task.detached(priority: .utility) { try BackupLocalStore.deleteArchiveFiles(in: folder, except: keep) }
-                try await withTaskCancellationHandler(operation: { try await cleanup.value }, onCancel: { cleanup.cancel() })
-            }
-            try Task.checkCancellation()
-            try await local.deleteFullBackups(except: keep)
             if plan.kind == .deleteBackups {
-                // Retire the exposed code for future setup too. The old key is
-                // retained only on this Mac for its automatic settings history.
-                try keyStore.save(newKey.base64EncodedString()); keyCache = newKey
-                recoverySaved = false; defaults.removeObject(forKey: "backup.recovery-verified.v1")
-            } else {
-                lastBackupAt = plan.replacement?.createdAt; lastRemoteBackupAt = Date()
-                defaults.set(lastBackupAt, forKey: "backup.last-local.v1")
-                defaults.set(lastRemoteBackupAt, forKey: "backup.last-copied.v1")
-            }
-            try await local.finishMaintenance()
-            hasPendingMaintenance = false; needsFullBackup = true
-            if plan.kind == .deleteBackups {
-                try? githubTokenStore.delete(); github = nil
+                try githubTokenStore.delete(); github = nil
                 for field in ["destination-kind", "destination-id", "destination-name", "github-owner", "folder-bookmark", "last-local", "last-copied", "source-stamp"] {
                     defaults.removeObject(forKey: "backup.\(field).v1")
                 }
                 destinationName = "Not connected"; lastBackupAt = nil; lastRemoteBackupAt = nil
             }
+            try await local.finishMaintenance()
+            hasPendingMaintenance = false; needsFullBackup = true
             try? pendingKeyStore.delete()
             if plan.kind == .replaceCode { setEnabled(plan.resumeAutomatic) }
             statusText = plan.kind == .replaceCode
@@ -386,6 +429,7 @@ final class BackupViewModel: ObservableObject {
                 : "Backups were deleted and automatic backup is off. Your working data and local settings history are kept."
             await refreshVersionsQuietly()
         } catch {
+            if error is CancellationError || Task.isCancelled { return }
             fail(error)
             let detail = errorMessage ?? "The operation could not finish."
             errorMessage = detail + " Some old copies may still exist. Automatic backup is paused. Reconnect if needed, then choose Finish backup management."
@@ -416,7 +460,10 @@ final class BackupViewModel: ObservableObject {
         isBusy = true; errorMessage = nil; statusText = "Connecting your private backup repository…"
         do {
             if hasPendingMaintenance {
-                guard destinationKind == "github", let owner = defaults.string(forKey: "backup.github-owner.v1") else { throw ConfigBackupError.busy }
+                guard destinationKind == "github", let owner = defaults.string(forKey: "backup.github-owner.v1") else {
+                    isBusy = false; errorMessage = "Reconnect the same backup folder to continue this request."
+                    return
+                }
                 let transport = try GitHubBackupTransport(token: token.trimmingCharacters(in: .whitespacesAndNewlines), owner: owner)
                 _ = try await transport.versions()
                 try githubTokenStore.save(token.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -447,7 +494,10 @@ final class BackupViewModel: ObservableObject {
 
     private func performChooseFolder() async {
         guard !isBusy, !needsRestart else { return }
-        guard !hasPendingMaintenance || destinationKind == "folder" else { fail(ConfigBackupError.busy); return }
+        guard !hasPendingMaintenance || destinationKind == "folder" else {
+            errorMessage = "Reconnect your existing GitHub destination to continue this request."
+            return
+        }
         let panel = NSOpenPanel()
         panel.title = "Choose a backup folder"
         panel.message = "Choose iCloud Drive, another synced folder, or an external drive. Whytap verifies the saved file; your sync service handles cloud upload."
@@ -579,7 +629,7 @@ final class BackupViewModel: ObservableObject {
         if FileManager.default.fileExists(atPath: output.path) { try FileManager.default.removeItem(at: output) }
         let records = try await local.records()
         let base = records.first { $0.summary.id != record.summary.id && $0.destinationID == destinationID
-            && $0.remoteID != nil && ($0.uploadedDepth ?? 0) < 32 }
+            && $0.recoveryOnly != true && $0.remoteID != nil && ($0.uploadedDepth ?? 0) < 32 }
         let baseFile = base.map { record in local.root.appendingPathComponent(record.summary.id.uuidString.lowercased() + ".exodiabackup") }
         let prepared = try await delta.prepare(full: file, base: baseFile, output: output, key: key)
         let depth = prepared.baseID == nil ? 0 : (base?.uploadedDepth ?? 0) + 1
@@ -915,7 +965,10 @@ final class BackupViewModel: ObservableObject {
     private func poll() async {
         guard !isBusy, !needsRestart else { return }
         await captureSettings()
-        guard !hasPendingMaintenance else { return }
+        if hasPendingMaintenance {
+            if !maintenanceRetryAttempted && idle() { await resumeBackupManagement() }
+            return
+        }
         let probe = changeProbe
         let stamp = await Task.detached(priority: .utility) { probe() }.value
         if stamp != sourceStamp { markDirty() }
@@ -945,6 +998,7 @@ final class BackupViewModel: ObservableObject {
     private func fail(_ error: Error) {
         if error is CancellationError || Task.isCancelled { return }
         if let error = error as? ConfigBackupError { errorMessage = error.localizedDescription }
+        else if let error = error as? BackupManagementError { errorMessage = error.localizedDescription }
         else if let error = error as? ArtifactBackupError { errorMessage = error.localizedDescription }
         else if let error = error as? GitHubBackupTransport.Failure { errorMessage = error.localizedDescription }
         else if (error as NSError).domain == NSURLErrorDomain {

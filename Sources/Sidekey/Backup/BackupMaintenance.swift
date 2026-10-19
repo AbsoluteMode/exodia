@@ -5,7 +5,7 @@ import Foundation
 /// WHY: .project-docs/decisions/2026-10-19-backup-management.md
 struct BackupMaintenancePlan: Codable, Equatable {
     enum Kind: String, Codable { case replaceCode, deleteBackups }
-    enum Phase: String, Codable { case preparing, cleanup }
+    enum Phase: String, Codable { case preparing, cleanup, finalizing }
     var kind: Kind
     var phase: Phase = .preparing
     var destinationID: String?
@@ -22,7 +22,8 @@ extension BackupLocalStore {
         let plan = try JSONDecoder().decode(BackupMaintenancePlan.self, from: ConfigBackupFiles.readFile(maintenanceURL))
         guard plan.newKeyID.count == 64, plan.newKeyID.allSatisfy({ $0.isHexDigit && !$0.isUppercase }),
               plan.kind != .replaceCode || plan.destinationID != nil,
-              plan.phase != .cleanup || plan.kind == .deleteBackups || plan.replacement != nil else {
+              plan.kind != .deleteBackups || plan.replacement == nil,
+              plan.phase == .preparing || plan.kind == .deleteBackups || plan.replacement != nil else {
             throw ConfigBackupError.invalidArchive
         }
         return plan
@@ -35,6 +36,31 @@ extension BackupLocalStore {
 
     func finishMaintenance() throws {
         try FileManager.default.removeItem(at: maintenanceURL)
+        try ConfigBackupFiles.synchronizeDirectory(root)
+    }
+
+    /// Explicit abandonment preserves the request and all bytes. A damaged
+    /// catalog is parked too; it cannot permanently trap the user in cleanup.
+    func abandonMaintenance() throws {
+        try ConfigBackupFiles.checkDirectory(root)
+        let catalog = root.appendingPathComponent("catalog.json")
+        if let values = try? records() {
+            let parked = values.map { record -> Record in
+                var value = record; value.recoveryOnly = true
+                value.purpose = "Kept after unfinished backup management"
+                return value
+            }
+            try ConfigBackupFiles.write(JSONEncoder().encode(parked), to: catalog)
+        } else {
+            let values = try catalog.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { throw ConfigBackupError.unsafePath }
+            try FileManager.default.moveItem(at: catalog, to: root.appendingPathComponent("kept-catalog-" + UUID().uuidString + ".json"))
+            try ConfigBackupFiles.write(Data("[]".utf8), to: catalog)
+        }
+        let metadata = try maintenanceURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard metadata.isRegularFile == true, metadata.isSymbolicLink != true else { throw ConfigBackupError.unsafePath }
+        try FileManager.default.moveItem(at: maintenanceURL,
+            to: root.appendingPathComponent("unfinished-management-" + UUID().uuidString + ".json"))
         try ConfigBackupFiles.synchronizeDirectory(root)
     }
 
@@ -68,5 +94,12 @@ extension BackupLocalStore {
             try FileManager.default.removeItem(at: file)
         }
         try ConfigBackupFiles.synchronizeDirectory(folder)
+    }
+}
+
+enum BackupManagementError: LocalizedError {
+    case historyKeyLimit
+    var errorDescription: String? {
+        "This Mac cannot retain another recovery key safely. Existing keys and backups are kept. Automatic backup is paused."
     }
 }
