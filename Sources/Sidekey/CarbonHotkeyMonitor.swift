@@ -11,9 +11,10 @@ import os.log
 /// "consume" hook — this is the canonical macOS API used by Spectacle,
 /// Rectangle, Alfred and friends.
 ///
-/// `RegisterEventHotKey` is gated by Accessibility only. The previous
-/// CGEventTap-based monitor required Input Monitoring on modern macOS, which
-/// Sidekey no longer asks for.
+/// Carbon registration itself needs no keyboard-observation grant. Drop keeps
+/// tap shortcuts registered when Accessibility is missing so invocation can
+/// explain the grant required for automatic paste. Hold gestures use an active
+/// CGEventTap instead and have their own permission/recovery path.
 ///
 /// `optionKey` is the Carbon modifier mask — it matches both Left and Right
 /// Option. The left/right Option distinction is intentionally dropped (the
@@ -263,7 +264,7 @@ final class CarbonHotkeyMonitor {
                 log: Self.log, type: .error,
                 Int(installStatus)
             )
-            throw VEError.hotkeyFailed("InstallEventHandler failed: \(installStatus)")
+            throw HotkeyRegistrationError.carbonHandler(installStatus)
         }
         self.handlerRef = newHandler
 
@@ -287,7 +288,7 @@ final class CarbonHotkeyMonitor {
                 _ = removeHandler(handlerRef)
                 self.handlerRef = nil
             }
-            throw VEError.hotkeyFailed("RegisterEventHotKey failed: \(registerStatus)")
+            throw HotkeyRegistrationError.carbonRegistration(registerStatus)
         }
         self.hotKeyRef = newHotKey
 

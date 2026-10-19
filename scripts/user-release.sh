@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
 # user-release.sh - community binary build and Sparkle release pipeline.
-# Default ad-hoc signing needs no Apple Developer account or notarization.
+# Persistent community certificate needs no Apple Developer account or notarization.
 # Optional Developer-ID mode: EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
-# One command: build and ad-hoc sign the DMG on a Mac, then publish it as
+# One command: build and sign the DMG on a Mac, then publish it as
 # a GitHub Release with archive EdDSA signatures in the Sparkle appcast so that
 # installed copies get the in-app update. No CI runners are involved.
 #
@@ -36,7 +36,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
     cat <<'EOF2'
-Exodia community binary pipeline (ad-hoc DMG -> GitHub -> Sparkle-verified updates).
+Exodia community binary pipeline (persistent certificate -> GitHub -> Sparkle-verified updates).
 No Apple Developer account or notarization is required by the default mode.
 
 Usage:
@@ -272,7 +272,7 @@ echo "Flavor: ${FLAVOR}"
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "Distribution: Developer ID + notarization (explicit legacy mode)"
 else
-    echo "Distribution: community (ad-hoc, no Apple notarization)"
+    echo "Distribution: community (persistent certificate, no Apple notarization)"
 fi
 echo "Short version: ${SHORT_VERSION}"
 echo "Build version: ${BUILD_VERSION}"

@@ -325,12 +325,10 @@ final class SpaceHoldMonitor: HotkeyShortcutMonitoring {
                     return
                 }
             }
-            // Disabled-at-creation (no Input Monitoring grant, or tap disabled
-            // immediately on a re-signed/adhoc build). Don't crash — record it
-            // and leave the tap uninstalled; a later `start()` (after the user
-            // grants the permission) retries.
+            // A missing tap is NOT an installed monitor. Propagate this so the
+            // runtime can surface recovery and retry after an external grant.
             logEmit(.error, "space_hold_tap_create_failed (retry on next start)")
-            return
+            throw HotkeyRegistrationError.tapUnavailable
         }
         // Smuggle `self` to the C callback via the per-process registry.
         SpaceHoldMonitor.activeMonitor = self

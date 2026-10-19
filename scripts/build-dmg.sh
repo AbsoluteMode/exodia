@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # build-dmg.sh — Build a universal community Exodia DMG.
-# Default: ad-hoc signing; no Apple Developer account or notarization.
+# Default: a pinned persistent certificate; no Apple Developer account or notarization.
 # Developer-ID/notarization is available only with EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
 # Usage:
@@ -29,7 +29,7 @@ set -euo pipefail
 
 LEGACY_SIGNED_RELEASE="${EXODIA_LEGACY_SIGNED_RELEASE:-0}"
 case "${LEGACY_SIGNED_RELEASE}" in
-    0) DISTRIBUTION_MODE="community"; SIGNING_IDENTITY="-"; SIGNING_TIMESTAMP_ARGS=(--timestamp=none) ;;
+    0) DISTRIBUTION_MODE="community"; SIGNING_TIMESTAMP_ARGS=(--timestamp=none) ;;
     1) DISTRIBUTION_MODE="developer-id"; SIGNING_TIMESTAMP_ARGS=(--timestamp) ;;
     *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 2 ;;
 esac
@@ -46,6 +46,12 @@ for argument in "$@"; do
     esac
 done
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+COMMUNITY_CERTIFICATE="${PROJECT_DIR}/Resources/community-signing.cer"
+if [ "${LEGACY_SIGNED_RELEASE}" = "0" ]; then
+    # A missing/changed key must fail closed; ad-hoc would invalidate TCC again.
+    SIGNING_IDENTITY="$(/usr/bin/python3 "${PROJECT_DIR}/scripts/code_signing.py" identity \
+        --certificate "${COMMUNITY_CERTIFICATE}")"
+fi
 
 # --- Flavor parameterisation ---------------------------------------------
 
@@ -229,6 +235,11 @@ PYJSON
     exit 0
 fi
 
+if [ "${LEGACY_SIGNED_RELEASE}" = "0" ]; then
+    /usr/bin/python3 "${PROJECT_DIR}/scripts/code_signing.py" identity \
+        --certificate "${COMMUNITY_CERTIFICATE}" --require-private-key >/dev/null
+fi
+
 # Pin the clean build-input commit before compiling; sealing checks it again.
 BUILD_SOURCE_SHA="$(/usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" capture \
     --project-root "${PROJECT_DIR}")"
@@ -395,6 +406,8 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
 /usr/libexec/PlistBuddy -c "Add :ExodiaDistribution string ${DISTRIBUTION_MODE}" \
     "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaSourceRevision string ${BUILD_SOURCE_SHA}" \
+    "${APP_BUNDLE}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ExodiaInstanceLeaseVersion integer 1" \
     "${APP_BUNDLE}/Contents/Info.plist"
 
 if [ -f "${PROJECT_DIR}/Resources/AppIcon.icns" ]; then
@@ -647,6 +660,10 @@ codesign \
 
 echo "▶ Verifying signature..."
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+if [ "${LEGACY_SIGNED_RELEASE}" = "0" ]; then
+    /usr/bin/python3 "${PROJECT_DIR}/scripts/code_signing.py" verify \
+        --certificate "${COMMUNITY_CERTIFICATE}" --app "${APP_BUNDLE}" --bundle-id "${BUNDLE_ID}"
+fi
 otool -L "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" | grep -i sparkle || {
     echo "ERROR: app binary does not link against Sparkle.framework" >&2
     exit 1
@@ -950,6 +967,11 @@ BACKGROUND_OK=0
 if [ -f "${DMG_MOUNT_POINT}/.background/background.png" ]; then
     BACKGROUND_OK=1
 fi
+if [ "${APP_PRESENT}" -eq 1 ] && [ "${LEGACY_SIGNED_RELEASE}" = "0" ]; then
+    /usr/bin/python3 "${PROJECT_DIR}/scripts/code_signing.py" verify \
+        --certificate "${COMMUNITY_CERTIFICATE}" \
+        --app "${DMG_MOUNT_POINT}/${APP_BUNDLE_NAME}.app" --bundle-id "${BUNDLE_ID}"
+fi
 detach_dmg_mount "${DMG_MOUNT_POINT}" 3 >/dev/null 2>&1 || true
 
 if [ "${SYMLINK_OK}" -ne 1 ]; then
@@ -1023,5 +1045,5 @@ echo ""
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "✓ Developer-ID signed + notarized DMG: ${DMG_PATH}"
 else
-    echo "✓ Community DMG (ad-hoc signed, not Apple-notarized): ${DMG_PATH}"
+    echo "✓ Community DMG (persistent certificate, not Apple-notarized): ${DMG_PATH}"
 fi

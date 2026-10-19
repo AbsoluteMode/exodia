@@ -299,8 +299,10 @@ final class SpaceHoldMonitorTests: XCTestCase {
             accessibilityTrusted: { false }
         )
 
-        // First start: factory returns nil → must NOT crash, tap not installed.
-        XCTAssertNoThrow(try monitor.start())
+        // First start: a failed tap must not masquerade as a registered hotkey.
+        XCTAssertThrowsError(try monitor.start()) { error in
+            XCTAssertEqual(error as? HotkeyRegistrationError, .tapUnavailable)
+        }
         XCTAssertFalse(monitor.isTapInstalled)
         XCTAssertEqual(attempts, 1)
 

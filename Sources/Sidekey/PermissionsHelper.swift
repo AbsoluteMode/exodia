@@ -134,6 +134,11 @@ enum PermissionsHelper {
         NSWorkspace.shared.open(url)
     }
 
+    static func openInputMonitoringSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     /// Whether the System Audio Recording (TCC `AudioCapture`) permission is
     /// known to be USABLE for opening a CoreAudio process tap.
     ///

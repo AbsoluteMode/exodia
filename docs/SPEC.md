@@ -258,6 +258,19 @@ Soniox (`stt-rt-v5`, по умолчанию), Deepgram (`nova-3`), ElevenLabs
 streaming, не batch; заметки встреч с Soniox идут через file API
 (`stt-async-v5`).
 
+**Input language** — отдельный от Smart Output language выбор. Явный язык
+передаётся STT-провайдеру: Soniox получает мягкие hints с добавлением английского,
+Deepgram — `language`, ElevenLabs — `language_code`, self-hosted — поле
+`language` совместимого протокола. Deepgram Auto использует `language=multi`:
+для `nova-3` это английский, испанский, французский, немецкий, хинди, русский,
+португальский, японский, итальянский и нидерландский. Остальные поддерживаемые
+языки выбираются явно. Settings → Models показывает это ограничение и
+поддерживаемые варианты. Неподдерживаемый язык известной Nova-модели и Auto
+неизвестной сохранённой модели останавливаются до передачи аудио; Drop
+открывает Models. Сохранённые язык, модель и провайдер сами не меняются.
+Realtime и batch используют одну
+[политику языков Deepgram](../.project-docs/decisions/2026-10-19-deepgram-language-policy.md).
+
 **Local STT** (FluidAudio Parakeet TDT v3) убран 2026-10-18 вместе с MLX
 Qwen и локальной диаризацией. Сохранённый выбор Local не переключается на
 провайдера сам: Drop открывает Settings → Models, пока пользователь не выберет

@@ -108,11 +108,10 @@ final class AppState: ObservableObject {
     /// need to react to the same hover signal.
     @Published var orbHovered: Bool = false
 
-    /// True once `CarbonHotkeyMonitor.start()` has thrown
-    /// `VEError.hotkeyFailed`. Surfaces the failure to UI so a future
-    /// status-bar badge / alert can prompt the user. Always reset to `false`
-    /// on a subsequent successful registration.
+    /// A failed installation is distinct from missing permission. Settings
+    /// exposes the actionable status and Retry without background alerts.
     @Published var hotkeyRegistrationFailed: Bool = false
+    @Published var dropHotkeyStatus: DropHotkeyStatus = .unavailable
 
     /// Set by a Hover-slot hotkey (⌥N) to expand the Hover drawer WITHOUT a
     /// mouse hover (D4). `IslandView.isHoverExpanded` unions this with the

@@ -29,7 +29,7 @@ sources:
   - type: url
     reference: https://sparkle-project.org/documentation/
     confirmed_at: 2026-10-17
-related: [../project.md, 2026-10-17-source-first-distribution.md]
+related: [2026-10-19-stable-code-identity.md, ../project.md, 2026-10-17-source-first-distribution.md]
 ---
 
 # Community updates
@@ -122,3 +122,5 @@ process, crash or power loss installs an update. Source evidence is the current
 `IslandUpdateUserDriver.invokeLater()` implementation and Sparkle's
 `SPUUserDriver.h` Ready callback contract and `Autoupdate/AppInstaller.m`
 termination listener at tag 2.9.1.
+
+The ad-hoc code-signing choice is superseded by [persistent code identity](2026-10-19-stable-code-identity.md); the remaining update policy is unchanged.

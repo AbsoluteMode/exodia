@@ -439,7 +439,9 @@ struct BYOKProviderConnectionProbe: BYOKConnectionProbing {
         case .openAI, .selfHosted:
             return await OpenAIRealtimeProbe(apiKey: apiKey, baseURL: baseURL, model: model).probe()
         case .deepgram:
-            var request = URLRequest(url: DeepgramRealtimeURL.make(model: model, language: nil, terms: []))
+            let language = await MainActor.run { PrivacyPreferences.shared.selectedLanguage?.code }
+            guard let url = try? DeepgramRealtimeURL.make(model: model, language: language, terms: []) else { return false }
+            var request = URLRequest(url: url)
             request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
             return await BYOKWebSocketProbe(request: request).probe()
         case .soniox:

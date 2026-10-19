@@ -14,7 +14,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/PostProcessor.swift
     confirmed_at: 2026-09-07
-related: [decisions/2026-10-19-strict-drop-modes.md, decisions/2026-10-18-clipboard-retention.md, decisions/2026-10-18-toolbox-drag-feedback.md, decisions/2026-10-17-community-updates.md, decisions/2026-10-17-source-first-distribution.md, decisions/2026-10-17-hover-tool-search.md, decisions/2026-10-17-exodia-name.md, decisions/2026-10-17-native-hover-glass.md, decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md, decisions/2026-10-18-remove-local-models.md, decisions/2026-10-18-legacy-model-cleanup.md, decisions/2026-10-18-no-default-realtime-host.md, decisions/2026-10-18-provider-batch-transcription.md]
+related: [decisions/2026-10-19-stable-code-identity.md, bugs/2026-10-19-permission-stability-audit.md, bugs/2026-10-19-input-language-audit.md, decisions/2026-10-19-strict-drop-modes.md, decisions/2026-10-18-clipboard-retention.md, decisions/2026-10-18-toolbox-drag-feedback.md, decisions/2026-10-17-community-updates.md, decisions/2026-10-17-source-first-distribution.md, decisions/2026-10-17-hover-tool-search.md, decisions/2026-10-17-exodia-name.md, decisions/2026-10-17-native-hover-glass.md, decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md, decisions/2026-10-18-remove-local-models.md, decisions/2026-10-18-legacy-model-cleanup.md, decisions/2026-10-18-no-default-realtime-host.md, decisions/2026-10-18-provider-batch-transcription.md]
 ---
 
 # Exodia
@@ -57,3 +57,8 @@ Hover search launches any catalog tool without adding it to the user's saved
 buttons: [tool search](decisions/2026-10-17-hover-tool-search.md).
 
 Clipboard retention: [bounded local history survives restarts](decisions/2026-10-18-clipboard-retention.md).
+
+Permission and hotkey reliability: [audit and implementation acceptance](bugs/2026-10-19-permission-stability-audit.md).
+Input language: [provider transport audit and Deepgram corrections](bugs/2026-10-19-input-language-audit.md).
+
+Community signing and application ownership: [persistent code identity](decisions/2026-10-19-stable-code-identity.md).

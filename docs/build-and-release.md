@@ -18,13 +18,28 @@ git clone https://github.com/AbsoluteMode/exodia.git
 cd exodia
 swift build
 swift test
-./scripts/dev-run.sh --run
+SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 ```
 
-The script builds `build/Exodia-Beta-dev.app` at a stable path with the beta
-bundle identity. It uses an existing local `Sidekey Dev` signing identity or
-falls back to ad-hoc signing. Do not launch the main app with `swift run`.
-Ad-hoc rebuilds may require granting macOS permissions again.
+The script builds `build/Exodia-Beta-dev.app` with the beta bundle identity.
+The explicit `-` above selects ad-hoc signing, which can require regranting
+permissions after a rebuild. There is no automatic ad-hoc fallback. Without
+an override, the script requires the private key matching the committed public
+community certificate. That key is only on the maintainer's machine.
+
+For your own persistent development identity, use Keychain Access → Certificate
+Assistant → Create a Certificate, choose **Self Signed Root** and **Code Signing**,
+and name it **Exodia Local**. Keep the same certificate and private key across
+rebuilds, then run `SIDEKEY_DEV_CODE_SIGN_IDENTITY="Exodia Local" ./scripts/dev-run.sh --run`.
+No Apple Developer account or system-wide Always Trust setting is required.
+Do not launch the main app with `swift run`.
+
+Building leaves other running apps alone and does not register build-only
+bundles in LaunchServices. If the usual development bundle is running, the
+script assembles a separate candidate. New builds coordinate one running copy
+across production, beta and worktrees before starting providers or permissions.
+The second copy offers to activate the existing app; it never stops a recording.
+Settings shows the actual app path, channel, version, build and source revision.
 
 Development version `0.0.0-dev` / build `9999` keeps published binary updates
 from replacing the custom app. Update the checkout with your coding agent,
@@ -96,7 +111,13 @@ For CLI packaging without a live Finder layout session, set
 `EXODIA_DMG_HEADLESS=1`. It skips only cosmetic Finder layout; packaging and
 verification remain the same. The default keeps the Finder layout step.
 
-Default community mode signs ad hoc and skips Apple notarization. Publication
+Default community mode uses the persistent self-issued certificate in
+`Resources/community-signing.cer` and skips Apple notarization. Its private key
+must already be present in the maintainer's Keychain. A missing key stops the
+build; it never substitutes ad-hoc signing or a different certificate. Both
+architectures of the packaged app and the app mounted from the final DMG are
+verified against the pin. Schema 2 provenance records the certificate SHA-256
+alongside the build commit and archive digest. Publication
 still requires authenticated GitHub release access and Exodia's Sparkle Ed25519
 private key through `SPARKLE_ED_PRIVATE_KEY` or `SPARKLE_ED_PRIVATE_KEY_FILE`.
 Keep its matching public key in `Resources/sparkle-public-ed-key.txt`. Never
@@ -105,8 +126,11 @@ archive signature before upload.
 
 Sparkle signatures authenticate update archives using Exodia's own key. They
 are independent of Apple code signing and do not make a community download
-Apple-notarized. First-download Gatekeeper warnings and permission regrants after
-ad-hoc updates remain possible; see [installation](install.md).
+Apple-notarized. First-download Gatekeeper warnings remain possible. Migration
+from an ad-hoc build or a later signer change can require a permission regrant;
+ordinary builds retain the same designated requirement. macOS owns the final
+permission decision; see [installation](install.md) and
+[the signing decision](../.project-docs/decisions/2026-10-19-stable-code-identity.md).
 
 `EXODIA_LEGACY_SIGNED_RELEASE=1` explicitly selects the optional Developer ID and
 notarization path. Only that mode requires `TEAM_ID`, a Developer ID certificate

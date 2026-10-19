@@ -23,7 +23,7 @@ Choose the `Exodia-latest.dmg` asset from an Exodia release. Whytap-named assets
 are historical builds. If no Exodia asset is listed yet, use the source-build
 instructions under [Development](#development).
 
-Community builds use ad-hoc code signing, without Apple notarization. macOS may
+Community builds use a persistent, self-issued code-signing certificate, without Apple notarization. macOS may
 warn on the first download; see [installation and permissions](docs/install.md).
 Updates use the existing island **Update** button and verify the archive with
 Exodia's Sparkle Ed25519 key, which is independent of Apple signing. An update
@@ -120,13 +120,16 @@ git clone https://github.com/AbsoluteMode/exodia.git
 cd exodia
 swift build
 swift test
-./scripts/dev-run.sh --run
+SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 ```
 
 Use `scripts/dev-run.sh` instead of `swift run`: it creates a proper app
-bundle at a stable path and preserves the bundle identity. With the existing
-local signing identity, permission grants can survive rebuilds. An ad-hoc
-rebuild may require granting permissions again in macOS Settings.
+bundle and preserves the beta bundle identity. The command above explicitly
+uses ad-hoc signing, which can require granting permissions again after a rebuild.
+For persistent grants, select your own local code-signing identity with
+`SIDEKEY_DEV_CODE_SIGN_IDENTITY="Exodia Local"`; see the build guide for setup.
+The maintainer's default requires the pinned community identity and fails if
+its private key is unavailable. No private signing key is distributed with source.
 
 See [build details](docs/build-and-release.md). Builds and tests run locally;
 GitHub Actions is disabled. Ready-made releases

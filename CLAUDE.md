@@ -319,10 +319,12 @@ Update flow (download-on-action):
   crashes, process kills or power loss. A final Sparkle delegate guard rechecks
   activity before an app-initiated relaunch. Feed = GitHub Releases
   (`BuildConfig.appcastURL`).
-  Community archives use our independent Sparkle Ed25519 signature and ad-hoc
-  app code signing, without Apple Developer/notarization. Source dev builds
+  Community archives use our independent Sparkle Ed25519 archive signature and
+  a pinned persistent self-issued app certificate, without Apple Developer/notarization.
+  Missing private keys fail the build; no silent ad-hoc fallback. Source dev builds
   (9999 / -dev) do not start the binary updater. WHY:
   .project-docs/decisions/2026-10-17-community-updates.md,
+  .project-docs/decisions/2026-10-19-stable-code-identity.md,
   docs/decisions/2026-06-17-update-download-on-action.md,
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
@@ -375,6 +377,10 @@ WHY: .project-docs/decisions/2026-10-18-clipboard-retention.md
 Installation: SidekeyAppMain checks InstallationGuard before constructing the
 app delegate. A read-only or AppTranslocation copy shows Finder installation
 instructions and quits before permissions, provider discovery or updates.
+ApplicationInstanceCoordinator then acquires one common prod/beta/worktree lease
+before constructing AppDelegate. A second copy offers to activate the owner and
+quits without starting permissions, providers or hotkeys. Legacy binaries launched
+later cannot honor the lease. Settings shows actual channel/version/build/path/revision.
 `--installation-check` loads the packaged executable and verifies resources
 without starting the app runtime. User guide: `docs/install.md`. Policy:
 `.project-docs/decisions/2026-09-10-public-installation.md`.
@@ -406,11 +412,17 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
   rebuilds it at every recording start.
 - **Microphone** for Drop, agent voice and meetings.
 
+Drop reconciles failed installations and permission changes on activation,
+reopen, Settings Refresh/Retry and a bounded quiet polling session. Carbon tap
+shortcuts remain registered without AX so invocation can show permission repair.
+Permission checks guard Start only; Stop is always available. Rebuilding active
+capture monitors waits until capture ends. Background polling never asks for a grant.
+
 ## Commands
 
 ```bash
-# Source build: existing local Sidekey Dev identity, or ad-hoc fallback.
-# No Apple Developer account. macOS may require permissions again after rebuilding.
+# Maintainer source build: pinned persistent identity must be in Keychain.
+# Source users can explicitly select their own local signing identity.
 # Use the packaged app, not `swift run`, for permissions and resources.
 ./scripts/dev-run.sh --run
 
@@ -440,11 +452,13 @@ verification and app integrity checks. The former Apple-signed mode remains
 optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
 other OS protections. First downloads may require user approval and macOS
 permissions can require regranting. WHY:
-`.project-docs/decisions/2026-10-17-community-updates.md`.
+`.project-docs/decisions/2026-10-17-community-updates.md`,
+`.project-docs/decisions/2026-10-19-stable-code-identity.md`.
 
 Release provenance is required: commit and clean Sources, Resources, Package.swift,
 Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
-seal archive SHA-256/size, version, build and flavor in `<DMG>.manifest.json`.
+seal archive SHA-256/size, version, build, flavor and pinned certificate SHA-256
+in schema 2 `<DMG>.manifest.json`. Verify both packaged architectures against the pin.
 Upload-only requires the adjacent manifest. Reject missing/inconsistent
 provenance, changed HEAD or archive bytes before signing-key access/uploads, and
 target the release at the verified manifest's build commit. Rebuild after changing

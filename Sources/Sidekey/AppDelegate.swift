@@ -231,6 +231,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionRepairWindowController: PermissionRepairWindowController?
     private var didCompleteReadyStartup = false
     private var runtimeAccessibilityGranted = false
+    private var runtimePermissionsObserver: NSObjectProtocol?
+    private var openHotkeySettingsObserver: NSObjectProtocol?
+    private var permissionCaptureEndObserver: AnyCancellable?
+    private var permissionRecoveryTimer: Timer?
+    private var permissionRecoverySession: UUID?
+    private var permissionRecoveryBudget = DropHotkeyRecoveryPollBudget()
+    private var dropRegistrationFailure: DropHotkeyStatus?
+    private var dropMonitorGeneration = UUID()
+    private var permissionMonitorRebuildPending = false
 
     /// Sparkle update flow (ROO-186). Owns `SPUUpdater` + `IslandUpdateUserDriver`
     /// via `UpdateController`, which translates driver stage emits into
@@ -441,13 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard didCompleteReadyStartup else { return }
-        let granted = PermissionsHelper.accessibilityGranted(prompt: false)
-        guard granted != runtimeAccessibilityGranted else { return }
-        runtimeAccessibilityGranted = granted
-        teardownHotkeyMonitorsForRebuild()
-        registerHotkey()
-        agentController?.start(googleCallbacks: makeGoogleCallbacks())
+        refreshRuntimePermissions()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -456,11 +459,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showRuntimeSurfaceAfterReopen() {
+        refreshRuntimePermissions()
         IslandPanel.shared.show()
         registerIslandHotkeyActivity()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopPermissionRecoveryPolling()
+        permissionCaptureEndObserver?.cancel()
+        permissionCaptureEndObserver = nil
+        if let runtimePermissionsObserver { NotificationCenter.default.removeObserver(runtimePermissionsObserver) }
+        if let openHotkeySettingsObserver { NotificationCenter.default.removeObserver(openHotkeySettingsObserver) }
         removeWorkspacePowerObservers()
         recorder.cancel()
         // Cancel any in-flight streaming session so the WS task doesn't
@@ -478,6 +487,128 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Permission repair
+
+    private func observeRuntimePermissionsIfNeeded() {
+        guard runtimePermissionsObserver == nil else { return }
+        runtimePermissionsObserver = NotificationCenter.default.addObserver(
+            forName: .sidekeyRuntimePermissionsRefresh, object: nil, queue: .main
+        ) { [weak self] note in
+            let retry = note.userInfo?["retry"] as? Bool ?? false
+            let resumePolling = note.userInfo?["resumePolling"] as? Bool ?? true
+            Task { @MainActor [weak self] in
+                self?.refreshRuntimePermissions(forceRebuild: retry, resumePolling: resumePolling)
+            }
+        }
+        openHotkeySettingsObserver = NotificationCenter.default.addObserver(
+            forName: .sidekeyOpenHotkeySettings, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.ensureSettingsWindowController().show(tab: .hotkeys) }
+        }
+        permissionCaptureEndObserver = Self.observeDropCaptureEnd(
+            AppState.shared.$phase.eraseToAnyPublisher(),
+            captureIsActive: { [weak self] in
+                AppState.shared.phase == .recording || self?.streamingSetupInProgress == true
+            },
+            hasPendingRebuild: { [weak self] in self?.permissionMonitorRebuildPending == true },
+            onCaptureEnded: { [weak self] in
+                // A long take may outlive the bounded repair poll. Service its
+                // deferred rebuild directly, without restarting that poll.
+                self?.refreshRuntimePermissions(resumePolling: false)
+            }
+        )
+    }
+
+    /// Published sends in willSet; queue delivery reads the completed phase
+    /// assignment and also rejects stale queued transitions of a new take.
+    /// Kept injectable so the long-capture/expired-poll path needs no real input.
+    static func observeDropCaptureEnd(
+        _ phases: AnyPublisher<AppPhase, Never>,
+        captureIsActive: @escaping () -> Bool,
+        hasPendingRebuild: @escaping () -> Bool,
+        onCaptureEnded: @escaping () -> Void
+    ) -> AnyCancellable {
+        phases.dropFirst().receive(on: DispatchQueue.main).sink { _ in
+            guard hasPendingRebuild(), !captureIsActive() else { return }
+            onCaptureEnded()
+        }
+    }
+
+    /// Never requests a grant. Reconciles actual installation as well as AX,
+    /// including a tap that failed while AX itself remained granted.
+    private func refreshRuntimePermissions(forceRebuild: Bool = false, resumePolling: Bool = true) {
+        guard didCompleteReadyStartup else { return }
+        let snapshot = PermissionsHelper.snapshot()
+        let accessibilityChanged = snapshot.accessibilityGranted != runtimeAccessibilityGranted
+        runtimeAccessibilityGranted = snapshot.accessibilityGranted
+        let captureActive = AppState.shared.phase == .recording || streamingSetupInProgress
+        switch DropHotkeyRecovery.reconcileDecision(
+            installed: hotkey != nil,
+            accessibilityChanged: accessibilityChanged,
+            forceRebuild: forceRebuild,
+            rebuildPending: permissionMonitorRebuildPending,
+            captureActive: captureActive
+        ) {
+        case .deferRebuild:
+            // Keep the current stop/release hook until the active take ends.
+            permissionMonitorRebuildPending = true
+        case .rebuild:
+            permissionMonitorRebuildPending = false
+            teardownHotkeyMonitorsForRebuild()
+            registerHotkey()
+            agentController?.start(googleCallbacks: makeGoogleCallbacks())
+        case .install:
+            registerHotkey()
+        case .none:
+            break
+        }
+        publishDropHotkeyStatus(snapshot: snapshot)
+        if AppState.shared.dropHotkeyStatus == .ready && !permissionMonitorRebuildPending {
+            stopPermissionRecoveryPolling()
+        } else if resumePolling {
+            startPermissionRecoveryPollingIfNeeded()
+        }
+    }
+
+    private func publishDropHotkeyStatus(snapshot: PermissionsHelper.Snapshot? = nil) {
+        let status = DropHotkeyRecovery.status(
+            snapshot: snapshot ?? PermissionsHelper.snapshot(),
+            installed: hotkey != nil,
+            failure: dropRegistrationFailure
+        )
+        if AppState.shared.dropHotkeyStatus != status { AppState.shared.dropHotkeyStatus = status }
+        AppState.shared.hotkeyRegistrationFailed = dropRegistrationFailure != nil
+    }
+
+    private func startPermissionRecoveryPollingIfNeeded() {
+        guard permissionRecoveryTimer == nil else { return }
+        permissionRecoveryBudget = DropHotkeyRecoveryPollBudget()
+        let session = UUID()
+        permissionRecoverySession = session
+        permissionRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.permissionRecoverySession == session else { return }
+                guard self.permissionRecoveryBudget.consume() else {
+                    self.stopPermissionRecoveryPolling()
+                    return
+                }
+                self.refreshRuntimePermissions(resumePolling: false)
+            }
+        }
+    }
+
+    private func stopPermissionRecoveryPolling() {
+        permissionRecoveryTimer?.invalidate()
+        permissionRecoveryTimer = nil
+        permissionRecoverySession = nil
+    }
+
+    /// Only a user invocation shows this window. A background loss or transient
+    /// tap failure updates status and retries quietly instead of interrupting.
+    private func explainMissingDropPermission() {
+        publishDropHotkeyStatus()
+        startPermissionRecoveryPollingIfNeeded()
+        presentPermissionRepair { [weak self] in self?.refreshRuntimePermissions(forceRebuild: true) }
+    }
 
     private func presentPermissionRepair(onComplete: @escaping () -> Void) {
         if permissionRepairWindowController == nil {
@@ -516,7 +647,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         observeHotkeyPreferences()
+        observeRuntimePermissionsIfNeeded()
         registerHotkey()
+        if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
         // Reactive reconcile: re-evaluate arm/disarm + meetings start/stop
         // whenever any capability flag flips (posted by UserPreferencesCache E1).
         NotificationCenter.default.addObserver(
@@ -676,6 +809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the hang surface, both together close the corner cases.
     private func pauseRuntimeForSleep() {
         os_log("power_will_sleep pausing runtime", log: Self.log, type: .info)
+        stopPermissionRecoveryPolling()
 
         recorder.cancel()
         // Same reasoning as `applicationWillTerminate` — sleep should not
@@ -765,6 +899,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         teardownHotkeyMonitorsForRebuild()
 
         registerHotkey()
+        if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
 
         // `AgentController.start()` re-installs `gestureMonitor.start()`
         // which itself calls `stop()` first. Calling it on the live
@@ -789,6 +924,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             [hotkey, helpHotkey, historyHotkey, meetingRecordHotkey] + hoverSlotHotkeys
         )
         hotkey = nil
+        dropMonitorGeneration = UUID()
         helpHotkey = nil
         historyHotkey = nil
         meetingRecordHotkey = nil
@@ -1179,7 +1315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHoverSlotHotkeys()
         registerMeetingRecordHotkey()
         guard hotkey == nil else { return }
-        guard PermissionsHelper.accessibilityGranted(prompt: false) else { return }
         // Keep Drop working during meetings. Meeting mic capture and the
         // Drop voice route can coexist, so configurable drop shortcuts
         // register without the old meeting suppression gate.
@@ -1192,6 +1327,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shortcut: dropVoiceHotkey,
             gesture: dropVoiceGesture
         )
+        guard DropHotkeyRecovery.canRegister(
+            shortcut: dropVoiceHotkey,
+            gesture: dropVoiceGesture,
+            accessibilityGranted: PermissionsHelper.accessibilityGranted(prompt: false)
+        ) else {
+            dropRegistrationFailure = nil
+            publishDropHotkeyStatus()
+            return
+        }
+        let monitorGeneration = UUID()
+        dropMonitorGeneration = monitorGeneration
         let hotkey = HotkeyShortcutMonitor(
             shortcut: dropVoiceHotkey,
             hotKeyIDValue: CarbonHotkeyMonitor.dropHotKeyID,
@@ -1207,58 +1353,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // of Carbon (so the bound character never prints); `.holdSpace`
             // already taps and ignores this flag.
             dropHoldSwallow: dropHoldSwallow,
-            // When the tap loses Accessibility at runtime, surface the repair
-            // screen so the user can re-grant without relaunching the app.
-            // `presentPermissionRepair` guards against showing twice (== nil
-            // check), so re-entrancy is safe.
-            //
-            // Losing Accessibility kills the Accessibility-gated monitors (the
-            // Drop tap, ⌥M / ⌥1..⌥5, and the agent's Right-Cmd `NSEvent` global
-            // monitor). On repair we resurrect them — mirroring
-            // `forceReregisterEventMonitors` (the wake/sleep path):
-            //   * Hotkeys: the stale monitors already tore themselves down, but
-            //     `registerHotkey()` and its per-monitor registrars early-return
-            //     on a live ref (`guard hotkey == nil`,
-            //     `guard meetingRecordHotkey == nil`,
-            //     `guard hoverSlotHotkeys.isEmpty`), so clear the WHOLE set first
-            //     or ⌥M / ⌥1..⌥5 stay dead after a re-grant. `startReady()` then
-            //     calls `registerHotkey()` and reinstalls them all.
-            //   * Agent: `startReady()` → `startAgentIfEnabled()` early-returns
-            //     on its own `agentController == nil` guard (the controller
-            //     object survives; only its global monitor died), so it will
-            //     NOT re-install the monitor. Re-`start()` the LIVE controller
-            //     here instead — `gestureMonitor.start()` calls `stop()` first,
-            //     reinstalling the NSEvent monitor without tearing down chat
-            //     state, response panel, or in-flight SSE (same call the
-            //     wake/sleep path makes).
+            // A disabled tap may be a transient failure, not a revoked grant.
+            // Recover quietly; permission UI is shown only on user invocation.
             onAccessibilityLost: { [weak self] in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.presentPermissionRepair(onComplete: { [weak self] in
-                        guard let self else { return }
-                        self.teardownHotkeyMonitorsForRebuild()
-                        self.startReady()
-                        self.agentController?.start(googleCallbacks: self.makeGoogleCallbacks())
-                    })
+                Task { @MainActor [weak self] in
+                    guard let self, self.dropMonitorGeneration == monitorGeneration else { return }
+                    if AppState.shared.phase == .recording || self.streamingSetupInProgress {
+                        // The lost hold tap can no longer receive keyUp. Finish
+                        // the captured audio instead of leaving the mic open.
+                        self.handleDropHotkeyRoute(Self.dropHotkeyReleasedRoute(
+                            gesture: dropVoiceGesture,
+                            phase: AppState.shared.phase,
+                            hasStreamingSession: self.streamingSession != nil,
+                            isStreamingSetupInProgress: self.streamingSetupInProgress
+                        ))
+                    }
+                    self.hotkey?.stop()
+                    self.hotkey = nil
+                    self.refreshRuntimePermissions(forceRebuild: true)
                 }
-            }
+            },
+            allowPermissionRequests: false
         )
         do {
             try hotkey.start()
             self.hotkey = hotkey
-            AppState.shared.hotkeyRegistrationFailed = false
+            dropRegistrationFailure = nil
+            publishDropHotkeyStatus()
         } catch {
-            // Carbon `RegisterEventHotKey` can return paramErr / eventInternalErr
-            // (e.g. on a hot-key collision with another app holding the same
-            // combo). Surface to os_log so the failure is visible in
-            // Console.app, and to AppState so a future UI surface (status-bar
-            // badge, alert) can prompt the user.
+            // Failed starts remain uninstalled. Settings shows a useful
+            // distinction between a permission issue and a shortcut collision.
             os_log(
                 "registerHotkey failed: %{public}@",
                 log: Self.hotkeyLog, type: .error,
                 String(describing: error)
             )
-            AppState.shared.hotkeyRegistrationFailed = true
+            dropRegistrationFailure = DropHotkeyRecovery.failure(
+                for: error,
+                inputMonitoringGranted: PermissionsHelper.inputMonitoringGranted(prompt: false)
+            )
+            publishDropHotkeyStatus()
         }
     }
 
@@ -1418,7 +1552,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         hotkey?.stop()
         hotkey = nil
+        dropMonitorGeneration = UUID()
         registerHotkey(dropShortcut: shortcut, dropGesture: gesture)
+        if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
     }
 
     /// Carbon hot-key IDs for the five positional Hover-slot shortcuts, in slot
@@ -2203,6 +2339,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleDropHotkeyRoute(_ route: DropFlowRoute) {
+        if DropHotkeyRecovery.requiresStartPermission(route) {
+            let snapshot = PermissionsHelper.snapshot()
+            guard snapshot.accessibilityGranted,
+                  snapshot.microphoneStatus != .denied,
+                  snapshot.microphoneStatus != .restricted else {
+                explainMissingDropPermission()
+                return
+            }
+            // The OS may show the initial microphone prompt when capture starts.
+            // Never put this check on stop/finalize/release routes.
+        }
         // Escaping a parked total-offline take must ALWAYS clear the banner.
         if route == .discardFailedTakeAndStart {
             discardPendingRetry()

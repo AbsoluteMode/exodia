@@ -43,13 +43,13 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("updates.whytap.ai"))
     }
 
-    func test_devRunUsesExodiaDevBundleAndCleansOldSidekeyBundles() throws {
+    func test_devRunUsesExodiaDevBundleWithoutDeletingLegacyCopies() throws {
         let source = try readProjectFile("scripts/dev-run.sh")
 
         XCTAssertTrue(source.contains(#"APP_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta-dev.app""#))
-        XCTAssertTrue(source.contains("build/Sidekey-Beta-dev.app"))
+        XCTAssertFalse(source.contains("stop_conflicting_sidekey_processes"))
     }
 
     /// Regression guard for the silent system-audio failure (June 2026): the
@@ -101,7 +101,7 @@ final class PackagingRebrandTests: XCTestCase {
         }
     }
 
-    func test_communityBuildReachesCompilerWithoutAppleTools() throws {
+    func test_communityBuildReachesCompilerWithPersistentLocalSignerWithoutAppleCredentials() throws {
         let temporary = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporary) }
         let tools = temporary.appendingPathComponent("bin", isDirectory: true)
@@ -123,6 +123,12 @@ final class PackagingRebrandTests: XCTestCase {
         """#)
         try executable(at: tools.appendingPathComponent("security"), contents: #"""
         #!/bin/bash
+        if [ "$*" = "find-identity -v -p codesigning" ]; then
+            fingerprint=$(/usr/bin/python3 "$PROBE_ROOT/scripts/code_signing.py" identity --certificate "$PROBE_ROOT/Resources/community-signing.cer")
+            echo "1) $fingerprint Fixture"
+            echo signer-check >> "$PROBE_MARKER"
+            exit 0
+        fi
         echo unexpected-apple >> "$PROBE_MARKER"
         exit 71
         """#)
@@ -138,9 +144,9 @@ final class PackagingRebrandTests: XCTestCase {
         try prepareProvenanceFixture(temporary)
         let result = try runScript(temporary.appendingPathComponent("scripts/build-dmg.sh"),
             environment: ["PATH": tools.path + ":/usr/bin:/bin", "PROBE_MARKER": marker.path,
-                          "BUILD_VERSION": "42", "FLAVOR": "prod"])
+                          "PROBE_ROOT": temporary.path, "BUILD_VERSION": "42", "FLAVOR": "prod"])
         XCTAssertEqual(result.status, 64, result.output)
-        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "compiler\n")
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "signer-check\ncompiler\n")
     }
 
     func test_developerIDPathRequiresExplicitLegacyOptIn() throws {
@@ -254,6 +260,11 @@ final class PackagingRebrandTests: XCTestCase {
         let helper = directory.appendingPathComponent("scripts/release-provenance.py")
         try FileManager.default.copyItem(at: try projectRoot().appendingPathComponent("scripts/release-provenance.py"),
             to: helper)
+        for relative in ["scripts/code_signing.py", "Resources/community-signing.cer"] {
+            let destination = directory.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: try projectRoot().appendingPathComponent(relative), to: destination)
+        }
         try "build/\n.build/\n".write(to: directory.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
         let environment = ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
         for arguments in [["init", "-q"], ["config", "user.name", "Release Fixture"],

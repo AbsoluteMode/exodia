@@ -11,6 +11,9 @@ import re
 import subprocess
 import sys
 import tempfile
+# Provenance must not create untracked build inputs while checking cleanliness.
+sys.dont_write_bytecode = True
+from code_signing import community_policy
 
 BUILD_INPUTS = ("Sources", "Resources", "Package.swift", "Package.resolved", "VERSION", "scripts")
 BUNDLE_IDS = {"prod": "com.rootwise.sidekey", "beta": "com.rootwise.sidekey.beta"}
@@ -64,9 +67,10 @@ def metadata(args: argparse.Namespace) -> dict:
     expected_name = f"{bundle}-{args.version}-build{args.build}.dmg"
     if args.archive.name != expected_name:
         raise InvalidProvenance("archive name does not match release version, build and flavor")
-    return {"schema_version": 1, "archive": expected_name, "version": args.version,
+    signing = community_policy(args.project_root) if args.distribution == "community" else {"kind": "developer-id"}
+    return {"schema_version": 2, "archive": expected_name, "version": args.version,
             "build": args.build, "flavor": args.flavor, "bundle_id": BUNDLE_IDS[args.flavor],
-            "distribution": args.distribution, "architectures": ["arm64", "x86_64"]}
+            "distribution": args.distribution, "architectures": ["arm64", "x86_64"], "code_signing": signing}
 
 
 def manifest_path(args: argparse.Namespace) -> Path:
