@@ -23,7 +23,7 @@ sources:
   - type: repository
     reference: scripts/dev-run.sh
     confirmed_at: 2026-10-19
-related: [../project.md, ../bugs/2026-10-19-permission-stability-audit.md, 2026-10-19-community-signing-identity.md, 2026-10-19-shared-working-app.md]
+related: [../project.md, ../bugs/2026-10-19-permission-stability-audit.md, 2026-10-19-community-signing-identity.md, 2026-10-19-shared-working-app.md, 2026-10-19-nowplaying-adapter-shutdown.md]
 ---
 
 # One running copy

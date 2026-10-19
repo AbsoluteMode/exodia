@@ -6,6 +6,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
     case agentMode
     case toolbox
     case notifications
+    case backup
     case other
 
     var id: String { rawValue }
@@ -38,6 +39,8 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
             return "Toolbox"
         case .notifications:
             return "Notifications"
+        case .backup:
+            return "Backup"
         case .other:
             return "Other"
         }
@@ -63,6 +66,8 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
             return "square.grid.2x2"
         case .notifications:
             return "bell.badge"
+        case .backup:
+            return "externaldrive.badge.timemachine"
         case .other:
             return "ellipsis.circle"
         }
@@ -70,7 +75,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var pdfResourceName: String? {
         switch self {
-        case .models, .hotkeys, .permissions, .notes, .agentMode, .toolbox, .notifications, .other:
+        case .models, .hotkeys, .permissions, .notes, .agentMode, .toolbox, .notifications, .backup, .other:
             return nil
         }
     }

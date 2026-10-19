@@ -44,6 +44,17 @@ struct CaseVaultKeyStore {
         return SymmetricKey(data: data)
     }
 
+    /// Reads the existing vault key WITHOUT creating one.
+    ///
+    /// The backup path must never mint a vault key as a side effect: a fresh
+    /// key next to an existing vault file would make an unreadable vault look
+    /// like an empty one, and the backup would quietly omit the user's Case
+    /// secrets. WHY: .project-docs/decisions/2026-10-19-config-backup.md
+    func readExistingKey() throws -> SymmetricKey? {
+        guard let data = try readKeyData() else { return nil }
+        return SymmetricKey(data: data)
+    }
+
     func deleteKey() throws {
         let status = SecItemDelete(baseQuery() as CFDictionary)
         switch status {

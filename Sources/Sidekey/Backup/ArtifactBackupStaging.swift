@@ -1,0 +1,632 @@
+import CryptoKit
+import Foundation
+
+/// Every on-disk location a complete backup covers. Legacy roots differ per
+/// store (`Sidekey/` for meetings, the bundle id for Monitor, Notify and the
+/// Case vault, the prod bundle id for history, `whytap/` for the agent
+/// workspace) and must not be "tidied up": changing them would orphan the
+/// user's existing data.
+struct ArtifactBackupLocations: Sendable {
+    var applicationSupport: URL
+    var bundleRoot: URL
+    var legacyMeetingsRoot: URL
+    var agentWorkspace: URL
+    /// Where `history.sqlite` and `history-assets` actually live.
+    /// `HistoryStoreLocation` hardcodes the prod bundle id, so a beta build
+    /// shares the prod history files; composing this path from
+    /// `BuildConfig.bundleID` would point a beta backup at a directory the
+    /// app never writes.
+    var historyRoot: URL
+
+    var meetingsCatalog: URL { legacyMeetingsRoot.appendingPathComponent("Meetings", isDirectory: true) }
+    var meetingsStaging: URL { legacyMeetingsRoot.appendingPathComponent("meetings-staging", isDirectory: true) }
+    var historyDatabase: URL { historyRoot.appendingPathComponent("history.sqlite", isDirectory: false) }
+    var historyAssets: URL { historyRoot.appendingPathComponent("history-assets", isDirectory: true) }
+    var caseVault: URL { bundleRoot.appendingPathComponent("case-vault.json.enc", isDirectory: false) }
+    var monitorRoot: URL { bundleRoot.appendingPathComponent("Monitor", isDirectory: true) }
+    var notifyRoot: URL { bundleRoot.appendingPathComponent("notifications", isDirectory: true) }
+    var agentMemory: URL { agentWorkspace.appendingPathComponent("AGENTS.md", isDirectory: false) }
+    var pendingRestoreRoot: URL { bundleRoot.appendingPathComponent("pending-restore", isDirectory: true) }
+    var stagingWorkRoot: URL { bundleRoot.appendingPathComponent("backup-work", isDirectory: true) }
+    /// Retained checkpoints of data a finished restore replaced.
+    var recoveryRoot: URL { pendingRestoreRoot.appendingPathComponent("recovery", isDirectory: true) }
+
+    static var production: Self {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return Self(
+            applicationSupport: support,
+            bundleRoot: support.appendingPathComponent(BuildConfig.bundleID, isDirectory: true),
+            legacyMeetingsRoot: support.appendingPathComponent("Sidekey", isDirectory: true),
+            agentWorkspace: support.appendingPathComponent("whytap", isDirectory: true)
+                .appendingPathComponent("agent", isDirectory: true),
+            historyRoot: HistoryStoreLocation.defaultURL.deletingLastPathComponent()
+        )
+    }
+
+    /// Isolated tree for tests and clean-profile recovery checks. The same
+    /// relative layout, so the production path rules are what get tested.
+    static func isolated(root: URL) -> Self {
+        Self(
+            applicationSupport: root,
+            bundleRoot: root.appendingPathComponent(BuildConfig.bundleID, isDirectory: true),
+            legacyMeetingsRoot: root.appendingPathComponent("Sidekey", isDirectory: true),
+            agentWorkspace: root.appendingPathComponent("whytap", isDirectory: true)
+                .appendingPathComponent("agent", isDirectory: true),
+            historyRoot: root.appendingPathComponent(BuildConfig.bundleID, isDirectory: true)
+        )
+    }
+}
+
+// MARK: - Store export seams
+
+struct ArtifactExportedFile: Sendable {
+    /// Path inside the archive section, e.g. `db/meetings.sqlite`.
+    let relativePath: String
+    let url: URL
+}
+
+struct ArtifactHistoryExport: Sendable {
+    let files: [ArtifactExportedFile]
+    /// Clipboard rows that only reference the user's own files. The backup
+    /// does not own those bytes and must say so.
+    let externalLinkCount: Int
+}
+
+/// A coherent export is a store-level responsibility: SQLite's own snapshot
+/// mechanism cannot coordinate the sidecar files a row points at.
+protocol ArtifactMeetingsExporting: Sendable {
+    func exportArtifactGeneration(into directory: URL) async throws -> [ArtifactExportedFile]
+}
+
+protocol ArtifactHistoryExporting: Sendable {
+    func exportArtifactGeneration(into directory: URL, assetsFrom assets: URL) throws -> ArtifactHistoryExport
+}
+
+// MARK: - Staged generation
+
+enum ArtifactStagedSource: Sendable {
+    /// A file inside the immutable staged generation.
+    case file(URL)
+    /// Secrets and small configurations that must never be written to a
+    /// plaintext temporary file.
+    case inline(Data)
+}
+
+struct ArtifactStagedEntry: Sendable {
+    var path: String
+    var section: ArtifactBackupSection
+    var bytes: Int64
+    var sha256: String
+    var source: ArtifactStagedSource
+}
+
+struct ArtifactInlinePayload: Sendable {
+    var path: String
+    var section: ArtifactBackupSection
+    var data: Data
+}
+
+struct ArtifactBackupStageRequest: Sendable {
+    var sections: Set<ArtifactBackupSection>
+    var locations: ArtifactBackupLocations
+    var inline: [ArtifactInlinePayload]
+    var includeCaseVaultFile: Bool
+    /// The exported vault key, used to prove the staged ciphertext copy opens
+    /// with exactly the key the archive carries.
+    var caseVaultKey: Data?
+    var meetings: ArtifactMeetingsExporting?
+    var history: ArtifactHistoryExporting?
+}
+
+struct ArtifactBackupGeneration: Sendable {
+    var directory: URL
+    var entries: [ArtifactStagedEntry]
+    var warnings: [String]
+    var contentBytes: Int64
+}
+
+/// Off-main worker. Staging, hashing and the encrypted write all happen on
+/// this actor's executor, so a large meeting recording never blocks the UI.
+///
+/// Coverage rule: an application-owned file that exists but cannot be included
+/// fails the backup. Only bytes the app does not own (the user's original
+/// clipboard files, scripts and credentials living outside our roots) and
+/// files that are still being written are reported as warnings.
+/// WHY: .project-docs/decisions/2026-10-19-config-backup.md
+actor ArtifactBackupStager {
+    private let fileManager = FileManager.default
+
+    /// Sanity ceilings. Hitting one fails the backup instead of trimming it.
+    private enum Limit {
+        static let caseVault: Int64 = 8 * 1024 * 1024
+        static let workspaceFile: Int64 = 8 * 1024 * 1024
+        static let workspaceFiles = 2048
+        static let workspaceTotal: Int64 = 512 * 1024 * 1024
+        /// Relative directory depth the archive paths can carry. A deeper
+        /// owned tree fails the backup, naming the path, instead of being
+        /// trimmed out of a "complete" snapshot.
+        static let workspaceDepth = 5
+        static let agentMemory: Int64 = 8 * 1024 * 1024
+        static let recordingFile: Int64 = 8 * 1024 * 1024 * 1024
+        static let recordingFiles = 4096
+        static let recordingDirectories = 1024
+        /// A chunk rotates every 30 s (`MeetingsConfig.chunkRotationSeconds`),
+        /// so a `.tmp` untouched for ten rotations is not being written: it is
+        /// a crash leftover whose bytes exist nowhere else and must travel.
+        static let abandonedTemporarySeconds: TimeInterval = 300
+    }
+
+    /// Provider job state never travels: a restored copy must not resume a
+    /// transcription job that belongs to the original Mac.
+    private static let excludedRecordingNames: Set<String> = ["soniox-transcription.json"]
+
+    /// Finder and the OS drop these into any directory the user browses. They
+    /// are not application data, so they are skipped rather than failing a
+    /// backup — every other unexpected name still fails, by name.
+    private static let systemMetadataNames: Set<String> = [".DS_Store", ".localized", "Icon\r"]
+
+    func stage(_ request: ArtifactBackupStageRequest) async throws -> ArtifactBackupGeneration {
+        guard !request.sections.isEmpty else { throw ArtifactBackupError.nothingSelected }
+        let directory = request.locations.stagingWorkRoot
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try createPrivateDirectory(request.locations.stagingWorkRoot)
+        try createPrivateDirectory(directory)
+        do {
+            var entries: [ArtifactStagedEntry] = []
+            var warnings: [String] = []
+            for payload in request.inline {
+                try ArtifactBackupPath.validate(payload.path)
+                guard request.sections.contains(payload.section) else { throw ArtifactBackupError.damaged }
+                guard Int64(payload.data.count) <= ArtifactBackupManifest.maxInlineBytes else {
+                    throw ArtifactBackupError.tooLarge
+                }
+                entries.append(ArtifactStagedEntry(
+                    path: payload.path, section: payload.section,
+                    bytes: Int64(payload.data.count), sha256: ArtifactBackupDigest.of(payload.data),
+                    source: .inline(payload.data)))
+            }
+            if request.sections.contains(.caseVault), request.includeCaseVaultFile {
+                entries.append(try stageCaseVault(request, into: directory))
+            }
+            if request.sections.contains(.meetings) {
+                entries.append(contentsOf: try await stageMeetings(request, into: directory, warnings: &warnings))
+            }
+            if request.sections.contains(.history) {
+                entries.append(contentsOf: try stageHistory(request, into: directory, warnings: &warnings))
+            }
+            if request.sections.contains(.workspace) {
+                entries.append(contentsOf: try stageWorkspace(request, into: directory,
+                                                              warnings: &warnings))
+            }
+            entries = try Self.ordered(entries)
+            let total = entries.reduce(Int64(0)) { $0 + $1.bytes }
+            guard total <= ArtifactBackupManifest.maxTotalBytes else { throw ArtifactBackupError.tooLarge }
+            return ArtifactBackupGeneration(directory: directory, entries: entries,
+                                            warnings: warnings, contentBytes: total)
+        } catch {
+            discard(directory)
+            throw error
+        }
+    }
+
+    func discard(_ directory: URL) {
+        guard directory.lastPathComponent.count == 36 else { return }
+        try? fileManager.removeItem(at: directory)
+    }
+
+    /// Inline entries first, then files; both deterministic. The restore path
+    /// validates every inline payload before it moves a single target, and a
+    /// stable prefix lets it do that by reading only the head of the archive.
+    /// Logical paths must also not collide when compared case-insensitively:
+    /// APFS is case-insensitive by default, so two such entries would be one
+    /// file on the restored Mac.
+    static func ordered(_ entries: [ArtifactStagedEntry]) throws -> [ArtifactStagedEntry] {
+        var seen = Set<String>()
+        for entry in entries {
+            guard seen.insert(entry.path.lowercased()).inserted else {
+                throw ArtifactBackupError.unsafeContent
+            }
+        }
+        let inline = entries.filter { ArtifactRestoreDestination.isInlinePath($0.path) }
+        let files = entries.filter { !ArtifactRestoreDestination.isInlinePath($0.path) }
+        return inline.sorted { $0.path < $1.path } + files.sorted { $0.path < $1.path }
+    }
+
+    // MARK: Validation and transaction staging (off the main thread)
+
+    /// The verification generation always lives in our own private work root,
+    /// never next to a user-chosen archive file.
+    func verifyArchive(at url: URL, archiveKey: Data,
+                       sections: Set<ArtifactBackupSection>? = nil,
+                       scratchRoot: URL) throws -> ArtifactArchiveVerification {
+        let directory = scratchRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try createPrivateDirectory(scratchRoot)
+        try createPrivateDirectory(directory)
+        defer { discard(directory) }
+        return try ArtifactArchiveVerifier.verify(archiveAt: url, key: archiveKey,
+                                                  sections: sections, scratch: directory)
+    }
+
+    func stageArchiveCopy(from source: URL, to destination: URL, archiveKey: Data,
+                          manifestID: UUID) throws -> (digest: String, bytes: Int64) {
+        try ArtifactRestoreTransaction.stageArchiveCopy(from: source, to: destination,
+                                                        key: archiveKey, manifestID: manifestID)
+    }
+
+    // MARK: Archive writing
+
+    /// Streams the manifest and every entry into one authenticated archive.
+    /// Returns the archive's size on disk, which is what a transport uploads.
+    func writeArchive(to url: URL, archiveKey: Data, manifest: ArtifactBackupManifest,
+                      entries: [ArtifactStagedEntry]) throws -> Int64 {
+        let manifestData = try manifest.encoded()
+        let index = Dictionary(uniqueKeysWithValues: entries.map { ($0.path, $0) })
+        let writer = try ArtifactArchiveWriter(url: url, archiveKey: archiveKey)
+        do {
+            try writer.append(Data(ArtifactArchiveHeader.bigEndian32(UInt32(manifestData.count))))
+            try writer.append(manifestData)
+            for entry in manifest.entries {
+                guard let staged = index[entry.path] else { throw ArtifactBackupError.readFailed }
+                switch staged.source {
+                case .inline(let data):
+                    guard Int64(data.count) == entry.bytes else { throw ArtifactBackupError.readFailed }
+                    try writer.append(data)
+                case .file(let file):
+                    // The staged generation is immutable; a size or digest
+                    // change here means something is still writing and the
+                    // archive would not match its manifest.
+                    let check = try? ArtifactBackupDigest.ofFile(file)
+                    guard let check, check.bytes == entry.bytes, check.digest == entry.sha256 else {
+                        throw ArtifactBackupError.contentChanged(file.lastPathComponent)
+                    }
+                    try writer.append(contentsOf: file)
+                }
+            }
+            try writer.finish()
+        } catch {
+            writer.cancel()
+            throw error
+        }
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return Int64(size)
+    }
+
+    // MARK: Sections
+
+    /// Case travels as its own ciphertext plus its key, and the staged copy is
+    /// proven to open with that exact key: a vault reset or key rotation that
+    /// lands between the pre-check and the copy would otherwise produce a
+    /// successful backup nobody can open.
+    private func stageCaseVault(_ request: ArtifactBackupStageRequest, into directory: URL) throws -> ArtifactStagedEntry {
+        guard let keyData = request.caseVaultKey, keyData.count == 32 else {
+            throw ArtifactBackupError.caseUnreadable
+        }
+        let staged = directory.appendingPathComponent("case", isDirectory: true)
+        try createPrivateDirectory(staged)
+        let copy = staged.appendingPathComponent("vault.enc", isDirectory: false)
+        _ = try copyStable(request.locations.caseVault, to: copy, limit: Limit.caseVault, required: true)
+        let payload: CaseVaultPayload
+        do { payload = try CaseVaultStore.decode(envelope: try Data(contentsOf: copy),
+                                                 using: SymmetricKey(data: keyData)) }
+        catch { throw ArtifactBackupError.caseUnreadable }
+        guard payload.schemaVersion <= CaseVaultPayload.currentSchemaVersion else {
+            throw ArtifactBackupError.caseUnreadable
+        }
+        return try entry(for: copy, path: "case/vault.enc", section: .caseVault)
+    }
+
+    private func stageMeetings(_ request: ArtifactBackupStageRequest, into directory: URL,
+                               warnings: inout [String]) async throws -> [ArtifactStagedEntry] {
+        guard let exporter = request.meetings else { throw ArtifactBackupError.missingSection }
+        let staged = directory.appendingPathComponent("meetings", isDirectory: true)
+        try createPrivateDirectory(staged)
+        var entries: [ArtifactStagedEntry] = []
+        for file in try await exporter.exportArtifactGeneration(into: staged) {
+            entries.append(try entry(for: file.url, path: "meetings/" + file.relativePath, section: .meetings))
+        }
+        entries.append(contentsOf: try stageRecordings(request, into: staged, warnings: &warnings))
+        return entries
+    }
+
+    /// Staged audio is the only copy of a meeting whose processing failed or
+    /// crashed, so every retained byte travels — finalize manifests, chunk
+    /// sidecars and raw orphan WAVs alike — as inert recovery files. Only a
+    /// chunk still being written (`*.tmp`, which the recorder renames when it
+    /// commits) and the provider's remote job record are left out, and the
+    /// first is reported.
+    private func stageRecordings(_ request: ArtifactBackupStageRequest, into staged: URL,
+                                 warnings: inout [String]) throws -> [ArtifactStagedEntry] {
+        let root = request.locations.meetingsStaging
+        guard fileManager.fileExists(atPath: root.path) else { return [] }
+        try validateOwnedRoot(root)
+        let children = try listDirectory(root)
+        guard children.count <= Limit.recordingDirectories else { throw ArtifactBackupError.tooLarge }
+        var entries: [ArtifactStagedEntry] = []
+        var unfinished = 0
+        var retained = 0
+        for child in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let values = try resourceValues(child)
+            guard values.isSymbolicLink != true else { throw ArtifactBackupError.unsafeContent }
+            guard values.isDirectory == true else {
+                // The staging root holds one directory per recording; a stray
+                // file there is unknown data, not something to drop silently.
+                throw ArtifactBackupError.invalidContent(child.lastPathComponent)
+            }
+            guard UUID(uuidString: child.lastPathComponent) != nil else {
+                throw ArtifactBackupError.invalidContent(child.lastPathComponent)
+            }
+            let name = child.lastPathComponent
+            let target = staged.appendingPathComponent("staged", isDirectory: true)
+                .appendingPathComponent(name, isDirectory: true)
+            var produced: [ArtifactStagedEntry] = []
+            var copied = Set<String>()
+            try walk(child, relative: "", depth: 1, maxDepth: 1) { file, relative in
+                if Self.excludedRecordingNames.contains(relative) { return }
+                if relative.hasSuffix(".tmp"), try self.isBeingWritten(file) { unfinished += 1; return }
+                guard retained < Limit.recordingFiles else { throw ArtifactBackupError.tooLarge }
+                retained += 1
+                let copy = target.appendingPathComponent(relative, isDirectory: false)
+                try self.createPrivateDirectory(copy.deletingLastPathComponent())
+                _ = try self.copyStable(file, to: copy, limit: Limit.recordingFile, required: true)
+                copied.insert(relative)
+                produced.append(try self.entry(for: copy, path: "meetings/staged/\(name)/\(relative)",
+                                               section: .meetings))
+            }
+            guard !produced.isEmpty else { continue }
+            // A finalize record names the chunks the recovery path will read.
+            // One of them missing is a damaged profile, not something to pack
+            // into a "complete" backup. An unreadable record keeps its bytes
+            // (it may be the only copy) and is reported instead.
+            let manifestURL = child.appendingPathComponent(MeetingFinalizeManifest.fileName)
+            if copied.contains(MeetingFinalizeManifest.fileName) {
+                if let data = try? Data(contentsOf: manifestURL), data.count <= 1_000_000,
+                   let manifest = try? JSONDecoder().decode(MeetingFinalizeManifest.self, from: data) {
+                    for chunk in manifest.chunkFileNames where !copied.contains(chunk) {
+                        throw ArtifactBackupError.requiredFileMissing(chunk)
+                    }
+                } else {
+                    warnings.append("A recording's finalize record could not be read. Its files are in this backup as recovery data.")
+                }
+            }
+            entries.append(contentsOf: produced)
+        }
+        if unfinished > 0 {
+            warnings.append("\(unfinished) recording chunk(s) were still being written and are not in this backup. They are included once their recording finishes.")
+        }
+        if !entries.isEmpty {
+            warnings.append("Unprocessed recordings are included. After a restore their audio is kept, but Exodia does not transcribe them automatically.")
+        }
+        return entries
+    }
+
+    private func stageHistory(_ request: ArtifactBackupStageRequest, into directory: URL,
+                              warnings: inout [String]) throws -> [ArtifactStagedEntry] {
+        guard let exporter = request.history else { throw ArtifactBackupError.missingSection }
+        let staged = directory.appendingPathComponent("history", isDirectory: true)
+        try createPrivateDirectory(staged)
+        let export = try exporter.exportArtifactGeneration(into: staged, assetsFrom: request.locations.historyAssets)
+        if export.externalLinkCount > 0 {
+            warnings.append("\(export.externalLinkCount) clipboard entries only link to your own files. Those original files are not inside this backup.")
+        }
+        return try export.files.map {
+            try entry(for: $0.url, path: "history/" + $0.relativePath, section: .history)
+        }
+    }
+
+    /// Monitor and Notify own whole private directories: dashboards, server
+    /// configuration, source manifests, logos, worker scripts (nested) and the
+    /// cursors/session files those scripts keep. Everything app-owned travels;
+    /// executables referenced outside these roots do not, and say so.
+    private func stageWorkspace(_ request: ArtifactBackupStageRequest, into directory: URL,
+                                warnings: inout [String]) throws -> [ArtifactStagedEntry] {
+        let staged = directory.appendingPathComponent("workspace", isDirectory: true)
+        try createPrivateDirectory(staged)
+        var entries: [ArtifactStagedEntry] = []
+        entries.append(contentsOf: try stageOwnedTree(request.locations.monitorRoot, into: staged,
+                                                      prefix: "monitor"))
+        entries.append(contentsOf: try stageOwnedTree(request.locations.notifyRoot, into: staged,
+                                                      prefix: "notify"))
+        // Only the real AGENTS.md. `CLAUDE.md` is a symlink alias and the
+        // `.opencode-runtime` directory, caches and session state are runtime,
+        // not user content.
+        let memory = request.locations.agentMemory
+        if fileManager.fileExists(atPath: memory.path) {
+            let copy = staged.appendingPathComponent("agent", isDirectory: true)
+                .appendingPathComponent("AGENTS.md", isDirectory: false)
+            try createPrivateDirectory(copy.deletingLastPathComponent())
+            _ = try copyStable(memory, to: copy, limit: Limit.agentMemory, required: true)
+            entries.append(try entry(for: copy, path: "workspace/agent/AGENTS.md", section: .workspace))
+        }
+        warnings.append(contentsOf: workspaceNotes(for: entries, staged: staged))
+        return entries
+    }
+
+    /// What a restore of this section will and will not do. These are
+    /// statements about unowned bytes and deliberate inertness, never a
+    /// substitute for including something we do own.
+    private func workspaceNotes(for entries: [ArtifactStagedEntry], staged: URL) -> [String] {
+        var notes: [String] = []
+        let paths = Set(entries.map(\.path))
+        if paths.contains("workspace/monitor/servers.json") {
+            notes.append("Restored server monitoring arrives switched off until you turn it back on, and it uses this Mac's SSH keys and credential tool — those are never inside a backup.")
+        }
+        let sources = paths.filter { $0.hasPrefix("workspace/notify/sources/") && $0.hasSuffix(".json") }
+        if !sources.isEmpty {
+            notes.append("Restored notification sources arrive switched off. Turn the ones you want back on in Settings → Notifications.")
+            var external = 0
+            for path in sources.sorted() {
+                let file = staged.appendingPathComponent(String(path.dropFirst("workspace/".count)))
+                guard let data = try? Data(contentsOf: file),
+                      let script = try? JSONDecoder().decode(NotifyScript.self, from: data),
+                      let executable = script.command.first else { continue }
+                if !executable.hasPrefix(staged.path), !isInsideNotifyRoot(executable) { external += 1 }
+            }
+            if external > 0 {
+                notes.append("\(external) notification source(s) run a program from outside Exodia's own folder. That program is not inside this backup.")
+            }
+        }
+        if paths.contains(where: { $0.hasPrefix("workspace/notify/workers/") }) {
+            notes.append("Notification scripts are restored as read-only files. If a source starts a script directly, make it executable again on the new Mac.")
+        }
+        return notes
+    }
+
+    private func isInsideNotifyRoot(_ executable: String) -> Bool {
+        executable.contains("/notifications/")
+    }
+
+    private func stageOwnedTree(_ root: URL, into staged: URL, prefix: String) throws -> [ArtifactStagedEntry] {
+        guard fileManager.fileExists(atPath: root.path) else { return [] }
+        try validateOwnedRoot(root)
+        var entries: [ArtifactStagedEntry] = []
+        var total: Int64 = 0
+        try walk(root, relative: "", depth: 1, maxDepth: Limit.workspaceDepth) { file, relative in
+            guard entries.count < Limit.workspaceFiles else { throw ArtifactBackupError.tooLarge }
+            let copy = staged.appendingPathComponent(prefix + "/" + relative, isDirectory: false)
+            try self.createPrivateDirectory(copy.deletingLastPathComponent())
+            let bytes = try self.copyStable(file, to: copy, limit: Limit.workspaceFile, required: true)
+            total += bytes
+            guard total <= Limit.workspaceTotal else { throw ArtifactBackupError.tooLarge }
+            entries.append(try self.entry(for: copy, path: "workspace/" + prefix + "/" + relative,
+                                          section: .workspace))
+        }
+        return entries
+    }
+
+    // MARK: File helpers
+
+    /// Depth-limited walk of an application-owned directory. Nothing is
+    /// skipped quietly: a link, an unexpected file type, an unusable name, a
+    /// directory deeper than the format supports or an unreadable directory
+    /// all fail the backup.
+    private func walk(_ directory: URL, relative: String, depth: Int, maxDepth: Int,
+                      visit: (URL, String) throws -> Void) throws {
+        for item in try listDirectory(directory).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let name = item.lastPathComponent
+            if Self.systemMetadataNames.contains(name) { continue }
+            let values = try resourceValues(item)
+            guard values.isSymbolicLink != true else { throw ArtifactBackupError.unsafeContent }
+            let child = relative.isEmpty ? name : relative + "/" + name
+            if values.isDirectory == true {
+                guard depth < maxDepth else { throw ArtifactBackupError.invalidContent(child) }
+                guard Self.isUsableName(name) else { throw ArtifactBackupError.unsafeContent }
+                try walk(item, relative: child, depth: depth + 1, maxDepth: maxDepth, visit: visit)
+                continue
+            }
+            guard values.isRegularFile == true else { throw ArtifactBackupError.unsafeContent }
+            guard Self.isUsableName(name) else { throw ArtifactBackupError.unsafeContent }
+            try visit(item, child)
+        }
+    }
+
+    /// True while a temporary chunk still belongs to a live recording. An
+    /// older one is a crash leftover: its bytes are retained audio and travel
+    /// as inert recovery data.
+    private func isBeingWritten(_ file: URL) throws -> Bool {
+        let values = try resourceValues(file)
+        guard let modified = values.contentModificationDate else { return true }
+        return Date().timeIntervalSince(modified) < Limit.abandonedTemporarySeconds
+    }
+
+    private func listDirectory(_ directory: URL) throws -> [URL] {
+        do {
+            return try fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey,
+                                             .fileSizeKey, .contentModificationDateKey],
+                // No `skipsHiddenFiles`: an unexpected hidden entry must be
+                // reported by name, not quietly left out of a "complete" backup.
+                options: [])
+        } catch { throw ArtifactBackupError.readFailed }
+    }
+
+    private func resourceValues(_ url: URL) throws -> URLResourceValues {
+        do {
+            return try url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey,
+                                                    .fileSizeKey, .contentModificationDateKey])
+        } catch { throw ArtifactBackupError.readFailed }
+    }
+
+    /// Archive paths are ASCII by construction, so a name the format cannot
+    /// carry fails rather than disappearing from a "complete" backup.
+    static func isUsableName(_ name: String) -> Bool {
+        !name.isEmpty && name.utf8.count <= 120 && name != "." && name != ".."
+            && !name.hasPrefix(".") && !name.contains("/")
+            && name.unicodeScalars.allSatisfy { $0.value > 0x20 && $0.value < 0x7F && $0 != ":" }
+    }
+
+    private func entry(for file: URL, path: String, section: ArtifactBackupSection) throws -> ArtifactStagedEntry {
+        try ArtifactBackupPath.validate(path)
+        let digest = try ArtifactBackupDigest.ofFile(file)
+        return ArtifactStagedEntry(path: path, section: section, bytes: digest.bytes,
+                                   sha256: digest.digest, source: .file(file))
+    }
+
+    /// Copies an owned file and proves the source did not change underneath:
+    /// a chunk that grew while being read would archive a torn file.
+    @discardableResult
+    private func copyStable(_ source: URL, to destination: URL, limit: Int64, required: Bool) throws -> Int64 {
+        let before = try resourceValues(source)
+        guard before.isRegularFile == true, before.isSymbolicLink != true else {
+            if required { throw ArtifactBackupError.requiredFileMissing(source.lastPathComponent) }
+            return 0
+        }
+        let size = Int64(before.fileSize ?? 0)
+        guard size <= limit else { throw ArtifactBackupError.tooLarge }
+        if fileManager.fileExists(atPath: destination.path) { try? fileManager.removeItem(at: destination) }
+        do { try fileManager.copyItem(at: source, to: destination) }
+        catch { throw ArtifactBackupError.requiredFileMissing(source.lastPathComponent) }
+        try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+        let after = try resourceValues(source)
+        let copied = try resourceValues(destination)
+        guard after.fileSize == before.fileSize,
+              after.contentModificationDate == before.contentModificationDate,
+              copied.fileSize == before.fileSize else {
+            throw ArtifactBackupError.contentChanged(source.lastPathComponent)
+        }
+        return size
+    }
+
+    /// An owned root and every existing ancestor must be a real directory.
+    /// A symlinked root would let a same-user attacker redirect the backup at
+    /// files the app does not own.
+    private func validateOwnedRoot(_ directory: URL) throws {
+        let values = try resourceValues(directory)
+        guard values.isDirectory == true, values.isSymbolicLink != true else {
+            throw ArtifactBackupError.unsafeContent
+        }
+        try Self.validateAncestors(of: directory)
+    }
+
+    static func validateAncestors(of directory: URL) throws {
+        var existing = directory.standardizedFileURL
+        while existing.path != "/", !FileManager.default.fileExists(atPath: existing.path) {
+            existing.deleteLastPathComponent()
+        }
+        // Reuses the hardened semantics already used for settings archives:
+        // real directories only, apart from Darwin's own /var and /tmp
+        // aliases, and never a user-created link.
+        do { try ConfigBackupFiles.checkDirectory(existing) }
+        catch { throw ArtifactBackupError.unsafeContent }
+    }
+
+    @discardableResult
+    private func createPrivateDirectory(_ directory: URL) throws -> Bool {
+        var isDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory) {
+            let values = try resourceValues(directory)
+            guard isDirectory.boolValue, values.isSymbolicLink != true else {
+                throw ArtifactBackupError.unsafeContent
+            }
+            return true
+        }
+        try Self.validateAncestors(of: directory)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700])
+        } catch { throw ArtifactBackupError.writeFailed }
+        return true
+    }
+}
