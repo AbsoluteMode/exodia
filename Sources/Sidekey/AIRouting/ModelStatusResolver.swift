@@ -149,7 +149,7 @@ struct ModelStatusResolver {
                 add(model.id)
             }
             for model in (snapshot?.models ?? []).sorted(by: { $0.id < $1.id })
-            where model.aliasOf == nil || isSelected(model.id) {
+            where (model.aliasOf == nil && !Self.isStale(model, fetchedAt: snapshot?.fetchedAt)) || isSelected(model.id) {
                 add(model.id)
             }
             if let selected, selected.account == account { add(selected.model) }
@@ -170,6 +170,16 @@ struct ModelStatusResolver {
                 refreshFailed: snapshot?.lastRefreshFailed ?? false
             )
         }
+    }
+
+    /// A model whose provider dates its versions (Deepgram) and that has not
+    /// been updated for this long before the catalog was fetched is left out
+    /// of pickers; it stays in the catalog, so a route on it keeps working.
+    static let staleAfter: TimeInterval = 365 * 86_400
+
+    static func isStale(_ model: CatalogModel, fetchedAt: Date?) -> Bool {
+        guard let updated = model.updatedAt, let fetchedAt else { return false }
+        return fetchedAt.timeIntervalSince(updated) > staleAfter
     }
 
     func missingProviderHint(for feature: AIFeature) -> String? {

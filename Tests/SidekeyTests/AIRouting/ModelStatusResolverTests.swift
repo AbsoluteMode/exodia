@@ -127,6 +127,44 @@ final class ModelStatusResolverTests: XCTestCase {
         }
     }
 
+    func test_deepgram_versions_give_the_newest_update_date() throws {
+        let json = #"""
+        {"stt":[
+          {"canonical_name":"nova-3-general","streaming":true,"batch":true,"version":"2026-10-15.0"},
+          {"canonical_name":"nova-3-general","streaming":true,"batch":true,"version":"2025-02-25.0"},
+          {"canonical_name":"whisper-large","streaming":false,"batch":true,"version":"2022-12-08.0"},
+          {"canonical_name":"odd","streaming":true,"batch":true,"version":"latest"}
+        ]}
+        """#
+        let models = try ModelCatalogFetcher.parseDeepgram(Data(json.utf8))
+        let day = { (s: String) in ModelCatalogFetcher.deepgramVersionDate(s) }
+        XCTAssertEqual(models.first { $0.id == "nova-3" }?.updatedAt, day("2026-10-15"), "the -general alias shares the date")
+        XCTAssertEqual(models.first { $0.id == "nova-3-general" }?.updatedAt, day("2026-10-15"))
+        XCTAssertEqual(models.first { $0.id == "whisper-large" }?.updatedAt, day("2022-12-08"))
+        XCTAssertNil(models.first { $0.id == "odd" }?.updatedAt, "an undated model is never hidden")
+    }
+
+    func test_picker_hides_deepgram_models_not_updated_for_a_year_but_keeps_selected_and_built_in() throws {
+        let fetched = try XCTUnwrap(ModelCatalogFetcher.deepgramVersionDate("2026-10-19"))
+        let day = { (s: String) in ModelCatalogFetcher.deepgramVersionDate(s) }
+        let models = [
+            CatalogModel(id: "nova-3", uses: [.realtimeSTT, .asyncSTT], updatedAt: day("2026-10-15")),
+            CatalogModel(id: "nova-3-medical", uses: [.realtimeSTT, .asyncSTT], updatedAt: day("2026-10-06")),
+            CatalogModel(id: "nova-2-general", uses: [.realtimeSTT, .asyncSTT], updatedAt: day("2025-03-31")),
+            CatalogModel(id: "nova-2-meeting", uses: [.realtimeSTT, .asyncSTT], updatedAt: day("2024-02-07")),
+            CatalogModel(id: "enhanced-general", uses: [.realtimeSTT, .asyncSTT], updatedAt: day("1983-05-08")),
+        ]
+        let snapshot = CatalogSnapshot(models: models, fetchedAt: fetched, lastRefreshFailed: false, limited: false)
+        let env = try makeEnv(snapshots: [.deepgram: snapshot], keyed: [.deepgram])
+        env.routing.setRoute(FeatureRoute(account: .deepgram, model: "nova-2-meeting"), for: .dropFast)
+
+        let ids = try XCTUnwrap(env.resolver.sections(for: .dropFast).first).options.map(\.model)
+        XCTAssertEqual(Set(ids), ["nova-3", "nova-3-medical", "nova-2-meeting"])
+        XCTAssertNotEqual(env.resolver.status(for: .dropFast), .removedByProvider, "a stale model is hidden, not removed")
+        let fresh = try XCTUnwrap(env.resolver.sections(for: .voiceSearch).first).options.map(\.model)
+        XCTAssertFalse(fresh.contains("nova-2-meeting"), "selected on another feature does not count")
+    }
+
     func test_deepgram_nova_3_is_not_removed() throws {
         let json = #"{"stt":[{"canonical_name":"nova-3-general","streaming":true,"batch":true}]}"#
         let models = try ModelCatalogFetcher.parseDeepgram(Data(json.utf8))
