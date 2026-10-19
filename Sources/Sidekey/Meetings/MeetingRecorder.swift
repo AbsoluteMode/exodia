@@ -121,6 +121,8 @@ final class MeetingRecorder: MeetingRecording {
     private let autoEndMicReleasedSeconds: TimeInterval
     private let autoEndStartupGraceSeconds: TimeInterval
     private let sampleRate: Int
+    private let testCapture: MeetingLiveTestCapture?
+    private var testMixer: MeetingLiveTestMixer?
 
     // MARK: - State
 
@@ -173,7 +175,8 @@ final class MeetingRecorder: MeetingRecording {
         chunkRotationSeconds: TimeInterval = MeetingsConfig.chunkRotationSeconds,
         autoEndMicReleasedSeconds: TimeInterval = MeetingsConfig.autoEndMicReleasedSeconds,
         autoEndStartupGraceSeconds: TimeInterval = MeetingsConfig.autoEndStartupGraceSeconds,
-        sampleRate: Int = 16_000
+        sampleRate: Int = 16_000,
+        testCapture: MeetingLiveTestCapture? = nil
     ) {
         self.micSource = micSource
         self.systemSource = systemSource
@@ -183,6 +186,7 @@ final class MeetingRecorder: MeetingRecording {
         self.autoEndMicReleasedSeconds = autoEndMicReleasedSeconds
         self.autoEndStartupGraceSeconds = autoEndStartupGraceSeconds
         self.sampleRate = sampleRate
+        self.testCapture = testCapture
 
         let (finStream, finCont) = AsyncStream<FinalizedEvent>.makeStream()
         self.finalizedStream = finStream
@@ -263,6 +267,10 @@ final class MeetingRecorder: MeetingRecording {
         isPaused = false
         pausedElapsed = 0
         segmentStartedAt = Date()
+        if sampleRate == 16_000, let testCapture {
+            testCapture.submit(.marker("meeting:\(meetingId.uuidString)"))
+            testMixer = MeetingLiveTestMixer(capture: testCapture)
+        }
 
         os_log(
             "recorder started (meetingId: %{public}@, prerecord_bytes: %{public}d)",
@@ -290,6 +298,7 @@ final class MeetingRecorder: MeetingRecording {
     func pause() async {
         guard isRunning, !isPaused else { return }
         isPaused = true
+        testMixer?.pause()
 
         // Snapshot elapsed BEFORE clearing segmentStartedAt so resume()
         // can continue counting from this value.
@@ -339,6 +348,7 @@ final class MeetingRecorder: MeetingRecording {
 
         isPaused = false
         segmentStartedAt = Date()
+        testMixer?.resume()
 
         startAutoEndWatcher()
 
@@ -373,6 +383,8 @@ final class MeetingRecorder: MeetingRecording {
         }
 
         isRunning = false
+        testMixer?.finish()
+        testMixer = nil
         cancelDrainTasks()
         cancelPublisherTasks()
         cancelAutoEndWatcher()
@@ -432,6 +444,7 @@ final class MeetingRecorder: MeetingRecording {
         micDrainTask = Task { [weak self] in
             for await chunk in micStream {
                 guard let self else { return }
+                if self.isRunning && !self.isPaused { self.testMixer?.append(chunk, source: .mic) }
                 let writer = await self.writer
                 await writer?.appendMicSamples(chunk)
             }
@@ -440,6 +453,7 @@ final class MeetingRecorder: MeetingRecording {
         systemDrainTask = Task { [weak self] in
             for await chunk in systemStream {
                 guard let self else { return }
+                if self.isRunning && !self.isPaused { self.testMixer?.append(chunk, source: .system) }
                 let writer = await self.writer
                 await writer?.appendSystemSamples(chunk)
             }

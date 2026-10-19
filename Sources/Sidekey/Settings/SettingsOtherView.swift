@@ -16,6 +16,8 @@ import SwiftUI
 /// Settings capability toggles.
 @MainActor
 struct SettingsOtherView: View {
+    @AppStorage(MeetingLiveTestSettings.enabledKey) private var liveMeetingTestCapture = false
+    @ObservedObject private var meetingTestRouting = AIRoutingStore.shared
     /// Injected (the host owns it as `@StateObject`) so the options list
     /// survives this view's re-inits on tab switches.
     @ObservedObject private var displayPicker: DisplayPickerViewModel
@@ -136,6 +138,26 @@ struct SettingsOtherView: View {
                             subtitle: "Right Option searches your selection on Google."
                         ) {
                             MacSwitch(isOn: googleToggleBinding)
+                        }
+
+                        MacRow(
+                            title: "Meeting Assistant test capture",
+                            subtitle: meetingTestRouting.route(for: .meetings)?.account == .soniox
+                                ? "For the next recording: save live Soniox text, both audio tracks and timing locally. Adds a streaming transcription request; notes work as usual."
+                                : "Requires Meeting Notes and Soniox selected for Meetings in API & Models."
+                        ) {
+                            MacSwitch(isOn: $liveMeetingTestCapture)
+                                .disabled(!meetingsEnabled || meetingTestRouting.route(for: .meetings)?.account != .soniox)
+                        }
+                        if liveMeetingTestCapture {
+                            MacRow(title: "Meeting test files", subtitle: "Contains private audio and text. Open to inspect or delete test recordings.") {
+                                Button("Open folder") {
+                                    let root = MeetingLiveTestSettings.root
+                                    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                        attributes: [.posixPermissions: 0o700])
+                                    NSWorkspace.shared.open(root)
+                                }
+                            }
                         }
                     }
                 }
