@@ -98,11 +98,8 @@ if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     TEAM_ID="${TEAM_ID:?set TEAM_ID for the explicitly selected Developer ID release}"
     SIGNING_IDENTITY="${TEAM_ID}"
 fi
-# BUILD_DIR points at the staged universal executable produced below. The
-# release build intentionally avoids `swift build --arch arm64 --arch x86_64`:
-# that multi-arch invocation switches SwiftPM to the Xcode build backend, which
-# tries to compile MLX's generated .metal resources even though we ship the
-# prebuilt, version-locked Resources/mlx.metallib.
+# BUILD_DIR points at the staged universal executable produced below by
+# per-architecture native builds and lipo (see the Build section).
 BUILD_DIR=""
 APP_BUNDLE="${PROJECT_DIR}/build/${APP_BUNDLE_NAME}.app"
 APP_ZIP="${PROJECT_DIR}/build/${APP_BUNDLE_NAME}.zip"
@@ -161,26 +158,6 @@ fi
 if [ ! -f "${PROJECT_DIR}/Resources/blocknote/index.html" ]; then
     echo "ERROR: BlockNote bundle missing at Resources/blocknote/index.html" >&2
     echo "Run: bash scripts/build-blocknote.sh" >&2
-    exit 1
-fi
-
-# MLX Metal shader library (ROO-257). Committed to the repo as a build artifact
-# (like AppIcon.icns / blocknote/) because `swift build` cannot compile Metal
-# shaders. Without it, on-device LLM inference throws "Failed to load the
-# default metallib" at runtime. Hard-fail at release time: shipping a DMG whose
-# Local LLM silently can't run is a worse outcome than blocking the build.
-# (arm64-only is expected — MLX / Local LLM is Apple-Silicon-gated.)
-#
-# Delegate to `build-metallib.sh --check` rather than re-implementing the
-# validation here: it asserts the lib exists, is a valid MetalLib, AND is
-# version-locked to the current Package.resolved mlx-swift revision (via the
-# committed .revision sidecar). The version lock is the safety net — an MLX bump
-# that forgets to regenerate the metallib would otherwise package a
-# DMG whose GPU kernels mismatch the runtime and crash on the first local-LLM op.
-# Same hard-fail philosophy as the BlockNote / Sparkle pre-flight checks above.
-if ! bash "${PROJECT_DIR}/scripts/build-metallib.sh" --check; then
-    echo "ERROR: MLX metallib pre-flight failed (missing, invalid, or stale vs Package.resolved)." >&2
-    echo "Run: bash scripts/build-metallib.sh   (regenerates the lib + version-lock sidecar)" >&2
     exit 1
 fi
 
@@ -296,10 +273,9 @@ mkdir -p "${PROJECT_DIR}/build"
 echo "▶ Building release binary (${FLAVOR}, universal x86_64+arm64)..."
 cd "${PROJECT_DIR}"
 # Universal build: build each architecture with SwiftPM's native build system,
-# then lipo the two executables. A single multi-arch `swift build` switches to
-# the Xcode build backend and attempts to compile MLX's generated .metal files;
-# this app ships the prebuilt Resources/mlx.metallib instead.
-# WHY: docs/decisions/2026-06-29-universal-release-native-backend-lipo.md
+# then lipo the two executables. This began as a workaround for MLX's Metal
+# kernels, which left with the on-device models; it stays the proven release
+# path. WHY: docs/decisions/2026-06-29-universal-release-native-backend-lipo.md
 # --product Sidekey: build only the consumer line — the B2B executable
 # has its own build path and must never ride along into a user release.
 # shellcheck disable=SC2086 # SWIFT_FLAGS expands to multi-token "-Xswiftc -DBETA" intentionally.
@@ -405,37 +381,6 @@ done <<< "${RELEASE_RPATHS}"
 echo "▶ Adding @executable_path/../Frameworks to binary rpath..."
 install_name_tool -add_rpath "@executable_path/../Frameworks" \
     "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
-
-# --- Bundle the MLX Metal shader library (sealed RESOURCE + symlink) -------
-# MLX (on-device LLM, ROO-257) resolves its precompiled GPU kernels by trying,
-# in order (device.cpp load_default_library): <binary_dir>/mlx.metallib, then
-# <binary_dir>/Resources/mlx.metallib. The binary lives in Contents/MacOS, so
-# the colocated path is Contents/MacOS/mlx.metallib.
-#
-# We deliberately do NOT ship the metallib as a real file under Contents/MacOS/.
-# A .metallib is a non-Mach-O "generic" object: codesign cannot embed a
-# signature, so signing it leaves a DETACHED signature in the
-# com.apple.cs.CodeSignature xattr and records it as a nested *code* item that
-# carries no stapled notarization ticket of its own. On macOS 15 (Sequoia) the
-# quarantined first-launch Gatekeeper path then tries to confirm that
-# un-stapleable nested code object ONLINE; when that lookup is blocked/slow
-# (e.g. Apple endpoints unreachable from some networks) the launch hard-fails
-# with "Apple could not verify … is free of malware" even though spctl and
-# `codesign --verify` pass locally. macOS 26 (Tahoe) honored the outer ticket
-# and never exhibited this. (Codename for what broke: first MLX release 1.15.0.)
-#
-# Fix: ship the metallib as an ordinary SEALED RESOURCE in Contents/Resources/
-# (hashed into _CodeSignature/CodeResources by the final app sign — no detached
-# xattr, no separate online-notarization surface) and put a RELATIVE symlink at
-# Contents/MacOS/mlx.metallib -> ../Resources/mlx.metallib so MLX's colocated
-# loader still finds it. The relative symlink survives app translocation and is
-# sealed by the app signature. The committed Resources/mlx.metallib is produced
-# by scripts/build-metallib.sh and version-locked to the resolved mlx-swift
-# revision — bump MLX ⇒ re-run build-metallib.sh.
-# WHY: docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
-echo "▶ Bundling MLX metallib (Contents/Resources/mlx.metallib + MacOS symlink)..."
-cp "${PROJECT_DIR}/Resources/mlx.metallib" "${APP_BUNDLE}/Contents/Resources/mlx.metallib"
-ln -s "../Resources/mlx.metallib" "${APP_BUNDLE}/Contents/MacOS/mlx.metallib"
 
 echo "▶ Generating Info.plist from template..."
 sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
@@ -689,14 +634,6 @@ codesign --force \
     --options runtime \
     "${SIGNING_TIMESTAMP_ARGS[@]}" \
     "${APP_BUNDLE}/Contents/Frameworks/MediaRemoteAdapter.framework"
-
-# NB: the MLX metallib is intentionally NOT signed here. It ships as a sealed
-# RESOURCE at Contents/Resources/mlx.metallib (hashed into CodeResources by the
-# app sign below) with a relative symlink at Contents/MacOS/mlx.metallib.
-# Signing it separately would make it a nested code item with a detached,
-# un-stapleable signature — the exact Sequoia first-launch Gatekeeper failure
-# this layout fixes (see the bundling step above). WHY:
-# docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
 
 echo "▶ Code signing app bundle..."
 # No --deep — Sparkle helpers and framework are already signed individually.

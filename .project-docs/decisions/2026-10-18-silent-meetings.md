@@ -2,7 +2,7 @@
 id: silent-meetings-2026-10-18
 type: decision
 title: A meeting without speech is finished, not failed
-summary: A recording without recognised speech, from a completed Soniox job or a successful local transcription, stores a "No speech detected" note and releases the staged audio instead of failing.
+summary: A recording without recognised speech from a completed Soniox job stores a "No speech detected" note and releases the staged audio instead of failing. The local half was removed with the on-device models.
 status: confirmed
 tags: [meetings, soniox, local, recovery]
 canonical_for: [silent-meeting-outcome]
@@ -17,22 +17,14 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Meetings/MeetingBYOKProcessorTests.swift
     confirmed_at: 2026-10-18
-  - type: repository
-    reference: Sources/Sidekey/Meetings/MeetingLocalProcessor.swift
-    confirmed_at: 2026-10-18
-  - type: repository
-    reference: Sources/Sidekey/Meetings/MeetingLocalTranscriber.swift
-    confirmed_at: 2026-10-18
-  - type: repository
-    reference: Tests/SidekeyTests/Meetings/MeetingLocalProcessorTests.swift
-    confirmed_at: 2026-10-18
-  - type: repository
-    reference: Tests/SidekeyTests/Meetings/MeetingLocalTranscriberTests.swift
-    confirmed_at: 2026-10-18
-related: [2026-09-07-soniox-meeting-files.md]
+related: [2026-09-07-soniox-meeting-files.md, 2026-10-18-meeting-recovery-dark-wake.md, 2026-10-18-remove-local-models.md]
 ---
 
 # Silent meetings
+
+> Update 2026-10-18: the local pipeline described below was removed with the
+> [on-device models](2026-10-18-remove-local-models.md); its files and tests no
+> longer exist. The Soniox rule remains current.
 
 ## Context
 

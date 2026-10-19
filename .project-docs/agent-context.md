@@ -1,7 +1,8 @@
 # Exodia
 
-Native macOS client (Swift + SwiftUI + AppKit, SwiftPM). BYOK first, with
-optional local models; free, MIT. Two hotkeys: hold Space in an editable
+Native macOS client (Swift + SwiftUI + AppKit, SwiftPM). BYOK only: the
+user's provider keys or their own OpenAI-compatible endpoints, no on-device
+models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
 OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Exodia servers,
 no telemetry. The user-facing name is Exodia (formerly Whytap); the module and most internal
@@ -23,21 +24,26 @@ Voice flow (Drop / dictation):
        -> AutoPasteEngine.rememberTargetBeforeRecording (pid + name)
        -> realtime STT via TranscriptionSessionFactory
             (level = TranscriptionIsolationLevel, Settings -> Models):
-            - Your key (BYOK): direct to the provider with the user's key
-              from the Keychain (Streaming/BYOK/): OpenAI Realtime or a
-              self-hosted OpenAI-compatible endpoint, Deepgram, Soniox,
-              ElevenLabs
-            - Local: FluidAudio Parakeet TDT v3 (Core ML), app-owned cache in
-              Application Support, Apple Silicon only, offline after the
-              one-time download (Streaming/Local/)
+            Your key (BYOK) only: direct to the provider with the user's key
+            from the Keychain (Streaming/BYOK/): Soniox (default), Deepgram,
+            ElevenLabs or a self-hosted endpoint speaking the OpenAI Realtime
+            protocol. OpenAI itself is not offered; a legacy OpenAI choice
+            resolves to Soniox. The self-hosted route has no default host: a
+            missing or unparseable base URL fails (.missingBaseURL) before any
+            socket opens, never reaching api.openai.com. WHY:
+            .project-docs/decisions/2026-10-18-no-default-realtime-host.md
+            No chosen level (never chosen on Apple Silicon, or the retired
+            Local route) throws .notConfigured and opens Settings -> Models;
+            a saved Local choice never switches to a provider on its own. WHY:
+            .project-docs/decisions/2026-10-18-remove-local-models.md
        Soniox Stop: drain all captured audio -> 200ms PCM silence -> explicit
        finalize + text EOF. A final <fin> acknowledgement completes the take;
        finished=true also completes it. The 10s watchdog remains the backstop.
        -> cleanup (PostProcessor, level = LLMIsolationLevel):
             OpenRouter with the user's key / custom OpenAI-compatible endpoint
-            (Ollama, LM Studio, vLLM) / local MLX Qwen3 / none
-            (raw transcript + Filler stripping). An unconfigured route
-            degrades to the no-LLM output; the paste never fails on it.
+            (Ollama, LM Studio, vLLM) / none (raw transcript + Filler
+            stripping). An unconfigured route, including the retired Local
+            one, degrades to the no-LLM output; the paste never fails on it.
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting
@@ -48,14 +54,25 @@ Voice flow (Drop / dictation):
             wait for modifiers released -> restore target focus -> settle ->
             CGEvent Cmd+V (4-event sequence)
        Resilient delivery: local audio is the truth. A degraded stream goes
-            to batch recovery over the retained PCM with the local model
-            (`LocalBatchTranscriber`, skipped when the Parakeet model is not
-            downloaded; bounded by BatchRecoveryDeadline, 30s), then
-            rung3 raw partial, then rung4 .deliveryFailed ("Couldn't
+            to batch recovery over the retained PCM through the
+            `BatchTranscribing` seam (bounded by BatchRecoveryDeadline, 30s),
+            then rung3 raw partial, then rung4 .deliveryFailed ("Couldn't
             deliver" + Retry). .deliveryFailed is escapable: a new take
-            discards it. Empty batch = silence, not offline. WHY:
+            discards it. Empty batch = silence, not offline. Production binds
+            `ProviderBatchTranscriber` (Streaming/BYOK/) for the batch rung,
+            Retry, the recorder fallback and agent batch voice: the whole
+            take goes to the provider selected in Settings -> Models with
+            that provider's own Keychain key (Soniox file API, Deepgram
+            pre-recorded, ElevenLabs speech-to-text, self-hosted
+            /v1/audio/transcriptions over https), with the realtime
+            request's language choices. No Your key level, no key for the
+            selected provider, or a self-hosted URL without a host =
+            unavailable, never another provider. Soniox polling stops after
+            30s; its file, then its job, are deleted after every outcome.
+            WHY:
             docs/decisions/2026-07-26-empty-batch-is-silence-not-offline.md,
-            docs/decisions/2026-06-24-deliveryfailed-escapable-and-retry-robust.md
+            docs/decisions/2026-06-24-deliveryfailed-escapable-and-retry-robust.md,
+            .project-docs/decisions/2026-10-18-provider-batch-transcription.md
        Transcript join (BYOKTranscriptJoin): Soniox tokens carry their own
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
@@ -89,23 +106,26 @@ Agent flow (OpenCode + OpenRouter):
 
 Meeting Notes:
   Always-on detector (mic activity + CoreAudio system audio + FluidAudio
-  Silero VAD; fires only when a recognised meeting app writes the mic)
+  Silero VAD, the only remaining Core ML model, downloaded from Hugging Face
+  on the first speech check; fires only when a recognised meeting app writes
+  the mic)
        -> island nudge: Take notes / Skip (20s) -> MeetingRecorder (mic +
           system audio, 16 kHz PCM16; the system-audio tap exists only while
           recording, WHY: docs/decisions/2026-06-16-system-audio-tap-on-record-only.md)
-       -> processing: fully local (mic track = "Me", system track diarised by
-          FluidAudio -> "Speaker N", alignment by time, MLX summary with
-          map-reduce for long transcripts; the three models load SERIALLY
-          with evict() between stages) or BYOK processor (Soniox file API with speaker-attributed turns and durable job/transcript checkpoint;
-          other providers use their adapters, then LLM with the user's keys). Neither configured = the meeting is
-          marked failed with `LocalModelMessaging.meetingProcessorNotConfigured`
-          and its audio stays staged; a `MeetingFinalizeManifest` re-dispatches
-          it later with the language captured at Stop time. A recording without
-          speech is not a failure: a completed Soniox job, or a successful local
-          transcription with no text on either track, stores a "No speech
-          detected" note without the LLM (locally also without the diarizer)
-          and releases the staged audio, so it is never retried. Model failures
-          remain errors. WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
+       -> processing: BYOK processor only (Soniox file API with
+          speaker-attributed turns and durable job/transcript checkpoint;
+          other providers use their adapters, then the LLM route the user
+          chose). Speaker labels come from the provider; there is no
+          on-device diarizer. Without a chosen speech level and LLM route
+          (including the retired Local route) the meeting is marked failed
+          with `MeetingsCoordinator.processorNotConfiguredMessage` and its
+          audio stays staged; a `MeetingFinalizeManifest` re-dispatches it
+          later with the language captured at Stop time. A recording without
+          speech is not a failure: a completed Soniox job without segments
+          stores a "No speech detected" note without the LLM and releases the
+          staged audio, so it is never retried. Model failures remain errors.
+          WHY: .project-docs/decisions/2026-10-18-silent-meetings.md,
+          .project-docs/decisions/2026-10-18-remove-local-models.md
        -> MeetingsStore (local SQLite) -> notes window (BlockNote in WKWebView)
   Delete: a finished meeting (ready or failed) has "Delete…" in its row
   context menu behind a confirmation whose default button is Cancel.
@@ -124,21 +144,12 @@ Meeting Notes:
   pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
   resuming is always the user's decision. WHY:
   docs/decisions/2026-07-29-reconnect-always-asks.md
-
-Local LLM (Apple Silicon):
-  MLX (`ml-explore/mlx-swift` + `-lm`), Qwen3-4B-Instruct-2507-4bit;
-  diarisation FluidAudio Core ML. Gate = `LocalModelSupport.isAppleSilicon`
-  (runtime sysctl `hw.optional.arm64`, not `#if arch`: the binary is
-  universal). Weights download from Hugging Face into Application Support.
-  Unified strings in `LocalModelMessaging` (not Apple Silicon / offline and
-  not downloaded / not downloaded).
-  Metallib: SwiftPM does not compile Metal shaders; `Resources/mlx.metallib`
-  is built by `scripts/build-metallib.sh` and VERSION-LOCKED to the resolved
-  mlx-swift revision (bump both together). It ships as a sealed resource in
-  `Contents/Resources/` with a relative symlink from `Contents/MacOS/`; never
-  put it directly into `Contents/MacOS/` and never sign it separately
-  (breaks first-launch Gatekeeper on Sequoia). WHY:
-  docs/decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md
+  A BYOK key read that fails with errSecInDarkWake (no Keychain prompt
+  possible: dark wake or the lid closing) defers the meeting instead of
+  failing it: no failure event, the earlier failure reason is restored and
+  the manifest stays for the next pass (startReady() after a full wake, or
+  the next launch). WHY:
+  .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
 
 Hover capsules and materials:
   The 2026-10-17 user correction requires hover and the compact island to have
@@ -161,6 +172,17 @@ Hover capsules and materials:
   Default six tools occupy two rows and a 243 pt host band. At most four rows
   are visible (312 pt grid viewport); 13 tools retain 388 pt of scroll content.
   Settings stays last; persistence and the first five positional hotkeys remain.
+  Settings Toolbox draws editable tools, a permanent Add target, then Settings,
+  using stable tool/Add identities. Add occupies the actual insertion position.
+  Drop targeting highlights without moving targets or saving. Native hosted
+  destinations set animatesToDestination=false in prepare, before AppKit removes
+  its preview and perform commits the current target identity. Settings has no
+  registered drop types; cancel/invalid/stale sessions do not save. No timers or
+  manual preview replacement. The 2.2.8/1460 candidate was not published after
+  the user reported a duplicate cursor/inserted image. Grid changes
+  ease over 0.18 s and highlights over 0.1 s; Reduce Motion disables both.
+  The editor can be hosted independently of Case/Vocab/provider stores. WHY:
+  `.project-docs/decisions/2026-10-18-toolbox-drag-feedback.md`.
   Drawer, compact pill, music, detached inline panels and native hit zones all
   use the actual compactWidth. Hints overlay stable targets without moving them.
   History needs no drawer overhang: its 300 pt left reservation still fits a
@@ -298,16 +320,18 @@ Update flow (download-on-action):
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
 
-Presentation: show Your key (BYOK) before Local in both Models segments and
-user-facing setup instructions. Preserve saved processing routes; changing
-presentation order does not switch where existing users send audio or text.
-WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md
+Presentation: Settings -> Models offers only Your key (BYOK) for speech and
+OpenRouter or a custom endpoint for text; Local was removed. Preserve saved
+processing routes: never switch where existing users send audio or text. A
+retired Local choice shows "not set up" banners until the user saves a
+provider. WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md,
+.project-docs/decisions/2026-10-18-remove-local-models.md
 
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
-island immediately. Configure provider keys and optional local models in
+island immediately. Configure provider keys and endpoints in
 Settings -> Models, the agent in Settings -> Agents, and permissions in
 Settings -> Permissions. A feature can request the permission it needs when
-invoked. Drop with a local model selected but not downloaded opens
+invoked. Drop without a chosen provider, key or endpoint opens
 Settings -> Models. Settings opens on Models; screenshot protection is in
 Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
@@ -330,6 +354,16 @@ Build/run use the canonical dev bundle script; hover and dashboard scaffolds
 are drafts. Guide: docs/customization/README.md. Update the capability map
 when moving its source entry points. Do not publish private monitoring
 configuration, project contents or credentials with the source.
+
+Clipboard history retains the newest 50 local entries across launch, quit and
+sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
+the oldest excess rows and their image sidecars; the current History feed shows
+20 clipboard entries in a scrollable five-row viewport (Agent/Drop keep 10),
+without deleting other retained rows. Startup seeds only the current
+pasteboard change counter; dictation write/restore suppression remains. Before
+replacing a running older binary with the old quit purge, preserve local
+clipboard data privately and restore only clipboard rows/assets after quit.
+WHY: .project-docs/decisions/2026-10-18-clipboard-retention.md
 
 Installation: SidekeyAppMain checks InstallationGuard before constructing the
 app delegate. A read-only or AppTranslocation copy shows Finder installation
@@ -415,7 +449,7 @@ modified app. Earlier Whytap installs can use a different feed and need a manual
 first Exodia installation; changing the new GitHub feed cannot migrate that copy.
 
 GitHub Actions is disabled to avoid hosted-runner costs; do not enable or dispatch
-it. Run appropriate local build/tests and record the results in the PR. BYOK-first
+it. Run appropriate local build/tests and record the results in the PR. BYOK
 presentation and local validation remain required:
 `.project-docs/decisions/2026-09-10-byok-and-local-builds.md`.
 
@@ -448,8 +482,8 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 
 1. **No Exodia-owned services.** The app never contacts an Exodia backend,
    has no account and sends no telemetry. Network traffic is limited to
-   model downloads from Hugging Face, providers and monitoring sources the
-   user configured (including their credential store), OpenCode's own provider
+   the meeting detector's Silero VAD download from Hugging Face, providers
+   and monitoring sources the user configured (including their credential store), OpenCode's own provider
    traffic, its official GitHub release download, `google.com` opened in the
    browser, and the Sparkle feed on GitHub Releases.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
@@ -458,9 +492,17 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    Keychain (`BuildConfig.keychainService`). `os_log` never receives
    transcripts, prompts, replies or keys (`LocalPathLoggingInvariantTests`).
    Key contents read by the hotkey tap are never logged or persisted.
-3. **Local models are Apple Silicon only, gated at runtime**
-   (`LocalModelSupport.isAppleSilicon`); Intel users get BYOK / custom
-   endpoints. There is no paid gate anywhere.
+3. **No on-device models and no silent route change.** Speech, cleanup and
+   meeting processing run only on providers or endpoints the user chose. A
+   stored retired `local` level, or no stored level on Apple Silicon (where
+   Local was the default), reads as not configured even when a key is stored;
+   Intel keeps its Your key default (`SelfKeyPreferences`,
+   `RetiredLocalRouteTests`). FluidAudio stays only for the meeting detector's
+   Silero VAD; launch removes the retired models' weights under
+   Application Support/Sidekey once per flavor and never touches FluidAudio's
+   cache (`LegacyLocalModelCleanup`, WHY:
+   .project-docs/decisions/2026-10-18-legacy-model-cleanup.md). There is no
+   paid gate anywhere.
 4. **Sparkle never shows a window.** Scheduled checks only show the island
    pill; nothing downloads before the user clicks. Requested downloads may
    install and relaunch while idle. Active meeting recording, dictation or

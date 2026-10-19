@@ -296,7 +296,7 @@ final class UpdateController: NSObject, ObservableObject {
         // Start the updater — it can throw on misconfiguration (e.g. missing
         // SUFeedURL in Info.plist). Failure is non-fatal: the app runs without
         // updates rather than crashing. Error type is logged (not payload —
-        // invariant #3).
+        // invariant #2).
         if updatesEnabled {
             do {
                 try updater.start()

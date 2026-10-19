@@ -1,9 +1,12 @@
 import XCTest
 
-/// Locks invariant #3 ("prompt/user content NEVER logged") on the on-device
-/// paths added by ROO-257. These flows handle the user's dictated text, agent
-/// prompts, model replies, and meeting transcripts entirely on-device — and
-/// must log only timing / counts / ids, never the content itself.
+/// Locks the logging invariant ("prompt/user content NEVER logged") on the
+/// paths that carry the user's dictated text, model replies and meeting
+/// transcripts to and from their own providers. They must log only timing /
+/// counts / ids, never the content itself. The on-device files it first
+/// guarded (ROO-257) were removed with the local models; their BYOK
+/// counterparts carry the same content now.
+/// WHY: .project-docs/decisions/2026-10-18-remove-local-models.md
 ///
 /// Source-inspection guard (mirrors the `scripts/build-dmg.sh`-style grep tests
 /// elsewhere in the suite): it parses every `os_log(...)` call in each guarded
@@ -12,25 +15,25 @@ import XCTest
 /// `reply`/`transcript`/`user` text fails loudly instead of silently leaking it
 /// into `os_log`.
 final class LocalPathLoggingInvariantTests: XCTestCase {
-    /// Files on the new local (on-device) paths that touch user/model content.
+    /// Files on the provider paths that touch user/model content.
     private static let guardedFiles = [
-        "Sources/Sidekey/LLM/Local/LocalLLMSession.swift",
-        "Sources/Sidekey/Meetings/MeetingLocalProcessor.swift",
-        "Sources/Sidekey/Meetings/MeetingLocalTranscriber.swift",
-        "Sources/Sidekey/Streaming/Local/LocalTranscriptionSession.swift",
-        "Sources/Sidekey/Streaming/Local/LocalBatchTranscriber.swift",
+        "Sources/Sidekey/Streaming/BYOK/OpenRouterLLMClient.swift",
+        "Sources/Sidekey/Meetings/MeetingBYOKProcessor.swift",
+        "Sources/Sidekey/Streaming/BYOK/DirectProviderStreamingSession.swift",
+        "Sources/Sidekey/Streaming/BYOK/ProviderBatchTranscriber.swift",
     ]
 
     /// Identifiers whose VALUE is user/model content. If an `os_log` call passes
     /// any of these as a logged argument, the content would land in the unified
-    /// log — exactly what invariant #3 forbids. Matched as whole words so e.g.
-    /// `systemSamples.count` (a count, allowed) does not trip the `system` rule.
+    /// log — exactly what the logging invariant forbids. Matched as whole
+    /// words so e.g. `systemSamples.count` (a count, allowed) does not trip the
+    /// `system` rule.
     private static let forbiddenContentTokens = [
         "prompt", "user", "system", "reply", "text", "transcript",
         "markdown", "instructions", "segments", "samples",
     ]
 
-    func test_localPathsNeverLogPromptOrContent() throws {
+    func test_guardedPathsNeverLogPromptOrContent() throws {
         for relativePath in Self.guardedFiles {
             let source = try readProjectFile(relativePath)
 
@@ -54,7 +57,7 @@ final class LocalPathLoggingInvariantTests: XCTestCase {
                 //    These paths must log only `%{public}` metrics.
                 XCTAssertFalse(
                     call.contains("%{private}"),
-                    "\(relativePath): os_log must not use a %{private} specifier on the local paths. Call:\n\(call)"
+                    "\(relativePath): os_log must not use a %{private} specifier on the guarded paths. Call:\n\(call)"
                 )
 
                 // 3. No forbidden content identifier in the ARGUMENT code. Field
@@ -69,7 +72,7 @@ final class LocalPathLoggingInvariantTests: XCTestCase {
                         if Self.isAllowedMetricUsage(hit) { continue }
                         XCTFail(
                             "\(relativePath): os_log appears to log content identifier '\(token)' "
-                                + "(usage: '\(hit)'). Invariant #3: log timing/counts only, never "
+                                + "(usage: '\(hit)'). Logging invariant: log timing/counts only, never "
                                 + "prompt/user/system/reply/text/transcript content. Call:\n\(call)"
                         )
                     }

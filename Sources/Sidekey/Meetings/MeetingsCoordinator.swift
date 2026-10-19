@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Security
 import os.log
 
 /// Wiring shell for the Meeting Notes feature. Owned by `AppDelegate` and
@@ -82,20 +83,6 @@ final class MeetingsCoordinator {
     /// summarized through the user's own providers.
     private let directProcessor: (any MeetingDirectProcessing)?
 
-    /// Fully-on-device meeting processor. When wired AND a finalized event
-    /// carries retained separate tracks AND `localMeetingGate` passes (both
-    /// transcription & LLM = .local), the coordinator transcribes, diarizes,
-    /// aligns ("Me" / "Speaker N"), summarizes, and stores the note entirely
-    /// on-device. Optional so the BYOK tests construct the coordinator
-    /// without it.
-    private let localProcessor: (any MeetingLocalProcessing)?
-
-    /// Activation predicate: `true` when the fully-local meeting path should
-    /// be taken (both transcription & LLM isolation = .local). Injected so
-    /// tests drive the gate deterministically; production reads
-    /// `SelfKeyPreferences` + the Apple Silicon probe.
-    private let localMeetingGate: @MainActor () -> Bool
-
     /// Look up the id of the most recently started meeting in the local
     /// store. Used by `AppDelegate` when the user clicks the Dynamic
     /// Island "Notes" tile so the meetings window can auto-select the
@@ -118,22 +105,10 @@ final class MeetingsCoordinator {
         return Int(ceil(duration))
     }
 
-    /// Activation gate (pure): the fully-on-device meeting path is taken only
-    /// when BOTH transcription and LLM isolation are `.local` AND the host is
-    /// Apple Silicon. A half-local meeting (e.g. local STT but cloud LLM) is
-    /// not a supported configuration, so both must be `.local` together. The
-    /// `isAppleSilicon` gate (ROO-257 Stage 6) keeps the MLX/Core ML path from
-    /// engaging on Intel under the universal binary — there it would fail at
-    /// load time. Centralised + pure so the recorder factory (which flips
-    /// `retainSeparateTracks`) and the coordinator's runtime gate read identical
-    /// logic.
-    static func isFullyLocalMeetingEnabled(
-        transcriptionLevel: TranscriptionIsolationLevel,
-        llmLevel: LLMIsolationLevel,
-        isAppleSilicon: Bool = LocalModelSupport.isAppleSilicon
-    ) -> Bool {
-        isAppleSilicon && transcriptionLevel == .local && llmLevel == .local
-    }
+    /// Shown on a meeting row when a recording finished but no provider is
+    /// chosen to process it. The staged audio is kept and re-dispatched later.
+    static let processorNotConfiguredMessage =
+        "Add your own provider keys in Settings > Models to process this meeting."
 
     // MARK: - Stage 4 recorder factory + active recorder
 
@@ -384,8 +359,6 @@ final class MeetingsCoordinator {
         stagingRoot: (() -> URL)? = nil,
         meetingsStore: MeetingsStore? = nil,
         directProcessor: (any MeetingDirectProcessing)? = nil,
-        localProcessor: (any MeetingLocalProcessing)? = nil,
-        localMeetingGate: @escaping @MainActor () -> Bool = { false },
         meetingsEnabled: @escaping @MainActor () -> Bool = { UserPreferencesCache.shared.currentMeetingsEnabled },
         enableMeetingsCapability: @escaping @MainActor () -> Void = { UserPreferencesCache.shared.setMeetingsEnabled(true) },
         now: @escaping () -> Date = Date.init
@@ -401,8 +374,6 @@ final class MeetingsCoordinator {
         self.stagingRootProvider = stagingRoot
         self.meetingsStore = meetingsStore
         self.directProcessor = directProcessor
-        self.localProcessor = localProcessor
-        self.localMeetingGate = localMeetingGate
         let (acceptStream, acceptContinuation) = AsyncStream<AcceptEvent>.makeStream()
         self.acceptEvents = acceptStream
         self.acceptEventsContinuation = acceptContinuation
@@ -1125,10 +1096,9 @@ final class MeetingsCoordinator {
 
     // MARK: - FinalizedEvent -> processing pipeline
 
-    /// Route a finalized recording to the fully-local processor (both
-    /// isolation levels `.local`, separate tracks retained) or the BYOK
-    /// processor (user's own STT + LLM providers). Pulled out of
-    /// `handleFinalizedEvent` so the cleanup path stays readable.
+    /// Route a finalized recording to the BYOK processor (user's own STT +
+    /// LLM providers). Pulled out of `handleFinalizedEvent` so the cleanup
+    /// path stays readable.
     ///
     /// Durability: a `manifest.json` is written into the recorder's staging
     /// dir (alongside the WAV chunks) BEFORE processing starts. If the app
@@ -1173,6 +1143,7 @@ final class MeetingsCoordinator {
             return
         }
         let endedAt = endedAt ?? Date()
+        let progressBeforeAttempt = try? await meetingsStore?.progressState(id: event.meetingId)
 
         if let meetingsStore {
             let meta = Self.progressMeta(
@@ -1196,24 +1167,6 @@ final class MeetingsCoordinator {
             reconnectMarkers: reconnectMarkers
         )
 
-        // Fully-on-device meeting path. When a local processor is wired, the
-        // recorder retained separate mic/system tracks, AND the local-meeting
-        // gate passes (both transcription & LLM = .local), transcribe +
-        // diarize + align + summarize + store ENTIRELY on-device.
-        if let localProcessor,
-           let tracks = event.separateTrackURLs,
-           localMeetingGate() {
-            await processMeetingFullyLocally(
-                processor: localProcessor,
-                event: event,
-                tracks: tracks,
-                startedAt: startedAt,
-                language: language,
-                reconnectMarkers: reconnectMarkers
-            )
-            return
-        }
-
         if let directProcessor, directProcessor.shouldProcessDirectly() {
             do {
                 let meetingId = try await directProcessor.process(
@@ -1228,6 +1181,26 @@ final class MeetingsCoordinator {
                 )
                 try? await meetingsStore?.updateProgress(id: meetingId, status: .ready)
                 eventsContinuation.yield(.newMeetingAvailable(id: meetingId))
+                refreshOpenWindowIfNeeded()
+            } catch KeychainError.unhandledError(errSecInDarkWake) {
+                // macOS cannot show a Keychain prompt in a dark wake or while
+                // the lid closes, so this says nothing about the meeting. Keep
+                // it staged without a failure event and put back the failure
+                // the attempt replaced; startReady() after a full wake retries.
+                // WHY: .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
+                os_log(
+                    "handleFinalizedEvent BYOK processing deferred until full wake (meetingId: %{public}@)",
+                    log: Self.log,
+                    type: .default,
+                    event.meetingId.uuidString
+                )
+                if progressBeforeAttempt?.status == .failed {
+                    try? await meetingsStore?.updateProgress(
+                        id: event.meetingId,
+                        status: .failed,
+                        failureReason: progressBeforeAttempt?.failureReason
+                    )
+                }
                 refreshOpenWindowIfNeeded()
             } catch {
                 os_log(
@@ -1248,19 +1221,19 @@ final class MeetingsCoordinator {
             return
         }
 
-        // Neither pipeline is configured: the recording stays staged (manifest
-        // + chunks) and is retried on the next launch once the user has set
-        // up local models or BYOK keys in Settings -> Models.
+        // No provider is configured: the recording stays staged (manifest +
+        // chunks) and is retried on the next launch once the user has set up
+        // BYOK keys in Settings -> Models.
         os_log(
             "handleFinalizedEvent no processor configured (meetingId: %{public}@) — recording kept for later",
             log: Self.log, type: .error,
             event.meetingId.uuidString
         )
-        eventsContinuation.yield(.meetingFailed(id: event.meetingId, error: LocalModelMessaging.meetingProcessorNotConfigured))
+        eventsContinuation.yield(.meetingFailed(id: event.meetingId, error: Self.processorNotConfiguredMessage))
         try? await meetingsStore?.updateProgress(
             id: event.meetingId,
             status: .failed,
-            failureReason: LocalModelMessaging.meetingProcessorNotConfigured
+            failureReason: Self.processorNotConfiguredMessage
         )
         refreshOpenWindowIfNeeded()
     }
@@ -1294,64 +1267,6 @@ final class MeetingsCoordinator {
                 "manifest write failed (recorderId: %{public}@, error: %{public}@) — meeting not crash-safe",
                 log: Self.log, type: .error,
                 event.meetingId.uuidString, String(describing: error)
-            )
-        }
-    }
-
-    // MARK: - Stage 5b: fully-on-device meeting path
-
-    /// Drive the fully-on-device meeting pipeline via `MeetingLocalProcessor`
-    /// and surface the resulting note to the UI. On success the new-meeting
-    /// event is emitted and the open notes window refreshed, exactly like the
-    /// BYOK path; on failure a `.meetingFailed` event is emitted.
-    ///
-    /// `internal` so tests can assert the bypass without standing up the full
-    /// model pipeline (an injected `MeetingLocalProcessing` spy suffices).
-    func processMeetingFullyLocally(
-        processor: any MeetingLocalProcessing,
-        event: MeetingRecorder.FinalizedEvent,
-        tracks: MeetingRecorder.SeparateTrackURLs,
-        startedAt: Date,
-        language: String?,
-        reconnectMarkers: [TranscriptReconnectMarker] = []
-    ) async {
-        do {
-            try? await meetingsStore?.updateProgress(
-                id: event.meetingId,
-                status: .transcribing
-            )
-            let meetingId = try await processor.process(
-                event: event,
-                startedAt: startedAt,
-                language: language,
-                meetingsStore: meetingsStore
-            )
-            try await persistReconnectMarkersIfNeeded(
-                reconnectMarkers,
-                meetingId: meetingId
-            )
-            try? await meetingsStore?.updateProgress(id: meetingId, status: .ready)
-            eventsContinuation.yield(.newMeetingAvailable(id: meetingId))
-            _meetingsWindowController?.refreshSidebar()
-            _settingsMeetingsContentController?.refreshSidebar()
-            os_log(
-                "meeting processed fully on-device (meetingId: %{public}@)",
-                log: Self.log, type: .info,
-                meetingId.uuidString
-            )
-        } catch {
-            os_log(
-                "fully-on-device meeting processing failed (meetingId: %{public}@, error: %{public}@)",
-                log: Self.log, type: .error,
-                event.meetingId.uuidString, String(describing: error)
-            )
-            eventsContinuation.yield(
-                .meetingFailed(id: event.meetingId, error: String(describing: error))
-            )
-            try? await meetingsStore?.updateProgress(
-                id: event.meetingId,
-                status: .failed,
-                failureReason: String(describing: error)
             )
         }
     }
@@ -1427,26 +1342,13 @@ final class MeetingsCoordinator {
             .map { dir.appendingPathComponent($0) }
             .filter { fm.fileExists(atPath: $0.path) }
         guard !chunkURLs.isEmpty else { return nil }
-        var event = MeetingRecorder.FinalizedEvent(
+        return MeetingRecorder.FinalizedEvent(
             meetingId: manifest.recorderMeetingId,
             chunkURLs: chunkURLs,
             totalDurationSeconds: TimeInterval(manifest.durationSeconds),
             reason: .user,
             interruptedBySleep: false
         )
-        // The fully-local pipeline consumes the whole un-mixed tracks the
-        // recorder writes beside the chunks (`MeetingRecorder` names them
-        // `mic.wav` / `system.wav`). Present only for recordings made with
-        // `retainSeparateTracks` on.
-        let micTrack = dir.appendingPathComponent("mic.wav")
-        let systemTrack = dir.appendingPathComponent("system.wav")
-        if fm.fileExists(atPath: micTrack.path), fm.fileExists(atPath: systemTrack.path) {
-            event.separateTrackURLs = MeetingRecorder.SeparateTrackURLs(
-                micURL: micTrack,
-                systemURL: systemTrack
-            )
-        }
-        return event
     }
 
     // MARK: - Stage 9 sleep / wake lifecycle hooks

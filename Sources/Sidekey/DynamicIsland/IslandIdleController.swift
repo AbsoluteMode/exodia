@@ -50,7 +50,7 @@ final class IslandIdleTimerScheduler: IslandIdleTickScheduling {
 /// Stage 4), and time flows through the injected `now` / scheduler. That keeps
 /// the whole engine unit-testable with a virtual clock.
 ///
-/// **Privacy (invariant #3):** `registerActivity()` takes no arguments and
+/// **Privacy (invariant #2):** `registerActivity()` takes no arguments and
 /// reads only the clock — it is structurally impossible to pass keystroke
 /// content, a keyCode, or any event payload through it. Nothing here is logged.
 @MainActor
@@ -100,7 +100,7 @@ final class IslandIdleController: ObservableObject {
 
     /// Record an activity signal. Resets the idle window to `now` and — if the
     /// island was hidden — wakes it immediately (no tick wait). Takes no payload
-    /// by design (invariant #3).
+    /// by design (invariant #2).
     func registerActivity() {
         lastActivity = now()
         reschedule()

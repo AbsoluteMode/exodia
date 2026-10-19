@@ -10,6 +10,7 @@ struct ToolboxSettingsView: View {
 
     @ObservedObject var hoverStore: HoverLayoutStore
     @ObservedObject var selection: SettingsWindowSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Live hotkey config so the Drop-mode caption names the real Drop
     // trigger (post-cutover: "Hold Space") instead of a hardcoded ⌥ /.
     @ObservedObject private var hotkeys: HotkeyPreferences = .shared
@@ -63,12 +64,13 @@ struct ToolboxSettingsView: View {
                 .tracking(0.9)
                 .foregroundStyle(.white.opacity(0.42))
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
-                                    count: HoverLayoutStore.columns), spacing: 16) {
-                ForEach(Array(hoverStore.slots.enumerated()), id: \.element) { index, tool in
-                    hoverSlotTile(tool: tool, index: index)
+            ToolboxHoverEditor(hoverStore: hoverStore, reduceMotion: reduceMotion) { item in
+                switch item {
+                case .tool(let tool):
+                    hoverSlotTile(tool: tool)
+                case .add:
+                    ToolboxAddTile()
                 }
-                emptySlot
             }
             .padding(16)
             .background(
@@ -85,7 +87,7 @@ struct ToolboxSettingsView: View {
     }
 
     @ViewBuilder
-    private func hoverSlotTile(tool: HoverTool, index: Int) -> some View {
+    private func hoverSlotTile(tool: HoverTool) -> some View {
         let isLocked = tool == .settings
         let info = HoverToolRegistry.info(for: tool)
         let isSelected = selectedTool == tool
@@ -122,33 +124,6 @@ struct ToolboxSettingsView: View {
                 .accessibilityLabel("Remove \(info.title) from hover")
                 .offset(x: 6, y: -4)
             }
-        }
-        .dropDestination(for: String.self) { items, _ in
-            guard let raw = items.first, let tool = HoverTool(rawValue: raw) else { return false }
-            return hoverStore.placeTool(tool, at: index)
-        }
-    }
-
-    private var emptySlot: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "plus")
-                .font(.system(size: 20, weight: .light))
-                .frame(width: 56, height: 56)
-                .background(Circle().strokeBorder(Color.white.opacity(0.22),
-                                                  style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
-            Text("ADD TOOL")
-                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
-                .tracking(0.8)
-                .frame(width: 56, height: 26)
-        }
-        .foregroundStyle(.white.opacity(0.45))
-        .contentShape(Rectangle())
-        .help("Drag a tool here to add it to your hover")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Drop a tool here to add it to hover")
-        .dropDestination(for: String.self) { items, _ in
-            guard let raw = items.first, let tool = HoverTool(rawValue: raw) else { return false }
-            return hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
         }
     }
 
@@ -472,6 +447,130 @@ struct ToolboxSettingsView: View {
         } else if hoveredTool == tool {
             hoveredTool = nil
         }
+    }
+}
+
+// MARK: - Hover editor
+
+enum ToolboxHoverEditorItem: Hashable {
+    case tool(HoverTool)
+    case add
+}
+
+/// The editor owns transient drop feedback; only a completed drop changes the
+/// persisted layout. Kept separate from the tool panels so the grid can also be
+/// hosted without initializing their stores.
+@MainActor
+struct ToolboxHoverEditor<Tile: View>: View {
+    @ObservedObject var hoverStore: HoverLayoutStore
+    let reduceMotion: Bool
+    @State private var targetedItem: ToolboxHoverEditorItem?
+    private let tile: (ToolboxHoverEditorItem) -> Tile
+
+    init(hoverStore: HoverLayoutStore, reduceMotion: Bool,
+         @ViewBuilder tile: @escaping (ToolboxHoverEditorItem) -> Tile) {
+        self.hoverStore = hoverStore
+        self.reduceMotion = reduceMotion
+        self.tile = tile
+    }
+
+    private var items: [ToolboxHoverEditorItem] {
+        // Match the insertion index used by the store: a new tool occupies the
+        // old Add position, while the permanent Add and Settings move together.
+        hoverStore.slots.filter { $0 != .settings }.map(ToolboxHoverEditorItem.tool)
+            + [.add, .tool(.settings)]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
+                                count: HoverLayoutStore.columns), spacing: 16) {
+            ForEach(items, id: \.self) { item in
+                editorCell(item)
+                    .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: hoverStore.slots)
+    }
+
+    private func editorCell(_ item: ToolboxHoverEditorItem) -> some View {
+        ToolboxNativeDropTarget(
+            targetID: item,
+            isEnabled: item != .tool(.settings),
+            validate: { raw in acceptsDrop(raw, onto: item) },
+            onTarget: { isTargeted in
+                if isTargeted {
+                    targetedItem = item
+                } else if targetedItem == item {
+                    targetedItem = nil
+                }
+            },
+            onDrop: { raw in commitDrop([raw], onto: item) }
+        ) {
+            tile(item)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.accentColor.opacity(targetedItem == item ? 0.12 : 0))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(targetedItem == item ? 0.7 : 0),
+                                              lineWidth: 1.5)
+                        }
+                        .padding(-4)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.1),
+                                   value: targetedItem == item)
+                }
+        }
+    }
+
+    private func acceptsDrop(_ raw: String, onto item: ToolboxHoverEditorItem) -> Bool {
+        guard let tool = HoverTool(rawValue: raw), tool != .settings else { return false }
+        switch item {
+        case .add: return true
+        case .tool(let target): return target != .settings && hoverStore.slots.contains(target)
+        }
+    }
+
+    private func commitDrop(_ items: [String], onto item: ToolboxHoverEditorItem) -> Bool {
+        targetedItem = nil
+        guard let raw = items.first, let tool = HoverTool(rawValue: raw), tool != .settings else { return false }
+        let index: Int
+        switch item {
+        case .add:
+            index = hoverStore.lockSlotIndex
+        case .tool(let target):
+            guard target != .settings,
+                  let targetIndex = hoverStore.slots.firstIndex(of: target) else { return false }
+            index = targetIndex
+        }
+        // A validated drop onto the same position is still accepted. The store
+        // skips unchanged arrays, so this avoids both a save and a failed-drop
+        // return animation for self/end drops.
+        hoverStore.placeTool(tool, at: index)
+        return true
+    }
+}
+
+@MainActor
+struct ToolboxAddTile: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .light))
+                .frame(width: 56, height: 56)
+                .background(Circle().strokeBorder(Color.white.opacity(0.22),
+                                                  style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+            Text("ADD TOOL")
+                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .frame(width: 56, height: 26)
+        }
+        .foregroundStyle(.white.opacity(0.45))
+        .contentShape(Rectangle())
+        .help("Drag a tool here to add it to your hover")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Drop a tool here to add it to hover")
     }
 }
 

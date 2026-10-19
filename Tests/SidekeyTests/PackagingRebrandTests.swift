@@ -108,9 +108,9 @@ final class PackagingRebrandTests: XCTestCase {
         try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
         let marker = temporary.appendingPathComponent("calls.txt")
         let root = try projectRoot()
-        for relative in ["scripts/build-dmg.sh", "scripts/build-metallib.sh", "VERSION", "Package.resolved",
+        for relative in ["scripts/build-dmg.sh", "VERSION", "Package.resolved",
                          "Resources/Info.plist.template", "Resources/sparkle-public-ed-key.txt",
-                         "Resources/blocknote/index.html", "Resources/mlx.metallib", "Resources/mlx.metallib.revision"] {
+                         "Resources/blocknote/index.html"] {
             let destination = temporary.appendingPathComponent(relative)
             try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true)

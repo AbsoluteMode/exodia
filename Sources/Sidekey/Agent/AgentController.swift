@@ -11,19 +11,20 @@ enum AgentControllerState: Equatable {
 }
 
 /// Batch transcription seam for the agent's record-then-transcribe voice
-/// path (used when realtime streaming is unavailable). Production runs the
-/// on-device Parakeet model; tests inject a fake.
+/// path (used when realtime streaming is unavailable). Production passes the
+/// provider batch transcriber (the user's own provider and key); tests
+/// inject a fake.
 protocol AgentAudioTranscribing {
     /// `language` is the ISO 639-1 code selected by the user (e.g. "ru"),
     /// or `nil` for automatic detection.
     func transcribe(audioData: Data, language: String?) async throws -> String
 }
 
-/// On-device batch transcription of a captured WAV via Parakeet.
-struct LocalAgentAudioTranscriber: AgentAudioTranscribing {
+/// Batch transcription of a captured WAV through a `BatchTranscribing`.
+struct BatchAgentAudioTranscriber: AgentAudioTranscribing {
     private let batch: any BatchTranscribing
 
-    init(batch: any BatchTranscribing = LocalBatchTranscriber()) {
+    init(batch: any BatchTranscribing = UnavailableBatchTranscriber()) {
         self.batch = batch
     }
 
@@ -275,7 +276,7 @@ final class AgentController: ObservableObject {
         self.resolveRunOptions = resolveRunOptions
         self.resolveProjectContext = resolveProjectContext
         self.agentSessionStore = agentSessionStore ?? AgentSessionStore.shared
-        self.audioTranscriber = audioTranscriber ?? LocalAgentAudioTranscriber()
+        self.audioTranscriber = audioTranscriber ?? BatchAgentAudioTranscriber()
         self.voiceSessionFactory = voiceSessionFactory ?? {
             AgentVoiceSession(recorder: AudioRecorder())
         }
@@ -1713,9 +1714,6 @@ final class AgentController: ObservableObject {
         if let agentError = error as? AgentClientError {
             return agentError.description
         }
-        if let localError = error as? LocalTranscriptionModelError {
-            return localError.errorDescription ?? "Could not transcribe audio."
-        }
         return "Could not transcribe audio."
     }
 
@@ -1723,7 +1721,9 @@ final class AgentController: ObservableObject {
         if let agentError = error as? AgentClientError {
             return agentError.retryable
         }
-        if error is LocalTranscriptionModelError {
+        // Retrying cannot help until a provider and its key are set in
+        // Settings -> Models.
+        if error is BatchTranscriptionUnavailable {
             return false
         }
         return true

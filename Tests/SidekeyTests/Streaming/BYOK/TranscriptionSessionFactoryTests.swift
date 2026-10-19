@@ -48,14 +48,29 @@ final class TranscriptionSessionFactoryTests: XCTestCase {
         }
     }
 
-    func testLocalBuildsLocalSession() throws {
-        let factory = TranscriptionSessionFactory(
-            prefs: prefs(.local),
-            keyStore: .inMemory(),
-            vocab: vocab()
-        )
-        let session = try factory.make(language: "en")
-        XCTAssertTrue(session is LocalTranscriptionSession)
+    func testSelfHostedWithUnparseableBaseURLThrows() throws {
+        let kc = BYOKKeyStore.inMemory()
+        try kc.save(key: "key-selfHosted", for: .selfHosted)
+        let p = prefs(.yourKey, .selfHosted)
+        p.selfHostedBaseURL = "http://my host:8000"
+        let factory = TranscriptionSessionFactory(prefs: p, keyStore: kc, vocab: vocab())
+        XCTAssertThrowsError(try factory.make(language: "en")) { error in
+            XCTAssertEqual(error as? TranscriptionFactoryError, .missingBaseURL)
+        }
+    }
+
+    func testNoChosenProviderThrowsNotConfigured() throws {
+        // A fresh Apple Silicon install has no provider chosen: no session,
+        // even with a stored provider key.
+        let d = UserDefaults(suiteName: "factory.test.\(UUID().uuidString)")!
+        let p = SelfKeyPreferences(defaults: d, isAppleSilicon: true)
+        p.selectedProvider = .soniox
+        let kc = BYOKKeyStore.inMemory()
+        try kc.save(key: "key-soniox", for: .soniox)
+        let factory = TranscriptionSessionFactory(prefs: p, keyStore: kc, vocab: vocab())
+        XCTAssertThrowsError(try factory.make(language: "en")) { error in
+            XCTAssertEqual(error as? TranscriptionFactoryError, .notConfigured)
+        }
     }
 
     func testDefaultTranscriptionModelPerProvider() {

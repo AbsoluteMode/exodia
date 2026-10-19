@@ -9,26 +9,17 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
     let assetName: String?
     let systemName: String?
     let label: String
-    /// When `true`, the breathing island mark renders the bundled asset in its
-    /// native colors (loaded non-template) instead of flattening it to the
-    /// monochrome white tint every other provider mark receives. Used for the
-    /// on-device Qwen mark, whose blue glyph would otherwise read as a generic
-    /// white blob. Settings rows already render Qwen full-color via a dedicated
-    /// view; this carries the same intent into the island.
-    let isFullColor: Bool
 
-    init(assetName: String, label: String, isFullColor: Bool = false) {
+    init(assetName: String, label: String) {
         self.assetName = assetName
         self.systemName = nil
         self.label = label
-        self.isFullColor = isFullColor
     }
 
     init(systemName: String, label: String) {
         self.assetName = nil
         self.systemName = systemName
         self.label = label
-        self.isFullColor = false
     }
 
     static func byok(_ provider: BYOKProvider) -> TranscriptionProviderBrand {
@@ -70,31 +61,21 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
     /// OpenAI-compatible endpoint.
     static let customLLM = TranscriptionProviderBrand(systemName: "server.rack", label: "Custom LLM")
 
-    /// Brand shown while Drop transcription runs fully on-device. The local
-    /// stack is Qwen (Parakeet STT + on-device Qwen LLM cleanup), so the island
-    /// shows the genuine Qwen mark in full color rather than a generic CPU glyph.
-    static let localTranscription = TranscriptionProviderBrand(
-        assetName: "qwen",
-        label: "Qwen",
-        isFullColor: true
-    )
-
     @MainActor
     static func currentDrop() -> TranscriptionProviderBrand? {
         let prefs = SelfKeyPreferences.shared
         switch prefs.transcriptionLevel {
+        case nil:
+            return nil
         case .yourKey:
             return byok(prefs.selectedProvider)
-        case .local:
-            return .localTranscription
         }
     }
 
     @MainActor
     static func currentDropCleanup() -> TranscriptionProviderBrand? {
         switch SelfKeyPreferences.shared.llmLevel {
-        case .local:
-            // On-device LLM has no cloud provider brand to surface.
+        case nil:
             return nil
         case .yourKey:
             return .openRouter

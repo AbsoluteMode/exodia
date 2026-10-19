@@ -1,6 +1,4 @@
 import XCTest
-import FluidAudio
-import MLXLMCommon
 @testable import Sidekey
 
 @MainActor
@@ -9,10 +7,10 @@ final class SettingsModelsViewModelTests: XCTestCase {
         UserDefaults(suiteName: "models.vm.\(UUID().uuidString)")!
     }
 
-    /// Builds a view model over isolated prefs. `isAppleSilicon` drives both
-    /// the prefs defaults (a fresh install starts on the on-device level on
-    /// Apple Silicon and on BYOK everywhere else) and the view model's
-    /// hardware gate. Pass `transcriptionLevel` / `llmLevel` to start from a
+    /// Builds a view model over isolated prefs. `isAppleSilicon` drives the
+    /// prefs default for a route the user never chose: none on Apple Silicon
+    /// (where the removed on-device models used to be the default) and BYOK
+    /// everywhere else. Pass `transcriptionLevel` / `llmLevel` to start from a
     /// persisted route instead of the fresh-install default.
     private func makeVM(
         isAppleSilicon: Bool = true,
@@ -23,8 +21,6 @@ final class SettingsModelsViewModelTests: XCTestCase {
         llmKeyStore: any OpenRouterLLMKeyStoring = ModelsFakeOpenRouterKeyStore(),
         customLLMKeyStore: any OpenRouterLLMKeyStoring = ModelsFakeOpenRouterKeyStore(),
         openRouterClient: any OpenRouterLLMClienting = ModelsFakeOpenRouterClient(),
-        localModelStore: any LocalTranscriptionModelManaging = ModelsFakeLocalModelStore(),
-        localLLMStore: any LocalLLMModelManaging = ModelsFakeLocalLLMStore(),
         makeProbe: ((BYOKProvider, String, String?, String) -> BYOKConnectionProbing)? = nil
     ) -> (SettingsModelsViewModel, SelfKeyPreferences) {
         let prefs = SelfKeyPreferences(defaults: makeDefaults(), isAppleSilicon: isAppleSilicon)
@@ -42,10 +38,7 @@ final class SettingsModelsViewModelTests: XCTestCase {
             llmKeyStore: llmKeyStore,
             customLLMKeyStore: customLLMKeyStore,
             openRouterClient: openRouterClient,
-            localModelStore: localModelStore,
-            localLLMStore: localLLMStore,
-            makeProbe: probeFactory,
-            isAppleSilicon: { isAppleSilicon }
+            makeProbe: probeFactory
         )
         return (vm, prefs)
     }
@@ -60,17 +53,17 @@ final class SettingsModelsViewModelTests: XCTestCase {
     // MARK: - Defaults
 
     func testFreshInstallDefaultsFollowHardware() {
+        // Apple Silicon used to default to the removed on-device models, so a
+        // fresh install there starts with no route chosen.
         let (appleSilicon, _) = makeVM(isAppleSilicon: true)
-        XCTAssertEqual(appleSilicon.level, .local)
-        XCTAssertEqual(appleSilicon.approvedLevel, .local)
-        XCTAssertEqual(appleSilicon.llmLevel, .local)
-        XCTAssertEqual(appleSilicon.approvedLLMLevel, .local)
+        XCTAssertNil(appleSilicon.approvedLevel)
+        XCTAssertNil(appleSilicon.approvedLLMLevel)
+        XCTAssertEqual(appleSilicon.llmLevel, .yourKey)
         // BYOK default is soniox now (OpenAI dropped from the picker).
         XCTAssertEqual(appleSilicon.provider, .soniox)
         XCTAssertEqual(appleSilicon.selfHostedModel, "gpt-4o-transcribe")
 
         let (intel, _) = makeVM(isAppleSilicon: false)
-        XCTAssertEqual(intel.level, .yourKey)
         XCTAssertEqual(intel.approvedLevel, .yourKey)
         XCTAssertEqual(intel.llmLevel, .yourKey)
         XCTAssertEqual(intel.approvedLLMLevel, .yourKey)
@@ -99,38 +92,43 @@ final class SettingsModelsViewModelTests: XCTestCase {
         }
     }
 
-    // MARK: - STT level selection and save
+    // MARK: - STT save
 
-    func testSelectingIsolationLevelDoesNotPersistUntilSaved() {
-        let (vm, prefs) = makeVM()
-        vm.selectLevel(.yourKey)
+    func testSaveWithoutChosenProviderKeepsDropOff() throws {
+        // Editing fields never turns on a provider: only a validated save does.
+        let keyStore = BYOKKeyStore.inMemory()
+        let (vm, prefs) = makeVM(keyStore: keyStore)
+        vm.provider = .deepgram
+        vm.providerChanged()
+        vm.apiKeyInput = "dg-key"
 
-        XCTAssertEqual(vm.level, .yourKey)
-        XCTAssertTrue(vm.hasPendingLevelChange)
-        XCTAssertEqual(prefs.transcriptionLevel, .local)
+        vm.save()
+
+        XCTAssertNil(prefs.transcriptionLevel)
+        XCTAssertNil(vm.approvedLevel)
+        XCTAssertEqual(prefs.selectedProvider, .deepgram)
+        XCTAssertEqual(try keyStore.read(for: .deepgram), "dg-key")
     }
 
-    func testSaveCurrentSelectionRequiresApiKeyAndKeepsLocalActive() async {
+    func testSaveCurrentSelectionRequiresApiKeyAndLeavesProviderUnchosen() async {
         let (vm, prefs) = makeVM()
-        vm.selectLevel(.yourKey)
         vm.apiKeyInput = "   "
 
         await vm.saveCurrentSelection()
 
-        XCTAssertEqual(prefs.transcriptionLevel, .local)
-        XCTAssertTrue(vm.hasPendingLevelChange)
+        XCTAssertNil(prefs.transcriptionLevel)
+        XCTAssertNil(vm.approvedLevel)
         XCTAssertEqual(vm.connectionStatus, .failed("Enter an API key"))
     }
 
     func testSaveCurrentSelectionRequiresSuccessfulValidation() async {
         let (vm, prefs) = makeVM(probeSucceeds: false)
-        vm.selectLevel(.yourKey)
         vm.apiKeyInput = "sk-test"
 
         await vm.saveCurrentSelection()
 
-        XCTAssertEqual(prefs.transcriptionLevel, .local)
-        XCTAssertTrue(vm.hasPendingLevelChange)
+        XCTAssertNil(prefs.transcriptionLevel)
+        XCTAssertNil(vm.approvedLevel)
         XCTAssertEqual(vm.connectionStatus, .failed("Could not reach provider"))
     }
 
@@ -138,14 +136,13 @@ final class SettingsModelsViewModelTests: XCTestCase {
         let keyStore = BYOKKeyStore.inMemory()
 
         let (vm, prefs) = makeVM(keyStore: keyStore)
-        vm.selectLevel(.yourKey)
         vm.provider = .openAI
         vm.apiKeyInput = "sk-approved"
 
         await vm.saveCurrentSelection()
 
         XCTAssertEqual(prefs.transcriptionLevel, .yourKey)
-        XCTAssertFalse(vm.hasPendingLevelChange)
+        XCTAssertEqual(vm.approvedLevel, .yourKey)
         XCTAssertEqual(vm.connectionStatus, .ok)
         XCTAssertEqual(try keyStore.read(for: .openAI), "sk-approved")
     }
@@ -166,7 +163,6 @@ final class SettingsModelsViewModelTests: XCTestCase {
                 return StubProbe(succeeds: true)
             }
         )
-        vm.selectLevel(.yourKey)
         vm.provider = .deepgram
         vm.selectedModel = "nova-3"
         vm.apiKeyInput = "dg-key"
@@ -180,7 +176,6 @@ final class SettingsModelsViewModelTests: XCTestCase {
     func testSaveKeyPersistsToKeychainAndPrefs() throws {
         try withInMemoryKeyStore(.openAI) { keyStore in
             let (vm, _) = makeVM(keyStore: keyStore)
-            vm.level = .yourKey
             vm.provider = .openAI
             vm.apiKeyInput = "sk-abc"
             vm.save()
@@ -202,103 +197,6 @@ final class SettingsModelsViewModelTests: XCTestCase {
         vm.apiKeyInput = ""
         await vm.testConnection()
         if case .failed = vm.connectionStatus {} else { XCTFail("expected failed") }
-    }
-
-    // MARK: - Local STT model (on-device Parakeet)
-
-    func testLocalLevelRequiresDownloadedModelBeforeSave() async {
-        let (vm, prefs) = makeVM(transcriptionLevel: .yourKey)
-        vm.selectLevel(.local)
-
-        await vm.saveCurrentSelection()
-
-        XCTAssertEqual(prefs.transcriptionLevel, .yourKey)
-        XCTAssertTrue(vm.hasPendingLevelChange)
-        XCTAssertEqual(vm.localModelStatus, .notDownloaded)
-        XCTAssertEqual(vm.connectionStatus, .failed(LocalModelMessaging.modelNotDownloaded))
-    }
-
-    func testSaveCurrentSelectionPersistsLocalWhenModelReady() async {
-        let (vm, prefs) = makeVM(
-            transcriptionLevel: .yourKey,
-            localModelStore: ModelsFakeLocalModelStore(isReady: true)
-        )
-        vm.selectLevel(.local)
-
-        await vm.saveCurrentSelection()
-
-        XCTAssertEqual(prefs.transcriptionLevel, .local)
-        XCTAssertFalse(vm.hasPendingLevelChange)
-        XCTAssertEqual(vm.localModelStatus, .ready)
-        XCTAssertEqual(vm.connectionStatus, .ok)
-    }
-
-    func testConnectLocalSTTMarksConnected() async {
-        let (vm, _) = makeVM(
-            transcriptionLevel: .yourKey,
-            localModelStore: ModelsFakeLocalModelStore(isReady: true)
-        )
-        XCTAssertFalse(vm.isLocalConnected)
-        vm.selectLevel(.local)
-
-        await vm.saveCurrentSelection()
-
-        XCTAssertTrue(vm.isLocalConnected)
-    }
-
-    func testDisconnectLocalSTTRevertsToYourKeyButKeepsPicker() async {
-        let (vm, prefs) = makeVM(
-            transcriptionLevel: .yourKey,
-            localModelStore: ModelsFakeLocalModelStore(isReady: true)
-        )
-        vm.selectLevel(.local)
-        await vm.saveCurrentSelection()
-        XCTAssertTrue(vm.isLocalConnected)
-
-        vm.disconnectLocal()
-
-        XCTAssertFalse(vm.isLocalConnected)
-        XCTAssertEqual(vm.approvedLevel, .yourKey)
-        XCTAssertEqual(prefs.transcriptionLevel, .yourKey)
-        // Picker stays on local so the card remains visible (button flips to Connect).
-        XCTAssertEqual(vm.level, .local)
-    }
-
-    func testDownloadLocalModelUpdatesReadyStatus() async {
-        let store = ModelsFakeLocalModelStore(isReady: false)
-        let (vm, _) = makeVM(localModelStore: store)
-
-        await vm.downloadLocalModel()
-
-        let downloadCalls = await store.downloadCalls
-        XCTAssertEqual(downloadCalls, 1)
-        XCTAssertEqual(vm.localModelStatus, .ready)
-    }
-
-    func testRefreshLocalModelStatusReportsInFlightDownload() async {
-        let store = ModelsFakeLocalModelStore(statusOverride: .downloading(0.42))
-        let (vm, _) = makeVM(localModelStore: store)
-
-        await vm.refreshLocalModelStatus()
-
-        XCTAssertEqual(vm.localModelStatus, .downloading(0.42))
-    }
-
-    func testDeleteLocalModelFallsBackFromActiveLocalToYourKey() async {
-        let store = ModelsFakeLocalModelStore(isReady: true)
-        let (vm, prefs) = makeVM(transcriptionLevel: .yourKey, localModelStore: store)
-        vm.selectLevel(.local)
-        await vm.saveCurrentSelection()
-        XCTAssertEqual(prefs.transcriptionLevel, .local)
-
-        await vm.deleteLocalModel()
-
-        let deleteCalls = await store.deleteCalls
-        XCTAssertEqual(deleteCalls, 1)
-        XCTAssertEqual(prefs.transcriptionLevel, .yourKey)
-        XCTAssertEqual(vm.level, .yourKey)
-        XCTAssertEqual(vm.approvedLevel, .yourKey)
-        XCTAssertEqual(vm.localModelStatus, .notDownloaded)
     }
 
     // MARK: - LLM BYOK (OpenRouter)
@@ -412,255 +310,90 @@ final class SettingsModelsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.llmConnectionStatus, .ok)
     }
 
-    func testSavingLocalLLMDoesNotDeleteSavedOpenRouterKey() async throws {
+    func testSavingCustomLLMDoesNotDeleteSavedOpenRouterKey() async throws {
         let llmKeyStore = ModelsFakeOpenRouterKeyStore()
         try llmKeyStore.save(key: "or-existing")
-        let (vm, prefs) = makeVM(
-            llmLevel: .yourKey,
-            llmKeyStore: llmKeyStore,
-            localLLMStore: ModelsFakeLocalLLMStore(isReady: true)
-        )
+        let (vm, prefs) = makeVM(llmLevel: .yourKey, llmKeyStore: llmKeyStore)
 
         // An empty key field must never delete the stored key when the user
         // commits a different route.
         vm.openRouterAPIKeyInput = ""
-        vm.selectLLMLevel(.local)
+        vm.selectLLMLevel(.custom)
+        vm.customLLMBaseURL = "http://localhost:8000/v1"
         await vm.saveCurrentLLMSelection()
 
-        XCTAssertEqual(prefs.llmLevel, .local)
+        XCTAssertEqual(prefs.llmLevel, .custom)
         XCTAssertEqual(try llmKeyStore.read(), "or-existing")
     }
 
-    // MARK: - LLM top-segment <-> route mapping (two-segment "Your key" merge)
+    // MARK: - LLM route selection and save
 
-    func testLLMTopLevelMapsYourKeyAndCustomToYourKeySegment() {
-        let (vm, _) = makeVM(llmLevel: .yourKey)
-        // OpenRouter route presents under the "Your key" segment.
-        XCTAssertEqual(vm.llmTopLevel, .yourKey)
-
-        // Custom endpoint route also presents under "Your key".
-        vm.llmLevel = .custom
-        XCTAssertEqual(vm.llmTopLevel, .yourKey)
-
-        vm.llmLevel = .local
-        XCTAssertEqual(vm.llmTopLevel, .local)
-    }
-
-    func testSelectingYourKeyTopSegmentDefaultsToOpenRouterWhenNoPriorVariant() {
-        let (vm, _) = makeVM()
-        XCTAssertEqual(vm.llmLevel, .local)
-
-        vm.selectLLMTopLevel(.yourKey)
-
-        // Fresh user with no prior BYOK variant lands on OpenRouter.
-        XCTAssertEqual(vm.llmLevel, .yourKey)
-        XCTAssertEqual(vm.yourKeyLLMVariant, .yourKey)
-    }
-
-    func testSelectingYourKeyTopSegmentRestoresLastCustomVariant() {
-        let (vm, _) = makeVM(llmLevel: .yourKey)
-        // User picks Custom inside "Your key" ...
-        vm.selectYourKeyLLMVariant(.custom)
-        XCTAssertEqual(vm.llmLevel, .custom)
-        XCTAssertEqual(vm.yourKeyLLMVariant, .custom)
-
-        // ... switches the top segment away ...
-        vm.selectLLMTopLevel(.local)
-        XCTAssertEqual(vm.llmLevel, .local)
-
-        // ... and back to "Your key": the Custom sub-variant is restored.
-        vm.selectLLMTopLevel(.yourKey)
-        XCTAssertEqual(vm.llmLevel, .custom)
-        XCTAssertEqual(vm.yourKeyLLMVariant, .custom)
-    }
-
-    func testYourKeyLLMVariantHydratesFromPersistedCustomRoute() {
+    func testPersistedCustomRouteHydratesPicker() {
         let (vm, _) = makeVM(llmLevel: .custom)
 
-        // Reopening the screen with a persisted Custom route shows "Your key"
-        // with the Custom sub-variant active.
-        XCTAssertEqual(vm.llmTopLevel, .yourKey)
-        XCTAssertEqual(vm.yourKeyLLMVariant, .custom)
+        XCTAssertEqual(vm.llmLevel, .custom)
+        XCTAssertEqual(vm.approvedLLMLevel, .custom)
     }
 
-    func testYourKeyTopSegmentIsNeverGated() {
-        // Both BYOK sub-routes are always available, on any hardware.
-        let (appleSilicon, _) = makeVM(isAppleSilicon: true)
-        XCTAssertFalse(appleSilicon.isYourKeyLLMTopGated)
-        let (intel, _) = makeVM(isAppleSilicon: false)
-        XCTAssertFalse(intel.isYourKeyLLMTopGated)
-    }
-
-    // MARK: - Local LLM (on-device MLX, ROO-257 Stage 2)
-
-    func testSelectingLocalLLMDoesNotPersistUntilSaved() {
+    func testSelectingLLMRouteDoesNotPersistUntilSaved() {
         let (vm, prefs) = makeVM(llmLevel: .yourKey)
-        vm.selectLLMLevel(.local)
+        vm.selectLLMLevel(.custom)
 
-        XCTAssertEqual(vm.llmLevel, .local)
+        XCTAssertEqual(vm.llmLevel, .custom)
         XCTAssertEqual(prefs.llmLevel, .yourKey)  // selection alone never persists
-    }
-
-    func testLocalLLMLevelRequiresDownloadedModelBeforeSave() async {
-        let (vm, prefs) = makeVM(llmLevel: .yourKey, localLLMStore: ModelsFakeLocalLLMStore(isReady: false))
-        vm.selectLLMLevel(.local)
-
-        await vm.saveCurrentLLMSelection()
-
-        XCTAssertEqual(prefs.llmLevel, .yourKey)
-        XCTAssertEqual(vm.localLLMStatus, .notDownloaded)
-        XCTAssertEqual(vm.llmConnectionStatus, .failed(LocalModelMessaging.modelNotDownloaded))
-    }
-
-    func testSaveCurrentLLMSelectionPersistsLocalWhenModelReady() async {
-        let (vm, prefs) = makeVM(llmLevel: .yourKey, localLLMStore: ModelsFakeLocalLLMStore(isReady: true))
-        vm.selectLLMLevel(.local)
-
-        await vm.saveCurrentLLMSelection()
-
-        XCTAssertEqual(prefs.llmLevel, .local)
-        XCTAssertEqual(vm.localLLMStatus, .ready)
-        XCTAssertEqual(vm.llmConnectionStatus, .ok)
-    }
-
-    func testConnectLLMLocalMarksConnected() async {
-        let (vm, _) = makeVM(llmLevel: .yourKey, localLLMStore: ModelsFakeLocalLLMStore(isReady: true))
-        XCTAssertFalse(vm.isLocalLLMConnected)
-        vm.selectLLMLevel(.local)
-
-        await vm.saveCurrentLLMSelection()
-
-        XCTAssertEqual(vm.approvedLLMLevel, .local)
-        XCTAssertTrue(vm.isLocalLLMConnected)
-    }
-
-    func testDisconnectLLMRevertsToYourKeyButKeepsPicker() async {
-        let (vm, prefs) = makeVM(llmLevel: .yourKey, localLLMStore: ModelsFakeLocalLLMStore(isReady: true))
-        vm.selectLLMLevel(.local)
-        await vm.saveCurrentLLMSelection()
-        XCTAssertTrue(vm.isLocalLLMConnected)
-
-        vm.disconnectLLM()
-
-        XCTAssertFalse(vm.isLocalLLMConnected)
         XCTAssertEqual(vm.approvedLLMLevel, .yourKey)
-        XCTAssertEqual(prefs.llmLevel, .yourKey)
-        // Picker stays on local so the card remains visible (button flips to Connect).
-        XCTAssertEqual(vm.llmLevel, .local)
     }
 
-    func testDownloadLocalLLMModelUpdatesReadyStatus() async {
-        let store = ModelsFakeLocalLLMStore(isReady: false)
-        let (vm, _) = makeVM(localLLMStore: store)
-
-        await vm.downloadLocalLLMModel()
-
-        let downloadCalls = await store.downloadCalls
-        XCTAssertEqual(downloadCalls, 1)
-        XCTAssertEqual(vm.localLLMStatus, .ready)
-    }
-
-    func testRefreshLocalLLMStatusReportsInFlightDownload() async {
-        let store = ModelsFakeLocalLLMStore(statusOverride: .downloading(0.42))
-        let (vm, _) = makeVM(localLLMStore: store)
-
-        await vm.refreshLocalLLMStatus()
-
-        XCTAssertEqual(vm.localLLMStatus, .downloading(0.42))
-    }
-
-    func testDeleteLocalLLMModelFallsBackFromActiveLocalToYourKey() async {
-        let store = ModelsFakeLocalLLMStore(isReady: true)
-        let (vm, prefs) = makeVM(llmLevel: .yourKey, localLLMStore: store)
-        vm.selectLLMLevel(.local)
-        await vm.saveCurrentLLMSelection()
-        XCTAssertEqual(prefs.llmLevel, .local)
-
-        await vm.deleteLocalLLMModel()
-
-        let deleteCalls = await store.deleteCalls
-        XCTAssertEqual(deleteCalls, 1)
-        XCTAssertEqual(prefs.llmLevel, .yourKey)
-        XCTAssertEqual(vm.llmLevel, .yourKey)
-        XCTAssertEqual(vm.localLLMStatus, .notDownloaded)
-    }
-
-    // MARK: - Apple-Silicon gate (ROO-257 Stage 6)
-
-    private func makeVMWithSilicon(isAppleSilicon: Bool) -> (SettingsModelsViewModel, SelfKeyPreferences) {
-        makeVM(
-            isAppleSilicon: isAppleSilicon,
-            localModelStore: ModelsFakeLocalModelStore(isReady: true),
-            localLLMStore: ModelsFakeLocalLLMStore(isReady: true)
-        )
-    }
-
-    func testIntelHidesLocalGateFlags() {
-        let (vm, _) = makeVMWithSilicon(isAppleSilicon: false)
-        XCTAssertFalse(vm.canUseLocal)
-        XCTAssertFalse(vm.canUseLocalLLM)
-        XCTAssertTrue(vm.localBlockedByHardware)
-        // The BYOK routes are unaffected by the hardware gate.
-        XCTAssertTrue(vm.canUseYourKey)
-        XCTAssertTrue(vm.canUseCustomLLM)
-    }
-
-    func testAppleSiliconKeepsLocalGateFlags() {
-        let (vm, _) = makeVMWithSilicon(isAppleSilicon: true)
-        XCTAssertTrue(vm.canUseLocal)
-        XCTAssertTrue(vm.canUseLocalLLM)
-        XCTAssertFalse(vm.localBlockedByHardware)
-        XCTAssertTrue(vm.canUseYourKey)
-        XCTAssertTrue(vm.canUseCustomLLM)
-    }
-
-    func testIntelCannotSelectLocalSTTWithSiliconMessage() {
-        let (vm, prefs) = makeVMWithSilicon(isAppleSilicon: false)
-        vm.selectLevel(.local)
-
-        XCTAssertEqual(vm.level, .yourKey)
-        XCTAssertEqual(prefs.transcriptionLevel, .yourKey)
-        XCTAssertEqual(vm.connectionStatus, .failed(LocalModelMessaging.requiresAppleSilicon))
-    }
-
-    func testIntelCannotPersistLocalSTTEvenIfLevelForced() async {
-        let (vm, prefs) = makeVMWithSilicon(isAppleSilicon: false)
-        vm.level = .local  // bypass selectLevel to prove the save-side guard
-
-        await vm.saveCurrentSelection()
-
-        XCTAssertEqual(vm.level, .yourKey)
-        XCTAssertEqual(prefs.transcriptionLevel, .yourKey)
-        XCTAssertEqual(vm.connectionStatus, .failed(LocalModelMessaging.requiresAppleSilicon))
-    }
-
-    func testIntelCannotSelectLocalLLMWithSiliconMessage() {
-        let (vm, prefs) = makeVMWithSilicon(isAppleSilicon: false)
-        vm.selectLLMLevel(.local)
-
-        XCTAssertEqual(vm.llmLevel, .yourKey)
-        XCTAssertEqual(prefs.llmLevel, .yourKey)
-        XCTAssertEqual(vm.llmConnectionStatus, .failed(LocalModelMessaging.requiresAppleSilicon))
-    }
-
-    func testIntelCannotPersistLocalLLMEvenIfLevelForced() async {
-        let (vm, prefs) = makeVMWithSilicon(isAppleSilicon: false)
-        vm.llmLevel = .local  // bypass selectLLMLevel to prove the save-side guard
+    func testFailedLLMValidationLeavesRouteUnchosen() async {
+        let (vm, prefs) = makeVM()
+        vm.openRouterAPIKeyInput = ""
 
         await vm.saveCurrentLLMSelection()
 
-        XCTAssertEqual(vm.llmLevel, .yourKey)
-        XCTAssertEqual(prefs.llmLevel, .yourKey)
-        XCTAssertEqual(vm.llmConnectionStatus, .failed(LocalModelMessaging.requiresAppleSilicon))
+        XCTAssertNil(prefs.llmLevel)
+        XCTAssertNil(vm.approvedLLMLevel)
+        XCTAssertEqual(vm.llmConnectionStatus, .failed("Enter an OpenRouter API key"))
     }
 
-    func testOfflineDownloadSurfacesUnifiedMessage() async {
-        let store = ModelsFakeLocalLLMStore(isReady: false, downloadError: URLError(.notConnectedToInternet))
-        let (vm, _) = makeVM(localLLMStore: store)
+    func testSaveLLMWithoutChosenRouteKeepsCleanupOff() throws {
+        // Editing fields never chooses a route: only a validated save does.
+        let llmKeyStore = ModelsFakeOpenRouterKeyStore()
+        let (vm, prefs) = makeVM(llmKeyStore: llmKeyStore)
+        vm.openRouterAPIKeyInput = "or-key"
+        vm.openRouterModel = "openai/gpt-4o-mini"
 
-        await vm.downloadLocalLLMModel()
+        vm.saveLLM()
 
-        XCTAssertEqual(vm.llmConnectionStatus, .failed(LocalModelMessaging.offlineCannotDownload))
+        XCTAssertNil(prefs.llmLevel)
+        XCTAssertNil(vm.approvedLLMLevel)
+        XCTAssertEqual(try llmKeyStore.read(), "or-key")
+        XCTAssertEqual(prefs.openRouterModel, "openai/gpt-4o-mini")
+    }
+
+    func testSaveLLMKeepsCommittedRouteWhenPickerMoved() {
+        let (vm, prefs) = makeVM(llmLevel: .custom)
+        vm.selectLLMLevel(.yourKey)
+
+        vm.saveLLM()
+
+        XCTAssertEqual(prefs.llmLevel, .custom)
+    }
+
+    func testLLMSaveCommitsTheRouteThatWasValidated() async {
+        let client = GatedOpenRouterClient()
+        let (vm, prefs) = makeVM(openRouterClient: client)
+        vm.openRouterAPIKeyInput = "or-key"
+
+        let save = Task { await vm.saveCurrentLLMSelection() }
+        for await _ in client.started { break }
+        // The picker moves to an unvalidated route while OpenRouter is checked.
+        vm.selectLLMLevel(.custom)
+        client.open()
+        let saved = await save.value
+
+        XCTAssertTrue(saved)
+        XCTAssertEqual(prefs.llmLevel, .yourKey)
+        XCTAssertEqual(vm.approvedLLMLevel, .yourKey)
     }
 }
 
@@ -708,107 +441,34 @@ private final class ModelsFakeOpenRouterKeyStore: OpenRouterLLMKeyStoring {
     }
 }
 
-private actor ModelsFakeLocalModelStore: LocalTranscriptionModelManaging {
-    var ready: Bool
-    var statusOverride: LocalTranscriptionModelStatus?
-    private(set) var downloadCalls = 0
-    private(set) var deleteCalls = 0
+/// Holds model listing open until the test releases it, so the test can move
+/// the picker while a save is validating.
+private final class GatedOpenRouterClient: OpenRouterLLMClienting {
+    let started: AsyncStream<Void>
+    private let startedContinuation: AsyncStream<Void>.Continuation
+    private let gate: AsyncStream<Void>
+    private let gateContinuation: AsyncStream<Void>.Continuation
 
-    init(isReady: Bool = false, statusOverride: LocalTranscriptionModelStatus? = nil) {
-        self.ready = isReady
-        self.statusOverride = statusOverride
+    init() {
+        var startedContinuation: AsyncStream<Void>.Continuation!
+        started = AsyncStream { startedContinuation = $0 }
+        self.startedContinuation = startedContinuation
+        var gateContinuation: AsyncStream<Void>.Continuation!
+        gate = AsyncStream { gateContinuation = $0 }
+        self.gateContinuation = gateContinuation
     }
 
-    func localModelStatus() async -> LocalTranscriptionModelStatus {
-        if let statusOverride { return statusOverride }
-        return ready ? .ready : .notDownloaded
+    func open() {
+        gateContinuation.yield()
     }
 
-    func isModelReady() async -> Bool {
-        ready
+    func listModels(endpoint: OpenAICompatibleLLMEndpoint) async throws -> [OpenRouterModelOption] {
+        startedContinuation.yield()
+        for await _ in gate { break }
+        return OpenRouterModelOption.fallback
     }
 
-    func downloadModel(progress: (@Sendable (Double) -> Void)?) async throws {
-        downloadCalls += 1
-        progress?(0.35)
-        ready = true
-        statusOverride = nil
-        progress?(1.0)
+    func complete(endpoint: OpenAICompatibleLLMEndpoint, model: String, messages: [OpenRouterChatMessage]) async throws -> String {
+        "unused"
     }
-
-    func deleteModel() async throws {
-        deleteCalls += 1
-        ready = false
-        statusOverride = nil
-    }
-
-    func loadManager() async throws -> AsrManager {
-        throw LocalTranscriptionModelError.modelNotDownloaded
-    }
-
-    func modelDirectory() async -> URL {
-        URL(fileURLWithPath: "/tmp/sidekey-local-model-test", isDirectory: true)
-    }
-
-    func evict() async {}
-}
-
-private actor ModelsFakeLocalLLMStore: LocalLLMModelManaging {
-    var ready: Bool
-    var statusOverride: LocalLLMModelStatus?
-    private(set) var downloadCalls = 0
-    private(set) var deleteCalls = 0
-    private let downloadError: Error?
-
-    init(
-        isReady: Bool = false,
-        statusOverride: LocalLLMModelStatus? = nil,
-        downloadError: Error? = nil
-    ) {
-        self.ready = isReady
-        self.statusOverride = statusOverride
-        self.downloadError = downloadError
-    }
-
-    func localModelStatus() async -> LocalLLMModelStatus {
-        if let statusOverride { return statusOverride }
-        return ready ? .ready : .notDownloaded
-    }
-
-    func isModelReady() async -> Bool {
-        ready
-    }
-
-    func downloadModel(progress: (@Sendable (Double) -> Void)?) async throws {
-        downloadCalls += 1
-        if let downloadError {
-            throw downloadError
-        }
-        progress?(0.35)
-        ready = true
-        statusOverride = nil
-        progress?(1.0)
-    }
-
-    func deleteModel() async throws {
-        deleteCalls += 1
-        ready = false
-        statusOverride = nil
-    }
-
-    func loadContainer() async throws -> ModelContainer {
-        throw LocalLLMModelError.modelNotDownloaded
-    }
-
-    func modelDirectory() async -> URL {
-        URL(fileURLWithPath: "/tmp/sidekey-local-llm-test", isDirectory: true)
-    }
-
-    func evict() async {}
-}
-
-private struct ModelsFailingTokenStore: TokenStore {
-    func read() throws -> String? { nil }
-    func save(_ token: String) throws { throw NSError(domain: "TestKeychain", code: 1) }
-    func delete() throws { throw NSError(domain: "TestKeychain", code: 1) }
 }

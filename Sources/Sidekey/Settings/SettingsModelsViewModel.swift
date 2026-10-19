@@ -14,18 +14,8 @@ enum BYOKConnectionStatus: Equatable {
     case failed(String)
 }
 
-/// Presentation-only grouping for the "Smart processing LLM" segmented control.
-/// The control shows two segments to match the STT control; the two BYOK
-/// routes (`LLMIsolationLevel.yourKey` OpenRouter + `.custom` endpoint) collapse
-/// into a single "Your key" segment whose sub-choice selects the concrete route.
-enum LLMTopLevel: Hashable {
-    case yourKey
-    case local
-}
-
 @MainActor
 final class SettingsModelsViewModel: ObservableObject {
-    @Published var level: TranscriptionIsolationLevel
     @Published var provider: BYOKProvider
     @Published var selfHostedBaseURL: String
     @Published var selfHostedModel: String
@@ -34,18 +24,14 @@ final class SettingsModelsViewModel: ObservableObject {
     @Published var selectedModel: String
     @Published var apiKeyInput: String
     @Published private(set) var connectionStatus: BYOKConnectionStatus = .idle
-    @Published private(set) var approvedLevel: TranscriptionIsolationLevel
-    @Published private(set) var localModelStatus: LocalTranscriptionModelStatus = .checking
+    /// Committed transcription level (persisted). `nil` = no provider saved
+    /// yet, so Drop stays off until the user saves one.
+    @Published private(set) var approvedLevel: TranscriptionIsolationLevel?
 
-    /// LLM route for smart text processing. `.yourKey` means direct OpenRouter
-    /// with the user's key; `.custom` means a user-hosted OpenAI-compatible endpoint.
+    /// LLM route shown in the panel: `.yourKey` = OpenRouter with the user's
+    /// key, `.custom` = a user-hosted OpenAI-compatible endpoint. Defaults to
+    /// OpenRouter while no route is saved.
     @Published var llmLevel: LLMIsolationLevel
-    /// Which BYOK sub-route the "Your key" segment last presented (`.yourKey` =
-    /// OpenRouter, `.custom` = custom endpoint). The top segment merges both into
-    /// one "Your key" tab; this remembers the user's pick so toggling away and
-    /// back restores it. Hydrated from the persisted `llmLevel` (a stored
-    /// `.custom` route reopens on Custom). WHY: three-segment Models parity.
-    @Published private(set) var yourKeyLLMVariant: LLMIsolationLevel
     /// Editable OpenRouter model id. The UI suggests remote models, but any
     /// text is accepted so newly released models can be used immediately.
     @Published var openRouterModel: String
@@ -54,54 +40,23 @@ final class SettingsModelsViewModel: ObservableObject {
     @Published var customLLMModel: String
     @Published var customLLMAPIKeyInput: String
     @Published private(set) var llmConnectionStatus: BYOKConnectionStatus = .idle
-    /// Committed/active LLM level (persisted). Mirrors `approvedLevel` on the STT
-    /// side; `.local` means the on-device LLM is currently connected.
-    @Published private(set) var approvedLLMLevel: LLMIsolationLevel
+    /// Committed LLM level (persisted). Mirrors `approvedLevel` on the STT
+    /// side; `nil` = no route saved, so cleanup returns the no-LLM output.
+    @Published private(set) var approvedLLMLevel: LLMIsolationLevel?
     @Published private(set) var openRouterModels: [OpenRouterModelOption]
     @Published private(set) var customLLMModels: [OpenRouterModelOption]
-    /// On-device MLX LLM download/readiness state (ROO-257). Mirrors
-    /// `localModelStatus` for the STT local model.
-    @Published private(set) var localLLMStatus: LocalLLMModelStatus = .checking
 
     /// Models offered in the picker for the current provider (empty for
     /// self-hosted, which is free-text).
     var models: [String] { provider.availableTranscriptionModels }
 
-    var hasPendingLevelChange: Bool { level != approvedLevel }
-    /// On-device STT is the active (committed) transcription provider.
-    var isLocalConnected: Bool { approvedLevel == .local }
-    /// On-device LLM is the active (committed) smart-processing provider.
-    var isLocalLLMConnected: Bool { approvedLLMLevel == .local }
-
     private var prefs: SelfKeyPreferences
     private let keyStore: BYOKKeyStore
     /// (provider, apiKey, baseURL?, model) -> provider reachability probe.
     private let makeProbe: (BYOKProvider, String, String?, String) -> BYOKConnectionProbing
-    private let localModelStore: any LocalTranscriptionModelManaging
-    private let localLLMStore: any LocalLLMModelManaging
     private let llmKeyStore: any OpenRouterLLMKeyStoring
     private let customLLMKeyStore: any OpenRouterLLMKeyStoring
     private let openRouterClient: any OpenRouterLLMClienting
-    /// Apple-Silicon capability gate (ROO-257 Stage 6). The on-device model
-    /// stack (MLX LLM + FluidAudio diarizer/Parakeet) is Apple-Silicon-only;
-    /// since the app ships a universal binary, this is a RUNTIME probe, not a
-    /// compile-time `#if arch`. Injectable so tests can simulate Intel.
-    private let isAppleSilicon: @MainActor () -> Bool
-
-    /// BYOK ("Your key") is always available.
-    var canUseYourKey: Bool { true }
-    /// Local models are Apple-Silicon-only — the Core ML models do not run on
-    /// Intel.
-    var canUseLocal: Bool { isAppleSilicon() }
-    /// A custom OpenAI-compatible LLM endpoint is always available.
-    var canUseCustomLLM: Bool { true }
-    /// The on-device LLM is Apple-Silicon-only — MLX requires Apple Silicon.
-    var canUseLocalLLM: Bool { isAppleSilicon() }
-
-    /// `true` when the local stack is blocked by hardware (Intel), so the UI
-    /// can explain why "Local" is disabled. Drives the Apple-Silicon hint in
-    /// the settings view.
-    var localBlockedByHardware: Bool { !isAppleSilicon() }
 
     private static let customLLMModelFallback: [OpenRouterModelOption] = [
         OpenRouterModelOption(id: SelfKeyPreferences.defaultCustomLLMModel, name: "Custom model"),
@@ -113,35 +68,24 @@ final class SettingsModelsViewModel: ObservableObject {
         llmKeyStore: any OpenRouterLLMKeyStoring = OpenRouterLLMKeyStore(),
         customLLMKeyStore: any OpenRouterLLMKeyStoring = CustomLLMKeyStore(),
         openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(),
-        localModelStore: any LocalTranscriptionModelManaging = LocalTranscriptionModelStore.shared,
-        localLLMStore: any LocalLLMModelManaging = LocalLLMModelStore.shared,
         makeProbe: @escaping (BYOKProvider, String, String?, String) -> BYOKConnectionProbing = { provider, key, baseURL, model in
             BYOKProviderConnectionProbe(provider: provider, apiKey: key, baseURL: baseURL, model: model)
-        },
-        isAppleSilicon: @escaping @MainActor () -> Bool = { LocalModelSupport.isAppleSilicon }
+        }
     ) {
         self.prefs = prefs
         self.keyStore = keyStore
         self.llmKeyStore = llmKeyStore
         self.customLLMKeyStore = customLLMKeyStore
         self.openRouterClient = openRouterClient
-        self.localModelStore = localModelStore
-        self.localLLMStore = localLLMStore
         self.makeProbe = makeProbe
-        self.isAppleSilicon = isAppleSilicon
-        self.level = prefs.transcriptionLevel
         self.approvedLevel = prefs.transcriptionLevel
         self.provider = prefs.selectedProvider
         self.selfHostedBaseURL = prefs.selfHostedBaseURL ?? ""
         self.selfHostedModel = prefs.selfHostedModel
         self.selectedModel = prefs.transcriptionModel(for: prefs.selectedProvider)
         self.apiKeyInput = (try? keyStore.read(for: prefs.selectedProvider)) ?? ""
-        self.llmLevel = prefs.llmLevel
+        self.llmLevel = prefs.llmLevel ?? .yourKey
         self.approvedLLMLevel = prefs.llmLevel
-        // Remember the last BYOK sub-route so the merged "Your key" segment can
-        // restore it. A persisted `.custom` route reopens on Custom; everything
-        // else defaults the sub-choice to OpenRouter.
-        self.yourKeyLLMVariant = prefs.llmLevel == .custom ? .custom : .yourKey
         self.openRouterModel = prefs.openRouterModel
         self.openRouterAPIKeyInput = (try? llmKeyStore.read()) ?? ""
         self.customLLMBaseURL = prefs.customLLMBaseURL ?? ""
@@ -151,208 +95,42 @@ final class SettingsModelsViewModel: ObservableObject {
         self.customLLMModels = Self.customLLMModelFallback
     }
 
-    func selectLevel(_ level: TranscriptionIsolationLevel) {
-        guard self.level != level else { return }
-        // Hardware gate: the on-device model stack needs Apple Silicon. Surface
-        // the reason and keep the selection on BYOK (nothing persisted).
-        if let gateMessage = hardwareGateMessage(for: level) {
-            self.level = .yourKey
-            connectionStatus = .failed(gateMessage)
-            return
-        }
-        self.level = level
-        connectionStatus = .idle
-        if level == .local {
-            Task { await refreshLocalModelStatus() }
-        }
-    }
-
+    /// Validate the selected provider with the entered key, then commit it as
+    /// the transcription route. This is the only way a level gets chosen.
     @discardableResult
     func saveCurrentSelection() async -> Bool {
-        // Hardware gate (defence-in-depth): even if `level` ended up on a gated
-        // value, the save never persists it.
-        if let gateMessage = hardwareGateMessage(for: level) {
-            level = .yourKey
-            connectionStatus = .failed(gateMessage)
-            return false
-        }
-        switch level {
-        case .yourKey:
-            guard await validateBYOKConnection() else { return false }
-            guard persistSettings(committedLevel: .yourKey) else { return false }
-            approvedLevel = .yourKey
-            connectionStatus = .ok
-        case .local:
-            guard await localModelStore.isModelReady() else {
-                localModelStatus = .notDownloaded
-                connectionStatus = .failed(LocalModelMessaging.modelNotDownloaded)
-                return false
-            }
-            guard persistSettings(committedLevel: .local, storeKey: false) else { return false }
-            approvedLevel = .local
-            localModelStatus = .ready
-            connectionStatus = .ok
-        }
+        guard await validateBYOKConnection() else { return false }
+        guard persistSettings(committedLevel: .yourKey) else { return false }
+        approvedLevel = .yourKey
+        connectionStatus = .ok
         return true
     }
 
-    func refreshLocalModelStatus() async {
-        localModelStatus = await localModelStore.localModelStatus()
-    }
-
-    func watchLocalModelStatus() async {
-        while !Task.isCancelled {
-            await refreshLocalModelStatus()
-            guard localModelStatus.isDownloading else { return }
-            try? await Task.sleep(nanoseconds: 500_000_000)
-        }
-    }
-
-    func downloadLocalModel() async {
-        connectionStatus = .idle
-        localModelStatus = await localModelStore.localModelStatus()
-        if !localModelStatus.isDownloading {
-            localModelStatus = .downloading(0)
-        }
-        do {
-            try await localModelStore.downloadModel { [weak self] fraction in
-                Task { @MainActor in
-                    self?.localModelStatus = .downloading(fraction)
-                }
-            }
-            localModelStatus = await localModelStore.localModelStatus()
-        } catch {
-            localModelStatus = await localModelStore.localModelStatus()
-            connectionStatus = .failed(Self.downloadFailureMessage(for: error))
-        }
-    }
-
-    func deleteLocalModel() async {
-        do {
-            try await localModelStore.deleteModel()
-            localModelStatus = .notDownloaded
-            connectionStatus = .idle
-            if approvedLevel == .local || level == .local {
-                level = .yourKey
-                persistSettings(committedLevel: .yourKey)
-                approvedLevel = .yourKey
-            }
-        } catch {
-            localModelStatus = .failed("Delete failed")
-            connectionStatus = .failed("Delete failed")
-        }
-    }
-
-    /// Disconnect the on-device STT model: revert the active level to BYOK but
-    /// keep the picker on `.local` so the card stays visible (the button flips
-    /// back to "Connect"). One-tap toggle, no extra confirmation.
-    func disconnectLocal() {
-        persistSettings(committedLevel: .yourKey)
-        approvedLevel = .yourKey
-        connectionStatus = .idle
-    }
-
-    /// Gate copy for a blocked level, else `nil`. `.local` requires Apple
-    /// Silicon; `.yourKey` is always allowed.
-    private func hardwareGateMessage(for level: TranscriptionIsolationLevel) -> String? {
-        switch level {
-        case .yourKey: return nil
-        case .local: return canUseLocal ? nil : LocalModelMessaging.requiresAppleSilicon
-        }
-    }
-
-    /// The merged top-segment value for the current concrete `llmLevel`. Both
-    /// BYOK routes (`.yourKey` / `.custom`) map to `.yourKey`.
-    var llmTopLevel: LLMTopLevel {
-        switch llmLevel {
-        case .yourKey, .custom: return .yourKey
-        case .local: return .local
-        }
-    }
-
-    /// `true` when neither BYOK sub-route is available, so the merged "Your
-    /// key" top segment should be disabled. Both are always available today.
-    var isYourKeyLLMTopGated: Bool { !(canUseYourKey || canUseCustomLLM) }
-
-    /// Pick the merged top segment. `.local` maps straight to the concrete
-    /// level; `.yourKey` resolves to the remembered BYOK sub-route (OpenRouter
-    /// by default, Custom if the user last used it).
-    func selectLLMTopLevel(_ top: LLMTopLevel) {
-        switch top {
-        case .local:
-            selectLLMLevel(.local)
-        case .yourKey:
-            selectLLMLevel(yourKeyLLMVariant)
-        }
-    }
-
-    /// Pick the BYOK sub-route inside the "Your key" segment and remember it so
-    /// re-entering the segment restores this choice. `variant` must be `.yourKey`
-    /// or `.custom`; other values are ignored (the segment never produces them).
-    func selectYourKeyLLMVariant(_ variant: LLMIsolationLevel) {
-        guard variant == .yourKey || variant == .custom else { return }
-        yourKeyLLMVariant = variant
-        selectLLMLevel(variant)
-    }
-
     func selectLLMLevel(_ level: LLMIsolationLevel) {
-        // Keep the remembered BYOK sub-route in sync whenever a concrete BYOK
-        // route is chosen by any path (segment, sub-control, or restore).
-        if level == .yourKey || level == .custom { yourKeyLLMVariant = level }
         guard llmLevel != level else { return }
-        if let gateMessage = llmHardwareGateMessage(for: level) {
-            llmLevel = .yourKey
-            llmConnectionStatus = .failed(gateMessage)
-            return
-        }
         llmLevel = level
         llmConnectionStatus = .idle
-        if level == .local {
-            Task { await refreshLocalLLMStatus() }
-        }
     }
 
     @discardableResult
     func saveCurrentLLMSelection() async -> Bool {
-        if let gateMessage = llmHardwareGateMessage(for: llmLevel) {
-            llmLevel = .yourKey
-            llmConnectionStatus = .failed(gateMessage)
-            return false
-        }
-        switch llmLevel {
+        // Commit the route that was validated, even if the picker moves while
+        // the check is in flight.
+        let level = llmLevel
+        switch level {
         case .yourKey:
             guard await validateOpenRouterConnection() else { return false }
-            guard persistLLMSettings(committedLevel: .yourKey) else { return false }
-            approvedLLMLevel = .yourKey
-            llmConnectionStatus = .ok
         case .custom:
             guard await validateCustomLLMConnection() else { return false }
-            guard persistLLMSettings(committedLevel: .custom) else { return false }
-            approvedLLMLevel = .custom
-            llmConnectionStatus = .ok
-        case .local:
-            guard await localLLMStore.isModelReady() else {
-                localLLMStatus = .notDownloaded
-                llmConnectionStatus = .failed(LocalModelMessaging.modelNotDownloaded)
-                return false
-            }
-            guard persistLLMSettings(committedLevel: .local, storeKeys: false) else { return false }
-            approvedLLMLevel = .local
-            localLLMStatus = .ready
-            llmConnectionStatus = .ok
         }
+        guard persistLLMSettings(committedLevel: level) else { return false }
+        approvedLLMLevel = level
+        llmConnectionStatus = .ok
         return true
     }
 
-    /// Disconnect the on-device LLM: revert the active level to OpenRouter BYOK
-    /// but keep the picker on `.local` so the card stays visible (the button
-    /// flips back to "Connect"). One-tap toggle, no extra confirmation.
-    func disconnectLLM() {
-        persistLLMSettings(committedLevel: .yourKey)
-        approvedLLMLevel = .yourKey
-        llmConnectionStatus = .idle
-    }
-
+    /// Persist the edited LLM fields under the committed route. Without one
+    /// the route stays unchosen.
     func saveLLM() {
         persistLLMSettings(committedLevel: prefs.llmLevel)
     }
@@ -363,80 +141,6 @@ final class SettingsModelsViewModel: ObservableObject {
             _ = await validateOpenRouterConnection()
         case .custom:
             _ = await validateCustomLLMConnection()
-        case .local:
-            await refreshLocalLLMStatus()
-        }
-    }
-
-    // MARK: - Local LLM model lifecycle (mirrors the STT local model)
-
-    func refreshLocalLLMStatus() async {
-        localLLMStatus = await localLLMStore.localModelStatus()
-    }
-
-    func watchLocalLLMStatus() async {
-        while !Task.isCancelled {
-            await refreshLocalLLMStatus()
-            guard localLLMStatus.isDownloading else { return }
-            try? await Task.sleep(nanoseconds: 500_000_000)
-        }
-    }
-
-    func downloadLocalLLMModel() async {
-        llmConnectionStatus = .idle
-        localLLMStatus = await localLLMStore.localModelStatus()
-        if !localLLMStatus.isDownloading {
-            localLLMStatus = .downloading(0)
-        }
-        do {
-            try await localLLMStore.downloadModel { [weak self] fraction in
-                Task { @MainActor in
-                    self?.localLLMStatus = .downloading(fraction)
-                }
-            }
-            localLLMStatus = await localLLMStore.localModelStatus()
-        } catch {
-            localLLMStatus = await localLLMStore.localModelStatus()
-            llmConnectionStatus = .failed(Self.downloadFailureMessage(for: error))
-        }
-    }
-
-    /// Map a model-download failure to user copy. An offline error gets the
-    /// unified "you're offline" message shared with Drop/meetings; any other
-    /// failure falls back to a generic message. Note that once downloaded,
-    /// inference runs fully offline — only the one-time fetch needs the network.
-    static func downloadFailureMessage(for error: Error) -> String {
-        if isOfflineError(error) {
-            return LocalModelMessaging.offlineCannotDownload
-        }
-        return "Download failed"
-    }
-
-    private static func isOfflineError(_ error: Error) -> Bool {
-        let urlError = (error as? URLError) ?? (error as NSError).underlyingURLError
-        switch urlError?.code {
-        case .notConnectedToInternet, .networkConnectionLost,
-             .cannotConnectToHost, .cannotFindHost, .dataNotAllowed,
-             .timedOut:
-            return true
-        default:
-            return false
-        }
-    }
-
-    func deleteLocalLLMModel() async {
-        do {
-            try await localLLMStore.deleteModel()
-            localLLMStatus = .notDownloaded
-            llmConnectionStatus = .idle
-            if prefs.llmLevel == .local || llmLevel == .local {
-                llmLevel = .yourKey
-                persistLLMSettings(committedLevel: .yourKey)
-                approvedLLMLevel = .yourKey
-            }
-        } catch {
-            localLLMStatus = .failed("Delete failed")
-            llmConnectionStatus = .failed("Delete failed")
         }
     }
 
@@ -512,23 +216,23 @@ final class SettingsModelsViewModel: ObservableObject {
         connectionStatus = .idle
     }
 
+    /// Persist the edited provider fields under the committed level. Without
+    /// one the level stays unchosen: editing fields never turns on a provider.
     func save() {
         persistSettings(committedLevel: approvedLevel)
     }
 
     @discardableResult
-    private func persistSettings(committedLevel: TranscriptionIsolationLevel, storeKey: Bool = true) -> Bool {
+    private func persistSettings(committedLevel: TranscriptionIsolationLevel?) -> Bool {
         let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            if storeKey {
-                if trimmed.isEmpty { try keyStore.delete(for: provider) }
-                else { try keyStore.save(key: trimmed, for: provider) }
-            }
+            if trimmed.isEmpty { try keyStore.delete(for: provider) }
+            else { try keyStore.save(key: trimmed, for: provider) }
         } catch {
             setConnectionFailure("Could not save API key in Keychain")
             return false
         }
-        prefs.transcriptionLevel = committedLevel
+        if let committedLevel { prefs.transcriptionLevel = committedLevel }
         prefs.selectedProvider = provider
         let trimmedBaseURL = selfHostedBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSelfHostedModel = selfHostedModel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -541,19 +245,17 @@ final class SettingsModelsViewModel: ObservableObject {
     }
 
     @discardableResult
-    private func persistLLMSettings(committedLevel: LLMIsolationLevel, storeKeys: Bool = true) -> Bool {
+    private func persistLLMSettings(committedLevel: LLMIsolationLevel?) -> Bool {
         let trimmed = openRouterAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedCustomKey = customLLMAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            if storeKeys {
-                if !trimmed.isEmpty { try llmKeyStore.save(key: trimmed) }
-                if !trimmedCustomKey.isEmpty { try customLLMKeyStore.save(key: trimmedCustomKey) }
-            }
+            if !trimmed.isEmpty { try llmKeyStore.save(key: trimmed) }
+            if !trimmedCustomKey.isEmpty { try customLLMKeyStore.save(key: trimmedCustomKey) }
         } catch {
             llmConnectionStatus = .failed("Could not save API key in Keychain")
             return false
         }
-        prefs.llmLevel = committedLevel
+        if let committedLevel { prefs.llmLevel = committedLevel }
         prefs.openRouterModel = openRouterModel
         prefs.customLLMBaseURL = customLLMBaseURL
         prefs.customLLMModel = customLLMModel
@@ -709,15 +411,6 @@ final class SettingsModelsViewModel: ObservableObject {
         connectionStatus = .failed(message)
     }
 
-    private func llmHardwareGateMessage(for level: LLMIsolationLevel) -> String? {
-        switch level {
-        case .yourKey, .custom:
-            return nil
-        case .local:
-            return canUseLocalLLM ? nil : LocalModelMessaging.requiresAppleSilicon
-        }
-    }
-
     private static func normalizedCustomLLMBaseURL(_ value: String) -> URL? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
@@ -843,7 +536,8 @@ struct OpenAIRealtimeProbe: BYOKConnectionProbing {
     let model: String
 
     func probe() async -> Bool {
-        var request = URLRequest(url: BYOKRealtimeURL.openAIRealtime(baseURL: baseURL))
+        guard let url = BYOKRealtimeURL.openAIRealtime(baseURL: baseURL) else { return false }
+        var request = URLRequest(url: url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         let task = URLSession.shared.webSocketTask(with: request)
         task.resume()

@@ -33,7 +33,7 @@ import os.log
 /// proactively recycled every ~`restartEventThreshold` events to bound any
 /// long-lived leak in the private substrate.
 ///
-/// **Privacy:** track metadata is never written to `os_log` (invariant #3);
+/// **Privacy:** track metadata is never written to `os_log` (invariant #2);
 /// the DEBUG log path only records lifecycle, never titles.
 final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 

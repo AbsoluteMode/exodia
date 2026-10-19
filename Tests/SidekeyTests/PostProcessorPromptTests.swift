@@ -186,4 +186,20 @@ final class PostProcessorPromptTests: XCTestCase {
         XCTAssertTrue(c.contains("payload text"))
         XCTAssertTrue(c.contains("<active_app_context>"))
     }
+
+    // MARK: - Direct route messages
+
+    func testDirectMessagesUseFullSystemPrompt() {
+        // OpenRouter and custom endpoints both send the full system prompt.
+        let messages = PostProcessor.openRouterMessages(
+            transcript: PostProcessor.wrapTranscript("привет"),
+            context: "Slack",
+            language: "ru",
+            outputLanguage: nil,
+            transcriptionMode: "smart"
+        )
+        let system = messages.first(where: { $0.role == "system" })?.content
+        XCTAssertEqual(system, PostProcessor.systemPrompt,
+                       "direct routes must keep the full system prompt")
+    }
 }

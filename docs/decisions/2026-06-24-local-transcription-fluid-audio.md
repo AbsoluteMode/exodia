@@ -1,5 +1,9 @@
 # ROO-256 - local transcription via FluidAudio Parakeet
 
+> Обновление 2026-10-18: локальная транскрипция Parakeet удалена
+> ([решение](../../.project-docs/decisions/2026-10-18-remove-local-models.md)). FluidAudio остался только
+> для Silero VAD в детекторе встреч.
+
 **Дата:** 2026-06-24
 **Где:** `Sources/Sidekey/Streaming/Local`, `SettingsModelsView*`,
 `TranscriptionSessionFactory`, `AppDelegate`.
