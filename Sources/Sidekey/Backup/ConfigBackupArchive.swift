@@ -11,11 +11,11 @@ enum ConfigBackupError: Error, LocalizedError, Equatable {
         switch self {
         case .invalidCode: return "Check your recovery code. Enter every group, including the last one."
         case .cannotUnlock: return "This code could not open the backup. Check the code or choose another backup."
-        case .unsupportedVersion: return "This backup needs a newer version of Exodia. Your settings have not changed."
+        case .unsupportedVersion: return "This backup needs a newer version of Whytap. Your settings have not changed."
         case .invalidArchive: return "This backup is incomplete or damaged. Choose another version."
         case .tooLarge: return "This backup exceeds a supported size limit. Choose a smaller version or another destination."
         case .unsafePath: return "This location cannot be used safely. Choose another folder."
-        case .keyUnavailable: return "Exodia could not access its backup key. Unlock your Mac, or restore with your saved recovery code."
+        case .keyUnavailable: return "Whytap could not access its backup key. Unlock your Mac, or restore with your saved recovery code."
         case .saveFailed: return "The backup could not be saved. Check the folder and available space, then try again."
         case .restoreFailed: return "Settings could not be restored. The previous version has been kept for recovery."
         case .busy: return "Finish recording, dictation and agent work before restoring settings."

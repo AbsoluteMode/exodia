@@ -130,7 +130,7 @@ final class ArtifactBackupEngine {
             warnings.append("This backup predates API & Models. Routes already configured on this Mac are kept; a fresh Mac can migrate the saved legacy provider choices.")
         }
         if verification.manifest.flavor != BuildConfig.flavor.rawValue {
-            warnings.append("This backup was made by the \(verification.manifest.flavor) build of Exodia.")
+            warnings.append("This backup was made by the \(verification.manifest.flavor) build of Whytap.")
         }
         let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         let summary = ArtifactBackupSummary(id: verification.manifest.id,

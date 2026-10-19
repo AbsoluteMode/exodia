@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# build-dmg.sh — Build a universal community Exodia DMG.
-# Default: Exodia's self-signed community certificate when
+# build-dmg.sh — Build a universal community Whytap DMG.
+# Default: Whytap's self-signed community certificate when
 # Resources/community-signing-certificate.pem is committed, otherwise ad-hoc;
 # no Apple Developer account or notarization.
 # Developer-ID/notarization is available only with EXODIA_LEGACY_SIGNED_RELEASE=1.
@@ -30,7 +30,7 @@
 #
 # Outputs:
 #   - build/${APP_BUNDLE_NAME}-${SHORT_VERSION}-build${BUILD_VERSION}.dmg
-#     where APP_BUNDLE_NAME = Exodia (prod) or Exodia-Beta (beta).
+#     where APP_BUNDLE_NAME = Whytap (prod) or Whytap-Beta (beta).
 
 set -euo pipefail
 
@@ -75,25 +75,25 @@ fi
 # wrapping the shared "Sidekey" library — see Package.swift), so the
 # artifact stays .build/release/Sidekey and CFBundleExecutable is stable
 # across the product-line split. The .app bundle wrapping it can be named
-# differently per flavor (Exodia.app vs Exodia-Beta.app) so both flavors
+# differently per flavor (Whytap.app vs Whytap-Beta.app) so both flavors
 # can sit side-by-side in /Applications without colliding.
 EXECUTABLE_NAME="Sidekey"
 BUNDLE_ICON_FILE="AppIcon"
 
 case "$FLAVOR" in
     beta)
-        APP_BUNDLE_NAME="Exodia-Beta"
+        APP_BUNDLE_NAME="Whytap-Beta"
         BUNDLE_ID="com.rootwise.sidekey.beta"
-        BUNDLE_DISPLAY_NAME="Exodia Beta"
+        BUNDLE_DISPLAY_NAME="Whytap Beta"
         SWIFT_FLAGS="-Xswiftc -DBETA"
-        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/download/beta/appcast.xml}"
+        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/download/beta/appcast.xml}"
         ;;
     prod)
-        APP_BUNDLE_NAME="Exodia"
+        APP_BUNDLE_NAME="Whytap"
         BUNDLE_ID="com.rootwise.sidekey"
-        BUNDLE_DISPLAY_NAME="Exodia"
+        BUNDLE_DISPLAY_NAME="Whytap"
         SWIFT_FLAGS=""
-        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/latest/download/appcast.xml}"
+        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/latest/download/appcast.xml}"
         ;;
     *)
         echo "ERROR: invalid FLAVOR='${FLAVOR}' (expected beta|prod)" >&2
@@ -1223,7 +1223,7 @@ echo ""
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "✓ Developer-ID signed + notarized DMG: ${DMG_PATH}"
 elif [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
-    echo "✓ Community DMG (Exodia certificate ${SIGNING_CERTIFICATE_SHA1}, not Apple-notarized): ${DMG_PATH}"
+    echo "✓ Community DMG (Whytap certificate ${SIGNING_CERTIFICATE_SHA1}, not Apple-notarized): ${DMG_PATH}"
 else
     echo "✓ Community DMG (ad-hoc signed, not Apple-notarized): ${DMG_PATH}"
 fi

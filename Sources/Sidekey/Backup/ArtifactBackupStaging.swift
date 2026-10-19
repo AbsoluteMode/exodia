@@ -396,7 +396,7 @@ actor ArtifactBackupStager {
             warnings.append("\(unfinished) recording chunk(s) were still being written and are not in this backup. They are included once their recording finishes.")
         }
         if !entries.isEmpty {
-            warnings.append("Unprocessed recordings are included. After a restore their audio is kept, but Exodia does not transcribe them automatically.")
+            warnings.append("Unprocessed recordings are included. After a restore their audio is kept, but Whytap does not transcribe them automatically.")
         }
         return entries
     }
@@ -464,7 +464,7 @@ actor ArtifactBackupStager {
                 if !executable.hasPrefix(staged.path), !isInsideNotifyRoot(executable) { external += 1 }
             }
             if external > 0 {
-                notes.append("\(external) notification source(s) run a program from outside Exodia's own folder. That program is not inside this backup.")
+                notes.append("\(external) notification source(s) run a program from outside Whytap's own folder. That program is not inside this backup.")
             }
         }
         if paths.contains(where: { $0.hasPrefix("workspace/notify/workers/") }) {

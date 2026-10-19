@@ -3930,7 +3930,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Boot output
 
     private func printBanner() {
-        print("Exodia v0.1")
+        print("Whytap v0.1")
         print("Hotkey: \(HotkeyPreferences.shared.dropVoiceShortcut.title)")
     }
 

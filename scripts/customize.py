@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local Exodia source-change helpers. Standard library only; no shell execution."""
+"""Local Whytap source-change helpers. Standard library only; no shell execution."""
 from __future__ import annotations
 
 import argparse

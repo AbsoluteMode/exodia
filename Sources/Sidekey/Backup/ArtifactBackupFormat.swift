@@ -40,9 +40,9 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .notAnArchive:
-            return "This file is not an Exodia backup. Choose a .exodiabackup file."
+            return "This file is not a Whytap backup. Choose a .exodiabackup file."
         case .needsNewerApp:
-            return "This backup was written by a newer version of Exodia. Update Exodia first; nothing on this Mac has changed."
+            return "This backup was written by a newer version of Whytap. Update Whytap first; nothing on this Mac has changed."
         case .cannotUnlock:
             return "This recovery key could not open the backup. Check the key, or choose another backup."
         case .damaged:
@@ -50,11 +50,11 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
         case .truncated:
             return "This backup is missing its end. The upload or copy did not finish; choose another version."
         case .tooLarge:
-            return "This backup is larger than Exodia can process."
+            return "This backup is larger tha Whytap can process."
         case .unsafeContent:
-            return "This backup contains a file path Exodia will not write. Nothing has been restored."
+            return "This backup contains a file path Whytap will not write. Nothing has been restored."
         case .readFailed:
-            return "Exodia could not read all the files it needs. Check the disk and try again."
+            return "Whytap could not read all the files it needs. Check the disk and try again."
         case .writeFailed:
             return "The backup could not be written. Check the folder and available space, then try again."
         case .busy:
@@ -66,23 +66,23 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
         case .requiredFileMissing(let name):
             return "A file this backup needs is missing: \(name). Nothing has been backed up."
         case .caseUnreadable:
-            return "Exodia cannot read this Mac's Case vault, so it was not included. Unlock Case, then back up again."
+            return "Whytap cannot read this Mac's Case vault, so it was not included. Unlock Case, then back up again."
         case .keyUnavailable:
-            return "Exodia could not access its backup key. Unlock your Mac and try again."
+            return "Whytap could not access its backup key. Unlock your Mac and try again."
         case .restoreFailed:
             return "The restore did not finish. Your previous data has been kept."
         case .restoreInterrupted:
             return "The last restore was interrupted, so your previous data was put back. Try restoring again."
         case .contentChanged(let name):
-            return "\(name) changed while Exodia was backing it up. Nothing has been backed up; try again when recording and processing have finished."
+            return "\(name) changed while Whytap was backing it up. Nothing has been backed up; try again when recording and processing have finished."
         case .incompleteArchive(let detail):
             return "This backup is missing data it says it contains (\(detail)). Nothing has been restored."
         case .invalidContent(let detail):
-            return "This backup contains data Exodia cannot read (\(detail)). Nothing has been restored."
+            return "This backup contains data Whytap cannot read (\(detail)). Nothing has been restored."
         case .restoreNeedsRecovery(let path):
-            return "Exodia could not finish putting your previous data back. Every original file, the backup copy and the restore record are preserved at \(path). Nothing was deleted; open Exodia again or recover those files before retrying."
+            return "Whytap could not finish putting your previous data back. Every original file, the backup copy and the restore record are preserved at \(path). Nothing was deleted; open Whytap again or recover those files before retrying."
         case .applyInProgress:
-            return "A restore is already being applied. Open Exodia again to let it finish or roll back."
+            return "A restore is already being applied. Open Whytap again to let it finish or roll back."
         }
     }
 }
@@ -120,7 +120,7 @@ struct ArtifactBackupManifest: Codable, Equatable, Sendable {
     var warnings: [String]
 
     /// Only the schema is read before anything else, so a future archive is
-    /// rejected with "update Exodia" instead of a decoding error.
+    /// rejected with "update Whytap" instead of a decoding error.
     private struct SchemaProbe: Decodable { let schema: Int }
 
     static func decode(_ data: Data) throws -> Self {

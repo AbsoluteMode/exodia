@@ -252,7 +252,7 @@ struct ModelProbe: ModelProbing {
     private static let probeTool = ChatBody.Tool(
         type: "function",
         function: .init(
-            name: "exodia_probe",
+            name: "whytap_probe",
             description: "Probe tool. Do not call.",
             parameters: .init(type: "object", properties: .init())
         )
@@ -336,7 +336,7 @@ struct ModelProbe: ModelProbing {
     }
 
     private static let anthropicProbeTool = AnthropicBody.Tool(
-        name: "exodia_probe",
+        name: "whytap_probe",
         description: "Probe tool. Do not call.",
         inputSchema: .init(type: "object", properties: .init())
     )

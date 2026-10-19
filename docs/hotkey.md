@@ -1,6 +1,6 @@
 # Hotkey display standard
 
-Single source of truth for how Exodia renders hotkey hints in its UI.
+Single source of truth for how Whytap renders hotkey hints in its UI.
 
 ## Component
 
@@ -32,7 +32,7 @@ Modifier glyphs and their VoiceOver pronunciations live on
   `HotkeyGlyph.shift` (⇧), `HotkeyGlyph.control` (⌃). Never the
   word `"Option"` / `"Command"` etc. as the cap label.
 - **Side disambiguation lives INSIDE the keycap.** When a hotkey is
-  wired to a specific physical side of a modifier key (e.g. Exodia's
+  wired to a specific physical side of a modifier key (e.g. Whytap's
   Agent uses Right Command only), use
   `KeycapContent.prefixedGlyph(prefix: "right", glyph: HotkeyGlyph.command, ...)`
   to bake the qualifier in front of the glyph inside the SAME cap
@@ -185,16 +185,16 @@ registration is an installation failure, never a ready monitor.
 
 Settings → Permissions shows the actual **Drop shortcut** state. **Retry
 shortcut** reinstalls it even when the permission status has not changed.
-A shortcut owned by another app or Exodia copy is reported as **Shortcut is
+A shortcut owned by another app or Whytap copy is reported as **Shortcut is
 in use**, with **Hotkeys…** available to change it; this error does not ask
 for more permissions. The repair view also identifies the running app in
 Finder when an old Accessibility entry needs replacing.
 
-Reopening Exodia, activating it, or pressing **Refresh** in Permissions
+Reopening Whytap, activating it, or pressing **Refresh** in Permissions
 quietly reconciles permission state and monitor installation. While waiting
 for repair, checks run once a second for up to 120 attempts and stop once
 ready. These checks do not request grants or open background repair windows.
-After that bounded session, reopening Exodia, Refresh, or Retry can start a
+After that bounded session, reopening Whytap, Refresh, or Retry can start a
 new session. Rebuilding a live monitor waits until the current capture can
 stop; if a hold tap itself is lost, the captured take is finalized, including
 a Stop received during setup. Saved shortcuts, gestures, modes and providers
@@ -257,10 +257,10 @@ slots); both converge on `MeetingsCoordinator.toggleManualRecording()`.
 
 ## Brightness keys
 
-The Mac's own brightness keys are not an Exodia hotkey: they have no
+The Mac's own brightness keys are not a Whytap hotkey: they have no
 `HotkeyConfiguration` binding, recorder row, `HotkeyHintView` or Help window
 row. Settings → Toolbox → Display → Brightness keys (off by default) lets
-Exodia take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
+Whytap take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
 
 - A head-insert session tap for system-defined events (needs Accessibility)
   swallows brightness up/down presses, so the macOS indicator does not show.
@@ -274,7 +274,7 @@ Exodia take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
 - ⌘, ⌃, ⌥ or ⇧ (other than ⌥⇧), hidden hover widgets and an unadjustable
   display leave the keys with macOS; ⌥ still opens Displays settings. Fn and
   Caps Lock do not matter. A press belongs wholly to whoever got its first
-  event, Exodia or macOS, also across the hotkeys' rebuild. After a longer
+  event, Whytap or macOS, also across the hotkeys' rebuild. After a longer
   gap or a tap macOS disabled, the presses in progress finish with macOS.
 - The tap is reinstalled with the other monitors after wake or an
   Accessibility change. As with every monitor, key contents are never logged

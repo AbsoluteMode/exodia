@@ -172,7 +172,7 @@ struct SettingsBackupView: View {
         VStack(alignment: .leading, spacing: 10) {
             MacBanner(tone: .info, systemImage: "arrow.clockwise.circle",
                 title: "Ready for your next launch",
-                text: "Quit Exodia normally and open it again when your work is finished. Your previous data is kept for recovery.")
+                text: "Quit Whytap normally and open it again when your work is finished. Your previous data is kept for recovery.")
             MacButton(title: "Cancel planned restore", style: .default, isEnabled: !model.isBusy) {
                 model.cancelPlannedRestore()
             }
@@ -212,7 +212,7 @@ struct SettingsBackupView: View {
                 Button("Enable") { if let item = activationItem { model.activateRecoveredItem(item) }; activationItem = nil }
                 Button("Cancel", role: .cancel) { activationItem = nil }
         } message: {
-            Text("Connections may contact your configured servers. A recording may be sent to your selected speech and text providers using your keys. Enabling allows Exodia to use this recovered item when it next checks for work.")
+            Text("Connections may contact your configured servers. A recording may be sent to your selected speech and text providers using your keys. Enabling allows Whytap to use this recovered item when it next checks for work.")
         }
     }
 
@@ -274,7 +274,7 @@ struct SettingsBackupView: View {
 
     private var emptyStateSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Encrypted Backup", trailing: "No Exodia account")
+            MacGroupTitle(title: "Encrypted Backup", trailing: "No Whytap account")
             MacCard {
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -498,7 +498,7 @@ struct SettingsBackupView: View {
         VStack(alignment: .leading, spacing: 0) {
             MacRow(
                 title: "Recovery code verified",
-                subtitle: "Choose where Exodia should store your encrypted backup archives."
+                subtitle: "Choose where Whytap should store your encrypted backup archives."
             ) {
                 MacPill(text: "Verified", tone: .green, showsDot: true)
             }
@@ -1037,7 +1037,7 @@ struct SettingsBackupView: View {
                         systemImage: "arrow.uturn.backward.circle"
                     )
                     Label(
-                        "Restored items apply at the next normal launch. Exodia will not force-quit or interrupt active work.",
+                        "Restored items apply at the next normal launch. Whytap will not force-quit or interrupt active work.",
                         systemImage: "clock.arrow.circlepath"
                     )
                     Label(
@@ -1128,7 +1128,7 @@ struct SettingsBackupView: View {
                 if availableLocalSnapshots.isEmpty {
                     MacRow(
                         title: "No local settings snapshots yet",
-                        subtitle: "Exodia saves local settings snapshots automatically on this Mac when preferences change."
+                        subtitle: "Whytap saves local settings snapshots automatically on this Mac when preferences change."
                     ) {
                         EmptyView()
                     }

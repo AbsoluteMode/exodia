@@ -181,7 +181,7 @@ final class BackupViewModel: ObservableObject {
         item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
         item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
         board.writeObjects([item])
-        // Privacy flags alone do not suppress Exodia's own polling watcher.
+        // Privacy flags alone do not suppress Whytap's own polling watcher.
         suppression.suppressThrough(changeCount: board.changeCount)
         let copiedCount = board.changeCount
         clipboardTask?.cancel()
@@ -198,7 +198,7 @@ final class BackupViewModel: ObservableObject {
         let context = LAContext()
         do {
             guard try await context.evaluatePolicy(.deviceOwnerAuthentication,
-                localizedReason: "Show your Exodia backup recovery code") else { return }
+                localizedReason: "Show your Whytap backup recovery code") else { return }
             recoveryCode = try ConfigBackupArchive.recoveryCode(for: key(create: false))
         } catch {
             let code = (error as NSError).code
@@ -254,7 +254,7 @@ final class BackupViewModel: ObservableObject {
         guard !isBusy, !needsRestart else { return }
         let panel = NSOpenPanel()
         panel.title = "Choose a backup folder"
-        panel.message = "Choose iCloud Drive, another synced folder, or an external drive. Exodia verifies the saved file; your sync service handles cloud upload."
+        panel.message = "Choose iCloud Drive, another synced folder, or an external drive. Whytap verifies the saved file; your sync service handles cloud upload."
         panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
         panel.prompt = "Use this folder"
@@ -263,7 +263,7 @@ final class BackupViewModel: ObservableObject {
             try Task.checkCancellation()
             let access = selected.startAccessingSecurityScopedResource()
             defer { if access { selected.stopAccessingSecurityScopedResource() } }
-            let folder = selected.lastPathComponent == "Exodia Backups" ? selected : selected.appendingPathComponent("Exodia Backups", isDirectory: true)
+            let folder = ["Whytap Backups", "Exodia Backups"].contains(selected.lastPathComponent) ? selected : selected.appendingPathComponent("Whytap Backups", isDirectory: true)
             try ConfigBackupFiles.ensurePrivateDirectory(folder)
             let bookmark = try folder.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             let folderID = SHA256.hash(data: Data(folder.standardizedFileURL.path.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -451,7 +451,7 @@ final class BackupViewModel: ObservableObject {
 
     private func performChooseArchive(code: String) async {
         guard !isBusy, !needsRestart else { return }
-        let panel = NSOpenPanel(); panel.title = "Open an Exodia backup"; panel.canChooseDirectories = false
+        let panel = NSOpenPanel(); panel.title = "Open a Whytap backup"; panel.canChooseDirectories = false
         panel.canChooseFiles = true; panel.allowsMultipleSelection = false
         guard await panel.begin() == .OK, let file = panel.url else { return }
         isBusy = true; errorMessage = nil
@@ -532,7 +532,7 @@ final class BackupViewModel: ObservableObject {
             if Task.isCancelled { _ = try engine.cancelPlanned(); throw CancellationError() }
             cleanupPreviewFiles()
             needsRestart = true; restorePreview = nil; restoreKey = nil; restoreFile = nil
-            statusText = "Restore is ready. Quit Exodia normally and open it again when your work is finished."
+            statusText = "Restore is ready. Quit Whytap normally and open it again when your work is finished."
             // Keep a fresh Mac on the source recovery credential, while retaining
             // its previous local history key. A cache error must not disguise an
             // already armed transaction as a failed restore.
@@ -551,7 +551,7 @@ final class BackupViewModel: ObservableObject {
                     try keyStore.save(key.base64EncodedString()); keyCache = key
                     recoverySaved = true; defaults.set(true, forKey: "backup.recovery-verified.v1")
                 } catch {
-                    errorMessage = "Restore is ready, but its code could not be remembered for future backups. Keep your recovery code and finish backup setup after reopening Exodia."
+                    errorMessage = "Restore is ready, but its code could not be remembered for future backups. Keep your recovery code and finish backup setup after reopening Whytap."
                 }
             }
         } catch { fail(error) }
@@ -575,7 +575,7 @@ final class BackupViewModel: ObservableObject {
             defer { try? FileManager.default.removeItem(at: file) }
             try await engine.stage(file, key, [group])
             needsRestart = true
-            statusText = "\(section.title) is ready to restore. Quit Exodia normally and open it again when your work is finished."
+            statusText = "\(section.title) is ready to restore. Quit Whytap normally and open it again when your work is finished."
             errorMessage = nil
         } catch { fail(error) }
     }
@@ -742,7 +742,7 @@ final class BackupViewModel: ObservableObject {
         else if let error = error as? ArtifactBackupError { errorMessage = error.localizedDescription }
         else if let error = error as? GitHubBackupTransport.Failure { errorMessage = error.localizedDescription }
         else if (error as NSError).domain == NSURLErrorDomain {
-            errorMessage = "The backup destination could not be reached. Your local copy is kept; Exodia will retry when connected."
+            errorMessage = "The backup destination could not be reached. Your local copy is kept; Whytap will retry when connected."
         } else if (error as NSError).code == NSFileWriteOutOfSpaceError {
             errorMessage = "There is not enough space for a backup. Free some space or choose another destination, then retry."
         } else { errorMessage = "The backup could not finish. Your existing data and previous copies are kept. Check the destination and try again." }

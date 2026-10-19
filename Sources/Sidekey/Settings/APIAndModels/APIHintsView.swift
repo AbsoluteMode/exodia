@@ -16,7 +16,7 @@ struct APIHintsView: View {
         MacCard {
             DisclosureGroup(isExpanded: $isExpanded) {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Exodia is free. Provider free tiers and included credits can cover your AI usage within their limits.")
+                    Text("Whytap is free. Provider free tiers and included credits can cover your AI usage within their limits.")
                         .font(.system(size: 12))
                         .foregroundStyle(MacSettingsTheme.text2)
 
