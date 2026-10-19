@@ -3,6 +3,18 @@ import XCTest
 
 @MainActor
 final class MeetingLiveTestCaptureTests: XCTestCase {
+    func testUntimedFinalTextSurvivesWhileInterimsAndControlTokensDoNot() {
+        let value = MeetingLiveTestToken(["text": "?", "is_final": true])
+        XCTAssertEqual(value?.text, "?")
+        XCTAssertNil(value?.startMS)
+        XCTAssertNil(MeetingLiveTestToken(["text": "partial", "is_final": false]))
+        XCTAssertNil(MeetingLiveTestToken(["text": "<fin>", "is_final": true]))
+        XCTAssertEqual(MeetingLiveTestToken(["text": "<example", "is_final": true])?.text, "<example")
+        let invalid = MeetingLiveTestToken(["text": "word", "is_final": true, "start_ms": 200.0, "end_ms": 100.0])
+        XCTAssertEqual(invalid?.text, "word")
+        XCTAssertNil(invalid?.endMS)
+    }
+
     func testRecorderFeedsLiveCaptureBeforeArchivalSoloFallback() async throws {
         let root = temporaryRoot(), staging = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: staging) }

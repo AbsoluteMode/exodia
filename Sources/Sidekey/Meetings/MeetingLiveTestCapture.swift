@@ -72,6 +72,24 @@ struct MeetingLiveTestPacket: Sendable {
     let emittedUptime: Double
 }
 
+struct MeetingLiveTestToken {
+    let text: String
+    let speaker: String?
+    let startMS: Double?
+    let endMS: Double?
+
+    init?(_ value: [String: Any]) {
+        guard value["is_final"] as? Bool == true, let text = value["text"] as? String,
+              !text.isEmpty, text != "<fin>", text != "<end>" else { return nil }
+        self.text = text
+        speaker = value["speaker"] as? String
+        if let start = value["start_ms"] as? Double, let end = value["end_ms"] as? Double,
+           start.isFinite, end.isFinite, start >= 0, end >= start {
+            startMS = start; endMS = end
+        } else { startMS = nil; endMS = nil }
+    }
+}
+
 /// Never awaits disk/network on the recorder's actor. A bounded queue fails
 /// the diagnostic capture explicitly rather than dropping audio unnoticed.
 final class MeetingLiveTestCapture: @unchecked Sendable {
@@ -276,15 +294,18 @@ private actor MeetingLiveTestWriter {
                 }
                 if response["error_code"] != nil { errorCode = "provider_error"; finished = true; return }
                 for token in response["tokens"] as? [[String: Any]] ?? [] {
-                    guard let text = token["text"] as? String, text != "<fin>", text != "<end>",
-                          token["is_final"] as? Bool == true,
-                          let start = token["start_ms"] as? Double, let end = token["end_ms"] as? Double,
-                          start.isFinite, end.isFinite, start >= 0, end >= start else { continue }
-                    let speaker = token["speaker"] as? String
-                    let role = mapper.classify(speaker: speaker, startMS: start, endMS: end, activity: activity)
-                    try appendJSON(["text": text, "start_ms": start, "end_ms": end,
-                                    "speaker": speaker ?? "unknown", "role": role,
-                                    "received_elapsed_ms": elapsedMS, "is_final": true], file: "tokens.jsonl")
+                    guard let value = MeetingLiveTestToken(token) else { continue }
+                    var role = "unknown"
+                    if let start = value.startMS, let end = value.endMS, end <= Double(samples) / 16 + 1 {
+                        role = mapper.classify(speaker: value.speaker, startMS: start, endMS: end, activity: activity)
+                    }
+                    // Timing is optional in the protocol. Preserve untimed
+                    // text/punctuation; never invent a source or timestamp.
+                    var saved: [String: Any] = ["text": value.text, "speaker": value.speaker ?? "unknown",
+                        "role": role, "received_elapsed_ms": elapsedMS, "is_final": true]
+                    saved["start_ms"] = value.startMS.map { $0 as Any } ?? NSNull()
+                    saved["end_ms"] = value.endMS.map { $0 as Any } ?? NSNull()
+                    try appendJSON(saved, file: "tokens.jsonl")
                     tokenCount += 1
                 }
                 if response["finished"] as? Bool == true { finished = true; return }

@@ -18,6 +18,8 @@ def summarize(folder):
     ends = [r['end_ms'] for r in activity]
     delays = []
     for token in tokens:
+        if not isinstance(token.get('end_ms'), (int, float)):
+            continue
         index = bisect_left(ends, token['end_ms'])
         if index < len(activity):
             frame = activity[index]
@@ -30,6 +32,7 @@ def summarize(folder):
     sizes = {name: (folder / name).stat().st_size for name in ['mixed.pcm', 'mic.pcm', 'system.pcm']}
     return {'state': manifest['state'], 'audio_seconds': manifest['samples'] / manifest['sample_rate'],
             'equal_track_sizes': len(set(sizes.values())) == 1, 'audio_bytes': sizes,
+            'track_sizes_match_manifest': all(v == manifest['samples'] * 2 for v in sizes.values()),
             'final_tokens': len(tokens), 'token_roles': dict(Counter(t['role'] for t in tokens)),
             'speaker_count': len({t['speaker'] for t in tokens if t['speaker'] != 'unknown'}),
             'frame_emission_to_final_token_median_ms': statistics.median(delays) if delays else None,
