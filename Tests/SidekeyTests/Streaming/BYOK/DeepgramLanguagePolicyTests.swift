@@ -43,6 +43,19 @@ final class DeepgramLanguagePolicyTests: XCTestCase {
         XCTAssertTrue(DeepgramLanguagePolicy.automaticLanguageDescription(for: "nova-2").contains("2 languages"))
     }
 
+    /// The texts show on a feature's row in API & Models, which has no
+    /// language menu and no Save button.
+    func testErrorTextsPointAtTheModelOrTheInputLanguage() {
+        XCTAssertEqual(
+            DeepgramLanguageConfigurationError.automaticLanguageUnavailable.localizedDescription,
+            "Auto language isn't available for this Deepgram model. Pick nova-3 or choose an input language."
+        )
+        XCTAssertEqual(
+            DeepgramLanguageConfigurationError.unsupportedLanguage.localizedDescription,
+            "This Deepgram model doesn't support the current input language. Pick another model or input language."
+        )
+    }
+
     func testUnknownModelsRequireExplicitLanguageWithoutSubstitution() throws {
         for model in ["custom-model", "nova-3-pharma", "flux-general-multi"] {
             XCTAssertNil(DeepgramLanguagePolicy.automaticLanguageCodes(for: model))

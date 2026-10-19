@@ -590,7 +590,7 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
         )
 
         // It still binds the batch transcribe of the retained PCM …
-        XCTAssertTrue(body.contains("let transcriber = batchTranscriber"))
+        XCTAssertTrue(body.contains("let transcriber = dropBatchTranscriber"))
         XCTAssertTrue(body.contains("transcriber.transcribe("))
 
         // … and delivers through the SHARED `dropDeliverySink` (the same sink the
@@ -649,14 +649,14 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
     func test_drop_callsite_passes_resilient_flag() throws {
         let source = try appDelegateSource()
         XCTAssertTrue(
-            source.contains("makeStreamingSession(resilient: AgentFeatureGate.resilientDropDeliveryEnabled)"),
+            source.contains("feature: DropTake.shared.feature,\n                    resilient: AgentFeatureGate.resilientDropDeliveryEnabled"),
             "Drop call site must pass resilient: AgentFeatureGate.resilientDropDeliveryEnabled — not a literal or a default."
         )
     }
 
     func test_agent_voice_callsite_passes_resilient_false() throws {
         let source = try appDelegateSource()
-        // The closure body is: `return try? await self.makeStreamingSession(resilient: false)`.
+        // The closure body is: `return try? await self.makeStreamingSession(feature: ..., resilient: false)`.
         // There must be exactly two `resilient: false` occurrences (agent-voice +
         // Google-search); we check the shared comment anchor instead so this
         // assertion doesn't depend on order.

@@ -30,6 +30,15 @@ struct SonioxBYOKAdapter: BYOKTranscriptionAdapter {
         self.makeTransport = transport
     }
 
+    /// The upgrade request with the key in the `Authorization` header, as the
+    /// API & Models spec requires for the model probe. The runtime adapter
+    /// keeps the key in the config frame (above); only the probe uses this.
+    static func handshakeRequest(apiKey: String) -> URLRequest {
+        var request = URLRequest(url: URL(string: "wss://stt-rt.soniox.com/transcribe-websocket")!)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
     func open(language: String?, terms: [String]) async throws -> BYOKUpstreamSession {
         let transport = makeTransport()
         transport.resume()

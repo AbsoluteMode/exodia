@@ -3,7 +3,7 @@ import AppKit
 /// Accessory (LSUIElement, `.accessory` activation policy) apps ship without a
 /// menu bar. That also strips the standard text-editing key equivalents
 /// (⌘X/⌘C/⌘V/⌘A, ⌘Z) of a command target in the responder chain — so pasting
-/// into ANY text field (e.g. the Settings → Models API-key field) just emits a
+/// into ANY text field (e.g. the Settings → API & Models API-key field) just emits a
 /// system beep. Installing a minimal main menu with an Edit submenu restores
 /// those shortcuts; the items are nil-targeted so they dispatch to the focused
 /// field editor via the responder chain. The menu bar stays hidden under
