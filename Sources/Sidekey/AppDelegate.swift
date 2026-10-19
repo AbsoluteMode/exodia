@@ -3609,7 +3609,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 micSource: MicCaptureSource(),
                 systemSource: vadProbe,
                 micInUseProbe: micProbe,
-                stagingRoot: stagingRoot
+                stagingRoot: stagingRoot,
+                testCapture: MeetingLiveTestSettings.makeIfEnabled()
             )
         }
         // Local store + coordinator wire. Store init can throw on
