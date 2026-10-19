@@ -448,6 +448,12 @@ Now Playing:
   (parentWatchGuardScript) that ends it when the app's end of the guard's
   stdin closes; vendored run.pl stays untouched. WHY:
   .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+  Missing artwork triggers a background get --micros with a 2s deadline,
+  one request at a time and a 5s retry cooldown. Recovery copies only the image
+  into current metadata, matching player/process/content item/title/artist/album
+  and the request generation; track changes, clears and lifecycle resets reject
+  stale results. No Automation prompt is added. WHY:
+  .project-docs/decisions/2026-10-19-nowplaying-artwork-recovery.md
 
 Island idle-hide:
   ~20s without activity -> the compact pill fades to the bare notch (opacity
