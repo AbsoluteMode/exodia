@@ -33,6 +33,18 @@ enum MeetingProgressStatus: String, Sendable, Codable, Equatable {
         case .failed: return "Failed"
         }
     }
+
+    /// A finished meeting (ready or failed) can be deleted. One that is still
+    /// waiting, uploading or being transcribed cannot: its processor would
+    /// store the row again when it finishes.
+    var canBeDeleted: Bool {
+        switch self {
+        case .ready, .failed:
+            return true
+        case .waitingToReconnect, .uploading, .transcribing, .generatingProtocol:
+            return false
+        }
+    }
 }
 
 /// Flat row type for the meetings list: the recording timestamps plus the
@@ -319,6 +331,11 @@ actor MeetingsStore: MeetingsStoring {
         return (MeetingProgressStatus(rawValue: String(cString: raw)) ?? .ready, failureReason)
     }
 
+    /// Deletes the meeting for good: its row AND its note and transcript
+    /// files. Safe to repeat, and for rows that never had a note (a failed
+    /// meeting). The row goes first, so a file that cannot be removed never
+    /// leaves a listed meeting without its note.
+    /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
     func delete(id: UUID) throws {
         let sql = "DELETE FROM meetings WHERE id = ?"
         var stmt: OpaquePointer?
@@ -332,6 +349,7 @@ actor MeetingsStore: MeetingsStoring {
         guard step == SQLITE_DONE else {
             throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
         }
+        try removeSidecars(of: id)
     }
 
     /// Replaces an existing meeting's markdown body and bumps its
@@ -790,6 +808,24 @@ actor MeetingsStore: MeetingsStoring {
 
     private func transcriptURL(for id: UUID) -> URL {
         rootDirectory.appendingPathComponent("\(id.uuidString)-transcript.json")
+    }
+
+    /// Removes `<uuid>.md` and `<uuid>-transcript.json`. Both are always
+    /// attempted; a missing file is fine, any other failure is reported once
+    /// both have been tried.
+    private func removeSidecars(of id: UUID) throws {
+        var failure: String?
+        for url in [markdownURL(for: id), transcriptURL(for: id)] {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                failure = failure ?? "Could not remove \(url.lastPathComponent): \(error)"
+            }
+        }
+        if let failure {
+            throw MeetingsStoreError.filesystem(failure)
+        }
     }
 
     private func writeMarkdown(_ id: UUID, markdown: String) throws {
