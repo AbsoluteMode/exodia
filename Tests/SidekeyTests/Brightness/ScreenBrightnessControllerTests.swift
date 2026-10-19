@@ -73,7 +73,7 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertGreaterThan(announcements, 0)
     }
 
-    func testPollingRunsOnlyWhileAStripIsVisible() {
+    func testPollingRunsWhileAStripIsVisibleOrExtraIsOn() {
         let f = Fixture(), controller = f.controller
         controller.refresh()
         XCTAssertFalse(controller.isPolling, "The capsule status reads once and never polls.")
@@ -90,7 +90,9 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         controller.setExtra(true)
         controller.endInteraction()
         XCTAssertTrue(controller.isExtraOn)
-        XCTAssertFalse(controller.isPolling, "Extra alone does not keep a timer running.")
+        XCTAssertTrue(controller.isPolling, "Extra must detect decreases while the strip is closed.")
+        controller.setExtra(false)
+        XCTAssertFalse(controller.isPolling)
         controller.shutdown()
     }
 
@@ -120,22 +122,129 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertEqual(device.events, ["boost 1", "write 1 0.7"])
     }
 
-    func testTheSliderKeepsExtraAtAnyLevel() {
+    func testLoweringTheSliderEndsExtraWithoutRestoringTheBacklight() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
 
         controller.setLevel(0.2)
-        controller.setLevel(1)
 
-        XCTAssertTrue(controller.isExtraOn, "Only the switch ends Extra, as with the Mac's own brightness keys.")
-        XCTAssertEqual(controller.level, 1)
-        XCTAssertEqual(device.boosts.first?.isClosed, false)
-        XCTAssertEqual(device.events, ["boost 1", "write 1 0.2", "write 1 1.0"])
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0.2)
+        XCTAssertEqual(device.boosts.first?.isClosed, true)
+        XCTAssertEqual(device.events, ["boost 1", "write 1 0.2"])
+
+        controller.setLevel(1)
+        XCTAssertFalse(controller.isExtraOn, "Increasing brightness does not re-enable Extra.")
     }
 
-    func testOutsideBacklightChangesKeepExtra() {
+    func testUnchangedAndIncreasedSliderLevelsKeepExtra() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
 
-        // Automatic brightness, idle dimming or the brightness keys.
+        controller.setLevel(0.4)
+        controller.setLevel(0.7)
+
+        XCTAssertTrue(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0.7)
+        XCTAssertEqual(device.boosts.first?.isClosed, false)
+    }
+
+    func testOutsideDecreaseEndsExtraWithTheStripClosed() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+        controller.endInteraction()
+        XCTAssertTrue(controller.isPolling)
+
+        // Native brightness keys, auto-brightness and idle dimming all use this readback.
+        device.hardware[1] = 0.25
+        controller.refresh()
+
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0.25)
+        XCTAssertEqual(device.boosts.first?.isClosed, true)
+        XCTAssertFalse(controller.isPolling)
+        XCTAssertNil(controller.notice)
+        XCTAssertEqual(device.events, ["boost 1"], "Ending Extra must not write the backlight.")
+
+        device.hardware[1] = 0.6
+        controller.refresh()
+        XCTAssertFalse(controller.isExtraOn)
+    }
+
+    func testPollingDetectsADecreaseWithoutOpeningTheStrip() async {
+        let f = Fixture(), device = f.device, controller = f.controller
+        controller.refresh()
+        controller.setExtra(true)
+        let ended = expectation(description: "Extra detects a lower backlight in the background")
+        let subscription = controller.$isExtraOn.dropFirst().filter { !$0 }.sink { _ in ended.fulfill() }
+        defer {
+            subscription.cancel()
+            controller.shutdown()
+        }
+
+        device.hardware[1] = 0.25
+        await fulfillment(of: [ended], timeout: 3)
+
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0.25)
+        XCTAssertFalse(controller.isPolling)
+        XCTAssertEqual(device.events, ["boost 1"])
+    }
+
+    func testStaleReadbackAfterAnIncreaseDoesNotEndExtra() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+        device.applyWrites = false
+        controller.setLevel(0.8)
+        controller.refresh()
+        XCTAssertTrue(controller.isExtraOn, "The old 0.4 reading is still settling.")
+
+        device.hardware[1] = 0.8
+        f.clock.advance(ScreenBrightnessController.writeSettleInterval + 0.1)
+        controller.refresh()
+        XCTAssertTrue(controller.isExtraOn)
+
+        device.hardware[1] = 0.7
+        controller.refresh()
+        XCTAssertFalse(controller.isExtraOn, "A subsequent real decrease ends Extra.")
+    }
+
+    func testStartingExtraUsesTheCurrentBacklightAsItsBaseline() {
+        let f = Fixture(), device = f.device, controller = f.controller
+        controller.refresh()
+        device.hardware[1] = 0.2
+
+        controller.setExtra(true)
+        controller.refresh()
+
+        XCTAssertTrue(controller.isExtraOn, "The decrease preceded enabling Extra.")
+        XCTAssertEqual(controller.level, 0.2)
+        controller.shutdown()
+    }
+
+    func testFloatRoundoffDoesNotEndExtra() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+        controller.setLevel(0.7)
+        device.hardware[1] = Double(Float(0.7))
+        f.clock.advance(ScreenBrightnessController.writeSettleInterval + 0.1)
+        controller.refresh()
+
+        XCTAssertTrue(controller.isExtraOn)
+        controller.setLevel(0.7)
+        XCTAssertTrue(controller.isExtraOn)
+    }
+
+    func testFailedSliderDecreaseKeepsExtra() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+        device.canWrite = false
+
+        controller.setLevel(0.2)
+
+        XCTAssertTrue(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0.4)
+        XCTAssertEqual(controller.notice, ScreenBrightnessController.writeFailedNotice)
+    }
+
+    func testOutsideBacklightIncreasesKeepExtra() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+
+        // An outside increase keeps Extra.
         device.hardware[1] = 0.5
         controller.refresh()
 

@@ -363,7 +363,7 @@ Brightness inside hover:
   ScreenBrightnessController follows the island display (IslandScreenResolver)
   and reads/writes its backlight through private DisplayServices (dlopen); an
   unreadable display gets a disabled slider and no switch. Showing the strip
-  only reads, polling every 0.5 s while it is visible; a pinned capsule
+  only reads, polling every 0.5 s while it is visible or Extra is on; a pinned capsule
   refreshes its NN%/Extra VoiceOver status when hover opens. Extra exists only
   for potential EDR headroom > 1.01 and never writes the backlight. As Vivid
   does it, GammaBrightnessBoost scales the display's own transfer table by
@@ -390,10 +390,14 @@ Brightness inside hover:
   pause during display sleep, system sleep and another user's session, each
   until its own end notification, and a gap over 1 s between frames restarts
   the 5 s wait for headroom and the 1.5 s hold; another user's session also gets the
-  display's own table until this one is active again. Extra is a fixed boost:
-  the slider at any level, brightness keys, automatic brightness, idle
-  dimming, closing the strip, sleep and a session switch keep it. Only its
-  switch (strip or Settings) ends it, apart from serious thermal state, a
+  display's own table until this one is active again. Extra is a fixed boost;
+  any backlight decrease ends it, including native brightness keys, automatic
+  brightness and idle dimming with the strip closed. Slider and intercepted
+  key decreases end it immediately after a successful write; outside changes
+  are detected within the 0.5 s poll, after the 0.75 s write-settle window.
+  Float readback round-off is ignored. Enabling Extra reads a fresh baseline;
+  increasing brightness never enables it. Its switch (strip or Settings) also
+  ends it, as do serious thermal state, a
   display change or lost EDR support, another app's table, a boost failure and
   quit. Ending it gives the display its own table back (ColorSync's if Quartz
   refuses it; Quartz also restores it when the process exits) and leaves the

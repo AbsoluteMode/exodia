@@ -74,10 +74,10 @@ protocol ScreenBrightnessDevice {
 
 /// Hover Display: the island display's backlight plus an Extra switch.
 /// Extra is a fixed EDR boost of the display's transfer table on top of whatever the
-/// backlight is, and it never writes the backlight itself. The slider, the Mac's brightness
-/// keys, automatic brightness, idle dimming, closing the strip, sleep and a session switch
-/// leave it on. Only the switch ends it, apart from heat, a display change or lost EDR
-/// support, another app adjusting the display's table, a boost failure and quit.
+/// backlight is, and it never writes the backlight itself. Any decrease in backlight ends
+/// Extra, including outside changes while the strip is closed. Increasing the backlight
+/// does not enable Extra. The switch, heat, a display change or lost EDR support, another
+/// app adjusting the display's table, a boost failure and quit also end it.
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
 final class ScreenBrightnessController: ObservableObject {
@@ -90,6 +90,8 @@ final class ScreenBrightnessController: ObservableObject {
     static let otherAppNotice = "Another app is adjusting this display."
     /// A read right after a write can still report the previous backlight level.
     static let writeSettleInterval: TimeInterval = 0.75
+    /// DisplayServices reads Float values; their round-off is not a brightness decrease.
+    static let levelReadbackTolerance = 0.000001
 
     @Published private(set) var level = 0.0
     @Published private(set) var isExtraOn = false
@@ -109,7 +111,7 @@ final class ScreenBrightnessController: ObservableObject {
     private var lastWrite: (display: CGDirectDisplayID, date: Date)?
     private var timer: Timer?
     private var viewers = 0
-    /// True while a visible strip follows outside changes.
+    /// True while a visible strip or active Extra follows outside changes.
     var isPolling: Bool { timer != nil }
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
@@ -134,7 +136,7 @@ final class ScreenBrightnessController: ObservableObject {
         let workspace = workspaceCenter
         observe(center, NSApplication.didChangeScreenParametersNotification) { $0.refresh() }
         observe(center, IslandScreenResolver.selectionDidChangeNotification) { $0.refresh() }
-        // Sleep and a session switch leave Extra on; its frames pause meanwhile.
+        // Wake reconciles the backlight too; a lower level ends Extra.
         observe(workspace, NSWorkspace.didWakeNotification) { $0.refresh() }
         observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.refresh() }
         observe(center, ProcessInfo.thermalStateDidChangeNotification) { $0.thermalStateDidChange() }
@@ -170,21 +172,22 @@ final class ScreenBrightnessController: ObservableObject {
             return
         }
         if !isAvailable { isAvailable = true }
+        let current = ScreenBrightnessScale.clampedLevel(hardware)
+        let settling = isSettling(target.id)
         if isExtraOn {
-            if target.supportsExtra {
-                // A lower backlight here is not a request to end Extra: automatic
-                // brightness and idle dimming change it without the user.
+            if !settling, current < level - Self.levelReadbackTolerance {
+                endExtra()
+            } else if target.supportsExtra {
                 boost?.refresh()
             } else {
                 endExtra()
             }
         }
-        let current = ScreenBrightnessScale.clampedLevel(hardware)
-        if !isSettling(target.id), level != current { level = current }
+        if !settling, level != current { level = current }
         updatePolling()
     }
 
-    /// The slider. Extra stays on at any level, as with the Mac's own brightness keys.
+    /// The slider and intercepted brightness keys. A successful decrease also ends Extra.
     func setLevel(_ requested: Double) {
         guard isAvailable, let display else { return }
         let next = ScreenBrightnessScale.clampedLevel(requested)
@@ -193,6 +196,7 @@ final class ScreenBrightnessController: ObservableObject {
             notice = Self.writeFailedNotice
             return
         }
+        if next < level - Self.levelReadbackTolerance { endExtra() }
         notice = nil
         level = next
     }
@@ -240,7 +244,11 @@ final class ScreenBrightnessController: ObservableObject {
     }
 
     private func startExtra() {
-        guard !isExtraOn, isAvailable, let display, display.supportsExtra else { return }
+        guard !isExtraOn else { return }
+        // A closed strip may have an old reading. Start from the actual backlight so the
+        // first poll does not mistake a decrease made before enabling Extra for a new one.
+        refresh()
+        guard isAvailable, let display, display.supportsExtra else { return }
         guard extraAllowed() else {
             notice = Self.coolingNotice
             return
@@ -279,9 +287,10 @@ final class ScreenBrightnessController: ObservableObject {
         lastWrite.map { $0.display == id && now().timeIntervalSince($0.date) < Self.writeSettleInterval } ?? false
     }
 
-    /// Only a visible strip polls. Extra alone follows display and power notifications.
+    /// Extra must detect native brightness keys, auto-brightness and idle dimming even
+    /// with the strip closed. Stop polling once neither Extra nor a strip needs it.
     private func updatePolling() {
-        guard viewers > 0 else {
+        guard viewers > 0 || isExtraOn else {
             timer?.invalidate()
             timer = nil
             return
