@@ -1187,6 +1187,7 @@ struct ArtifactRestoreTransaction {
         guard let vault, let key, key.count == 32 else { throw ArtifactBackupError.damaged }
         let sourcePayload: CaseVaultPayload
         do { sourcePayload = try CaseVaultStore.decode(envelope: vault, using: SymmetricKey(data: key)) }
+        catch CaseVaultStoreError.needsNewerApp { throw ArtifactBackupError.needsNewerApp }
         catch { throw ArtifactBackupError.damaged }
         guard sourcePayload.schemaVersion <= CaseVaultPayload.currentSchemaVersion else {
             throw ArtifactBackupError.needsNewerApp
@@ -1403,24 +1404,37 @@ enum ArtifactCaseMerge {
                 if let incomingValue { values[secret.id] = incomingValue }
             }
         }
-        var groups: [UUID: CaseGroup] = [:]
-        for group in target.groups { groups[group.id] = group }
-        for group in source.groups {
-            if let existing = groups[group.id], group.updatedAt <= existing.updatedAt { continue }
-            groups[group.id] = group
+        var projects: [UUID: CaseProject] = [:]
+        for project in target.projects { projects[project.id] = project }
+        for project in source.projects {
+            if let existing = projects[project.id], project.updatedAt <= existing.updatedAt { continue }
+            projects[project.id] = project
         }
+        if projects[CaseProject.generalID] == nil {
+            projects[CaseProject.generalID] = .general(now: secrets.values.map(\.createdAt).min() ?? Date())
+        }
+        // A secret must always point at an existing project.
+        for (id, secret) in secrets where projects[secret.projectID] == nil {
+            var moved = secret
+            moved.projectID = CaseProject.generalID
+            secrets[id] = moved
+        }
+        var apps: [UUID: CaseAppRegistration] = [:]
+        for app in source.apps { apps[app.id] = app }
+        for app in target.apps { apps[app.id] = app }
         let known = Set(secrets.keys)
-        let mergedGroups = groups.values.map { group -> CaseGroup in
-            var copy = group
-            copy.keyIDs = group.keyIDs.filter { known.contains($0) }
-            return copy
-        }
         return CaseVaultPayload(
             schemaVersion: CaseVaultPayload.currentSchemaVersion,
+            projects: projects.values.sorted { lhs, rhs in
+                if lhs.id == CaseProject.generalID { return true }
+                if rhs.id == CaseProject.generalID { return false }
+                return lhs.createdAt < rhs.createdAt
+            },
             secrets: secrets.values.sorted { $0.createdAt < $1.createdAt },
             values: known.compactMap { id in
                 values[id].map { CaseSecretValue(secretID: id, value: $0) }
             }.sorted { $0.secretID.uuidString < $1.secretID.uuidString },
-            groups: mergedGroups.sorted { $0.createdAt < $1.createdAt })
+            apps: apps.values.sorted { $0.createdAt < $1.createdAt },
+            timedApprovalMinutes: target.timedApprovalMinutes)
     }
 }

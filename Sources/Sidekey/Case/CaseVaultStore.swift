@@ -54,20 +54,12 @@ struct CaseVaultStore {
         }
 
         let envelopeData = try Data(contentsOf: fileURL)
-        let payload = try Self.decode(envelope: envelopeData, using: key)
-        if payload.schemaVersion > CaseVaultPayload.currentSchemaVersion {
-            // The vault was written by a newer build of the app. Decryption
-            // succeeded — the data is intact — but this version can't interpret
-            // the newer schema. Surface needsNewerApp so the UI directs the user
-            // to update; crucially, this must NOT be treated as undecryptable or
-            // offer a destructive Reset.
-            throw CaseVaultStoreError.needsNewerApp
-        }
-        guard payload.schemaVersion == CaseVaultPayload.currentSchemaVersion else {
-            // schemaVersion < current: an older format we no longer understand.
-            throw CaseVaultStoreError.unsupportedEnvelope
-        }
-        return payload
+        // decode migrates schema 1 to 2 in memory; the file is rewritten as
+        // schema 2 on the next save, which keeps the schema-1 bytes in `.bak`.
+        // A newer schema throws needsNewerApp (decryption succeeded, data is
+        // intact; must NOT be treated as undecryptable or offer Reset). An
+        // older, unknown schema throws unsupportedEnvelope.
+        return try Self.decode(envelope: envelopeData, using: key)
     }
 
     /// Decrypts a vault envelope that is already in memory.
@@ -105,7 +97,7 @@ struct CaseVaultStore {
             throw CaseVaultStoreError.invalidEnvelope
         }
         let data = try AES.GCM.open(sealedBox, using: key, authenticating: Self.staticAssociatedData())
-        return try JSONDecoder.caseVault.decode(CaseVaultPayload.self, from: data)
+        return try CaseVaultMigration.decodePayload(data)
     }
 
     func save(_ payload: CaseVaultPayload, using key: SymmetricKey) throws {
@@ -163,7 +155,7 @@ struct CaseVaultStore {
     }
 }
 
-private extension JSONEncoder {
+extension JSONEncoder {
     static var caseVault: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .custom { date, encoder in
@@ -175,7 +167,7 @@ private extension JSONEncoder {
     }
 }
 
-private extension JSONDecoder {
+extension JSONDecoder {
     static var caseVault: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in

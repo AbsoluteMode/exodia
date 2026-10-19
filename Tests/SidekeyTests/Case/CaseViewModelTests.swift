@@ -391,6 +391,7 @@ final class CaseViewModelTests: XCTestCase {
         let deletedID = UUID()
         let survivingID = UUID()
         let payload = CaseVaultPayload(
+            projects: [.general(now: Date()), group(id: groupID, name: "AWS")],
             secrets: [
                 secret(id: deletedID, name: "AWS_ACCESS_KEY", groupID: groupID),
                 secret(id: survivingID, name: "AWS_SECRET_KEY", groupID: groupID)
@@ -398,9 +399,6 @@ final class CaseViewModelTests: XCTestCase {
             values: [
                 CaseSecretValue(secretID: deletedID, value: "deleted-value"),
                 CaseSecretValue(secretID: survivingID, value: "surviving-value")
-            ],
-            groups: [
-                group(id: groupID, name: "AWS", keyIDs: [deletedID, survivingID])
             ]
         )
         let env = TestCaseEnvironment(payload: payload)
@@ -409,8 +407,8 @@ final class CaseViewModelTests: XCTestCase {
 
         try vm.deleteSecret(deletedID)
 
-        XCTAssertTrue(env.savedPayload?.groups.isEmpty ?? false)
-        XCTAssertEqual(env.savedPayload?.secrets.first(where: { $0.id == survivingID })?.groupID, nil)
+        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID])
+        XCTAssertEqual(env.savedPayload?.secrets.first(where: { $0.id == survivingID })?.projectID, CaseProject.generalID)
         XCTAssertEqual(vm.rows, [CaseDisplayRow(id: survivingID, kind: .secret, displayName: "AWS_SECRET_KEY")])
     }
 
@@ -426,11 +424,11 @@ final class CaseViewModelTests: XCTestCase {
 
         let createdGroupID = try vm.createGroup(sourceSecretID: firstID, targetSecretID: secondID, name: "AI keys")
 
-        XCTAssertEqual(createdGroupID, env.savedPayload?.groups.first?.id)
-        XCTAssertEqual(env.savedPayload?.groups.first?.name, "AI keys")
-        XCTAssertEqual(Set(env.savedPayload?.groups.first?.keyIDs ?? []), Set([firstID, secondID]))
-        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == firstID }?.groupID, env.savedPayload?.groups.first?.id)
-        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == secondID }?.groupID, env.savedPayload?.groups.first?.id)
+        let created = env.savedPayload?.projects.first { $0.id != CaseProject.generalID }
+        XCTAssertEqual(createdGroupID, created?.id)
+        XCTAssertEqual(created?.name, "AI keys")
+        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == firstID }?.projectID, createdGroupID)
+        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == secondID }?.projectID, createdGroupID)
     }
 
     func test_create_group_rejects_empty_and_too_long_names() async throws {
@@ -444,18 +442,18 @@ final class CaseViewModelTests: XCTestCase {
 
         XCTAssertThrowsError(try vm.createGroup(sourceSecretID: firstID, targetSecretID: secondID, name: "   "))
         XCTAssertThrowsError(try vm.createGroup(sourceSecretID: firstID, targetSecretID: secondID, name: String(repeating: "a", count: 49)))
-        XCTAssertTrue(env.store.payload.groups.isEmpty)
+        XCTAssertEqual(env.store.payload.projects.map(\.id), [CaseProject.generalID])
     }
 
     func test_create_key_directly_inside_opened_group() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+        let group = CaseProject(id: groupID, name: "AI keys", description: "", createdAt: Date(), updatedAt: Date())
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group],
             secrets: [secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID), secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)],
-            values: [],
-            groups: [group]
+            values: []
         ))
         let vm = env.makeViewModel()
         try await vm.unlock()
@@ -463,39 +461,39 @@ final class CaseViewModelTests: XCTestCase {
         try vm.submitName("github token", groupID: groupID)
         try vm.submitValue("ghp-secret")
 
-        XCTAssertEqual(env.savedPayload?.secrets.last?.groupID, groupID)
-        XCTAssertEqual(env.savedPayload?.groups.first?.keyIDs.count, 3)
+        XCTAssertEqual(env.savedPayload?.secrets.last?.projectID, groupID)
+        XCTAssertEqual(env.savedPayload?.secrets.filter { $0.projectID == groupID }.count, 3)
     }
 
     func test_drag_out_of_two_key_group_collapses_group() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+        let group = CaseProject(id: groupID, name: "AI keys", description: "", createdAt: Date(), updatedAt: Date())
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group],
             secrets: [secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID), secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)],
-            values: [],
-            groups: [group]
+            values: []
         ))
         let vm = env.makeViewModel()
         try await vm.unlock()
 
         try vm.removeSecretFromGroup(firstID)
 
-        XCTAssertTrue(env.savedPayload?.groups.isEmpty ?? false)
-        XCTAssertNil(env.savedPayload?.secrets.first { $0.id == firstID }?.groupID)
-        XCTAssertNil(env.savedPayload?.secrets.first { $0.id == secondID }?.groupID)
+        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID])
+        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == firstID }?.projectID, CaseProject.generalID)
+        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == secondID }?.projectID, CaseProject.generalID)
     }
 
     func test_copy_all_group_emits_env_payload_and_updates_usage() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+        let group = CaseProject(id: groupID, name: "AI keys", description: "", createdAt: Date(), updatedAt: Date())
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group],
             secrets: [secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID), secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)],
-            values: [CaseSecretValue(secretID: firstID, value: "sk-openai"), CaseSecretValue(secretID: secondID, value: "sk-anthropic")],
-            groups: [group]
+            values: [CaseSecretValue(secretID: firstID, value: "sk-openai"), CaseSecretValue(secretID: secondID, value: "sk-anthropic")]
         ))
         let vm = env.makeViewModel()
         try await vm.unlock()
@@ -503,7 +501,6 @@ final class CaseViewModelTests: XCTestCase {
         try vm.copyAll(groupID)
 
         XCTAssertEqual(env.pasteboard.lastString, "OPENAI_API_KEY=sk-openai\nANTHROPIC_API_KEY=sk-anthropic")
-        XCTAssertEqual(env.savedPayload?.groups.first?.copyCount, 1)
         XCTAssertEqual(env.savedPayload?.secrets.map(\.copyCount), [1, 1])
     }
 
@@ -511,8 +508,9 @@ final class CaseViewModelTests: XCTestCase {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+        let group = CaseProject(id: groupID, name: "AI keys", description: "", createdAt: Date(), updatedAt: Date())
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group],
             secrets: [
                 secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID),
                 secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)
@@ -520,8 +518,7 @@ final class CaseViewModelTests: XCTestCase {
             values: [
                 CaseSecretValue(secretID: firstID, value: "sk-openai"),
                 CaseSecretValue(secretID: secondID, value: "sk-anthropic")
-            ],
-            groups: [group]
+            ]
         ))
         let vm = env.makeViewModel()
         try await vm.unlock()
@@ -547,11 +544,11 @@ final class CaseViewModelTests: XCTestCase {
     }
 
     private func secret(id: UUID = UUID(), name: String, groupID: UUID? = nil) -> CaseSecret {
-        CaseSecret(id: id, name: name, groupID: groupID, copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+        CaseSecret(id: id, name: name, projectID: groupID ?? CaseProject.generalID, description: "", copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
     }
 
-    private func group(id: UUID = UUID(), name: String, keyIDs: [UUID]) -> CaseGroup {
-        CaseGroup(id: id, name: name, keyIDs: keyIDs, copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+    private func group(id: UUID = UUID(), name: String) -> CaseProject {
+        CaseProject(id: id, name: name, description: "", createdAt: Date(), updatedAt: Date())
     }
 }
 

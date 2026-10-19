@@ -1,13 +1,50 @@
 import Foundation
 
+/// A named bucket of keys. Every secret belongs to exactly one project;
+/// keys that had no group in schema 1 live in the fixed built-in General.
+struct CaseProject: Identifiable, Codable, Equatable {
+    static let generalID = UUID(uuidString: "00000000-0000-0000-0000-00000000CA5E")!
+    static let generalName = "General"
+    static let maxNameCharacters = 48
+
+    var id: UUID
+    var name: String
+    var description: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    static func general(now: Date) -> CaseProject {
+        CaseProject(id: generalID, name: generalName, description: "", createdAt: now, updatedAt: now)
+    }
+}
+
 struct CaseSecret: Identifiable, Codable, Equatable {
     var id: UUID
     var name: String
-    var groupID: UUID?
+    var projectID: UUID
+    var description: String
     var copyCount: Int
     var lastCopiedAt: Date?
     var createdAt: Date
     var updatedAt: Date
+}
+
+extension CaseSecret {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, projectID, description, copyCount, lastCopiedAt, createdAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        projectID = try c.decode(UUID.self, forKey: .projectID)
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        copyCount = try c.decode(Int.self, forKey: .copyCount)
+        lastCopiedAt = try c.decodeIfPresent(Date.self, forKey: .lastCopiedAt)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+    }
 }
 
 struct CaseSecretValue: Identifiable, Codable, Equatable {
@@ -16,37 +53,73 @@ struct CaseSecretValue: Identifiable, Codable, Equatable {
     var value: String
 }
 
-struct CaseGroup: Identifiable, Codable, Equatable {
+enum CaseAccessMode: String, Codable, Equatable {
+    case approve
+    case bypass
+}
+
+enum CaseAppIdentity: Codable, Equatable, Hashable {
+    case developerID(teamID: String, signingIdentifier: String)
+    case executablePath(String)
+    case builtInOpenCode
+}
+
+struct CaseAppRegistration: Identifiable, Codable, Equatable {
     var id: UUID
-    var name: String
-    var keyIDs: [UUID]
-    var copyCount: Int
-    var lastCopiedAt: Date?
+    var displayName: String
+    var identity: CaseAppIdentity
+    var defaultMode: CaseAccessMode
+    var projectModes: [UUID: CaseAccessMode]
     var createdAt: Date
-    var updatedAt: Date
 }
 
 struct CaseVaultPayload: Codable, Equatable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
+    static let defaultTimedApprovalMinutes = 15
 
     var schemaVersion: Int
+    var projects: [CaseProject]
     var secrets: [CaseSecret]
     var values: [CaseSecretValue]
-    var groups: [CaseGroup]
+    var apps: [CaseAppRegistration]
+    var timedApprovalMinutes: Int
 
     init(
         schemaVersion: Int = Self.currentSchemaVersion,
+        projects: [CaseProject] = [CaseProject.general(now: Date(timeIntervalSinceReferenceDate: 0))],
         secrets: [CaseSecret] = [],
         values: [CaseSecretValue] = [],
-        groups: [CaseGroup] = []
+        apps: [CaseAppRegistration] = [],
+        timedApprovalMinutes: Int = Self.defaultTimedApprovalMinutes
     ) {
         self.schemaVersion = schemaVersion
+        self.projects = projects
         self.secrets = secrets
         self.values = values
-        self.groups = groups
+        self.apps = apps
+        self.timedApprovalMinutes = timedApprovalMinutes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, projects, secrets, values, apps, timedApprovalMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        projects = try c.decode([CaseProject].self, forKey: .projects)
+        secrets = try c.decode([CaseSecret].self, forKey: .secrets)
+        values = try c.decode([CaseSecretValue].self, forKey: .values)
+        apps = try c.decodeIfPresent([CaseAppRegistration].self, forKey: .apps) ?? []
+        timedApprovalMinutes = try c.decodeIfPresent(Int.self, forKey: .timedApprovalMinutes)
+            ?? Self.defaultTimedApprovalMinutes
     }
 
     func value(for secretID: UUID) -> String? {
         values.first { $0.secretID == secretID }?.value
+    }
+
+    func project(_ id: UUID) -> CaseProject? {
+        projects.first { $0.id == id }
     }
 }

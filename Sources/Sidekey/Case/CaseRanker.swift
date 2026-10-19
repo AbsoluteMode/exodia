@@ -19,7 +19,7 @@ enum CaseRanker {
 
     static func sortedEntries(
         secrets: [CaseSecret],
-        groups: [CaseGroup],
+        projects: [CaseProject],
         query: String,
         now: Date = Date()
     ) -> [CaseListEntry] {
@@ -27,12 +27,13 @@ enum CaseRanker {
         let normalizedQuery = try? CaseNameNormalizer.normalizedName(trimmedQuery)
         let searchText = normalizedQuery ?? trimmedQuery.uppercased()
 
-        let groupIDs = Set(groups.map(\.id))
-        let groupedSecretIDs = Set(groups.flatMap(\.keyIDs))
+        // Interim list model until the project UI lands: General's keys are
+        // listed individually, every other project is a collapsible row.
+        let groupProjects = projects.filter { $0.id != CaseProject.generalID }
         let individualEntries = secrets
             .filter { secret in
-                let belongsToExistingGroup = secret.groupID.map { groupIDs.contains($0) } ?? false
-                return !belongsToExistingGroup && !groupedSecretIDs.contains(secret.id)
+                secret.projectID == CaseProject.generalID
+                    || !groupProjects.contains { $0.id == secret.projectID }
             }
             .map { secret in
                 CaseListEntry(
@@ -43,19 +44,16 @@ enum CaseRanker {
                 )
             }
 
-        let groupEntries = groups.map { group in
-            let groupKeyIDs = Set(group.keyIDs)
-            let children = secrets.filter { secret in
-                secret.groupID == group.id || groupKeyIDs.contains(secret.id)
-            }
-            let childScore = children
+        let groupEntries = groupProjects.map { project in
+            let childScore = secrets
+                .filter { $0.projectID == project.id }
                 .map { score(copyCount: $0.copyCount, lastCopiedAt: $0.lastCopiedAt, createdAt: $0.createdAt, now: now) }
                 .max() ?? 0
-            let ownScore = score(copyCount: group.copyCount, lastCopiedAt: group.lastCopiedAt, createdAt: group.createdAt, now: now)
+            let ownScore = score(copyCount: 0, lastCopiedAt: nil, createdAt: project.createdAt, now: now)
             return CaseListEntry(
-                id: group.id,
+                id: project.id,
                 kind: .group,
-                displayName: group.name,
+                displayName: project.name,
                 score: max(ownScore, childScore)
             )
         }

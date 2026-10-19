@@ -8,7 +8,7 @@ final class CaseRankerTests: XCTestCase {
         let old = secret(name: "OLD_PROJECT_KEY", copyCount: 200, lastCopiedDaysAgo: 120, createdDaysAgo: 200)
         let recent = secret(name: "CURRENT_PROJECT_KEY", copyCount: 3, lastCopiedDaysAgo: 1, createdDaysAgo: 2)
 
-        let sorted = CaseRanker.sortedEntries(secrets: [old, recent], groups: [], query: "", now: now)
+        let sorted = CaseRanker.sortedEntries(secrets: [old, recent], projects: [], query: "", now: now)
 
         XCTAssertEqual(sorted.map(\.displayName), ["CURRENT_PROJECT_KEY", "OLD_PROJECT_KEY"])
     }
@@ -17,7 +17,7 @@ final class CaseRankerTests: XCTestCase {
         let new = secret(name: "NEW_TOKEN", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 0.5)
         let unusedOld = secret(name: "OLD_UNUSED", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 90)
 
-        let sorted = CaseRanker.sortedEntries(secrets: [unusedOld, new], groups: [], query: "", now: now)
+        let sorted = CaseRanker.sortedEntries(secrets: [unusedOld, new], projects: [], query: "", now: now)
 
         XCTAssertEqual(sorted.first?.displayName, "NEW_TOKEN")
     }
@@ -27,7 +27,7 @@ final class CaseRankerTests: XCTestCase {
         let exact = secret(name: "GITHUB_TOKEN", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
         let prefix = secret(name: "GITHUB_BACKUP", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
 
-        let sorted = CaseRanker.sortedEntries(secrets: [veryPopular, prefix, exact], groups: [], query: "github token", now: now)
+        let sorted = CaseRanker.sortedEntries(secrets: [veryPopular, prefix, exact], projects: [], query: "github token", now: now)
 
         XCTAssertEqual(sorted.map(\.displayName), ["GITHUB_TOKEN", "GITHUB_BACKUP"])
     }
@@ -36,7 +36,7 @@ final class CaseRankerTests: XCTestCase {
         let firstTokenOnly = secret(name: "AWS_STAGING", copyCount: 10, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
         let completeTokenMatch = secret(name: "MY_AWS_PROD_KEY", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
 
-        let sorted = CaseRanker.sortedEntries(secrets: [firstTokenOnly, completeTokenMatch], groups: [], query: "aws prod", now: now)
+        let sorted = CaseRanker.sortedEntries(secrets: [firstTokenOnly, completeTokenMatch], projects: [], query: "aws prod", now: now)
 
         XCTAssertEqual(sorted.map(\.displayName), ["MY_AWS_PROD_KEY", "AWS_STAGING"])
     }
@@ -44,17 +44,15 @@ final class CaseRankerTests: XCTestCase {
     func test_group_uses_group_name_and_child_usage_for_ranking() {
         let groupID = UUID()
         let child = secret(name: "AWS_PROD_KEY", groupID: groupID, copyCount: 8, lastCopiedDaysAgo: 1, createdDaysAgo: 20)
-        let group = CaseGroup(
+        let group = CaseProject(
             id: groupID,
             name: "AWS prod",
-            keyIDs: [child.id],
-            copyCount: 0,
-            lastCopiedAt: nil,
+            description: "",
             createdAt: now.addingTimeInterval(-20 * 86_400),
             updatedAt: now
         )
 
-        let sorted = CaseRanker.sortedEntries(secrets: [child], groups: [group], query: "aws", now: now)
+        let sorted = CaseRanker.sortedEntries(secrets: [child], projects: [group], query: "aws", now: now)
 
         XCTAssertEqual(sorted.first?.displayName, "AWS prod")
     }
@@ -62,17 +60,15 @@ final class CaseRankerTests: XCTestCase {
     func test_secret_with_group_id_is_not_emitted_individually_when_group_key_ids_are_stale() {
         let groupID = UUID()
         let child = secret(name: "STALE_CHILD", groupID: groupID, copyCount: 3, lastCopiedDaysAgo: 1, createdDaysAgo: 20)
-        let group = CaseGroup(
+        let group = CaseProject(
             id: groupID,
             name: "Stale group",
-            keyIDs: [],
-            copyCount: 0,
-            lastCopiedAt: nil,
+            description: "",
             createdAt: now.addingTimeInterval(-20 * 86_400),
             updatedAt: now
         )
 
-        let sorted = CaseRanker.sortedEntries(secrets: [child], groups: [group], query: "", now: now)
+        let sorted = CaseRanker.sortedEntries(secrets: [child], projects: [group], query: "", now: now)
 
         XCTAssertEqual(sorted.map(\.displayName), ["Stale group"])
     }
@@ -81,26 +77,22 @@ final class CaseRankerTests: XCTestCase {
         let staleGroupID = UUID()
         let oldGroupID = UUID()
         let child = secret(name: "STALE_CHILD", groupID: staleGroupID, copyCount: 8, lastCopiedDaysAgo: 1, createdDaysAgo: 20)
-        let staleGroup = CaseGroup(
+        let staleGroup = CaseProject(
             id: staleGroupID,
             name: "Stale group",
-            keyIDs: [],
-            copyCount: 0,
-            lastCopiedAt: nil,
+            description: "",
             createdAt: now.addingTimeInterval(-20 * 86_400),
             updatedAt: now
         )
-        let oldGroup = CaseGroup(
+        let oldGroup = CaseProject(
             id: oldGroupID,
             name: "Old group",
-            keyIDs: [],
-            copyCount: 40,
-            lastCopiedAt: now.addingTimeInterval(-120 * 86_400),
+            description: "",
             createdAt: now.addingTimeInterval(-200 * 86_400),
             updatedAt: now
         )
 
-        let sorted = CaseRanker.sortedEntries(secrets: [child], groups: [oldGroup, staleGroup], query: "", now: now)
+        let sorted = CaseRanker.sortedEntries(secrets: [child], projects: [oldGroup, staleGroup], query: "", now: now)
 
         XCTAssertEqual(sorted.first?.displayName, "Stale group")
     }
@@ -115,7 +107,8 @@ final class CaseRankerTests: XCTestCase {
         CaseSecret(
             id: UUID(),
             name: name,
-            groupID: groupID,
+            projectID: groupID ?? CaseProject.generalID,
+            description: "",
             copyCount: copyCount,
             lastCopiedAt: lastCopiedDaysAgo.map { now.addingTimeInterval(-$0 * 86_400) },
             createdAt: now.addingTimeInterval(-createdDaysAgo * 86_400),

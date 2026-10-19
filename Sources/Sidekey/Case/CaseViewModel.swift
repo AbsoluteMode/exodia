@@ -116,7 +116,7 @@ final class CaseViewModel: ObservableObject {
 
     nonisolated private static let defaultUnlockedSessionSeconds = 15 * 60
     private static let maxValueBytes = 16 * 1024
-    private static let maxGroupNameCharacters = 48
+    private static let maxGroupNameCharacters = CaseProject.maxNameCharacters
     private static let sanitizedUnlockFailureMessage = "Unable to unlock Case"
     private static let needsResetMessage = "Couldn't unlock this Case. Reset starts a new one and keeps the old file."
     private static let needsNewerAppMessage = "Update the app to open this Case."
@@ -275,7 +275,7 @@ final class CaseViewModel: ObservableObject {
             throw CaseViewModelError.duplicateName
         }
         if let groupID {
-            guard payload.groups.contains(where: { $0.id == groupID }) else {
+            guard Self.isGroupProject(groupID, in: payload) else {
                 throw CaseViewModelError.missingGroup
             }
         }
@@ -295,7 +295,8 @@ final class CaseViewModel: ObservableObject {
         let secret = CaseSecret(
             id: secretID,
             name: name,
-            groupID: groupID,
+            projectID: groupID ?? CaseProject.generalID,
+            description: "",
             copyCount: 0,
             lastCopiedAt: nil,
             createdAt: timestamp,
@@ -303,9 +304,8 @@ final class CaseViewModel: ObservableObject {
         )
         payload.secrets.append(secret)
         payload.values.append(CaseSecretValue(secretID: secretID, value: value))
-        if let groupID, let groupIndex = payload.groups.firstIndex(where: { $0.id == groupID }) {
-            payload.groups[groupIndex].keyIDs.append(secretID)
-            payload.groups[groupIndex].updatedAt = timestamp
+        if let groupID, let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID }) {
+            payload.projects[projectIndex].updatedAt = timestamp
         }
 
         try save(payload)
@@ -325,27 +325,12 @@ final class CaseViewModel: ObservableObject {
     }
 
     func childRows(forGroupID groupID: UUID) -> [CaseDisplayRow] {
-        guard let payload, unlockState == .unlocked,
-              let group = payload.groups.first(where: { $0.id == groupID })
-        else {
+        guard let payload, unlockState == .unlocked, Self.isGroupProject(groupID, in: payload) else {
             return []
         }
-
-        let orderedIDs = group.keyIDs
-        let orderedRows = orderedIDs.compactMap { secretID -> CaseDisplayRow? in
-            guard let secret = payload.secrets.first(where: { $0.id == secretID }) else {
-                return nil
-            }
-            return CaseDisplayRow(id: secret.id, kind: .secret, displayName: secret.name)
-        }
-
-        let orderedIDSet = Set(orderedIDs)
-        let linkedRows = payload.secrets
-            .filter { $0.groupID == groupID && !orderedIDSet.contains($0.id) }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return payload.secrets
+            .filter { $0.projectID == groupID }
             .map { CaseDisplayRow(id: $0.id, kind: .secret, displayName: $0.name) }
-
-        return orderedRows + linkedRows
     }
 
     func copySecret(_ secretID: UUID) throws {
@@ -379,33 +364,30 @@ final class CaseViewModel: ObservableObject {
         else {
             throw CaseViewModelError.missingSecret
         }
-        guard payload.secrets[sourceIndex].groupID == nil,
-              payload.secrets[targetIndex].groupID == nil,
-              !payload.groups.contains(where: { $0.keyIDs.contains(sourceSecretID) || $0.keyIDs.contains(targetSecretID) })
+        guard payload.secrets[sourceIndex].projectID == CaseProject.generalID,
+              payload.secrets[targetIndex].projectID == CaseProject.generalID
         else {
             throw CaseViewModelError.invalidGroupOperation
         }
 
         let timestamp = now()
-        let groupID = UUID()
-        payload.groups.append(CaseGroup(
-            id: groupID,
+        let projectID = UUID()
+        payload.projects.append(CaseProject(
+            id: projectID,
             name: trimmedName,
-            keyIDs: [sourceSecretID, targetSecretID],
-            copyCount: 0,
-            lastCopiedAt: nil,
+            description: "",
             createdAt: timestamp,
             updatedAt: timestamp
         ))
-        payload.secrets[sourceIndex].groupID = groupID
+        payload.secrets[sourceIndex].projectID = projectID
         payload.secrets[sourceIndex].updatedAt = timestamp
-        payload.secrets[targetIndex].groupID = groupID
+        payload.secrets[targetIndex].projectID = projectID
         payload.secrets[targetIndex].updatedAt = timestamp
 
         try save(payload)
         refreshRows()
         scheduleIdleLock()
-        return groupID
+        return projectID
     }
 
     func addSecretToGroup(secretID: UUID, groupID: UUID) throws {
@@ -413,22 +395,19 @@ final class CaseViewModel: ObservableObject {
         guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
             throw CaseViewModelError.missingSecret
         }
-        guard payload.secrets[secretIndex].groupID == nil,
-              !payload.groups.contains(where: { $0.id != groupID && $0.keyIDs.contains(secretID) })
-        else {
+        guard payload.secrets[secretIndex].projectID == CaseProject.generalID else {
             throw CaseViewModelError.invalidGroupOperation
         }
-        guard let groupIndex = payload.groups.firstIndex(where: { $0.id == groupID }) else {
+        guard Self.isGroupProject(groupID, in: payload),
+              let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID })
+        else {
             throw CaseViewModelError.missingGroup
         }
 
         let timestamp = now()
-        payload.secrets[secretIndex].groupID = groupID
+        payload.secrets[secretIndex].projectID = groupID
         payload.secrets[secretIndex].updatedAt = timestamp
-        if !payload.groups[groupIndex].keyIDs.contains(secretID) {
-            payload.groups[groupIndex].keyIDs.append(secretID)
-        }
-        payload.groups[groupIndex].updatedAt = timestamp
+        payload.projects[projectIndex].updatedAt = timestamp
 
         try save(payload)
         refreshRows()
@@ -440,26 +419,18 @@ final class CaseViewModel: ObservableObject {
         guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
             throw CaseViewModelError.missingSecret
         }
-        guard let groupID = payload.secrets[secretIndex].groupID,
-              let groupIndex = payload.groups.firstIndex(where: { $0.id == groupID })
+        let groupID = payload.secrets[secretIndex].projectID
+        guard Self.isGroupProject(groupID, in: payload),
+              let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID })
         else {
             throw CaseViewModelError.missingGroup
         }
 
         let timestamp = now()
-        payload.secrets[secretIndex].groupID = nil
+        payload.secrets[secretIndex].projectID = CaseProject.generalID
         payload.secrets[secretIndex].updatedAt = timestamp
-        payload.groups[groupIndex].keyIDs.removeAll { $0 == secretID }
-        payload.groups[groupIndex].updatedAt = timestamp
-
-        if payload.groups[groupIndex].keyIDs.count < 2 {
-            let remainingKeyIDs = Set(payload.groups[groupIndex].keyIDs)
-            for index in payload.secrets.indices where remainingKeyIDs.contains(payload.secrets[index].id) {
-                payload.secrets[index].groupID = nil
-                payload.secrets[index].updatedAt = timestamp
-            }
-            payload.groups.remove(at: groupIndex)
-        }
+        payload.projects[projectIndex].updatedAt = timestamp
+        Self.dissolveSmallGroups(in: &payload, at: timestamp)
 
         try save(payload)
         refreshRows()
@@ -468,16 +439,16 @@ final class CaseViewModel: ObservableObject {
 
     func copyAll(_ groupID: UUID) throws {
         var payload = try unlockedPayload()
-        guard let groupIndex = payload.groups.firstIndex(where: { $0.id == groupID }) else {
+        guard Self.isGroupProject(groupID, in: payload),
+              let projectIndex = payload.projects.firstIndex(where: { $0.id == groupID })
+        else {
             throw CaseViewModelError.missingGroup
         }
 
         var lines: [String] = []
         var secretIndices: [Int] = []
-        for secretID in payload.groups[groupIndex].keyIDs {
-            guard let secretIndex = payload.secrets.firstIndex(where: { $0.id == secretID }) else {
-                throw CaseViewModelError.missingSecret
-            }
+        for secretIndex in payload.secrets.indices where payload.secrets[secretIndex].projectID == groupID {
+            let secretID = payload.secrets[secretIndex].id
             guard let value = payload.value(for: secretID) else {
                 throw CaseViewModelError.missingValue
             }
@@ -487,9 +458,7 @@ final class CaseViewModel: ObservableObject {
 
         pasteboard.writeString(lines.joined(separator: "\n"))
         let timestamp = now()
-        payload.groups[groupIndex].copyCount += 1
-        payload.groups[groupIndex].lastCopiedAt = timestamp
-        payload.groups[groupIndex].updatedAt = timestamp
+        payload.projects[projectIndex].updatedAt = timestamp
         for secretIndex in secretIndices {
             payload.secrets[secretIndex].copyCount += 1
             payload.secrets[secretIndex].lastCopiedAt = timestamp
@@ -549,18 +518,7 @@ final class CaseViewModel: ObservableObject {
         var payload = try unlockedPayload()
         payload.secrets.removeAll { $0.id == secretID }
         payload.values.removeAll { $0.secretID == secretID }
-        for index in payload.groups.indices {
-            payload.groups[index].keyIDs.removeAll { $0 == secretID }
-            payload.groups[index].updatedAt = now()
-        }
-        let dissolvedGroupIDs = Set(payload.groups.filter { $0.keyIDs.count < 2 }.map(\.id))
-        if !dissolvedGroupIDs.isEmpty {
-            for index in payload.secrets.indices where payload.secrets[index].groupID.map(dissolvedGroupIDs.contains) == true {
-                payload.secrets[index].groupID = nil
-                payload.secrets[index].updatedAt = now()
-            }
-        }
-        payload.groups.removeAll { $0.keyIDs.count < 2 }
+        Self.dissolveSmallGroups(in: &payload, at: now())
         try save(payload)
         refreshRows()
         scheduleIdleLock()
@@ -594,6 +552,24 @@ final class CaseViewModel: ObservableObject {
         }
     }
 
+    /// Interim group model: a non-General project is shown as a group, and a
+    /// group with fewer than two keys falls back into General.
+    private static func isGroupProject(_ id: UUID, in payload: CaseVaultPayload) -> Bool {
+        id != CaseProject.generalID && payload.projects.contains { $0.id == id }
+    }
+
+    private static func dissolveSmallGroups(in payload: inout CaseVaultPayload, at timestamp: Date) {
+        let small = Set(payload.projects.map(\.id).filter { id in
+            id != CaseProject.generalID && payload.secrets.filter { $0.projectID == id }.count < 2
+        })
+        guard !small.isEmpty else { return }
+        for index in payload.secrets.indices where small.contains(payload.secrets[index].projectID) {
+            payload.secrets[index].projectID = CaseProject.generalID
+            payload.secrets[index].updatedAt = timestamp
+        }
+        payload.projects.removeAll { small.contains($0.id) }
+    }
+
     private func validatedGroupName(_ name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= Self.maxGroupNameCharacters else {
@@ -610,7 +586,7 @@ final class CaseViewModel: ObservableObject {
 
         rows = CaseRanker.sortedEntries(
             secrets: payload.secrets,
-            groups: payload.groups,
+            projects: payload.projects,
             query: query,
             now: now()
         )
