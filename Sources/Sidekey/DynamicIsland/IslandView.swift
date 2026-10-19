@@ -270,8 +270,13 @@ struct IslandView: View {
     @State private var dropModeStatus: TranscriptionMode?
     @State private var dropModeStatusGeneration = 0
     @State private var hoverPanelMode: IslandHoverPanelMode = .controls
+    /// While the pointer is still where the taller panel was, the hover zone keeps
+    /// that height so the short Brightness strip does not close the drawer under it.
+    @State private var hoverPanelHeightHold: CGFloat?
     /// Text entry holds the drawer open without taking focus on ordinary hover.
     @State private var hoverSearchFocused = false
+    /// A brightness-key glance: the strip shows without keyboard focus and closes sooner.
+    @State private var hoverPanelGlance = false
     /// Invalidation token for the programmatic-expansion auto-collapse timer:
     /// each change to `programmaticHoverExpansion` AND each ⌥N panel request
     /// bumps it (`armProgrammaticExpansionCollapse`), so a stale deferred
@@ -298,6 +303,8 @@ struct IslandView: View {
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .history:
             base = IslandDropModeControl.historyHoverPanelHeight
+        case .brightness:
+            base = IslandDropModeControl.detachedPanelGap + IslandBrightnessStrip.contentHeight
         default:
             base = IslandDropModeControl.hoverPanelHeight
         }
@@ -313,12 +320,22 @@ struct IslandView: View {
         isHoverExpanded && hoverNowPlaying != nil
     }
 
-    private var activeHoverPanelHeight: CGFloat {
+    /// Height of the rendered drawer for the current mode.
+    private var visibleHoverPanelHeight: CGFloat {
         Self.hoverPanelHeight(
             for: hoverPanelMode,
             musicActive: hoverNowPlaying != nil,
             toolCount: hoverStore.slots.count
         )
+    }
+
+    /// Hover zone and host band: the drawer, or a still-held taller height.
+    private var activeHoverPanelHeight: CGFloat {
+        Self.heldHoverPanelHeight(visibleHoverPanelHeight, hold: hoverPanelHeightHold)
+    }
+
+    static func heldHoverPanelHeight(_ height: CGFloat, hold: CGFloat?) -> CGFloat {
+        max(height, hold ?? 0)
     }
 
     /// Playback for the COMPACT right-band wing — eye-INDEPENDENT. The wing is
@@ -369,10 +386,11 @@ struct IslandView: View {
     /// change. The gate consults the latch's PRIOR value, so the open vs
     /// stay-open distinction is preserved.
     private func recomputeMouseExpanded() {
-        let next = IslandHoverGate.mouseExpanded(
+        let next = Self.mouseHoldsDrawer(
             pillHovering: pillHovering,
             panelHovering: panelHovering,
-            wasExpanded: mouseExpanded
+            wasExpanded: mouseExpanded,
+            glance: hoverPanelGlance
         )
         if mouseExpanded != next {
             mouseExpanded = next
@@ -388,6 +406,31 @@ struct IslandView: View {
     /// hover before auto-collapsing. Long enough to read the surfaced panel,
     /// short enough that a keyboard-opened drawer never feels stuck.
     private static let programmaticExpansionTimeout: TimeInterval = 4
+    /// A brightness key shows the strip for a glance only.
+    private static let brightnessGlanceTimeout: TimeInterval = 2
+
+    static func programmaticCollapseDelay(glance: Bool) -> TimeInterval {
+        glance ? brightnessGlanceTimeout : programmaticExpansionTimeout
+    }
+
+    /// A glance leaves the keyboard with the user's app.
+    static func panelWantsKeyboardFocus(_ mode: IslandHoverPanelMode, searchFocused: Bool, glance: Bool) -> Bool {
+        searchFocused || (mode.needsKeyboardFocus && !glance)
+    }
+
+    /// A brightness key replaces the tools or the strip itself, never another panel under the
+    /// pointer or a search being typed.
+    static func brightnessGlanceMayOpen(over mode: IslandHoverPanelMode, hovering: Bool, searchFocused: Bool) -> Bool {
+        !searchFocused && (!hovering || mode == .controls || mode == .brightness)
+    }
+
+    /// A glance opened without the pointer crossing the pill, so reaching its strip from below
+    /// counts as entering the drawer rather than as the drawer's fading band.
+    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool, glance: Bool) -> Bool {
+        IslandHoverGate.mouseExpanded(
+            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance
+        )
+    }
 
     /// Maps a Hover-slot inline-panel request (from a ⌥N hotkey) onto the
     /// private panel-mode state. `outputLanguagePicker` only opens in Smart mode
@@ -405,6 +448,8 @@ struct IslandView: View {
             return .notifications
         case .monitor:
             return .monitor
+        case .brightness:
+            return .brightness
         case .vocabularyEditor:
             return .vocabularyEditor
         case .caseVault:
@@ -1083,7 +1128,9 @@ struct IslandView: View {
                             onSearchFocusChange: { focused in
                                 hoverSearchFocused = focused
                                 onKeyboardFocusRequest(
-                                    isHoverExpanded && (focused || hoverPanelMode.needsKeyboardFocus)
+                                    isHoverExpanded && Self.panelWantsKeyboardFocus(
+                                        hoverPanelMode, searchFocused: focused, glance: hoverPanelGlance
+                                    )
                                 )
                                 onHoverChange(isHoverExpanded)
                             },
@@ -1137,12 +1184,12 @@ struct IslandView: View {
                         )
                         .frame(
                             width: compactWidth,
-                            height: activeHoverPanelHeight
+                            height: visibleHoverPanelHeight
                                 // Subtract the ACTUAL top gap used above (the
                                 // music-strip case uses the smaller
                                 // `musicStripTopGap`), so the panel reclaims
                                 // those pixels and the VStack still sums to
-                                // `activeHoverPanelHeight`.
+                                // `visibleHoverPanelHeight`.
                                 - (showsHoverMusicStrip
                                     ? IslandDropModeControl.musicStripTopGap
                                     : IslandDropModeControl.detachedPanelGap)
@@ -1157,8 +1204,15 @@ struct IslandView: View {
                         .islandHoverGlassSurface(
                             showGlass: hoverPanelMode != .history || IslandHoverGlass.usesNativeLiquidGlass
                         )
+                        // The pointer reached the shorter strip: the held zone below it can go.
+                        .onContinuousHover { phase in
+                            guard case .active = phase, hoverPanelHeightHold != nil else { return }
+                            hoverPanelHeightHold = nil
+                            onHoverPanelBandHeightChange(visibleHoverPanelHeight)
+                        }
                     }
-                    .frame(width: compactWidth, height: activeHoverPanelHeight)
+                    // A held zone extends below the drawer as transparent hover space.
+                    .frame(width: compactWidth, height: activeHoverPanelHeight, alignment: .top)
                     // Hover trigger zone for the lower panel (gap + drawer as
                     // one hit zone) — only present once expansion has already
                     // happened. Keeps the expanded state alive while the cursor
@@ -1238,6 +1292,11 @@ struct IslandView: View {
                 // directions. On exit it collapses the keyboard-opened drawer (D4);
                 // on enter it hands animation control back to the hover path.
                 appState.programmaticHoverExpansion = false
+                // The pointer reached a glance: the strip is the user's now.
+                if hoverPanelGlance {
+                    hoverPanelGlance = false
+                    requestPanelKeyboardFocus(hoverPanelMode, glance: false)
+                }
             } else if !hoverSearchFocused {
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
@@ -1250,16 +1309,28 @@ struct IslandView: View {
         .onChange(of: hoverStore.slots.count) { _, _ in
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
-        .onChange(of: hoverPanelMode) { _, newValue in
+        .onChange(of: hoverPanelMode) { oldValue, newValue in
             hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
-            onHoverPanelBandHeightChange(
+            let height = { (mode: IslandHoverPanelMode) in
                 Self.hoverPanelHeight(
-                    for: newValue,
+                    for: mode,
                     musicActive: hoverNowPlaying != nil,
                     toolCount: hoverStore.slots.count
                 )
+            }
+            // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
+            // The strip is far shorter than the tools; a pointer left on a lower
+            // tile would otherwise fall outside the drawer and close it.
+            let hold = newValue == .brightness && panelHovering
+                ? max(height(oldValue), hoverPanelHeightHold ?? 0)
+                : nil
+            hoverPanelHeightHold = hold
+            onHoverPanelBandHeightChange(Self.heldHoverPanelHeight(height(newValue), hold: hold))
+            onKeyboardFocusRequest(
+                isHoverExpanded && Self.panelWantsKeyboardFocus(
+                    newValue, searchFocused: hoverSearchFocused, glance: hoverPanelGlance
+                )
             )
-            onKeyboardFocusRequest(isHoverExpanded && (hoverSearchFocused || newValue.needsKeyboardFocus))
             if newValue != .history {
                 historyPreviewAnchor = nil
             }
@@ -1271,13 +1342,7 @@ struct IslandView: View {
         // so the AppKit panel's hit-test band covers the strip's transport
         // buttons.
         .onChange(of: appState.nowPlaying != nil) { _, _ in
-            onHoverPanelBandHeightChange(
-                Self.hoverPanelHeight(
-                    for: hoverPanelMode,
-                    musicActive: hoverNowPlaying != nil,
-                    toolCount: hoverStore.slots.count
-                )
-            )
+            onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: displayPreferences.hideIslandHoverWidgets) { _, hidden in
             if hidden {
@@ -1288,13 +1353,7 @@ struct IslandView: View {
                 appState.hoveredMusicTransport = nil
             }
             onHoverChange(isHoverExpanded)
-            onHoverPanelBandHeightChange(
-                Self.hoverPanelHeight(
-                    for: hoverPanelMode,
-                    musicActive: hoverNowPlaying != nil,
-                    toolCount: hoverStore.slots.count
-                )
-            )
+            onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: isHoverExpanded) { _, expanded in
             hoverHitBridge.setEnabled(expanded && hoverPanelMode == .controls)
@@ -1302,6 +1361,7 @@ struct IslandView: View {
             onHoverChange(expanded)
             if !expanded {
                 hoverSearchFocused = false
+                hoverPanelGlance = false
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
             }
@@ -1311,13 +1371,7 @@ struct IslandView: View {
             // band growth would otherwise never be reported and the panel's
             // hit band would be too short to cover the strip + the panel below
             // it.
-            onHoverPanelBandHeightChange(
-                Self.hoverPanelHeight(
-                    for: hoverPanelMode,
-                    musicActive: hoverNowPlaying != nil,
-                    toolCount: hoverStore.slots.count
-                )
-            )
+            onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         // A Hover-slot ⌥N for an inline-panel tool lands here (D1). Honour it
         // only while expansion is allowed (D4) and the drawer is open; otherwise
@@ -1326,7 +1380,20 @@ struct IslandView: View {
         // IslandActions closure directly in `AppDelegate`.
         .onChange(of: appState.programmaticHoverPanelRequest) { _, request in
             guard let request, isHoverExpanded else { return }
-            hoverPanelMode = Self.panelMode(for: request.panel, mode: dropMode)
+            if request.isGlance, !Self.brightnessGlanceMayOpen(
+                over: hoverPanelMode, hovering: isHovering, searchFocused: hoverSearchFocused
+            ) {
+                // The pointer or the search holds the drawer; the key only changed the level.
+                appState.programmaticHoverExpansion = false
+                return
+            }
+            // Under the pointer the strip opens as from its tile, otherwise for a glance. The
+            // mode may not change (⌥N on a glance, a key on the open strip), so ask here too.
+            let glance = request.isGlance && !isHovering
+            let mode = Self.panelMode(for: request.panel, mode: dropMode)
+            hoverPanelGlance = glance
+            hoverPanelMode = mode
+            requestPanelKeyboardFocus(mode, glance: glance)
             // A repeat ⌥N while the drawer is already open leaves
             // `programmaticHoverExpansion` at true (true -> true is not a
             // change event), so the expansion onChange never re-fires and the
@@ -1428,6 +1495,13 @@ struct IslandView: View {
         }
     }
 
+    /// The search and inline tools take keyboard focus; a glance leaves it with the user's app.
+    private func requestPanelKeyboardFocus(_ mode: IslandHoverPanelMode, glance: Bool) {
+        onKeyboardFocusRequest(
+            isHoverExpanded && Self.panelWantsKeyboardFocus(mode, searchFocused: hoverSearchFocused, glance: glance)
+        )
+    }
+
     /// Arms (or re-arms) the programmatic-expansion auto-collapse window:
     /// bumps the generation so any pending deferred collapse goes stale, then
     /// schedules a fresh one. Shared by the expansion onChange (first ⌥N) and
@@ -1437,7 +1511,7 @@ struct IslandView: View {
     private func armProgrammaticExpansionCollapse() {
         programmaticExpansionCollapseGeneration += 1
         let generation = programmaticExpansionCollapseGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.programmaticExpansionTimeout) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.programmaticCollapseDelay(glance: hoverPanelGlance)) {
             guard programmaticExpansionCollapseGeneration == generation else { return }
             if !isHovering && !hoverSearchFocused {
                 appState.programmaticHoverExpansion = false
@@ -2311,10 +2385,13 @@ enum IslandHoverPanelMode: Equatable {
     case vocabularyEditor
     case fillerEditor
     case caseVault
+    case brightness
 
     var needsKeyboardFocus: Bool {
         switch self {
-        case .languagePicker, .outputLanguagePicker, .history, .monitor, .notifications, .vocabularyEditor, .fillerEditor, .caseVault:
+        // Brightness takes key status like Monitor so its slider and switch get clicks.
+        case .languagePicker, .outputLanguagePicker, .history, .monitor, .notifications, .vocabularyEditor, .fillerEditor,
+             .caseVault, .brightness:
             return true
         case .controls:
             return false
@@ -2341,6 +2418,8 @@ private struct IslandDropModeHoverPanel: View {
     @ObservedObject var vocabularyViewModel: IslandVocabularyViewModel
     @ObservedObject var fillerViewModel: IslandFillerViewModel
     @ObservedObject var caseViewModel: CaseViewModel
+    /// The Brightness capsule shows the current level or Extra.
+    @ObservedObject var brightness: ScreenBrightnessController = .shared
     let onToggle: () -> Void
     let onOpenSettings: () -> Void
     let onOpenHotkeys: () -> Void
@@ -2419,6 +2498,9 @@ private struct IslandDropModeHoverPanel: View {
             } else if panelMode == .monitor {
                 MonitorHoverPanel(onBack: { panelMode = .controls })
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if panelMode == .brightness {
+                IslandBrightnessStrip(onBack: { panelMode = .controls })
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if panelMode == .vocabularyEditor {
                 IslandVocabularyEditorPanel(
                     viewModel: vocabularyViewModel
@@ -2488,6 +2570,8 @@ private struct IslandDropModeHoverPanel: View {
             contentsVisible = true
             hoverHitBridge.setSurface(IslandHoverToolSearch.isFiltering(searchQuery) ? .result : .tile)
             hoverHitBridge.setContext(hitTargetContext)
+            // Brightness keys may have changed the level since the last hover.
+            if hoverStore.slots.contains(.brightness) { brightness.refresh() }
         }
         .onDisappear {
             hoverHitBridge.setEnabled(false)
@@ -2681,6 +2765,7 @@ private struct IslandDropModeHoverPanel: View {
             case .history: panelMode = .history
             case .notifications: panelMode = .notifications
             case .monitor: panelMode = .monitor
+            case .brightness: panelMode = .brightness
             case .vocabularyEditor: panelMode = .vocabularyEditor
             case .caseVault: panelMode = .caseVault
             case .fillerEditor: panelMode = .fillerEditor
@@ -2799,7 +2884,8 @@ private struct IslandDropModeHoverPanel: View {
         let presentation = HoverToolPresentation.resolve(
             tool: tool, mode: mode,
             inputLanguage: selectedLanguage, outputLanguage: targetLanguage,
-            meetingRecordingActive: meetingRecordingActive
+            meetingRecordingActive: meetingRecordingActive,
+            brightness: brightnessStatus
         )
         let info = HoverToolRegistry.info(for: tool)
         return IslandHoverPanelControl(
@@ -2815,6 +2901,11 @@ private struct IslandDropModeHoverPanel: View {
             action: { activateTool(tool) }
         )
         .accessibilityHint(info.description)
+    }
+
+    private var brightnessStatus: HoverBrightnessStatus? {
+        guard brightness.isAvailable else { return nil }
+        return brightness.isExtraOn ? .extra : .level(brightness.level)
     }
 
     private func languageIconPresentation(for tool: HoverTool) -> IslandHoverIconPresentation? {

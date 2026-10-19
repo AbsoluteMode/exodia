@@ -17,6 +17,7 @@ enum HoverInlinePanel: Equatable {
     case inputLanguagePicker
     case outputLanguagePicker
     case monitor
+    case brightness
 }
 
 /// A one-shot "open this inline panel" request carried on `AppState`. The
@@ -26,6 +27,8 @@ enum HoverInlinePanel: Equatable {
 struct HoverPanelRequest: Equatable {
     let panel: HoverInlinePanel
     let token: Int
+    /// A brightness key: show the strip briefly without taking keyboard focus.
+    var isGlance = false
 }
 
 /// The single effect a Hover slot produces when activated — by a tile click OR
@@ -121,6 +124,8 @@ enum HoverSlotRouter {
             return .toggleMeetingRecord
         case .monitor:
             return .openPanel(.monitor)
+        case .brightness:
+            return .openPanel(.brightness)
         case .quit:
             return .quit
         case .vocab:

@@ -214,8 +214,9 @@ Hover capsules and materials:
   Historical 2.2.5 icon-refinement proof covers 101 focused tests and 18
   source-matched offscreen renders with no visible/key windows (layout/text only).
   Bundled icon assets retain their own presentation. HoverToolPresentation
-  resolves state purely from mode, languages and recording: Fast/Smart, input
-  Auto/language, output Smart only/Off/language, and Recording/Not recording.
+  resolves state purely from mode, languages, recording and brightness:
+  Fast/Smart, input Auto/language, output Smart only/Off/language,
+  Recording/Not recording, and NN%/Extra (none for an unreadable display).
   Stateless navigation tools have no invented status.
   HoverLayoutStore.columns=3. Shared geometry uses 68 pt rows, a 76 pt row
   stride, 8 pt row/column gaps, 12 pt horizontal and 8 pt vertical insets.
@@ -276,6 +277,60 @@ Monitor inside hover:
   40 search PNGs with no visible/key windows. Synthetic no-op stores avoid real
   collectors/user data; native glass, real pointer/focus and installed-app
   acceptance remain separate. Guide: docs/customization/dashboards.md.
+
+Brightness inside hover:
+  Brightness is an inlinePanel tool offered only from the Toolbox catalog and
+  search; its capsule title is Display, which fits one line of the narrowest
+  capsule. HoverLayoutStore.defaultSlots and saved layouts are unchanged.
+  HoverSlotRouter resolves .openPanel(.brightness) to IslandBrightnessStrip:
+  Back, a white capsule backlight slider, an Extra switch and one status line
+  (a notice, or the battery time left). The strip is 68 pt (76 pt band, 126 pt
+  with music) and needsKeyboardFocus for its controls. Opened from a lower
+  tile, the band keeps the previous height as transparent hover space under the
+  top-aligned drawer until the pointer reaches the strip (onContinuousHover
+  releases it), so the drawer does not close under the pointer.
+  ScreenBrightnessController follows the island display (IslandScreenResolver)
+  and reads/writes its backlight through private DisplayServices (dlopen); an
+  unreadable display gets a disabled slider and no switch. Showing the strip
+  only reads, polling every 0.5 s while it is visible; a pinned capsule
+  refreshes NN%/Extra when hover opens. Extra exists only for potential EDR
+  headroom > 1.01 and never writes the backlight: it orders a click-through
+  shielding-level BrightnessBoostOverlay (1x1 rgba16Float extended-linear
+  MTKView, multiply compositing, multiplier min(2, headroom), sharingType none)
+  over whatever level the backlight has. BrightnessBoostFrameTimer presents a
+  frame every 0.2 s while the overlay window is visible, strip open or not:
+  without focus WindowServer keeps the boost only ~0.8 s after the last frame,
+  so the former 2 s keepalive blinked. Each app activation adds a frame at once
+  and 15 more at 1/60 s, because every ⌘Tab dimmed the boost (pending live
+  check). Frames pause during display sleep, system sleep and another user's
+  session, each until its own end notification. Extra is a fixed boost: the
+  slider at any level, brightness keys, automatic brightness, idle dimming,
+  closing the strip, sleep and a session switch keep it. Only its switch (strip
+  or Settings) ends it, apart from serious thermal state, a display change or
+  lost headroom, an overlay failure and quit; ending it leaves the backlight as
+  it is. Extra is never persisted or resumed after relaunch.
+  Settings -> Toolbox -> Display (ToolboxDisplayPane) holds the Extra and
+  Brightness keys switches without a slider; it reads the display on appear,
+  never polls and fits the 188 pt Toolbox area in every state. Brightness keys
+  are off by default and saved. BrightnessKeyEventTap, a head-insert session
+  tap for system-defined events on a SpaceHoldMonitor.TapThread, takes the
+  brightness key presses from macOS, so its indicator does not show: sixteenth
+  steps (Option-Shift: 64ths), two brightness-up presses at the maximum within
+  1.5 s (timed when the tap sees them) turn Extra on, and each press opens the
+  strip as a glance (2 s, no keyboard focus, never over another panel under
+  the pointer or a focused search; a pointer reaching it holds the drawer).
+  Other modifier combinations, hidden hover widgets and an unadjustable
+  display leave the keys with macOS. A press stays with whoever got its first
+  event, also across the hotkeys' rebuild; after a gap over 0.1 s or a tap
+  macOS disabled, the presses in progress finish with macOS. The tap needs
+  Accessibility, is reinstalled with the hotkeys and retried when the Settings
+  pane appears. They are the Mac's keys, not an Exodia hotkey: no Help row.
+  BatteryRuntimeMonitor reads IOKit
+  power sources and AppleSmartBattery every 5 s while the strip is visible: on
+  battery macOS's estimate wins, otherwise remaining Wh over the smoothed
+  accumulator load; on power the line shows the time if unplugged. Battery
+  readings and key events are never stored, logged or sent. WHY:
+  .project-docs/decisions/2026-10-18-brightness-tool.md
 
 Hover tool search and pointer routing:
   Search all tools searches the full catalog (titles, descriptions and aliases),
@@ -449,7 +504,8 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
   close for the visible agent answer, WHY:
   docs/decisions/2026-07-02-escape-close-passive-monitor.md), the AX check
   of the focused field (`PasteTargetValidator`) and, empirically, the active
-  `CGEventTap` in `SpaceHoldMonitor`.
+  `CGEventTap` in `SpaceHoldMonitor` and the optional Brightness keys tap
+  (`BrightnessKeyEventTap`).
 - **Post Event** gates `CGEvent.post` for the synthetic Cmd+V and Backspace
   (`CGPreflightPostEventAccess` / `CGRequestPostEventAccess`, a separate TCC
   bucket from Accessibility since 10.15; Tahoe shows both in one panel).
@@ -571,7 +627,8 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 2. **Keys and content never leave through logs.** BYOK keys live only in the
    Keychain (`BuildConfig.keychainService`). `os_log` never receives
    transcripts, prompts, replies or keys (`LocalPathLoggingInvariantTests`).
-   Key contents read by the hotkey tap are never logged or persisted.
+   Key contents read by the hotkey tap or the Brightness keys tap are never
+   logged or persisted.
 3. **No on-device models and no silent route change.** Speech, cleanup and
    meeting processing run only on providers or endpoints the user chose. A
    stored retired `local` level, or no stored level on Apple Silicon (where

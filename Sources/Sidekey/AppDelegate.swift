@@ -467,6 +467,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Remove the Extra overlay; Extra never changes the backlight.
+        ScreenBrightnessController.shared.shutdown()
+        BrightnessKeys.shared.stop()
         NotifyScriptSupervisor.shared.stop()
         stopPermissionRecoveryPolling()
         permissionCaptureEndObserver?.cancel()
@@ -935,6 +938,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         historyHotkey = nil
         meetingRecordHotkey = nil
         hoverSlotHotkeys = []
+        // The setting stays; registerHotkey installs the tap again.
+        BrightnessKeys.shared.stop()
     }
 
     /// Test seam for the rebuild teardown: stops each supplied monitor,
@@ -1321,6 +1326,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHelpHotkey()
         registerHoverSlotHotkeys()
         registerMeetingRecordHotkey()
+        // Brightness keys install their tap only when switched on in Settings -> Toolbox.
+        BrightnessKeys.shared.start(showStrip: { [weak self] in self?.showBrightnessGlance() })
         guard hotkey == nil else { return }
         // Keep Drop working during meetings. Meeting mic capture and the
         // Drop voice route can coexist, so configurable drop shortcuts
@@ -3856,6 +3863,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         IslandPanel.shared.onIslandHoverChange = { [weak controller] hovered in
             controller?.setHovered(hovered)
         }
+    }
+
+    /// A brightness key changed the island display: show the Display strip briefly, without
+    /// keyboard focus. While the island cannot expand the level still changes, without the strip.
+    private func showBrightnessGlance() {
+        registerIslandHotkeyActivity()
+        let appState = AppState.shared
+        guard IslandHoverPolicy.allowsExpansion(
+            meetingSuggestionActive: appState.meetingSuggestionActive,
+            meetingRecordingActive: appState.meetingRecordingActive,
+            agentFlowActive: IslandPanel.shared.agentFlow.isActive
+        ) else { return }
+        appState.programmaticHoverExpansion = true
+        hoverPanelRequestToken += 1
+        appState.programmaticHoverPanelRequest = HoverPanelRequest(
+            panel: .brightness, token: hoverPanelRequestToken, isGlance: true
+        )
     }
 
     /// Register a hotkey activation as island activity (spec §4.2): resets the
