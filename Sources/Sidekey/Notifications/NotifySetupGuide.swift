@@ -21,7 +21,7 @@ enum NotifySetupGuide {
         History keeps the newest 500 events. Unseen events leave a red dot on
         Notify in hover/search until history is opened, including after a restart;
         Monitor is not highlighted. Clear All clears history and current events
-        after confirmation and keeps connected sources enabled.
+        immediately, without confirmation, and keeps connected sources enabled.
         Settings > Notifications lists all sources with Notification type (Large /
         Small) and individual on/off switches.
         No Whytap server or model request is needed to deliver a notification.
