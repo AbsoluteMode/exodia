@@ -44,13 +44,13 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("updates.whytap.ai"))
     }
 
-    func test_devRunUsesExodiaDevBundleAndCleansOldSidekeyBundles() throws {
+    func test_devRunUsesExodiaDevBundleWithoutDeletingLegacyCopies() throws {
         let source = try readProjectFile("scripts/dev-run.sh")
 
         XCTAssertTrue(source.contains(#"APP_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta-dev.app""#))
-        XCTAssertTrue(source.contains("build/Sidekey-Beta-dev.app"))
+        XCTAssertFalse(source.contains("stop_conflicting_sidekey_processes"))
     }
 
     /// Regression guard for the silent system-audio failure (June 2026): the

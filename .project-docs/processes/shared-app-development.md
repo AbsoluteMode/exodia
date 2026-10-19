@@ -76,8 +76,9 @@ taps. Keep the user's working instance; do not launch a second app for testing.
    worktree's build output separate. Tests use temporary stores and fake
    providers rather than the user's notes, clipboard, keys or paid requests.
 4. Do **not** invoke `scripts/dev-run.sh`, `customize.py build/run`, `swift run`,
-   `open` on a feature bundle, or LaunchServices registration. In current main,
-   even `dev-run.sh` without `--run` can stop other beta processes. Do not
+   `open` on a feature bundle, or LaunchServices registration. On branches
+   older than the one-running-copy change (2026-10-19), even `dev-run.sh`
+   without `--run` stops other beta processes. Do not
    install a feature branch over `/Applications/Exodia.app` or stop its process.
    Production app/DMG packaging (`FLAVOR=prod` builds) is also reserved for
    the integrator under the shared lock; a worker's ordinary `swift build`

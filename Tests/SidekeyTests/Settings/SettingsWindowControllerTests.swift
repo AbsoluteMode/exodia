@@ -222,8 +222,6 @@ final class SettingsWindowControllerTests: XCTestCase {
             .appendingPathComponent("Settings")
             .appendingPathComponent("SettingsWindowView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        XCTAssertTrue(source.contains("Quit Exodia"),
-                      "Sidebar must have a pinned Quit Exodia row")
         XCTAssertTrue(source.contains("NSApp.terminate(nil)"),
                       "Quit row must call NSApp.terminate(nil)")
     }

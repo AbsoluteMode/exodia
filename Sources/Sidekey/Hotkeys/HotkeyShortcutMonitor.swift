@@ -44,7 +44,8 @@ final class HotkeyShortcutMonitor: HotkeyShortcutMonitoring {
         onCancel: Callback? = nil,
         shouldSuppress: SuppressionGate? = nil,
         dropHoldSwallow: Bool = false,
-        onAccessibilityLost: Callback? = nil
+        onAccessibilityLost: Callback? = nil,
+        allowPermissionRequests: Bool = true
     ) {
         switch shortcut {
         case .combo(let combo) where dropHoldSwallow:
@@ -52,7 +53,7 @@ final class HotkeyShortcutMonitor: HotkeyShortcutMonitoring {
             // uses, generalized to this combo's key + modifiers. It swallows the
             // bound character from the first keyDown (so ∂ never prints) and
             // honours `onCancel` (Escape), neither of which the Carbon path can
-            // do. Gated by Input Monitoring (requested in `registerHotkey`).
+            // do. Permission requests can be disabled for quiet recovery.
             // A nil release would leave the mic stoppable only via Escape.
             assert(onHotkeyReleased != nil, "SpaceHold-routed Drop requires a release handler")
             monitor = SpaceHoldMonitor(
@@ -61,7 +62,8 @@ final class HotkeyShortcutMonitor: HotkeyShortcutMonitoring {
                 onHotkey: onHotkey,
                 onHotkeyReleased: onHotkeyReleased ?? {},
                 onCancel: onCancel ?? {},
-                onAccessibilityLost: onAccessibilityLost ?? {}
+                onAccessibilityLost: onAccessibilityLost ?? {},
+                requestInputMonitoring: { allowPermissionRequests && PermissionsHelper.inputMonitoringGranted(prompt: true) }
             )
         case .combo(let combo):
             monitor = CarbonHotkeyMonitor(
@@ -95,19 +97,19 @@ final class HotkeyShortcutMonitor: HotkeyShortcutMonitoring {
                 onHotkey: onHotkey,
                 onHotkeyReleased: onHotkeyReleased ?? {},
                 onCancel: onCancel ?? {},
-                onAccessibilityLost: onAccessibilityLost ?? {}
+                onAccessibilityLost: onAccessibilityLost ?? {},
+                requestInputMonitoring: { allowPermissionRequests && PermissionsHelper.inputMonitoringGranted(prompt: true) }
             )
         }
     }
 
     /// Whether a Drop binding runs on the CGEventTap (`SpaceHoldMonitor`) and
-    /// therefore needs Input Monitoring and the keystroke-swallow route.
+    /// therefore needs the keystroke-swallow route. Input Monitoring is only a
+    /// fallback when Accessibility alone cannot enable that tap.
     ///
     /// `true` for hold-Space and a hold-combo Drop (both swallow the keystroke
-    /// through the tap); `false` for a tap-combo Drop (deferred; would use
-    /// Carbon) and a modifier Drop. This is the single predicate behind both the
-    /// `dropHoldSwallow` routing flag and the `registerHotkey` Input Monitoring
-    /// gate, so the two never drift.
+    /// through the tap); `false` for a tap-combo Drop (Carbon) and a modifier
+    /// Drop. Used by the `dropHoldSwallow` routing flag.
     static func isDropHoldTap(shortcut: HotkeyShortcut, gesture: HotkeyGesture) -> Bool {
         switch shortcut {
         case .holdSpace:
@@ -177,6 +179,7 @@ final class ModifierOnlyHotkeyMonitor: HotkeyShortcutMonitoring {
         }
         if globalMonitor == nil {
             os_log("modifier monitor global install failed", log: Self.log, type: .error)
+            throw HotkeyRegistrationError.modifierMonitorUnavailable
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.monitoredEvents) { [weak self] event in
             self?.handle(event)

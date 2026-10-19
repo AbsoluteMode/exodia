@@ -47,7 +47,10 @@ final class UserPreferencesCache {
     /// Persists `mode` to `UserDefaults`. The next `currentMode` read
     /// (on the same or any other instance) reflects the new value.
     func setMode(_ mode: TranscriptionMode) {
+        let previousMode = currentMode
         defaults.set(mode.rawValue, forKey: Key.transcriptionMode)
+        guard mode != previousMode else { return }
+        NotificationCenter.default.post(name: .sidekeyDropModeChanged, object: self)
     }
 
     // MARK: - Capability opt-in flags
@@ -80,6 +83,8 @@ final class UserPreferencesCache {
 }
 
 extension Notification.Name {
+    /// Every mode control observes the same synchronous stored preference.
+    static let sidekeyDropModeChanged = Notification.Name("sidekey.dropMode.changed")
     /// Posted by `UserPreferencesCache` whenever a capability flag
     /// (agent/meetings/google) actually changes value. AppDelegate
     /// listens to reconcile subsystem arming.

@@ -3,8 +3,8 @@ import XCTest
 
 @MainActor
 final class DeepgramBYOKAdapterTests: XCTestCase {
-    func testURLCarriesModelEncodingLanguageAndKeyterms() {
-        let url = DeepgramRealtimeURL.make(model: "nova-3", language: "ru", terms: ["Whytap", "Sidekey"])
+    func testURLCarriesModelEncodingLanguageAndKeyterms() throws {
+        let url = try DeepgramRealtimeURL.make(model: "nova-3", language: "ru", terms: ["Whytap", "Sidekey"])
         let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         let items = comps.queryItems ?? []
         func vals(_ name: String) -> [String] { items.filter { $0.name == name }.compactMap { $0.value } }
@@ -20,11 +20,45 @@ final class DeepgramBYOKAdapterTests: XCTestCase {
         XCTAssertEqual(vals("keyterm"), ["Whytap", "Sidekey"])  // repeated, one per term
     }
 
-    func testURLOmitsLanguageAndKeytermsWhenEmpty() {
-        let url = DeepgramRealtimeURL.make(model: "nova-3", language: nil, terms: [])
-        let names = (URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems ?? []).map { $0.name }
-        XCTAssertFalse(names.contains("language"))
-        XCTAssertFalse(names.contains("keyterm"))
+    // Omitting language silently enables English, not Auto, at Deepgram.
+    func testURLAutoUsesMultilingualWithoutChangingModelOrEnablingLanguageDetection() throws {
+        for language in [nil, ""] as [String?] {
+            let url = try DeepgramRealtimeURL.make(model: "nova-3", language: language, terms: [])
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            XCTAssertEqual(items.filter { $0.name == "language" }.map(\.value), ["multi"])
+            XCTAssertEqual(items.first { $0.name == "model" }?.value, "nova-3")
+            XCTAssertFalse(items.contains { $0.name == "detect_language" || $0.name == "keyterm" })
+        }
+    }
+
+    func testUnsupportedLanguageFailsBeforeCreatingTransport() async {
+        var transportWasCreated = false
+        let adapter = DeepgramBYOKAdapter(model: "nova-3") { _, _ in
+            transportWasCreated = true
+            return StubWebSocketTransport()
+        }
+        do {
+            _ = try await adapter.open(language: "cy", terms: [])
+            XCTFail("Welsh is not supported by Nova-3")
+        } catch {
+            XCTAssertEqual(error as? DeepgramLanguageConfigurationError, .unsupportedLanguage)
+        }
+        XCTAssertFalse(transportWasCreated)
+    }
+
+    func testUnknownModelAutoFailsBeforeCreatingTransport() async {
+        var transportWasCreated = false
+        let adapter = DeepgramBYOKAdapter(model: "user-custom-model") { _, _ in
+            transportWasCreated = true
+            return StubWebSocketTransport()
+        }
+        do {
+            _ = try await adapter.open(language: nil, terms: [])
+            XCTFail("Unknown models must not quietly fall back to English")
+        } catch {
+            XCTAssertEqual(error as? DeepgramLanguageConfigurationError, .automaticLanguageUnavailable)
+        }
+        XCTAssertFalse(transportWasCreated)
     }
 
     func testSendAudioIsRawBinaryAndEndInputClosesStream() async throws {

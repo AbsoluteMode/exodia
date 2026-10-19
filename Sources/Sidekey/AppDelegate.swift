@@ -147,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// re-armed `.deliveryFailed`) — so a no-audio/empty/unauthorized retry never
     /// leaves captured audio stranded in memory.
     private var pendingRetryPCM: Data?
+    private var pendingProcessingRetry: DropProcessingRetry?
     private var pendingRetryTarget: (app: String?, pid: pid_t?)?
     /// True while a manual Retry's batch recovery is in flight. Gates
     /// `retryPendingDelivery` (via `shouldBeginRetry`) so a second press can't
@@ -230,6 +231,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionRepairWindowController: PermissionRepairWindowController?
     private var didCompleteReadyStartup = false
     private var runtimeAccessibilityGranted = false
+    private var runtimePermissionsObserver: NSObjectProtocol?
+    private var openHotkeySettingsObserver: NSObjectProtocol?
+    private var permissionCaptureEndObserver: AnyCancellable?
+    private var permissionRecoveryTimer: Timer?
+    private var permissionRecoverySession: UUID?
+    private var permissionRecoveryBudget = DropHotkeyRecoveryPollBudget()
+    private var dropRegistrationFailure: DropHotkeyStatus?
+    private var dropMonitorGeneration = UUID()
+    private var permissionMonitorRebuildPending = false
 
     /// Sparkle update flow (ROO-186). Owns `SPUUpdater` + `IslandUpdateUserDriver`
     /// via `UpdateController`, which translates driver stage emits into
@@ -440,13 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard didCompleteReadyStartup else { return }
-        let granted = PermissionsHelper.accessibilityGranted(prompt: false)
-        guard granted != runtimeAccessibilityGranted else { return }
-        runtimeAccessibilityGranted = granted
-        teardownHotkeyMonitorsForRebuild()
-        registerHotkey()
-        agentController?.start(googleCallbacks: makeGoogleCallbacks())
+        refreshRuntimePermissions()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -455,11 +459,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showRuntimeSurfaceAfterReopen() {
+        refreshRuntimePermissions()
         IslandPanel.shared.show()
         registerIslandHotkeyActivity()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopPermissionRecoveryPolling()
+        permissionCaptureEndObserver?.cancel()
+        permissionCaptureEndObserver = nil
+        if let runtimePermissionsObserver { NotificationCenter.default.removeObserver(runtimePermissionsObserver) }
+        if let openHotkeySettingsObserver { NotificationCenter.default.removeObserver(openHotkeySettingsObserver) }
         removeWorkspacePowerObservers()
         recorder.cancel()
         // Cancel any in-flight streaming session so the WS task doesn't
@@ -477,6 +487,128 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Permission repair
+
+    private func observeRuntimePermissionsIfNeeded() {
+        guard runtimePermissionsObserver == nil else { return }
+        runtimePermissionsObserver = NotificationCenter.default.addObserver(
+            forName: .sidekeyRuntimePermissionsRefresh, object: nil, queue: .main
+        ) { [weak self] note in
+            let retry = note.userInfo?["retry"] as? Bool ?? false
+            let resumePolling = note.userInfo?["resumePolling"] as? Bool ?? true
+            Task { @MainActor [weak self] in
+                self?.refreshRuntimePermissions(forceRebuild: retry, resumePolling: resumePolling)
+            }
+        }
+        openHotkeySettingsObserver = NotificationCenter.default.addObserver(
+            forName: .sidekeyOpenHotkeySettings, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.ensureSettingsWindowController().show(tab: .hotkeys) }
+        }
+        permissionCaptureEndObserver = Self.observeDropCaptureEnd(
+            AppState.shared.$phase.eraseToAnyPublisher(),
+            captureIsActive: { [weak self] in
+                AppState.shared.phase == .recording || self?.streamingSetupInProgress == true
+            },
+            hasPendingRebuild: { [weak self] in self?.permissionMonitorRebuildPending == true },
+            onCaptureEnded: { [weak self] in
+                // A long take may outlive the bounded repair poll. Service its
+                // deferred rebuild directly, without restarting that poll.
+                self?.refreshRuntimePermissions(resumePolling: false)
+            }
+        )
+    }
+
+    /// Published sends in willSet; queue delivery reads the completed phase
+    /// assignment and also rejects stale queued transitions of a new take.
+    /// Kept injectable so the long-capture/expired-poll path needs no real input.
+    static func observeDropCaptureEnd(
+        _ phases: AnyPublisher<AppPhase, Never>,
+        captureIsActive: @escaping () -> Bool,
+        hasPendingRebuild: @escaping () -> Bool,
+        onCaptureEnded: @escaping () -> Void
+    ) -> AnyCancellable {
+        phases.dropFirst().receive(on: DispatchQueue.main).sink { _ in
+            guard hasPendingRebuild(), !captureIsActive() else { return }
+            onCaptureEnded()
+        }
+    }
+
+    /// Never requests a grant. Reconciles actual installation as well as AX,
+    /// including a tap that failed while AX itself remained granted.
+    private func refreshRuntimePermissions(forceRebuild: Bool = false, resumePolling: Bool = true) {
+        guard didCompleteReadyStartup else { return }
+        let snapshot = PermissionsHelper.snapshot()
+        let accessibilityChanged = snapshot.accessibilityGranted != runtimeAccessibilityGranted
+        runtimeAccessibilityGranted = snapshot.accessibilityGranted
+        let captureActive = AppState.shared.phase == .recording || streamingSetupInProgress
+        switch DropHotkeyRecovery.reconcileDecision(
+            installed: hotkey != nil,
+            accessibilityChanged: accessibilityChanged,
+            forceRebuild: forceRebuild,
+            rebuildPending: permissionMonitorRebuildPending,
+            captureActive: captureActive
+        ) {
+        case .deferRebuild:
+            // Keep the current stop/release hook until the active take ends.
+            permissionMonitorRebuildPending = true
+        case .rebuild:
+            permissionMonitorRebuildPending = false
+            teardownHotkeyMonitorsForRebuild()
+            registerHotkey()
+            agentController?.start(googleCallbacks: makeGoogleCallbacks())
+        case .install:
+            registerHotkey()
+        case .none:
+            break
+        }
+        publishDropHotkeyStatus(snapshot: snapshot)
+        if AppState.shared.dropHotkeyStatus == .ready && !permissionMonitorRebuildPending {
+            stopPermissionRecoveryPolling()
+        } else if resumePolling {
+            startPermissionRecoveryPollingIfNeeded()
+        }
+    }
+
+    private func publishDropHotkeyStatus(snapshot: PermissionsHelper.Snapshot? = nil) {
+        let status = DropHotkeyRecovery.status(
+            snapshot: snapshot ?? PermissionsHelper.snapshot(),
+            installed: hotkey != nil,
+            failure: dropRegistrationFailure
+        )
+        if AppState.shared.dropHotkeyStatus != status { AppState.shared.dropHotkeyStatus = status }
+        AppState.shared.hotkeyRegistrationFailed = dropRegistrationFailure != nil
+    }
+
+    private func startPermissionRecoveryPollingIfNeeded() {
+        guard permissionRecoveryTimer == nil else { return }
+        permissionRecoveryBudget = DropHotkeyRecoveryPollBudget()
+        let session = UUID()
+        permissionRecoverySession = session
+        permissionRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.permissionRecoverySession == session else { return }
+                guard self.permissionRecoveryBudget.consume() else {
+                    self.stopPermissionRecoveryPolling()
+                    return
+                }
+                self.refreshRuntimePermissions(resumePolling: false)
+            }
+        }
+    }
+
+    private func stopPermissionRecoveryPolling() {
+        permissionRecoveryTimer?.invalidate()
+        permissionRecoveryTimer = nil
+        permissionRecoverySession = nil
+    }
+
+    /// Only a user invocation shows this window. A background loss or transient
+    /// tap failure updates status and retries quietly instead of interrupting.
+    private func explainMissingDropPermission() {
+        publishDropHotkeyStatus()
+        startPermissionRecoveryPollingIfNeeded()
+        presentPermissionRepair { [weak self] in self?.refreshRuntimePermissions(forceRebuild: true) }
+    }
 
     private func presentPermissionRepair(onComplete: @escaping () -> Void) {
         if permissionRepairWindowController == nil {
@@ -515,7 +647,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         observeHotkeyPreferences()
+        observeRuntimePermissionsIfNeeded()
         registerHotkey()
+        if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
         // Reactive reconcile: re-evaluate arm/disarm + meetings start/stop
         // whenever any capability flag flips (posted by UserPreferencesCache E1).
         NotificationCenter.default.addObserver(
@@ -675,6 +809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the hang surface, both together close the corner cases.
     private func pauseRuntimeForSleep() {
         os_log("power_will_sleep pausing runtime", log: Self.log, type: .info)
+        stopPermissionRecoveryPolling()
 
         recorder.cancel()
         // Same reasoning as `applicationWillTerminate` — sleep should not
@@ -764,6 +899,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         teardownHotkeyMonitorsForRebuild()
 
         registerHotkey()
+        if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
 
         // `AgentController.start()` re-installs `gestureMonitor.start()`
         // which itself calls `stop()` first. Calling it on the live
@@ -788,6 +924,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             [hotkey, helpHotkey, historyHotkey, meetingRecordHotkey] + hoverSlotHotkeys
         )
         hotkey = nil
+        dropMonitorGeneration = UUID()
         helpHotkey = nil
         historyHotkey = nil
         meetingRecordHotkey = nil
@@ -1033,8 +1170,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The output-language code handed to the cleanup LLM, or nil. Translation
     /// is Smart-only and only when a target language is set and differs from
     /// the input language.
-    private func outputLanguageCodeForDrop() -> String? {
-        guard UserPreferencesCache.shared.currentMode == .smart else { return nil }
+    private func outputLanguageCodeForDrop(mode: TranscriptionMode) -> String? {
+        guard mode == .smart else { return nil }
         let prefs = PrivacyPreferences.shared
         guard let target = prefs.targetLanguage?.code else { return nil }
         return target == prefs.selectedLanguage?.code ? nil : target
@@ -1132,15 +1269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rawTranscript: String,
         targetApp: String?
     ) async {
-        let filtered = DropFillerFilter.apply(text, removing: FillerTermsStore().terms())
-        // Defense-in-depth (ROO-257): the filler filter itself can strip the
-        // text to "" (its normalize() trims). An empty `filtered` would make
-        // deliverDropTranscript's `guard !text.isEmpty` swallow the paste, so
-        // fall back to the raw transcript when the filter emptied a non-empty
-        // input. WHY: docs/decisions/2026-06-26-local-llm.md.
-        let cleaned = Self.dropDeliverableAfterCleanup(
-            cleaned: filtered, rawTranscript: rawTranscript
-        )
+        let cleaned = text
         AppState.shared.phase = .inserting
         let pasted = await deliverDropTranscript(cleaned)
         if !pasted {
@@ -1156,6 +1285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // The user-visible deliverable landed (either direct paste or
         // clipboard fallback). Either way the turn closes as completed.
+        discardPendingRetry()
         completeDropTurnTelemetry()
         dropHistoryRecorder?.record(
             rawTranscript: rawTranscript,
@@ -1185,7 +1315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHoverSlotHotkeys()
         registerMeetingRecordHotkey()
         guard hotkey == nil else { return }
-        guard PermissionsHelper.accessibilityGranted(prompt: false) else { return }
         // Keep Drop working during meetings. Meeting mic capture and the
         // Drop voice route can coexist, so configurable drop shortcuts
         // register without the old meeting suppression gate.
@@ -1198,6 +1327,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shortcut: dropVoiceHotkey,
             gesture: dropVoiceGesture
         )
+        guard DropHotkeyRecovery.canRegister(
+            shortcut: dropVoiceHotkey,
+            gesture: dropVoiceGesture,
+            accessibilityGranted: PermissionsHelper.accessibilityGranted(prompt: false)
+        ) else {
+            dropRegistrationFailure = nil
+            publishDropHotkeyStatus()
+            return
+        }
+        let monitorGeneration = UUID()
+        dropMonitorGeneration = monitorGeneration
         let hotkey = HotkeyShortcutMonitor(
             shortcut: dropVoiceHotkey,
             hotKeyIDValue: CarbonHotkeyMonitor.dropHotKeyID,
@@ -1213,58 +1353,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // of Carbon (so the bound character never prints); `.holdSpace`
             // already taps and ignores this flag.
             dropHoldSwallow: dropHoldSwallow,
-            // When the tap loses Accessibility at runtime, surface the repair
-            // screen so the user can re-grant without relaunching the app.
-            // `presentPermissionRepair` guards against showing twice (== nil
-            // check), so re-entrancy is safe.
-            //
-            // Losing Accessibility kills the Accessibility-gated monitors (the
-            // Drop tap, ⌥M / ⌥1..⌥5, and the agent's Right-Cmd `NSEvent` global
-            // monitor). On repair we resurrect them — mirroring
-            // `forceReregisterEventMonitors` (the wake/sleep path):
-            //   * Hotkeys: the stale monitors already tore themselves down, but
-            //     `registerHotkey()` and its per-monitor registrars early-return
-            //     on a live ref (`guard hotkey == nil`,
-            //     `guard meetingRecordHotkey == nil`,
-            //     `guard hoverSlotHotkeys.isEmpty`), so clear the WHOLE set first
-            //     or ⌥M / ⌥1..⌥5 stay dead after a re-grant. `startReady()` then
-            //     calls `registerHotkey()` and reinstalls them all.
-            //   * Agent: `startReady()` → `startAgentIfEnabled()` early-returns
-            //     on its own `agentController == nil` guard (the controller
-            //     object survives; only its global monitor died), so it will
-            //     NOT re-install the monitor. Re-`start()` the LIVE controller
-            //     here instead — `gestureMonitor.start()` calls `stop()` first,
-            //     reinstalling the NSEvent monitor without tearing down chat
-            //     state, response panel, or in-flight SSE (same call the
-            //     wake/sleep path makes).
+            // A disabled tap may be a transient failure, not a revoked grant.
+            // Recover quietly; permission UI is shown only on user invocation.
             onAccessibilityLost: { [weak self] in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.presentPermissionRepair(onComplete: { [weak self] in
-                        guard let self else { return }
-                        self.teardownHotkeyMonitorsForRebuild()
-                        self.startReady()
-                        self.agentController?.start(googleCallbacks: self.makeGoogleCallbacks())
-                    })
+                Task { @MainActor [weak self] in
+                    guard let self, self.dropMonitorGeneration == monitorGeneration else { return }
+                    if AppState.shared.phase == .recording || self.streamingSetupInProgress {
+                        // The lost hold tap can no longer receive keyUp. Finish
+                        // the captured audio instead of leaving the mic open.
+                        self.handleDropHotkeyRoute(Self.dropHotkeyReleasedRoute(
+                            gesture: dropVoiceGesture,
+                            phase: AppState.shared.phase,
+                            hasStreamingSession: self.streamingSession != nil,
+                            isStreamingSetupInProgress: self.streamingSetupInProgress
+                        ))
+                    }
+                    self.hotkey?.stop()
+                    self.hotkey = nil
+                    self.refreshRuntimePermissions(forceRebuild: true)
                 }
-            }
+            },
+            allowPermissionRequests: false
         )
         do {
             try hotkey.start()
             self.hotkey = hotkey
-            AppState.shared.hotkeyRegistrationFailed = false
+            dropRegistrationFailure = nil
+            publishDropHotkeyStatus()
         } catch {
-            // Carbon `RegisterEventHotKey` can return paramErr / eventInternalErr
-            // (e.g. on a hot-key collision with another app holding the same
-            // combo). Surface to os_log so the failure is visible in
-            // Console.app, and to AppState so a future UI surface (status-bar
-            // badge, alert) can prompt the user.
+            // Failed starts remain uninstalled. Settings shows a useful
+            // distinction between a permission issue and a shortcut collision.
             os_log(
                 "registerHotkey failed: %{public}@",
                 log: Self.hotkeyLog, type: .error,
                 String(describing: error)
             )
-            AppState.shared.hotkeyRegistrationFailed = true
+            dropRegistrationFailure = DropHotkeyRecovery.failure(
+                for: error,
+                inputMonitoringGranted: PermissionsHelper.inputMonitoringGranted(prompt: false)
+            )
+            publishDropHotkeyStatus()
         }
     }
 
@@ -1424,7 +1552,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         hotkey?.stop()
         hotkey = nil
+        dropMonitorGeneration = UUID()
         registerHotkey(dropShortcut: shortcut, dropGesture: gesture)
+        if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
     }
 
     /// Carbon hot-key IDs for the five positional Hover-slot shortcuts, in slot
@@ -2209,6 +2339,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleDropHotkeyRoute(_ route: DropFlowRoute) {
+        if DropHotkeyRecovery.requiresStartPermission(route) {
+            let snapshot = PermissionsHelper.snapshot()
+            guard snapshot.accessibilityGranted,
+                  snapshot.microphoneStatus != .denied,
+                  snapshot.microphoneStatus != .restricted else {
+                explainMissingDropPermission()
+                return
+            }
+            // The OS may show the initial microphone prompt when capture starts.
+            // Never put this check on stop/finalize/release routes.
+        }
         // Escaping a parked total-offline take must ALWAYS clear the banner.
         if route == .discardFailedTakeAndStart {
             discardPendingRetry()
@@ -2264,6 +2405,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// hardcoded `"pending"`) so a turn's started/completed/failed events
     /// correlate, plus a phase timeline to localise where a turn stalls.
     private var dropTurnTrace: DropTurnTrace?
+    private var dropTurnMode: TranscriptionMode = .fast
     /// Fires if a turn never reaches a terminal event — the infinite-hang case
     /// that otherwise emits NOTHING (only an orphaned `voice_turn_started`,
     /// because `run()` never returns so `handleStreamingResult` never runs).
@@ -2289,13 +2431,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let dropTurnWatchdogTimeout: Duration = .seconds(640)
 
     private func startDropTurnTelemetry() {
+        dropTurnMode = UserPreferencesCache.shared.currentMode
+        AppState.shared.dropDeliveryFailureMessage = nil
         lastDropPartial = ""
         let trace = DropTurnTrace()
         dropTurnTrace = trace
         dropActivity.begin(reason: "drop voice turn")
         armDropTurnWatchdog(for: trace)
         armDropMaxHoldTimer(for: trace)
-        os_log("drop turn %{public}@ started", log: Self.log, type: .info, trace.turnId)
+        os_log("drop turn %{public}@ started mode=%{public}@", log: Self.log, type: .info, trace.turnId, dropTurnMode.rawValue)
     }
 
     private func completeDropTurnTelemetry() {
@@ -2833,104 +2977,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Picks the deliverable for a Drop turn after cleanup ran. Pure so the
-    /// empty-output fallback is unit-tested without the AppKit delegate.
-    ///
-    /// WHY: a degenerate cleanup reply can be whitespace-only, and
-    /// `DropFillerFilter` can also strip cleanup output to "". Feeding "" into
-    /// the paste tail makes `deliverDropTranscript`'s `guard !text.isEmpty`
-    /// early-return, silently eating the paste with no error surfaced
-    /// (ROO-257). So when cleanup is empty/whitespace but the raw transcript
-    /// is not, fall back to the raw transcript — guaranteeing a non-empty
-    /// deliverable whenever the dictation was non-empty. Both-empty stays "" (the downstream guard still idles
-    /// without pasting). Mirrors the thrown-error fallback that already pastes
-    /// the raw transcript. See docs/decisions/2026-06-26-local-llm.md.
-    static func dropDeliverableAfterCleanup(cleaned: String, rawTranscript: String) -> String {
-        if cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return rawTranscript
-        }
-        return cleaned
-    }
-
-    /// Reuses the post-processing + paste tail of the async pipeline so
-    /// the streaming flow's user-visible UX (formatting, paste, telemetry)
-    /// matches the recorder fallback path.
-    private func runPostProcessAndPaste(rawText: String, targetApp: String?, targetPID: pid_t?) async {
-        guard let postProcessor else {
-            FileHandle.standardError.write(Data("✗ post processor not initialised\n".utf8))
-            failDropTurnTelemetry(reason: "clients_unavailable")
-            AppState.shared.phase = .idle
-            return
-        }
-
-        AppState.shared.phase = .verifying
+    /// Fast bypasses the LLM; Smart either delivers processed text or retains
+    /// its transcript for Retry. The mode belongs to the take, not the current
+    /// preference when an asynchronous provider happens to finish.
+    /// WHY: .project-docs/decisions/2026-10-19-strict-drop-modes.md
+    @discardableResult
+    private func runPostProcessAndPaste(
+        rawText: String, targetApp: String?, targetPID: pid_t?,
+        mode retryMode: TranscriptionMode? = nil
+    ) async -> Bool {
+        let mode = retryMode ?? dropTurnMode
+        let generation = streamingSetupGeneration
+        let policy = DropOutputPolicy(mode: mode)
         let processStartedAt = ProcessInfo.processInfo.systemUptime
         let turnID = dropTurnTrace?.turnId ?? "unavailable"
-        let prefs = PrivacyPreferences.shared
+        var contextMs = 0
+        var cleanupStartedAt = processStartedAt
+        if mode == .smart { AppState.shared.phase = .verifying }
         do {
-            let appContext = await AXContextReader.snapshot(forPID: targetPID)
-            guard !Task.isCancelled else { return }
-            let contextReadyAt = ProcessInfo.processInfo.systemUptime
-            let final = try await postProcessor.process(
-                rawText,
-                targetApp: targetApp,
-                appContext: appContext,
-                screenshot: nil,
-                language: prefs.selectedLanguage?.code,
-                outputLanguage: outputLanguageCodeForDrop(),
-                transcriptionMode: UserPreferencesCache.shared.currentMode.rawValue
-            )
-            guard !Task.isCancelled else { return }
-            let cleanupReadyAt = ProcessInfo.processInfo.systemUptime
-            let processMs = Int((cleanupReadyAt - processStartedAt) * 1000)
-            os_log(
-                "process ok turn_id=%{public}@ chars=%{public}d latency_ms=%{public}d ax_ms=%{public}d cleanup_ms=%{public}d",
-                log: Self.log, type: .info, turnID,
-                final.count, processMs, Int((contextReadyAt - processStartedAt) * 1000),
-                Int((cleanupReadyAt - contextReadyAt) * 1000)
-            )
-
-            // WHY: docs/decisions/2026-06-26-local-llm.md — a degenerate
-            // cleanup reply can be empty/whitespace; without this guard the
-            // empty string flows into the paste tail and is silently swallowed
-            // (deliverDropTranscript's `guard !text.isEmpty`). Fall back to
-            // the raw transcript so a non-empty dictation is never silently
-            // dropped (ROO-257).
-            let deliverable = Self.dropDeliverableAfterCleanup(
-                cleaned: final, rawTranscript: rawText
-            )
-            if deliverable != final {
-                // ROO-257: the raw-fallback is a band-aid, not a happy path. It
-                // should fire rarely; a FREQUENT fire means cleanup is still
-                // returning empty (e.g. a model or prompt regression), so this
-                // is a bug signal worth surfacing.
-                // Flag only — never the transcript text (invariant #2).
-                os_log(
-                    "cleanup_raw_fallback: empty cleanup, pasting raw transcript",
-                    log: Self.log, type: .error
+            let final = try await policy.prepare(
+                rawText: rawText, fillerTerms: FillerTermsStore().terms()
+            ) { [self] in
+                guard let postProcessor else { throw OpenRouterLLMError.notConfigured }
+                let appContext = await AXContextReader.snapshot(forPID: targetPID)
+                try Task.checkCancellation()
+                cleanupStartedAt = ProcessInfo.processInfo.systemUptime
+                contextMs = Int((cleanupStartedAt - processStartedAt) * 1000)
+                let prefs = PrivacyPreferences.shared
+                return try await postProcessor.process(
+                    rawText, targetApp: targetApp, appContext: appContext,
+                    screenshot: nil, language: prefs.selectedLanguage?.code,
+                    outputLanguage: outputLanguageCodeForDrop(mode: mode),
+                    transcriptionMode: mode.rawValue
                 )
             }
-            await finishDropDelivery(
-                text: deliverable,
-                rawTranscript: rawText,
-                targetApp: targetApp
-            )
-        } catch {
-            guard !Task.isCancelled else { return }
-            // No usable LLM route (none chosen / missing key / endpoint
-            // down): degrade to the fast output — the raw transcript
-            // (filler stripping still applies in `finishDropDelivery`). The
-            // paste never fails because cleanup is unavailable.
+            guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }
             os_log(
-                "post-process unavailable; pasting raw transcript: %{public}@",
-                log: Self.log, type: .error,
-                Self.pipelineErrorDescription(error)
+                "drop processing ok turn_id=%{public}@ mode=%{public}@ chars=%{public}d latency_ms=%{public}d ax_ms=%{public}d cleanup_ms=%{public}d",
+                log: Self.log, type: .info, turnID, mode.rawValue, final.count,
+                Int((ProcessInfo.processInfo.systemUptime - processStartedAt) * 1000), contextMs,
+                mode == .smart ? Int((ProcessInfo.processInfo.systemUptime - cleanupStartedAt) * 1000) : 0
             )
-            await finishDropDelivery(
-                text: rawText,
-                rawTranscript: rawText,
-                targetApp: targetApp
+            await finishDropDelivery(text: final, rawTranscript: rawText, targetApp: targetApp)
+            return true
+        } catch {
+            guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }
+            pendingProcessingRetry = DropProcessingRetry(
+                rawText: rawText, targetApp: targetApp, targetPID: targetPID, mode: mode
             )
+            let message = DropOutputPolicy.failureMessage(for: error)
+            AppState.shared.dropDeliveryFailureMessage = message
+            failDropTurnTelemetry(reason: "smart_cleanup_failed")
+            AppState.shared.phase = .deliveryFailed
+            os_log("drop cleanup failed: %{public}@", log: Self.log, type: .error, message)
+            if DropOutputPolicy.requiresConfiguration(for: error) {
+                openSettingsWindow(tab: .models)
+            }
+            return false
         }
     }
 
@@ -2974,12 +3077,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// side-effect wiring — phase, paste tail, retry-state, telemetry, and
     /// raw-partial salvage — is defined in exactly one place.
     private func dropDeliverySink(targetApp: String?, targetPID: pid_t?) -> DropBatchRecoverySink {
-        DropBatchRecoverySink(
+        let mode = dropTurnMode
+        let generation = streamingSetupGeneration
+        return DropBatchRecoverySink(
             setPhase: { AppState.shared.phase = $0 },
             deliver: { [weak self] raw in
-                guard let self else { return }
-                await self.runPostProcessAndPaste(
-                    rawText: raw, targetApp: targetApp, targetPID: targetPID
+                guard let self, generation == self.streamingSetupGeneration else { return false }
+                return await self.runPostProcessAndPaste(
+                    rawText: raw, targetApp: targetApp, targetPID: targetPID, mode: mode
                 )
             },
             retainForRetry: { [weak self] pcm in
@@ -2991,8 +3096,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             },
             clearPendingRetry: { [weak self] in
-                self?.pendingRetryPCM = nil
-                self?.pendingRetryTarget = nil
+                guard let self, generation == self.streamingSetupGeneration else { return }
+                self.pendingRetryPCM = nil
+                self.pendingRetryTarget = nil
             },
             failTelemetry: { [weak self] reason in
                 self?.failDropTurnTelemetry(reason: reason)
@@ -3008,7 +3114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let pasted = await self.autoPasteEngine.paste(raw)
                 if pasted { AppState.shared.phase = .idle }
                 return pasted
-            }
+            },
+            requiresProcessingForPartial: mode == .smart
         )
     }
 
@@ -3077,6 +3184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func discardPendingRetry() {
         pendingRetryPCM = nil
         pendingRetryTarget = nil
+        pendingProcessingRetry = nil
+        AppState.shared.dropDeliveryFailureMessage = nil
     }
 
     /// Manual retry for a total-offline degraded Drop (Task 7). Re-runs
@@ -3094,6 +3203,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// in-flight phase (routed to `.noop`), never the escapable terminal: that
     /// closes the window where a stale retry could paste over a new turn.
     func retryPendingDelivery() {
+        if let pending = pendingProcessingRetry {
+            guard !retryInFlight else { return }
+            retryInFlight = true
+            AppState.shared.phase = .verifying
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.runPostProcessAndPaste(
+                    rawText: pending.rawText, targetApp: pending.targetApp,
+                    targetPID: pending.targetPID, mode: pending.mode
+                )
+                self.retryInFlight = false
+            }
+            return
+        }
         guard Self.shouldBeginRetry(inFlight: retryInFlight, hasPendingAudio: pendingRetryPCM != nil),
               let pcm = pendingRetryPCM else { return }
         let target = pendingRetryTarget
@@ -3128,10 +3251,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     struct DropBatchRecoverySink {
         /// Move the on-screen Drop phase (`.finishing`, `.idle`, `.deliveryFailed`).
         var setPhase: (AppPhase) -> Void
-        /// Deliver a non-empty recovered transcript through the normal
-        /// post-process + paste tail. Async because the production tail awaits
-        /// the cleanup LLM + paste.
-        var deliver: (String) async -> Void
+        /// Deliver through the mode's processing + paste tail. False means the
+        /// processing owner retained the transcript and displayed a retryable
+        /// failure; recovery must not clear it or substitute a raw partial.
+        var deliver: (String) async -> Bool
         /// Retain the captured PCM for a manual Retry (total-offline only).
         var retainForRetry: (Data) -> Void
         /// Clear any armed retry (on a successful delivery).
@@ -3145,6 +3268,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// through to `.deliveryFailed` (retain for retry) instead of silently
         /// losing the dictation.
         var pasteRaw: (String) async -> Bool = { _ in true }
+        /// A Smart take must process recovered partials before delivering them.
+        var requiresProcessingForPartial: Bool = false
     }
 
     /// Pure-ish state machine for degraded-Drop batch recovery (Task 7). Given
@@ -3191,7 +3316,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 sink.setPhase(.idle)
                 return
             }
-            await sink.deliver(raw)
+            guard await sink.deliver(raw) else { return }
             // Delivery owns the phase tail (it ends at .idle); a successful
             // (re)delivery clears any armed retry from a prior failed attempt.
             sink.clearPendingRetry()
@@ -3299,7 +3424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log: log, type: .info,
                 text.count, latencyMs
             )
-            await sink.deliver(text)                                   // rung 1
+            guard await sink.deliver(text) else { return }             // rung 1
             // A successful realtime delivery clears any retry armed by a PRIOR
             // failed take (parity with the batch rung), so stale PCM never
             // lingers across turns.
@@ -3335,6 +3460,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The manual Retry armed by `retainForRetry` (.deliveryFailed →
             // `recoverViaBatch`) re-transcribes the retained PCM in batch.
             if !streamingTranscriptIsEmpty(lastPartial) {
+                if sink.requiresProcessingForPartial {
+                    if await sink.deliver(lastPartial) { sink.clearPendingRetry() }
+                    return
+                }
                 let pasted = await sink.pasteRaw(lastPartial)          // rung 3
                 if pasted {
                     sink.failTelemetry("salvaged_partial")
@@ -3382,7 +3511,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await salvageOrFail(batchFailureReason: "degraded_empty", armRetry: false)
                 return
             }
-            await sink.deliver(raw)
+            guard await sink.deliver(raw) else { return }
             sink.clearPendingRetry()
         } catch is BatchRecoveryTimeout {
             // Stuck decode cut by the deadline: same salvage ladder, but the

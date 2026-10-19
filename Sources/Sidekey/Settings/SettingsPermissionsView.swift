@@ -12,7 +12,7 @@ struct SettingsPermissionsView: View {
                     MacCard {
                         permissionRow(
                             icon: "keyboard.fill",
-                            title: "Universal Access",
+                            title: "Keyboard control",
                             granted: viewModel.snapshot.accessibilityGranted,
                             status: viewModel.snapshot.accessibilityGranted ? "Allowed" : "Required",
                             actionTitle: "Open",
@@ -30,6 +30,7 @@ struct SettingsPermissionsView: View {
                     }
                 }
 
+                DropShortcutStatusSection(viewModel: viewModel)
                 MacButton(title: "Refresh", style: .default) { viewModel.refresh() }
             }
             .padding(.horizontal, 24)

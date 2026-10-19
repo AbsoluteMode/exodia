@@ -162,15 +162,48 @@ and the gesture, as determined by `HotkeyShortcutMonitor.isDropHoldTap`:
 
 | Shortcut type | Gesture | Monitor | Effect |
 |---------------|---------|---------|--------|
-| `.holdSpace` (normalized hold) | hold | `SpaceHoldMonitor` (CGEventTap, Input Monitoring) | Swallows Space; plain typing unaffected by release |
-| bare combo (`modifiers == 0`) | hold | `SpaceHoldMonitor` (CGEventTap, Input Monitoring) | Swallows the key on hold; plain taps still type |
+| `.holdSpace` (normalized hold) | hold | `SpaceHoldMonitor` (CGEventTap, Accessibility) | Swallows Space; plain typing unaffected by release |
+| bare combo (`modifiers == 0`) | hold | `SpaceHoldMonitor` (CGEventTap, Accessibility) | Swallows the key on hold; plain taps still type |
 | bare combo (`modifiers == 0`) | tap/Toggle | Carbon `RegisterEventHotKey` | Key grabbed globally — **stops typing**; Settings shows a warning |
-| modifier combo | hold | `SpaceHoldMonitor` (CGEventTap, Input Monitoring) | Swallows the key on hold |
+| modifier combo | hold | `SpaceHoldMonitor` (CGEventTap, Accessibility) | Swallows the key on hold |
 | modifier combo | tap/Toggle | Carbon `RegisterEventHotKey` | Standard combo registration; modifier key still types normally |
 | `.modifier` (R⌘, R⌥) | — | `ModifierOnlyHotkeyMonitor` | Tap/hold split on the same physical key |
 
 `voiceTitle` in display: `.tap` shows as "Toggle" on voice rows;
 `HotkeyGesture.rawValue` ("tap"/"hold") is for persistence only, never for UI.
+
+### Drop permissions and shortcut recovery
+
+Carbon tap/Toggle shortcuts stay registered when Accessibility is missing.
+Pressing the saved shortcut, including a bare key such as `]`, opens the
+existing permission-repair surface before a new recording starts. A Stop or
+release for an active take is never blocked by the start-permission check.
+Hold and modifier monitors still need Accessibility to install. Input
+Monitoring is a fallback only when macOS cannot create the hold event tap;
+it is not required for Carbon tap shortcuts. A failed tap or Carbon
+registration is an installation failure, never a ready monitor.
+
+Settings → Permissions shows the actual **Drop shortcut** state. **Retry
+shortcut** reinstalls it even when the permission status has not changed.
+A shortcut owned by another app or Exodia copy is reported as **Shortcut is
+in use**, with **Hotkeys…** available to change it; this error does not ask
+for more permissions. The repair view also identifies the running app in
+Finder when an old Accessibility entry needs replacing.
+
+Reopening Exodia, activating it, or pressing **Refresh** in Permissions
+quietly reconciles permission state and monitor installation. While waiting
+for repair, checks run once a second for up to 120 attempts and stop once
+ready. These checks do not request grants or open background repair windows.
+After that bounded session, reopening Exodia, Refresh, or Retry can start a
+new session. Rebuilding a live monitor waits until the current capture can
+stop; if a hold tap itself is lost, the captured take is finalized, including
+a Stop received during setup. Saved shortcuts, gestures, modes and providers
+are not changed by recovery.
+
+Source contract: `DropHotkeyRecovery`, `AppDelegate.refreshRuntimePermissions`,
+and `PermissionsSettingsViewModel`. The source correction and remaining
+installed-app checks are recorded in the
+[permission stability audit](../.project-docs/bugs/2026-10-19-permission-stability-audit.md).
 
 ## Hover-slot hotkeys
 
