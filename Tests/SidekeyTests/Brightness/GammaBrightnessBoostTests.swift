@@ -98,6 +98,41 @@ final class GammaBrightnessBoostTests: XCTestCase {
         XCTAssertEqual(f.gamma.colorSyncRestores, 1)
     }
 
+    func testCloseLeavesATableAnotherAppWroteSinceTheLastFrame() {
+        // Another booster may write between two frames; giving the old table back would undo it.
+        let f = BoostFixture()
+        f.boost.tick()
+        f.gamma.table = .ramp(1.6)
+        f.boost.close()
+
+        XCTAssertEqual(f.gamma.table, .ramp(1.6))
+        XCTAssertEqual(f.gamma.writes, [.ramp(1).scaled(by: 1.45)])
+    }
+
+    func testCloseAfterAResetSinceTheLastFrameKeepsTheNewerTable() {
+        // macOS restored the display's own table, perhaps a new profile's: the older one must not return.
+        let f = BoostFixture()
+        f.boost.tick()
+        f.gamma.table = .ramp(0.9)
+        f.boost.close()
+
+        XCTAssertEqual(f.gamma.table, .ramp(0.9))
+        XCTAssertEqual(f.gamma.writes.count, 1)
+    }
+
+    func testCloseWithoutBoostLeavesTheDisplaysNewerTable() {
+        let f = BoostFixture()
+        f.boost.tick()
+        f.headroom = 1
+        f.run(for: 30)
+        let writes = f.gamma.writes.count
+        f.gamma.table = .curve
+        f.boost.close()
+
+        XCTAssertEqual(f.gamma.table, .curve)
+        XCTAssertEqual(f.gamma.writes.count, writes)
+    }
+
     func testEndsAreReportedOnce() {
         let f = BoostFixture()
         f.gamma.table = .ramp(1.45)
@@ -205,8 +240,8 @@ final class GammaBrightnessBoostTests: XCTestCase {
         let f = BoostFixture()
         f.boost.tick()
         f.headroom = 1.6
-        f.advance(0.2)
-        f.advance(GammaBrightnessBoost.settleInterval - 0.1)
+        // The first of these frames sees the change; it has held 1.4 s at the last.
+        f.run(for: 1.6)
         XCTAssertEqual(f.gamma.writes.count, 1, "A change must hold before the table follows it.")
 
         f.advance(0.2)
@@ -254,6 +289,67 @@ final class GammaBrightnessBoostTests: XCTestCase {
         XCTAssertEqual(f.ends, [])
     }
 
+    func testAlmostNoHeadroomGivesTheDisplayExactlyItsOwnTable() {
+        // A boost within the tolerance of none would otherwise be taken for the display's own table.
+        let f = BoostFixture()
+        f.boost.tick()
+        f.headroom = 1.01
+        f.run(for: 30)
+        XCTAssertEqual(f.gamma.table, .ramp(1))
+
+        f.headroom = 2.6667
+        f.run(for: 2)
+        XCTAssertEqual(f.gamma.table, .ramp(1).scaled(by: 1.45))
+    }
+
+    func testAProfileChangeWithoutBoostIsTheTableScaledWhenTheHeadroomReturns() {
+        // A new profile may keep SDR white and change the curve below it.
+        let f = BoostFixture()
+        f.boost.tick()
+        f.headroom = 1
+        f.run(for: 30)
+        f.gamma.table = .curve
+        f.advance(0.2)
+        f.headroom = 2.6667
+        f.run(for: 2)
+
+        XCTAssertEqual(f.gamma.table, DisplayGammaTable.curve.scaled(by: 1.45))
+        XCTAssertEqual(f.ends, [])
+    }
+
+    // MARK: Paused frames
+
+    func testFramesPausedWhileWaitingForHeadroomDoNotCountTowardTheTimeout() {
+        // Frames pause while the display or the Mac sleeps; only frames raise the headroom.
+        let f = BoostFixture()
+        f.headroom = 1
+        f.boost.tick()
+        f.run(for: 1)
+        f.now += 30
+        f.boost.tick()
+        f.run(for: GammaBrightnessBoost.engageTimeout - 0.4)
+        XCTAssertEqual(f.ends, [])
+
+        f.run(for: 0.6)
+        XCTAssertEqual(f.ends, [.unavailable])
+    }
+
+    func testFramesPausedDuringADipDoNotStepTheTableDownAtWake() {
+        // At wake the trigger raises the headroom again within a second.
+        let f = BoostFixture()
+        f.boost.tick()
+        f.headroom = 1
+        f.run(for: 0.4)
+        f.now += 30
+        f.boost.tick()
+        f.run(for: 0.6)
+        f.headroom = 2.6667
+        f.run(for: 3)
+
+        XCTAssertEqual(f.gamma.writes.count, 1, "The dip never held for the settle time while frames came.")
+        XCTAssertEqual(f.ends, [])
+    }
+
     // MARK: Another session
 
     func testAnInactiveSessionGetsTheDisplaysOwnTable() {
@@ -278,6 +374,16 @@ final class GammaBrightnessBoostTests: XCTestCase {
         XCTAssertEqual(f.ends, [])
     }
 
+    func testSuspendingLeavesATableAnotherAppWroteSinceTheLastFrame() {
+        let f = BoostFixture()
+        f.boost.tick()
+        f.gamma.table = .ramp(1.6)
+        f.boost.suspend()
+
+        XCTAssertEqual(f.gamma.table, .ramp(1.6))
+        XCTAssertEqual(f.gamma.writes.count, 1)
+    }
+
     func testCloseWhileSuspendedWritesNothing() {
         let f = BoostFixture()
         f.boost.tick()
@@ -288,6 +394,31 @@ final class GammaBrightnessBoostTests: XCTestCase {
     }
 
     // MARK: Factor
+
+    func testTheAppliedFactorIsTheBoostTheDisplayHas() {
+        // The battery estimate counts the light the display actually shows.
+        let f = BoostFixture()
+        f.headroom = 1
+        f.boost.tick()
+        XCTAssertEqual(f.boost.appliedFactor, 1)
+
+        f.headroom = 2.6667
+        f.advance(0.2)
+        XCTAssertEqual(f.boost.appliedFactor, 1.45)
+
+        f.headroom = 1
+        f.run(for: 30)
+        XCTAssertEqual(f.boost.appliedFactor, 1)
+
+        f.headroom = 2.6667
+        f.run(for: 2)
+        f.boost.suspend()
+        XCTAssertEqual(f.boost.appliedFactor, 1)
+        f.boost.resume()
+        f.advance(0.2)
+        f.boost.close()
+        XCTAssertEqual(f.boost.appliedFactor, 1)
+    }
 
     func testTheFactorMatchesVividAndNeverExceedsTheHeadroom() {
         XCTAssertEqual(ScreenBrightnessScale.extraGammaFactor(currentHeadroom: 2.6667), 1.45)
@@ -353,6 +484,15 @@ private extension DisplayGammaTable {
     /// A linear table ending at `white`.
     static func ramp(_ white: Float) -> DisplayGammaTable {
         let values = (0..<256).map { Float($0) / 255 * white }
+        return DisplayGammaTable(red: values, green: values, blue: values)
+    }
+
+    /// Another profile's curve with the same SDR white.
+    static var curve: DisplayGammaTable {
+        let values = (0..<256).map { (i: Int) -> Float in
+            let x = Float(i) / 255
+            return x * x
+        }
         return DisplayGammaTable(red: values, green: values, blue: values)
     }
 }

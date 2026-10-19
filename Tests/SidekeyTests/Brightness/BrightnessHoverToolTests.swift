@@ -295,7 +295,9 @@ private final class StripFixture {
         }
         battery = BatteryRuntimeMonitor(read: { snapshot }, displayLoad: {
             followsDisplay
-                ? ScreenBrightnessScale.displayLoad(level: controller.level, isExtraOn: controller.isExtraOn)
+                ? ScreenBrightnessScale.displayLoad(
+                    level: controller.level,
+                    gammaFactor: controller.isExtraOn ? ScreenBrightnessScale.maximumExtraGamma : 1)
                 : nil
         })
         state.prepare(controller)
@@ -453,6 +455,7 @@ private final class StaticBrightnessDevice: ScreenBrightnessDevice {
 
 @MainActor
 private final class NoBoost: BrightnessBoost {
+    var gammaFactor: Double { 1 }
     func refresh() {}
     func close() {}
 }

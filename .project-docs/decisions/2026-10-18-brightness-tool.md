@@ -75,7 +75,7 @@ sources:
     reference: https://github.com/niklasr22/BrightIntosh (GPL, read for ideas only, no code copied) — a 1x1 trigger window one level above its full-screen overlay at the shielding level, presented five times a second, a brightness factor of 1 + 0.5 x min(headroom / 2.66, 1) on its list of 600-nit built-in panels (1 + 0.59 x min(headroom / 3.2, 1) on other built-in panels), suspension on screensaver, session and protected-data changes, and CGDisplayRestoreColorSyncSettings resetting every display's table.
     confirmed_at: 2026-10-19
   - type: trace
-    reference: Local runs on 2026-10-19/20. Each fix was written test-first. GammaBrightnessBoostTests 25, ScreenBrightnessControllerTests 32, BrightnessBoostFrameTimerTests 9, BrightnessHoverToolTests 19, BrightnessKeysTests 44, BatteryRuntimeTests 27 and BatteryRuntimeMonitorTests 5; the Brightness, battery and Toolbox filter 177 tests, 0 failures. Four mutations of the table boost and eight of the battery estimate were each caught. After merging main 9b03696, full swift test 3,515 tests, 8 skipped, 0 failures (96.234 s).
+    reference: Local runs on 2026-10-19/20. Each fix was written test-first. GammaBrightnessBoostTests 25, ScreenBrightnessControllerTests 32, BrightnessBoostFrameTimerTests 9, BrightnessHoverToolTests 19, BrightnessKeysTests 44, BatteryRuntimeTests 27 and BatteryRuntimeMonitorTests 5; the Brightness, battery and Toolbox filter 177 tests, 0 failures. Four mutations of the table boost and eight of the battery estimate were each caught. After merging main 9b03696, full swift test 3,515 tests, 8 skipped, 0 failures (96.234 s). After Codex's six review findings were fixed test-first: GammaBrightnessBoostTests 34, ScreenBrightnessControllerTests 33, BatteryRuntimeTests 28, the seven suites 172 tests, 0 failures; eight mutations of the fixes each caught; after merging main 92a2aa3, full swift test 3,545 tests, 9 skipped, 0 failures (97.748 s).
     confirmed_at: 2026-10-20
   - type: url
     reference: https://developer.apple.com/videos/play/wwdc2022/10114/ (Display EDR content with Core Image, Metal, and SwiftUI)
@@ -152,17 +152,23 @@ also while the window is not visible. Nothing happens between
 with its own notification.
 
 `GammaBrightnessBoost` writes nothing until the current EDR headroom exceeds
-1.05; if it does not within 5 seconds, Extra ends with the Extra notice. It
+1.05; if it does not within 5 seconds of frames, Extra ends with the Extra
+notice. It
 then reads the display's own table (`CGGetDisplayTransferByTable`, up to 256
 entries) and writes it scaled by `min(1.45, 1.055 x headroom^(1/2.4) - 0.055)`,
 the headroom in the sRGB encoding the table holds. From a headroom of about
 2.35 the factor stays at 1.45, about 2.35 times SDR light at white. While the
 headroom first rises, each step is followed at once. Any other change is
 written once the table has differed from it for 1.5 seconds; without headroom
-the display gets its own table while Extra stays on, and returning headroom
-rises at once again. After every frame the
-boost compares each channel's white with the table it wrote, within 0.003
-because Quartz may resample a table. A table that already ends above 1.01
+the display gets exactly its own table while Extra stays on (a factor within
+0.005 of none counts as none), and returning headroom rises at once again.
+Frames come every 0.2 seconds, so a gap of more than a second between two
+means they paused (sleep, another session): it restarts the 5-second wait and
+the 1.5-second hold instead of counting toward them. After every frame the
+boost compares each channel's white with the boosted table it wrote, within
+0.003 because Quartz may resample a table. Without a boost there is nothing
+to compare: the display's current neutral table, a new profile's included,
+simply becomes the one boosted when the headroom returns. A table that already ends above 1.01
 belongs to another booster such as Vivid: at the start or later, Extra ends
 with "Another app is adjusting this display." and leaves that table alone. A
 table back at SDR white is a reset, such as a display reconfiguration or a
@@ -170,8 +176,10 @@ profile change: it becomes the display's own table and is boosted again, and
 a third reset within 10 seconds also counts as another app. An unreadable
 table or a refused write ends Extra with the Extra notice. While another
 user's session is active the display has its own table, and Extra engages
-again when the session returns. Ending Extra writes the display's own table
-back before the trigger closes, or restores every display's ColorSync table if
+again when the session returns. Ending Extra, or another session, writes the
+display's own table back before the trigger closes, but only while the display
+still has the boosted table: one written since the last frame by macOS or
+another app stays, or restores every display's ColorSync table if
 Quartz refuses that write; Quartz also gives the displays their own tables
 back when the process exits.
 
@@ -238,8 +246,10 @@ launch on a Mac with a battery, and every 5 seconds while the strip is
 visible. A sample is the system load that the accumulators average
 between two readings 30 to 180 seconds apart, with the built-in display's
 light averaged over the same span (`ScreenBrightnessScale.displayLoad`): the
-level squared, times 2.35 while Extra is on that display, and 0 with the lid
-closed. A longer gap such as sleep, a counter reset or a clock change starts
+level squared, times the light of the table factor Extra currently applies to
+that display (2.35 at 1.45, 1 while it waits for headroom or has none), and 0
+with the lid closed. A factor that changes on its own, with the headroom, is
+counted at the next reading: 5 seconds with the strip open, a minute without. A longer gap such as sleep, a counter reset or a clock change starts
 a new span without a sample; an empty history starts from the latest instant
 load, and loads under 0.5 W are dropped. The estimate uses the last 30
 minutes: the load's least-squares slope over the light, drawn toward a prior
@@ -251,8 +261,10 @@ least 0.5 W. While the strip is visible, every level or Extra change it sees
 recomputes the line at once without reading the battery; with the strip
 closed, a change enters the light average at the next reading. On battery
 macOS's estimate comes first while fewer than five samples exist or the
-history gives no time, adjusted by the same slope from the recent mean light
-to the current one; otherwise the history gives the time. On power the
+history gives no time, adjusted by the same slope from the light of the
+minute before its reading to the current one: macOS follows the battery's
+average current, about the last minute (an assumption), so a refreshed
+estimate already has an older change of brightness; otherwise the history gives the time. On power the
 history shows "N h if unplugged", otherwise "On power" or "Charging". Times
 are at most 24 hours and round to 5 minutes under an hour, then to 10.
 
@@ -297,6 +309,19 @@ Brightness keys need the Accessibility permission the hotkeys use.
   and writing ours over it would fight the other app frame by frame. A table
   back at SDR white is macOS resetting it, as a reconfiguration or a profile
   change does; three resets within 10 seconds mean another app keeps writing it.
+- Only white is compared, because Quartz may resample a table and an exact
+  comparison of the curve could take its own resampling for another app. A
+  profile that keeps SDR white and changes the curve below it is therefore
+  invisible while boosting; without a boost the current table is taken as the
+  display's own, so a profile change during a headroom loss is not undone.
+  Codex's review of #63 found the old curve coming back.
+- A table goes back only while the display still has the boosted one: another
+  booster or macOS may write between two frames, and giving the older table
+  back would undo it (Codex, #63).
+- Time without frames is not the headroom's: only the trigger's frames raise
+  it, so a display that slept past the 5-second wait would otherwise end Extra
+  at wake, and a dip that began before sleep would step the table down at once
+  (Codex, #63).
 - The table belongs to the display, not to the session, so another user's
   session gets the display's own table.
 - The trigger is 1x1 point in the top-right corner, as Vivid places its own,
@@ -516,6 +541,24 @@ Brightness keys need the Accessibility permission the hotkeys use.
   main 9b03696, the full `swift test` on the merge executed 3,515 tests,
   8 skipped, 0 failures (96.234 s), with no build warnings in the Brightness
   files, `IslandView` or `MacSwitch`.
+- Codex's read-only review of #63 (2026-10-20) reported six findings, five
+  medium and one low, all confirmed by reading the code and fixed test-first:
+  close and another session overwrote a table written since the last frame;
+  a curve change behind an unchanged white came back after a headroom loss;
+  time without frames counted toward the 5-second wait and the 1.5-second
+  hold; a refreshed macOS estimate was adjusted again for an older brightness
+  (549 minutes instead of 384); the battery light counted Extra's full 2.35
+  while the display had its own table; and the privacy note left out the
+  background backlight reads. The nine new engine and battery tests and the
+  load test first failed for those reasons. Eight mutations of the fixes (no
+  factor guard or no table check when giving back, no snap to the display's
+  own table, no pause gap, no adoption of the unboosted table, an applied
+  factor that ignores the phase, the estimate's light from the history and a
+  load that ignores the applied factor) were each caught by 1 to 3 tests.
+  The seven Brightness and battery suites then passed 172 tests with 0
+  failures, and after merging main 92a2aa3 the full `swift test` executed
+  3,545 tests, 9 skipped, 0 failures (97.748 s), with no build warnings in the
+  Brightness files.
 
 ## Rejected alternatives
 

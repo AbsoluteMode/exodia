@@ -70,6 +70,16 @@ final class BatteryRuntimeTests: XCTestCase {
         XCTAssertEqual(estimator.status(for: battery, at: start + 10), .remaining(percent: 84, minutes: 438))
     }
 
+    func testARefreshedSystemEstimateIsNotAdjustedForAnOlderBrightness() {
+        // macOS's estimate follows about the last minute of current: once that minute is at a
+        // quarter of the light, a refreshed estimate already has it.
+        var estimator = BatteryRuntimeEstimator()
+        let end = feed(&estimator, [(load: 1, watts: 10), (load: 0.25, watts: 6.25)])
+        // 40 Wh at 6.25 W, the load macOS saw at a quarter of the light.
+        XCTAssertEqual(estimator.status(for: snapshot(systemMinutes: 384), at: end),
+                       .remaining(percent: 84, minutes: 384))
+    }
+
     func testWithoutWattHoursTheSystemEstimateStaysAsIs() {
         var estimator = BatteryRuntimeEstimator()
         let battery = snapshot(systemMinutes: 260, wattHours: nil, instantWatts: 20)
@@ -258,7 +268,7 @@ final class BatteryRuntimeTests: XCTestCase {
     func testExtraTakesTime() {
         var estimator = BatteryRuntimeEstimator()
         let end = feed(&estimator, repeated(1, 10, 10))
-        estimator.noteDisplayLoad(ScreenBrightnessScale.displayLoad(level: 1, isExtraOn: true), at: end + 5)
+        estimator.noteDisplayLoad(ScreenBrightnessScale.displayLoad(level: 1, gammaFactor: ScreenBrightnessScale.maximumExtraGamma), at: end + 5)
         // 10 W + 5 W × 1.35 = 16.7 W.
         XCTAssertEqual(estimator.status(for: snapshot(), at: end + 5), .remaining(percent: 84, minutes: 143))
     }

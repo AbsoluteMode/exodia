@@ -359,15 +359,19 @@ Brightness inside hover:
   ⌘Tab. Nothing is written until the headroom exceeds 1.05 (none within 5 s
   ends Extra as unavailable). While the headroom first rises or returns, each
   step is followed at once; any other change applies once it holds 1.5 s.
-  Without headroom the display has its own table and Extra stays on. A table
+  Without headroom the display has exactly its own table (a factor within
+  0.005 of none is none) and Extra stays on; its current table, a new
+  profile's included, is the one boosted when the headroom returns. A table
   already above SDR white (Vivid) or rewritten by another app is left alone
   and ends Extra with "Another app is adjusting this display."; a reset by a
   reconfiguration or profile change is boosted again, and a third reset within
-  10 s counts as another app. BrightnessBoostFrameTimer presents a trigger
+  10 s counts as another app. Ending or suspending gives a table back only
+  while the display still has the boosted one. BrightnessBoostFrameTimer presents a trigger
   frame every 0.2 s, strip open or not, then checks the table: without focus
   WindowServer keeps the headroom only ~0.8 s after the last frame. Frames
   pause during display sleep, system sleep and another user's session, each
-  until its own end notification; another user's session also gets the
+  until its own end notification, and a gap over 1 s between frames restarts
+  the 5 s wait for headroom and the 1.5 s hold; another user's session also gets the
   display's own table until this one is active again. Extra is a fixed boost:
   the slider at any level, brightness keys, automatic brightness, idle
   dimming, closing the strip, sleep and a session switch keep it. Only its
@@ -396,13 +400,16 @@ Brightness inside hover:
   minute from launch, and every 5 s while the strip is visible. Each sample is
   the system load that PowerTelemetryData's accumulators average between two
   updates 30-180 s apart (a longer gap such as sleep adds none), with the
-  built-in display's light averaged over the same span: level squared, x2.35
-  with Extra on it, 0 with the lid closed. Over the last 30 minutes the load's
+  built-in display's light averaged over the same span: level squared, times
+  the light of the table factor Extra currently applies to it (x2.35 at 1.45,
+  x1 without headroom), 0 with the lid closed. A factor change on its own is
+  counted at the next reading (5 s with the strip, 60 s without). Over the last 30 minutes the load's
   slope over that light (ridge toward a 5 W prior, 1-15 W, at most 80% of the
   mean load) moves the display's share to the current light, so a slider or
   Extra change recomputes the line at once without reading the battery. On
   battery macOS's estimate comes first until five samples exist, adjusted the
-  same way for the light change since it was made; on power the line shows the
+  same way from the light of the minute before its reading (about what macOS
+  averages) to the current light; on power the line shows the
   time if unplugged. The history stays in memory: battery readings and key
   events are never written to disk, logged or sent. WHY:
   .project-docs/decisions/2026-10-18-brightness-tool.md

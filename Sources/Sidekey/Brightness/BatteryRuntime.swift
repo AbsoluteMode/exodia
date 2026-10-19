@@ -52,6 +52,9 @@ struct BatteryRuntimeEstimator {
     static let displayWattsRange = 1.0...15.0
     /// The display never takes more of the average load than this.
     static let maximumDisplayShare = 0.8
+    /// macOS's estimate follows the battery's average current, about the last minute: the light
+    /// over that minute is the one it was made at (an assumption).
+    static let systemEstimateSpan: TimeInterval = 60
 
     struct Sample: Equatable {
         var date: Date
@@ -72,6 +75,10 @@ struct BatteryRuntimeEstimator {
     private var baseline: (counters: Counters?, date: Date)?
     /// The built-in display's latest known light and since when.
     private var load: (value: Double, since: Date)?
+    /// The light's changes over the last `systemEstimateSpan`, oldest first.
+    private var recentLoads: [(value: Double, since: Date)] = []
+    /// The light the latest reading's macOS estimate was made at.
+    private var systemEstimateLoad: Double?
     /// The light integrated over the known time since the baseline.
     private var loadArea = 0.0
     private var loadDuration: TimeInterval = 0
@@ -83,11 +90,17 @@ struct BatteryRuntimeEstimator {
         loadArea = integrated.area
         loadDuration = integrated.duration
         load = (max(0, value), date)
+        recentLoads.append((max(0, value), date))
+        // Changes before the span matter only through the last one, which lasted into it.
+        while recentLoads.count > 1, recentLoads[1].since <= date - Self.systemEstimateSpan {
+            recentLoads.removeFirst()
+        }
     }
 
     /// A battery reading. Once the accumulators move on, their average since the baseline
     /// becomes a sample with the display's average light over the same span.
     mutating func record(_ snapshot: BatterySnapshot, at date: Date) {
+        systemEstimateLoad = recentMeanLoad(until: date)
         samples.removeAll { date.timeIntervalSince($0.date) >= Self.window }
         let counters = snapshot.loadSum.flatMap { sum in snapshot.loadCount.map { Counters(sum: sum, count: $0) } }
         // Without telemetry there is no load to learn from.
@@ -130,7 +143,7 @@ struct BatteryRuntimeEstimator {
         if let system = snapshot.systemMinutesToEmpty, system > 0,
            history.count < Self.minimumSamples || fromHistory == nil {
             let minutes = systemMinutes(system, wattHours: snapshot.remainingWattHours, history: history,
-                                        light: light, at: date)
+                                        light: light)
             return .remaining(percent: percent, minutes: minutes)
         }
         guard let fromHistory else { return .estimating(percent: percent) }
@@ -186,14 +199,27 @@ struct BatteryRuntimeEstimator {
         return integrated.duration > 0 ? integrated.area / integrated.duration : load?.value ?? 0
     }
 
-    /// macOS's estimate with the display's share moved from the light it was made at to the
-    /// current light.
-    private func systemMinutes(_ system: Int, wattHours: Double?, history: [Sample], light: Double,
-                               at date: Date) -> Int {
+    /// The light over the last `systemEstimateSpan` before `date`; without a span known, the light then.
+    private func recentMeanLoad(until date: Date) -> Double? {
+        let from = date - Self.systemEstimateSpan
+        var area = 0.0, duration: TimeInterval = 0
+        for (index, entry) in recentLoads.enumerated() {
+            let end = index + 1 < recentLoads.count ? min(recentLoads[index + 1].since, date) : date
+            let start = max(entry.since, from)
+            guard end > start else { continue }
+            area += entry.value * end.timeIntervalSince(start)
+            duration += end.timeIntervalSince(start)
+        }
+        return duration > 0 ? area / duration : load?.value
+    }
+
+    /// macOS's estimate with the display's share moved from the light it was made at (the last
+    /// minute's before the reading) to the current light.
+    private func systemMinutes(_ system: Int, wattHours: Double?, history: [Sample], light: Double) -> Int {
         let fallback = min(system, Self.maximumMinutes)
         guard let wattHours, wattHours.isFinite, wattHours > 0 else { return fallback }
         let watts = wattHours * 60 / Double(system)
-        let madeAt = history.isEmpty ? meanDisplayLoad(until: date) : Self.mean(history.map(\.displayLoad))
+        let madeAt = systemEstimateLoad ?? light
         let adjusted = watts + Self.displayWatts(history, meanWatts: watts, meanLoad: madeAt) * (light - madeAt)
         return Self.minutes(wattHours: wattHours, watts: max(adjusted, Self.minimumLoadWatts)) ?? fallback
     }

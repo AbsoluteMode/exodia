@@ -24,11 +24,17 @@ enum ScreenBrightnessScale {
     /// White's light with Extra relative to SDR white: the table factor through sRGB's curve.
     static let extraLight = pow((maximumExtraGamma + 0.055) / 1.055, 2.4)
 
+    /// White's light at a table factor relative to SDR white: the factor through sRGB's curve.
+    static func light(gammaFactor: Double) -> Double {
+        guard gammaFactor.isFinite, gammaFactor > 1 else { return 1 }
+        return pow((gammaFactor + 0.055) / 1.055, 2.4)
+    }
+
     /// The display's light relative to its full SDR white, for the battery estimate. The level
     /// is perceptual, so the backlight's light grows about with its square (an assumption).
-    static func displayLoad(level: Double, isExtraOn: Bool) -> Double {
+    static func displayLoad(level: Double, gammaFactor: Double) -> Double {
         let level = clampedLevel(level)
-        return level * level * (isExtraOn ? extraLight : 1)
+        return level * level * light(gammaFactor: gammaFactor)
     }
 }
 
@@ -54,6 +60,8 @@ protocol BrightnessBoost: AnyObject {
     func refresh()
     /// Gives the display its own table back.
     func close()
+    /// The factor the display's table has now; 1 while Extra waits for the headroom or has none.
+    var gammaFactor: Double { get }
 }
 
 @MainActor
@@ -214,8 +222,9 @@ final class ScreenBrightnessController: ObservableObject {
         observers.removeAll()
     }
 
-    /// The built-in display's light for the battery estimate, times Extra's boost while Extra is
-    /// on it: 0 without a built-in display (a closed lid), nil when its level can't be read. Reads only.
+    /// The built-in display's light for the battery estimate, times the boost Extra applies to it
+    /// now (none while it waits for headroom or has none): 0 without a built-in display (a closed
+    /// lid), nil when its level can't be read. Reads only.
     func builtInDisplayLoad() -> Double? {
         guard let builtIn = device.displays().first(where: \.isBuiltIn) else { return 0 }
         let isCurrent = display?.id == builtIn.id
@@ -226,7 +235,8 @@ final class ScreenBrightnessController: ObservableObject {
             guard let hardware = device.read(builtIn.id), hardware.isFinite else { return nil }
             level = hardware
         }
-        return ScreenBrightnessScale.displayLoad(level: level, isExtraOn: isCurrent && isExtraOn)
+        let factor = isCurrent && isExtraOn ? boost?.gammaFactor ?? 1 : 1
+        return ScreenBrightnessScale.displayLoad(level: level, gammaFactor: factor)
     }
 
     private func startExtra() {

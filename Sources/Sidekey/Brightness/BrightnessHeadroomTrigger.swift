@@ -12,6 +12,8 @@ final class NativeBrightnessBoost: BrightnessBoost {
     private let workspaceCenter: NotificationCenter
     private var observers: [NSObjectProtocol] = []
 
+    var gammaFactor: Double { engine?.appliedFactor ?? 1 }
+
     init?(display id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void,
           workspaceCenter: NotificationCenter = NSWorkspace.shared.notificationCenter) {
         let engine = GammaBrightnessBoost(display: id, gamma: QuartzDisplayGamma(), headroom: {

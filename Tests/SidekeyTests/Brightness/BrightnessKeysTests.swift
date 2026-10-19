@@ -566,6 +566,7 @@ private final class KeyBrightnessDevice: ScreenBrightnessDevice {
 
 @MainActor
 private final class KeyNoBoost: BrightnessBoost {
+    var gammaFactor: Double { 1 }
     func refresh() {}
     func close() {}
 }

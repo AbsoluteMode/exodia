@@ -77,6 +77,10 @@ final class GammaBrightnessBoost {
     /// A table ending above this already boosts the display.
     nonisolated static let neutralPeak: Float = 1.01
     nonisolated static let factorTolerance = 0.005
+    /// Frames come every 0.2 s, and WindowServer keeps the headroom only about 0.8 s without
+    /// them: a longer gap means they paused (sleep, another session), and that time is not
+    /// the headroom's to count.
+    nonisolated static let pauseGap: TimeInterval = 1
 
     private enum Phase {
         /// Nothing is written until the trigger's frames raise the headroom.
@@ -102,6 +106,7 @@ final class GammaBrightnessBoost {
     /// Since when the headroom has asked for a different factor.
     private var pendingSince: Date?
     private var resets: [Date] = []
+    private var lastTick: Date
 
     init(display: CGDirectDisplayID, gamma: DisplayGammaAccess, headroom: @escaping () -> Double,
          now: @escaping () -> Date = Date.init, onEnd: @escaping (BrightnessBoostEnd) -> Void) {
@@ -110,17 +115,33 @@ final class GammaBrightnessBoost {
         self.headroom = headroom
         self.now = now
         self.onEnd = onEnd
-        phase = .engaging(since: now())
+        let start = now()
+        phase = .engaging(since: start)
+        lastTick = start
     }
 
     /// After each trigger frame.
     func tick() {
+        let date = now()
+        let resumed = date.timeIntervalSince(lastTick) > Self.pauseGap
+        lastTick = date
         switch phase {
         case .suspended, .ended: return
-        case .engaging(let since): engage(since: since)
+        case .engaging(let since):
+            if resumed { phase = .engaging(since: date) }
+            engage(since: resumed ? date : since)
         case .ramping, .boosting:
+            if resumed { pendingSince = nil }
             guard holdTable() else { return }
             follow(ScreenBrightnessScale.extraGammaFactor(currentHeadroom: headroom()))
+        }
+    }
+
+    /// The factor the display has now: 1 while waiting for the headroom, without it, or ended.
+    var appliedFactor: Double {
+        switch phase {
+        case .ramping, .boosting: factor
+        case .engaging, .suspended, .ended: 1
         }
     }
 
@@ -179,11 +200,17 @@ final class GammaBrightnessBoost {
             end(.unavailable)
             return false
         }
-        if table.matches(base.scaled(by: factor)) { return true }
+        if factor > 1, table.matches(base.scaled(by: factor)) { return true }
         guard table.peak <= Self.neutralPeak else {
             // Another booster took the display over; its table stays.
             end(.otherApp)
             return false
+        }
+        // Without the boost the display shows its own table, whatever profile it has now: a
+        // new one may keep SDR white and change the curve, which white alone cannot tell.
+        guard factor > 1 else {
+            self.base = table
+            return true
         }
         let date = now()
         resets = resets.filter { date.timeIntervalSince($0) < Self.resetLimit.interval } + [date]
@@ -199,8 +226,11 @@ final class GammaBrightnessBoost {
         return true
     }
 
-    private func follow(_ target: Double) {
+    private func follow(_ wanted: Double) {
         let tolerance = Self.factorTolerance
+        // Within the tolerance of no boost the display gets exactly its own table back, so
+        // `factor > 1` always means a boosted table.
+        let target = wanted <= 1 + tolerance ? 1 : wanted
         // Returning headroom rises as it did the first time.
         if case .boosting = phase, factor <= 1 + tolerance, target > factor + tolerance { phase = .ramping }
         if abs(target - factor) <= tolerance {
@@ -238,9 +268,11 @@ final class GammaBrightnessBoost {
         end(.unavailable)
     }
 
-    /// If Quartz refuses the display's own table, ColorSync restores every display's.
+    /// Only a table that is still the boosted one goes back: a newer one is the display's own
+    /// or another app's. If Quartz refuses the display's own table, ColorSync restores every display's.
     private func giveBack() {
-        guard let base else { return }
+        guard let base, factor > 1 else { return }
+        if let table = gamma.read(display), !table.matches(base.scaled(by: factor)) { return }
         if !gamma.write(base, to: display) { gamma.restoreColorSyncSettings() }
     }
 
