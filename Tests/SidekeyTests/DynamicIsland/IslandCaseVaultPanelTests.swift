@@ -15,6 +15,21 @@ final class IslandCaseVaultPanelTests: XCTestCase {
         XCTAssertFalse(source.contains(".value(for:"))
     }
 
+    func test_caseListResetsDragStateOnBackgroundDropAndDisappearButNotHoverEnd() throws {
+        let source = try caseVaultPanelSource()
+
+        let drop = try XCTUnwrap(source.range(of: ".onDrop(of: [UTType.text], isTargeted: nil)"))
+        XCTAssertTrue(source[drop.upperBound...].prefix(120).contains("dragState.reset()"))
+        let disappear = try XCTUnwrap(source.range(of: ".onDisappear { dragState.reset() }"))
+        XCTAssertNotNil(disappear)
+
+        let hover = try XCTUnwrap(source.range(of: ".onContinuousHover"))
+        let hoverBody = source[hover.upperBound...].prefix(900)
+        let end = try XCTUnwrap(hoverBody.range(of: ".onDrop"))
+        XCTAssertFalse(hoverBody[..<end.lowerBound].contains("reset()"))
+        XCTAssertFalse(hoverBody[..<end.lowerBound].contains(".ended"))
+    }
+
     func test_caseVaultPanelSupportsGroupsAndDragAutoScroll() throws {
         let source = try caseVaultPanelSource()
 

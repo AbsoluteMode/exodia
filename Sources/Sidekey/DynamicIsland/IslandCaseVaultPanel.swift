@@ -294,15 +294,13 @@ struct IslandCaseVaultPanel: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onContinuousHover { phase in
-                    switch phase {
-                    case let .active(location):
+                    // Never reset here: the pointer can leave and re-enter mid-drag.
+                    if case let .active(location) = phase {
                         scrollIfNeeded(
                             pointerY: location.y,
                             viewportHeight: geometry.size.height,
                             proxy: proxy
                         )
-                    case .ended:
-                        dragState.reset()
                     }
                 }
                 // A drag released on empty list space (or cancelled) never reaches a
