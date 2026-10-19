@@ -186,7 +186,7 @@ def scaffold_hover(args: argparse.Namespace) -> int:
         f"1. Add persisted `HoverTool.{tool_id}` and registry metadata.\n"
         "2. Choose an existing inline panel, action or Settings destination; wire the shared router.\n"
         "3. Wire production handlers and preview no-ops; update exhaustive switches.\n"
-        "4. Verify tile and positional hotkey dispatch and dynamic row height.\n"
+        "4. Verify tile and feature hotkey dispatch and dynamic row height.\n"
         "5. Run focused checks, build the beta app, inspect it, then review the diff.\n\n"
         "No application source or user preferences were changed by the generator.\n", encoding="utf-8")
     print(f"Created draft: {destination}")

@@ -947,15 +947,9 @@ struct HotkeyConfiguration: Equatable {
     var usefulLinksOpenShortcut: HotkeyShortcut
     var usefulLinksNextShortcut: HotkeyShortcut
     var usefulLinksPreviousShortcut: HotkeyShortcut
-    /// Positional Hover-slot shortcuts (ROO-210). `hoverSlotNShortcut` activates
-    /// whatever tool currently occupies `HoverLayoutStore.slots[N-1]` — the
-    /// binding follows the POSITION, not the tool, so a Toolbox reorder
-    /// re-points ⌥N at the new occupant (D1). Default ⌥1..⌥5.
-    var hoverSlot1Shortcut: HotkeyShortcut
-    var hoverSlot2Shortcut: HotkeyShortcut
-    var hoverSlot3Shortcut: HotkeyShortcut
-    var hoverSlot4Shortcut: HotkeyShortcut
-    var hoverSlot5Shortcut: HotkeyShortcut
+    /// Stable tool IDs keep bindings independent of the Toolbox layout.
+    // WHY: docs/decisions/2026-10-19-feature-hotkeys.md
+    var toolShortcuts: [HoverTool: HotkeyShortcut]
     /// Google-search gesture, default Right Option (R-Option), symmetric to the
     /// agent's Right Command: tap = type a query, hold = speak a query. Both
     /// open the result in the default browser.
@@ -977,11 +971,7 @@ struct HotkeyConfiguration: Equatable {
         usefulLinksOpenShortcut: HotkeyShortcut = .combo(.rightArrow),
         usefulLinksNextShortcut: HotkeyShortcut = .combo(.downArrow),
         usefulLinksPreviousShortcut: HotkeyShortcut = .combo(.upArrow),
-        hoverSlot1Shortcut: HotkeyShortcut = .combo(.optionOne),
-        hoverSlot2Shortcut: HotkeyShortcut = .combo(.optionTwo),
-        hoverSlot3Shortcut: HotkeyShortcut = .combo(.optionThree),
-        hoverSlot4Shortcut: HotkeyShortcut = .combo(.optionFour),
-        hoverSlot5Shortcut: HotkeyShortcut = .combo(.optionFive),
+        toolShortcuts: [HoverTool: HotkeyShortcut] = [:],
         googleSearchTextShortcut: HotkeyShortcut = .modifier(.rightOption),
         googleSearchVoiceShortcut: HotkeyShortcut = .modifier(.rightOption),
         googleSearchVoiceGesture: HotkeyGesture = .hold,
@@ -997,11 +987,7 @@ struct HotkeyConfiguration: Equatable {
         self.usefulLinksOpenShortcut = usefulLinksOpenShortcut
         self.usefulLinksNextShortcut = usefulLinksNextShortcut
         self.usefulLinksPreviousShortcut = usefulLinksPreviousShortcut
-        self.hoverSlot1Shortcut = hoverSlot1Shortcut
-        self.hoverSlot2Shortcut = hoverSlot2Shortcut
-        self.hoverSlot3Shortcut = hoverSlot3Shortcut
-        self.hoverSlot4Shortcut = hoverSlot4Shortcut
-        self.hoverSlot5Shortcut = hoverSlot5Shortcut
+        self.toolShortcuts = toolShortcuts
         self.googleSearchTextShortcut = googleSearchTextShortcut
         self.googleSearchVoiceShortcut = googleSearchVoiceShortcut
         self.googleSearchVoiceGesture = googleSearchVoiceGesture
@@ -1151,19 +1137,6 @@ struct HotkeyConfiguration: Equatable {
     var usefulLinksPreviousCombo: HotkeyTapCombo {
         get { usefulLinksPreviousShortcut.combo ?? HotkeyConfiguration.defaults.usefulLinksPreviousCombo }
         set { usefulLinksPreviousShortcut = .combo(newValue) }
-    }
-
-    /// The five Hover-slot shortcuts in slot order (index 0 = slot 1). Read-only
-    /// view used by registration and the conflict graph so callers iterate the
-    /// positional family without restating each field.
-    var hoverSlotShortcuts: [HotkeyShortcut] {
-        [
-            hoverSlot1Shortcut,
-            hoverSlot2Shortcut,
-            hoverSlot3Shortcut,
-            hoverSlot4Shortcut,
-            hoverSlot5Shortcut
-        ]
     }
 
     static let defaults = HotkeyConfiguration(
@@ -1316,26 +1289,6 @@ extension HotkeyConfiguration {
                 binding: HotkeyBinding(gesture: .tap, key: usefulLinksPreviousShortcut.bindingKey)
             ),
             HotkeyBindingAssignment(
-                actionTitle: "Hover slot 1",
-                binding: HotkeyBinding(gesture: .tap, key: hoverSlot1Shortcut.bindingKey)
-            ),
-            HotkeyBindingAssignment(
-                actionTitle: "Hover slot 2",
-                binding: HotkeyBinding(gesture: .tap, key: hoverSlot2Shortcut.bindingKey)
-            ),
-            HotkeyBindingAssignment(
-                actionTitle: "Hover slot 3",
-                binding: HotkeyBinding(gesture: .tap, key: hoverSlot3Shortcut.bindingKey)
-            ),
-            HotkeyBindingAssignment(
-                actionTitle: "Hover slot 4",
-                binding: HotkeyBinding(gesture: .tap, key: hoverSlot4Shortcut.bindingKey)
-            ),
-            HotkeyBindingAssignment(
-                actionTitle: "Hover slot 5",
-                binding: HotkeyBinding(gesture: .tap, key: hoverSlot5Shortcut.bindingKey)
-            ),
-            HotkeyBindingAssignment(
                 actionTitle: "Google text",
                 binding: HotkeyBinding(gesture: .tap, key: googleSearchTextShortcut.bindingKey)
             ),
@@ -1347,6 +1300,15 @@ extension HotkeyConfiguration {
                 actionTitle: "Meeting record",
                 binding: HotkeyBinding(gesture: .tap, key: meetingRecordShortcut.bindingKey)
             )
+        ] + HoverTool.allCases.compactMap { tool in
+            guard let shortcut = toolShortcuts[tool] else { return nil }
+            return HotkeyBindingAssignment(
+                actionTitle: HoverToolRegistry.info(for: tool).title,
+                binding: HotkeyBinding(gesture: .tap, key: shortcut.bindingKey)
+            )
+        } + [
+            HotkeyBindingAssignment(actionTitle: "Help", binding: HotkeyBinding(gesture: .tap, key: .combo(HotkeyTapCombo(keyCode: UInt32(kVK_ANSI_H), modifiers: UInt32(optionKey), keyTitle: "H")))),
+            HotkeyBindingAssignment(actionTitle: "History strip", binding: HotkeyBinding(gesture: .tap, key: .combo(HotkeyTapCombo(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(optionKey), keyTitle: "V"))))
         ]
     }
 
@@ -1446,24 +1408,13 @@ final class HotkeyPreferences: ObservableObject {
         didSet { save(usefulLinksPreviousShortcut.rawValue, forKey: Self.usefulLinksPreviousShortcutDefaultsKey) }
     }
 
-    @Published var hoverSlot1Shortcut: HotkeyShortcut {
-        didSet { save(hoverSlot1Shortcut.rawValue, forKey: Self.hoverSlot1ShortcutDefaultsKey) }
-    }
+    @Published var unavailableToolShortcuts: Set<HoverTool> = []
 
-    @Published var hoverSlot2Shortcut: HotkeyShortcut {
-        didSet { save(hoverSlot2Shortcut.rawValue, forKey: Self.hoverSlot2ShortcutDefaultsKey) }
-    }
-
-    @Published var hoverSlot3Shortcut: HotkeyShortcut {
-        didSet { save(hoverSlot3Shortcut.rawValue, forKey: Self.hoverSlot3ShortcutDefaultsKey) }
-    }
-
-    @Published var hoverSlot4Shortcut: HotkeyShortcut {
-        didSet { save(hoverSlot4Shortcut.rawValue, forKey: Self.hoverSlot4ShortcutDefaultsKey) }
-    }
-
-    @Published var hoverSlot5Shortcut: HotkeyShortcut {
-        didSet { save(hoverSlot5Shortcut.rawValue, forKey: Self.hoverSlot5ShortcutDefaultsKey) }
+    @Published var toolShortcuts: [HoverTool: HotkeyShortcut] {
+        didSet {
+            defaults.set(Dictionary(uniqueKeysWithValues: toolShortcuts.map { ($0.key.rawValue, $0.value.rawValue) }),
+                         forKey: Self.toolShortcutsDefaultsKey)
+        }
     }
 
     @Published var meetingRecordShortcut: HotkeyShortcut {
@@ -1482,11 +1433,7 @@ final class HotkeyPreferences: ObservableObject {
             usefulLinksOpenShortcut: usefulLinksOpenShortcut,
             usefulLinksNextShortcut: usefulLinksNextShortcut,
             usefulLinksPreviousShortcut: usefulLinksPreviousShortcut,
-            hoverSlot1Shortcut: hoverSlot1Shortcut,
-            hoverSlot2Shortcut: hoverSlot2Shortcut,
-            hoverSlot3Shortcut: hoverSlot3Shortcut,
-            hoverSlot4Shortcut: hoverSlot4Shortcut,
-            hoverSlot5Shortcut: hoverSlot5Shortcut,
+            toolShortcuts: toolShortcuts,
             meetingRecordShortcut: meetingRecordShortcut
         )
     }
@@ -1553,11 +1500,7 @@ final class HotkeyPreferences: ObservableObject {
     private static let usefulLinksNextShortcutDefaultsKey = "hotkeys.usefulLinksNextShortcut"
     private static let usefulLinksPreviousComboDefaultsKey = "hotkeys.usefulLinksPreviousCombo"
     private static let usefulLinksPreviousShortcutDefaultsKey = "hotkeys.usefulLinksPreviousShortcut"
-    private static let hoverSlot1ShortcutDefaultsKey = "hotkeys.hoverSlot1Shortcut"
-    private static let hoverSlot2ShortcutDefaultsKey = "hotkeys.hoverSlot2Shortcut"
-    private static let hoverSlot3ShortcutDefaultsKey = "hotkeys.hoverSlot3Shortcut"
-    private static let hoverSlot4ShortcutDefaultsKey = "hotkeys.hoverSlot4Shortcut"
-    private static let hoverSlot5ShortcutDefaultsKey = "hotkeys.hoverSlot5Shortcut"
+    nonisolated static let toolShortcutsDefaultsKey = "hotkeys.toolShortcuts.v1"
     private static let meetingRecordShortcutDefaultsKey = "hotkeys.meetingRecordShortcut"
 
     private let defaults: UserDefaults
@@ -1667,32 +1610,33 @@ final class HotkeyPreferences: ObservableObject {
             self.usefulLinksPreviousShortcut = HotkeyConfiguration.defaults.usefulLinksPreviousShortcut
         }
 
-        // Hover-slot shortcuts are new keys (no legacy combo fallback): load the
-        // stored shortcut or seed the ⌥1..⌥5 default.
-        self.hoverSlot1Shortcut = Self.loadShortcut(
-            defaults, Self.hoverSlot1ShortcutDefaultsKey,
-            default: HotkeyConfiguration.defaults.hoverSlot1Shortcut
-        )
-        self.hoverSlot2Shortcut = Self.loadShortcut(
-            defaults, Self.hoverSlot2ShortcutDefaultsKey,
-            default: HotkeyConfiguration.defaults.hoverSlot2Shortcut
-        )
-        self.hoverSlot3Shortcut = Self.loadShortcut(
-            defaults, Self.hoverSlot3ShortcutDefaultsKey,
-            default: HotkeyConfiguration.defaults.hoverSlot3Shortcut
-        )
-        self.hoverSlot4Shortcut = Self.loadShortcut(
-            defaults, Self.hoverSlot4ShortcutDefaultsKey,
-            default: HotkeyConfiguration.defaults.hoverSlot4Shortcut
-        )
-        self.hoverSlot5Shortcut = Self.loadShortcut(
-            defaults, Self.hoverSlot5ShortcutDefaultsKey,
-            default: HotkeyConfiguration.defaults.hoverSlot5Shortcut
-        )
+        self.toolShortcuts = Self.loadToolShortcuts(defaults)
         self.meetingRecordShortcut = Self.loadShortcut(
             defaults, Self.meetingRecordShortcutDefaultsKey,
             default: HotkeyConfiguration.defaults.meetingRecordShortcut
         )
+    }
+
+    /// An empty saved dictionary is intentional: cleared bindings must never
+    /// be resurrected from legacy slots after a restart or backup restore.
+    private static func loadToolShortcuts(_ defaults: UserDefaults) -> [HoverTool: HotkeyShortcut] {
+        if let saved = defaults.dictionary(forKey: toolShortcutsDefaultsKey) {
+            return saved.reduce(into: [:]) { result, entry in
+                guard let tool = HoverTool(rawValue: entry.key), let raw = entry.value as? String,
+                      let shortcut = nonDropShortcut(rawValue: raw) else { return }
+                result[tool] = shortcut
+            }
+        }
+        let layout = HoverLayoutStore(defaults: defaults).slots
+        var migrated: [HoverTool: HotkeyShortcut] = [:]
+        for (offset, tool) in layout.prefix(5).enumerated() {
+            guard let raw = defaults.string(forKey: "hotkeys.hoverSlot\(offset + 1)Shortcut"),
+                  let shortcut = nonDropShortcut(rawValue: raw) else { continue }
+            migrated[tool] = shortcut
+        }
+        defaults.set(Dictionary(uniqueKeysWithValues: migrated.map { ($0.key.rawValue, $0.value.rawValue) }),
+                     forKey: toolShortcutsDefaultsKey)
+        return migrated
     }
 
     /// Decode a persisted NON-Drop shortcut. `.holdSpace` is Drop-only — the
@@ -1730,6 +1674,9 @@ final class HotkeyPreferences: ObservableObject {
         guard conflicts.isEmpty else {
             throw HotkeyConfigurationError.conflictingBindings(conflicts)
         }
+        // Release old tool registrations before a core shortcut can take one
+        // of their keys. Publish the final tool map after all core rebinds.
+        toolShortcuts = [:]
         agentTextShortcut = configuration.agentTextShortcut
         agentVoiceShortcut = configuration.agentVoiceShortcut
         agentVoiceGesture = configuration.agentVoiceGesture
@@ -1744,15 +1691,12 @@ final class HotkeyPreferences: ObservableObject {
         usefulLinksOpenShortcut = configuration.usefulLinksOpenShortcut
         usefulLinksNextShortcut = configuration.usefulLinksNextShortcut
         usefulLinksPreviousShortcut = configuration.usefulLinksPreviousShortcut
-        hoverSlot1Shortcut = configuration.hoverSlot1Shortcut
-        hoverSlot2Shortcut = configuration.hoverSlot2Shortcut
-        hoverSlot3Shortcut = configuration.hoverSlot3Shortcut
-        hoverSlot4Shortcut = configuration.hoverSlot4Shortcut
-        hoverSlot5Shortcut = configuration.hoverSlot5Shortcut
         meetingRecordShortcut = configuration.meetingRecordShortcut
+        toolShortcuts = configuration.toolShortcuts
     }
 
     func resetToDefaults() {
+        toolShortcuts = [:]
         agentTextShortcut = HotkeyConfiguration.defaults.agentTextShortcut
         agentVoiceShortcut = HotkeyConfiguration.defaults.agentVoiceShortcut
         agentVoiceGesture = HotkeyConfiguration.defaults.agentVoiceGesture
@@ -1763,11 +1707,6 @@ final class HotkeyPreferences: ObservableObject {
         usefulLinksOpenShortcut = HotkeyConfiguration.defaults.usefulLinksOpenShortcut
         usefulLinksNextShortcut = HotkeyConfiguration.defaults.usefulLinksNextShortcut
         usefulLinksPreviousShortcut = HotkeyConfiguration.defaults.usefulLinksPreviousShortcut
-        hoverSlot1Shortcut = HotkeyConfiguration.defaults.hoverSlot1Shortcut
-        hoverSlot2Shortcut = HotkeyConfiguration.defaults.hoverSlot2Shortcut
-        hoverSlot3Shortcut = HotkeyConfiguration.defaults.hoverSlot3Shortcut
-        hoverSlot4Shortcut = HotkeyConfiguration.defaults.hoverSlot4Shortcut
-        hoverSlot5Shortcut = HotkeyConfiguration.defaults.hoverSlot5Shortcut
         meetingRecordShortcut = HotkeyConfiguration.defaults.meetingRecordShortcut
     }
 

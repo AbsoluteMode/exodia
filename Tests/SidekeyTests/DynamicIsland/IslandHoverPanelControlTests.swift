@@ -280,7 +280,7 @@ final class IslandHoverPanelControlTests: XCTestCase {
         // every data-level test green, so pin the callsite itself.
         let source = try Self.source("Sources/Sidekey/DynamicIsland/IslandView.swift")
         let hintBody = try XCTUnwrap(
-            Self.funcBody(named: "hoverSlotHint", in: source),
+            Self.funcBody(named: "toolHotkeyHint", in: source),
             "IslandView must keep the hoverSlotHint(for:) builder."
         )
         XCTAssertTrue(

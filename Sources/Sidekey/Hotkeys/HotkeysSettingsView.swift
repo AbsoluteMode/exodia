@@ -5,10 +5,6 @@ import SwiftUI
 @MainActor
 struct HotkeysSettingsView: View {
     @ObservedObject var preferences: HotkeyPreferences
-    /// The live Hover layout. The five positional Hover-slot rows label
-    /// themselves from `slots[i]` (D1), so a Toolbox reorder re-labels the rows
-    /// here too; observing it keeps the Settings surface in sync.
-    @ObservedObject var hoverLayout: HoverLayoutStore
     @State private var draft: HotkeyConfiguration
     @State private var saveError: String?
     @State private var recordingTarget: RecordingTarget?
@@ -16,10 +12,9 @@ struct HotkeysSettingsView: View {
     @State private var shortcutRecorder = HotkeyShortcutRecorder()
     @State private var eventMonitor: Any?
 
-    init(preferences: HotkeyPreferences? = nil, hoverLayout: HoverLayoutStore? = nil) {
+    init(preferences: HotkeyPreferences? = nil) {
         let preferences = preferences ?? HotkeyPreferences.shared
         self.preferences = preferences
-        self.hoverLayout = hoverLayout ?? HoverLayoutStore.shared
         _draft = State(initialValue: preferences.configuration)
     }
 
@@ -245,7 +240,7 @@ struct HotkeysSettingsView: View {
                         onRecord: { startRecording(.agentClose) }
                     )
 
-                    hoverSlotSection
+                    toolShortcutSection
 
                     conflictBlock
                 }
@@ -313,56 +308,46 @@ struct HotkeysSettingsView: View {
         }
     }
 
-    /// The five positional Hover-slot rows (ROO-210). Each row's title + icon
-    /// come from the LIVE tool occupying that slot (`hoverLayout.slots[i]` via
-    /// `HoverToolRegistry`), so a Toolbox reorder re-labels the row (D1). The
-    /// shortcut (key) is editable like every other row. The TOOL is not changed
-    /// here — Toolbox owns tool placement. Empty positions retain editable
-    /// bindings without indexing past the user's current tool count.
-    @ViewBuilder
-    private var hoverSlotSection: some View {
-        ForEach(0..<HoverLayoutStore.shortcutSlotCount, id: \.self) { offset in
-            hoverSlotRow(position: offset)
+    private var toolShortcutSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Tools")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(MacSettingsTheme.text)
+                .padding(.top, 12)
+            Text("Shortcuts stay with the function, even when you move or remove its hover tile.")
+                .font(.system(size: 12))
+                .foregroundStyle(MacSettingsTheme.text2)
+                .padding(.bottom, 4)
+            ForEach(HoverTool.allCases, id: \.self) { tool in
+                toolShortcutRow(tool)
+            }
         }
     }
 
-    @ViewBuilder
-    private func hoverSlotRow(position offset: Int) -> some View {
-        let target = Self.hoverSlotTargets[offset]
-        let tool = hoverLayout.slots.indices.contains(offset) ? hoverLayout.slots[offset] : nil
-        let info = tool.map { HoverToolRegistry.info(for: $0) }
-        let isLocked = tool == .settings
-        let baseDetail: String = {
-            guard let info else {
-                return "This position is empty. Add a tool in Toolbox to activate it."
-            }
-            return isLocked
-                ? "Activates \(info.title) (pinned at the end of your hover). The key is editable."
-                : "Open the Hover and activate \(info.title)."
-        }()
-        HotkeySettingRow(
-            iconName: info?.sfSymbol ?? "square.dashed",
-            title: info.map { "Hover \($0.title)" } ?? "Hover slot \(offset + 1)",
-            detail: Self.rowDetail(base: baseDetail, for: draft.hoverSlotShortcuts[offset]),
+    private func toolShortcutRow(_ tool: HoverTool) -> some View {
+        let target = RecordingTarget.tool(tool)
+        let info = HoverToolRegistry.info(for: tool)
+        let shortcut = draft.toolShortcuts[tool]
+        return HotkeySettingRow(
+            iconName: info.sfSymbol,
+            title: tool == .meetingRecord ? "Record (additional shortcut)" : info.title,
+            detail: shortcut.map { Self.rowDetail(base: info.description, for: $0) } ?? info.description,
             gesture: .tap,
             allowsGestureSwitch: false,
-            shortcutContents: shortcutContents(
-                for: target,
-                fallback: draft.hoverSlotShortcuts[offset].contents
-            ),
+            shortcutContents: shortcutContents(for: target, fallback: shortcut?.contents ?? []),
             isRecording: recordingTarget == target,
             hasConflict: hasConflict(for: target),
             onGestureChange: { _ in },
-            onRecord: { startRecording(target) }
+            onRecord: { startRecording(target) },
+            registrationError: shortcut == preferences.toolShortcuts[tool]
+                && preferences.unavailableToolShortcuts.contains(tool)
+                ? "Shortcut unavailable. Check Accessibility or record another shortcut." : nil,
+            onClear: shortcut == nil ? nil : {
+                stopRecording()
+                draft.toolShortcuts[tool] = nil
+            }
         )
     }
-
-    /// `RecordingTarget` for each Hover slot in position order (index 0 = slot
-    /// 1). Mirrors `HotkeyConfiguration.hoverSlotShortcuts` ordering so the row
-    /// at position i edits `hoverSlot(i+1)Shortcut`.
-    private static let hoverSlotTargets: [RecordingTarget] = [
-        .hoverSlot1, .hoverSlot2, .hoverSlot3, .hoverSlot4, .hoverSlot5
-    ]
 
     private func startRecording(_ target: RecordingTarget) {
         stopRecording()
@@ -400,7 +385,7 @@ struct HotkeysSettingsView: View {
     }
 
     private func initialRecordingContents(for target: RecordingTarget) -> [KeycapContent] {
-        shortcut(for: target).contents
+        shortcut(for: target)?.contents ?? []
     }
 
     private func shortcutContents(for target: RecordingTarget, fallback: [KeycapContent]) -> [KeycapContent] {
@@ -439,23 +424,12 @@ struct HotkeysSettingsView: View {
             draft.usefulLinksPreviousShortcut = shortcut
         case .agentClose:
             draft.agentCloseShortcut = shortcut
-        case .hoverSlot1:
-            draft.hoverSlot1Shortcut = shortcut
-        case .hoverSlot2:
-            draft.hoverSlot2Shortcut = shortcut
-        case .hoverSlot3:
-            draft.hoverSlot3Shortcut = shortcut
-        case .hoverSlot4:
-            draft.hoverSlot4Shortcut = shortcut
-        case .hoverSlot5:
-            // D2: only the KEY changes here. The tool stays `.settings` (the
-            // lock lives in `HoverLayoutStore`, enforced regardless of this
-            // shortcut), so this assignment never touches the slot's action.
-            draft.hoverSlot5Shortcut = shortcut
+        case .tool(let tool):
+            draft.toolShortcuts[tool] = shortcut
         }
     }
 
-    private func shortcut(for target: RecordingTarget) -> HotkeyShortcut {
+    private func shortcut(for target: RecordingTarget) -> HotkeyShortcut? {
         switch target {
         case .agentText:
             return draft.agentTextShortcut
@@ -479,16 +453,8 @@ struct HotkeysSettingsView: View {
             return draft.usefulLinksPreviousShortcut
         case .agentClose:
             return draft.agentCloseShortcut
-        case .hoverSlot1:
-            return draft.hoverSlot1Shortcut
-        case .hoverSlot2:
-            return draft.hoverSlot2Shortcut
-        case .hoverSlot3:
-            return draft.hoverSlot3Shortcut
-        case .hoverSlot4:
-            return draft.hoverSlot4Shortcut
-        case .hoverSlot5:
-            return draft.hoverSlot5Shortcut
+        case .tool(let tool):
+            return draft.toolShortcuts[tool]
         }
     }
 
@@ -498,11 +464,11 @@ struct HotkeysSettingsView: View {
         // gesture) and reports only the first member's binding, so comparing
         // the whole binding — gesture included — would leave the other member
         // of a tap/hold combo conflict un-highlighted (Stage 1 review fix).
-        let conflictKey = binding(for: target).conflictKey
+        guard let conflictKey = binding(for: target)?.conflictKey else { return false }
         return activeConflicts.contains { $0.binding.conflictKey == conflictKey }
     }
 
-    private func binding(for target: RecordingTarget) -> HotkeyBinding {
+    private func binding(for target: RecordingTarget) -> HotkeyBinding? {
         switch target {
         case .agentText:
             return HotkeyBinding(gesture: .tap, key: draft.agentTextShortcut.bindingKey)
@@ -526,16 +492,8 @@ struct HotkeysSettingsView: View {
             return HotkeyBinding(gesture: .tap, key: draft.usefulLinksPreviousShortcut.bindingKey)
         case .agentClose:
             return HotkeyBinding(gesture: .tap, key: draft.agentCloseShortcut.bindingKey)
-        case .hoverSlot1:
-            return HotkeyBinding(gesture: .tap, key: draft.hoverSlot1Shortcut.bindingKey)
-        case .hoverSlot2:
-            return HotkeyBinding(gesture: .tap, key: draft.hoverSlot2Shortcut.bindingKey)
-        case .hoverSlot3:
-            return HotkeyBinding(gesture: .tap, key: draft.hoverSlot3Shortcut.bindingKey)
-        case .hoverSlot4:
-            return HotkeyBinding(gesture: .tap, key: draft.hoverSlot4Shortcut.bindingKey)
-        case .hoverSlot5:
-            return HotkeyBinding(gesture: .tap, key: draft.hoverSlot5Shortcut.bindingKey)
+        case .tool(let tool):
+            return draft.toolShortcuts[tool].map { HotkeyBinding(gesture: .tap, key: $0.bindingKey) }
         }
     }
 
@@ -671,15 +629,7 @@ struct HotkeysSettingsView: View {
         case usefulLinksNext
         case usefulLinksPrevious
         case agentClose
-        // Positional Hover-slot shortcuts (ROO-210), index-aligned with
-        // `HotkeyConfiguration.hoverSlotShortcuts` (slot 1 … slot 5). The
-        // Settings tool stays last in Toolbox; each position's key is
-        // editable here without changing tool placement.
-        case hoverSlot1
-        case hoverSlot2
-        case hoverSlot3
-        case hoverSlot4
-        case hoverSlot5
+        case tool(HoverTool)
     }
 
     private var footerBlock: some View {
@@ -720,7 +670,7 @@ struct HotkeysSettingsView: View {
 }
 
 @MainActor
-private struct HotkeySettingRow: View {
+struct HotkeySettingRow: View {
     let iconName: String
     let title: String
     let detail: String
@@ -735,6 +685,8 @@ private struct HotkeySettingRow: View {
     let hasConflict: Bool
     let onGestureChange: (HotkeyGesture) -> Void
     let onRecord: () -> Void
+    var registrationError: String? = nil
+    var onClear: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -751,6 +703,12 @@ private struct HotkeySettingRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(MacSettingsTheme.text2)
                     .lineLimit(2)
+                if let registrationError {
+                    Text(registrationError)
+                        .font(.system(size: 11))
+                        .foregroundStyle(MacSettingsTheme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 12)
@@ -766,13 +724,27 @@ private struct HotkeySettingRow: View {
                         }
                     }
                 )
-                ForEach(Array(visibleShortcutContents.enumerated()), id: \.offset) { _, content in
-                    ShortcutKeySlot(
-                        content: content,
-                        isRecording: isRecording,
-                        hasConflict: hasConflict,
-                        onTap: onRecord
-                    )
+                if shortcutContents.isEmpty && !isRecording {
+                    Button("Record shortcut", action: onRecord)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11))
+                        .foregroundStyle(MacSettingsTheme.accent)
+                        .help("Press a shortcut, then release all keys. Escape cancels.")
+                        .accessibilityLabel("Record shortcut for \(title)")
+                } else {
+                    ForEach(Array(visibleShortcutContents.enumerated()), id: \.offset) { _, content in
+                        ShortcutKeySlot(content: content, isRecording: isRecording,
+                                        hasConflict: hasConflict, onTap: onRecord)
+                    }
+                }
+                if let onClear {
+                    Button(action: onClear) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(MacSettingsTheme.text2)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Remove shortcut")
+                    .accessibilityLabel("Remove shortcut for \(title)")
                 }
             }
             .accessibilityLabel("\(title) shortcut")

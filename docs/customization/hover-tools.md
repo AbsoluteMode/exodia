@@ -11,9 +11,8 @@ shows an add target; the live hover grid shows the selected tools. The search
 field above it searches the full catalog and launches a tool without pinning it.
 At most four rows are visible in a 312-point grid viewport; the thirteenth
 and later selections scroll without being removed. New-install defaults have six
-tools, two rows and a 243-point host band; existing selections persist. Positions
-one through five have
-configurable positional hotkeys, independent of the column count.
+tools, two rows and a 243-point host band; existing selections persist. Every catalog tool can have an optional named shortcut in Settings → Hotkeys,
+independent of whether it is selected or where it appears.
 
 ## Source map
 
@@ -33,8 +32,8 @@ All paths below start at `Sources/Sidekey/`.
 | Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `DynamicIsland/IslandPanel.swift` |
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
 | Drag/drop catalog and selected layout | `Settings/ToolboxSettingsView.swift` |
-| App services and hotkey dispatch | `AppDelegate.swift` (`onHoverSlotActivated`) |
-| Positional hotkey labels and hints | `Settings/HotkeysSettingsView.swift`, `HelpWindowController.swift` |
+| App services and hotkey dispatch | `AppDelegate.swift` (`onToolHotkeyActivated`) |
+| Feature hotkey labels and hints | `Hotkeys/HotkeysSettingsView.swift`, `HelpWindowController.swift` |
 
 ## Tool contract
 
@@ -47,7 +46,7 @@ All paths below start at `Sources/Sidekey/`.
    handler in `AppDelegate`. For an inline panel, also add its panel state and
    view in `IslandView`.
 4. Update exhaustive switches in the live hover, Toolbox, search aliases and any
-   navigation surfaces. Search results, tile clicks and positional hotkeys must
+   navigation surfaces. Search results, tile clicks and feature hotkeys must
    cause the same effect. Search results must not mutate the saved layout.
 5. Keep `HoverLayoutStore.columns` and the shared height calculation aligned. A
    new row must resize the AppKit panel and its hit region, not just the SwiftUI
