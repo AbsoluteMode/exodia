@@ -47,7 +47,7 @@ struct IslandBrightnessStrip: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .fixedSize()
-                    .help("Brighter than the usual maximum. Uses more battery.")
+                    .help("Adds brightness on top of the current level. Uses more battery.")
                     .accessibilityLabel("Extra brightness")
                 }
             }

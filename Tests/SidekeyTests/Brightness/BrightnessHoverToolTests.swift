@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CoreGraphics
 import SwiftUI
 import XCTest
@@ -129,7 +130,7 @@ final class BrightnessHoverToolTests: XCTestCase {
                 // Without a status line only the control row and its padding remain.
                 let expected: CGFloat = state == .noBattery ? 44 : IslandBrightnessStrip.contentHeight
                 XCTAssertEqual(fixture.idealHeight, expected, accuracy: 0.5, "\(state) at \(width) pt")
-                try fixture.saveImage("brightness-\(state)-\(Int(width))")
+                try saveProofImage(of: fixture.host, named: "brightness-\(state)-\(Int(width))")
             }
         }
     }
@@ -146,6 +147,46 @@ final class BrightnessHoverToolTests: XCTestCase {
         XCTAssertFalse(fixture.battery.isSampling)
     }
 
+    // MARK: Settings
+
+    func testSettingsPaneReadsTheDisplayWithoutPolling() {
+        let fixture = SettingsPaneFixture(state: .extraOff, prepared: false)
+        defer { fixture.close() }
+        XCTAssertFalse(fixture.controller.supportsExtra, "Nothing has read the display yet.")
+
+        fixture.settle()
+
+        XCTAssertTrue(fixture.controller.supportsExtra, "Opening the pane offers Extra without the island.")
+        XCTAssertFalse(fixture.controller.isPolling,
+                       "Closing the Settings window may skip onDisappear, so the pane starts no timer.")
+    }
+
+    func testSettingsPaneRetriesARefusedBrightnessKeyTap() {
+        let fixture = SettingsPaneFixture(state: .extraOff, keys: .refused)
+        defer { fixture.close() }
+        XCTAssertFalse(fixture.keys.isListening)
+        fixture.tap.accepts = true
+
+        fixture.settle()
+
+        XCTAssertTrue(fixture.keys.isListening,
+                      "Accessibility allowed after the refusal takes effect when Settings shows the switch.")
+    }
+
+    /// The real pane with fake hardware, rendered in an unordered offscreen window.
+    func testSettingsPaneFitsUnderTheToolHeaderInEveryState() throws {
+        for state in [StripState.extraOff, .extraOn, .noExtra, .unavailable, .notice] {
+            for keys in PaneKeys.allCases {
+                let fixture = SettingsPaneFixture(state: state, keys: keys)
+                defer { fixture.close() }
+                fixture.settle()
+                XCTAssertLessThanOrEqual(fixture.idealHeight, SettingsPaneFixture.availableHeight,
+                                         "\(state), keys \(keys)")
+                try saveProofImage(of: fixture.host, named: "settings-display-\(state)-keys-\(keys)")
+            }
+        }
+    }
+
     private static func width(_ text: String, size: CGFloat) -> CGFloat {
         NSAttributedString(string: text, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular),
@@ -155,6 +196,37 @@ final class BrightnessHoverToolTests: XCTestCase {
 
 private enum StripState: String, CaseIterable {
     case extraOff, extraOn, noExtra, unavailable, notice, onPower, noBattery
+
+    @MainActor
+    func makeController() -> ScreenBrightnessController {
+        let device = StaticBrightnessDevice(
+            headroom: self == .noExtra ? 1 : 16,
+            level: self == .unavailable ? nil : 0.62,
+            canWrite: self != .notice)
+        return ScreenBrightnessController(device: device, selectedDisplayID: { 1 }, observeSystem: false)
+    }
+
+    @MainActor
+    func prepare(_ controller: ScreenBrightnessController) {
+        controller.refresh()
+        switch self {
+        case .extraOn: controller.setExtra(true)
+        case .notice: controller.setLevel(0.3)
+        default: break
+        }
+    }
+}
+
+/// Saved only when EXODIA_BRIGHTNESS_PROOF_DIR names a folder.
+@MainActor
+private func saveProofImage(of host: NSView, named name: String) throws {
+    guard let output = ProcessInfo.processInfo.environment["EXODIA_BRIGHTNESS_PROOF_DIR"] else { return }
+    let directory = URL(fileURLWithPath: output, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    try data.write(to: directory.appendingPathComponent(name + ".png"))
 }
 
 /// No real backlight, overlay, battery or input events.
@@ -166,23 +238,14 @@ private final class StripFixture {
     let host: NSHostingView<AnyView>
 
     init(state: StripState, width: CGFloat) {
-        let device = StaticBrightnessDevice(
-            headroom: state == .noExtra ? 1 : 16,
-            level: state == .unavailable ? nil : 0.62,
-            canWrite: state != .notice)
-        controller = ScreenBrightnessController(device: device, selectedDisplayID: { 1 }, observeSystem: false)
+        controller = state.makeController()
         let snapshot: BatterySnapshot? = switch state {
         case .noBattery: nil
         case .onPower: BatterySnapshot(percent: 100, isOnAC: true, isCharging: false)
         default: BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, systemMinutesToEmpty: 260)
         }
         battery = BatteryRuntimeMonitor(read: { snapshot })
-        controller.refresh()
-        switch state {
-        case .extraOn: controller.setExtra(true)
-        case .notice: controller.setLevel(0.3)
-        default: break
-        }
+        state.prepare(controller)
 
         window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width,
                                               height: IslandBrightnessStrip.contentHeight),
@@ -214,21 +277,78 @@ private final class StripFixture {
         settle()
     }
 
-    func saveImage(_ name: String) throws {
-        guard let output = ProcessInfo.processInfo.environment["EXODIA_BRIGHTNESS_PROOF_DIR"] else { return }
-        let directory = URL(fileURLWithPath: output, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-        try data.write(to: directory.appendingPathComponent(name + ".png"))
-    }
-
     func close() {
         removeStrip()
         controller.shutdown()
         window.contentView = nil
         window.close()
+    }
+}
+
+/// Brightness keys as the Settings pane finds them: off, listening, or refused by macOS.
+private enum PaneKeys: String, CaseIterable {
+    case off, on, refused
+}
+
+/// Settings -> Toolbox -> Display with fake hardware and a fake key tap, in an unordered
+/// offscreen window.
+@MainActor
+private final class SettingsPaneFixture {
+    /// The Toolbox action pane is 300 pt wide with 16 pt padding.
+    static let width: CGFloat = 268
+    /// At the Toolbox row's 300 pt minimum height: the 13 pt ACTION label, 10 pt spacing and 32 pt
+    /// padding leave 245 pt, and the tool header, its divider and their spacing take 57 pt.
+    static let availableHeight: CGFloat = 188
+
+    let controller: ScreenBrightnessController
+    let tap = FakeKeyTap()
+    let keys: BrightnessKeys
+    let window: NSWindow
+    let host: NSHostingView<AnyView>
+    private let suite = "BrightnessHoverToolTests-\(UUID().uuidString)"
+
+    init(state: StripState, keys keysState: PaneKeys = .off, prepared: Bool = true) {
+        controller = state.makeController()
+        if prepared { state.prepare(controller) }
+        keys = BrightnessKeys(defaults: UserDefaults(suiteName: suite)!, controller: controller, tap: tap,
+                              hoverHidden: Just(false).eraseToAnyPublisher())
+        keys.start(showStrip: {})
+        if keysState != .off {
+            tap.accepts = keysState == .on
+            keys.setEnabled(true)
+        }
+        let size = CGSize(width: Self.width, height: Self.availableHeight)
+        window = NSWindow(contentRect: CGRect(origin: CGPoint(x: -20_000, y: -20_000), size: size),
+                          styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        host = NSHostingView(rootView: AnyView(
+            ToolboxDisplayPane(controller: controller, keys: keys)
+                .frame(width: Self.width)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(Color(white: 0.13))
+                .environment(\.colorScheme, .dark)))
+        host.frame = CGRect(origin: .zero, size: size)
+        window.contentView = host
+    }
+
+    /// The pane's own height, independent of the frame it is given.
+    var idealHeight: CGFloat { host.fittingSize.height }
+
+    func settle() {
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.06))
+        host.layoutSubtreeIfNeeded()
+    }
+
+    func close() {
+        host.rootView = AnyView(EmptyView())
+        settle()
+        keys.stop()
+        controller.shutdown()
+        window.contentView = nil
+        window.close()
+        UserDefaults().removePersistentDomain(forName: suite)
     }
 }
 

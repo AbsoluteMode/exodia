@@ -320,7 +320,9 @@ struct ToolboxSettingsView: View {
                 dropModePane
             case .clipboard:
                 clipboardPane
-            case .hotkeys, .notes, .meetingRecord, .monitor, .brightness, .quit, .settings:
+            case .brightness:
+                ToolboxDisplayPane()
+            case .hotkeys, .notes, .meetingRecord, .monitor, .quit, .settings:
                 Color.clear
             }
         }

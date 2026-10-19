@@ -26,6 +26,8 @@ enum HoverInlinePanel: Equatable {
 struct HoverPanelRequest: Equatable {
     let panel: HoverInlinePanel
     let token: Int
+    /// A brightness key: show the strip briefly without taking keyboard focus.
+    var isGlance = false
 }
 
 /// The single effect a Hover slot produces when activated — by a tile click OR

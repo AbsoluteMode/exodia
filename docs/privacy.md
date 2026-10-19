@@ -64,8 +64,9 @@ Data-use policies depend on the selected provider and its account settings.
 
 ## Permissions
 
-- Accessibility: global hotkeys (hold Space, Right Command) and detecting an
-  editable text field before recording.
+- Accessibility: global hotkeys (hold Space, Right Command), detecting an
+  editable text field before recording and, only when Brightness keys is
+  switched on in Settings → Toolbox → Display, the Mac's brightness keys.
 - Microphone: dictation and meetings.
 - System Audio Recording: the other side of a call, only while a meeting is
   being recorded. The audio tap is created at recording start and torn down
@@ -74,4 +75,6 @@ Data-use policies depend on the selected provider and its account settings.
   Command-V used to paste.
 
 The hold-Space detector reads keyboard events only to recognise the trigger
-key and Escape. Key contents are never logged or stored.
+key and Escape. The Brightness keys tap receives only system-defined events,
+such as the brightness, volume and media keys, and acts only on the
+brightness keys. Key contents are never logged or stored.

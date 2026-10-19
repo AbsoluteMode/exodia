@@ -223,6 +223,29 @@ three converge on `MeetingsCoordinator.toggleManualRecording()`.
 - Help window row: "Meeting record" — contents come from the live
   configuration like every other row.
 
+## Brightness keys
+
+The Mac's own brightness keys are not an Exodia hotkey: they have no
+`HotkeyConfiguration` binding, recorder row, `HotkeyHintView` or Help window
+row. Settings → Toolbox → Display → Brightness keys (off by default) lets
+Exodia take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
+
+- A head-insert session tap for system-defined events (needs Accessibility)
+  swallows brightness up/down presses, so the macOS indicator does not show.
+  Each press steps the island display's backlight by a sixteenth (⌥⇧: a
+  sixty-fourth) and opens the Display strip as a glance: about 2 s, no
+  keyboard focus, never over another panel under the pointer or a focused
+  search.
+- Two brightness-up presses at the maximum within 1.5 s turn Extra on; the
+  press that reaches the maximum and repeats from holding the key do not count.
+- ⌘, ⌃, ⌥ or ⇧ (other than ⌥⇧), hidden hover widgets and an unadjustable
+  display leave the keys with macOS; ⌥ still opens Displays settings. Fn and
+  Caps Lock do not matter. A press belongs wholly to Exodia or to macOS from
+  its first event.
+- The tap is reinstalled with the other monitors after wake or an
+  Accessibility change. As with every monitor, key contents are never logged
+  or stored (invariant #2).
+
 ## Canonical reference
 
 `HelpWindowController.swift` shows every existing hotkey through

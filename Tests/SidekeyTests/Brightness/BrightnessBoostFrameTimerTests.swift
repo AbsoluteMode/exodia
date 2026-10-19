@@ -43,17 +43,91 @@ final class BrightnessBoostFrameTimerTests: XCTestCase {
         frames.stop()
     }
 
-    func testNoFramesWhileTheDisplaysSleep() {
+    /// Frames stop after `pause` and come back after `resume`.
+    private func assertFramesPause(after pause: Notification.Name, until resume: Notification.Name,
+                                   file: StaticString = #filePath, line: UInt = #line) {
         let probe = Probe(), center = NotificationCenter()
         let frames = makeFrames(probe, center: center)
-        // A sleeping display takes no frames, so waiting for a drawable would block the main thread.
-        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        center.post(name: pause, object: nil)
         runMainLoop(for: 0.1)
-        XCTAssertEqual(probe.frames, 0)
+        XCTAssertEqual(probe.frames, 0, file: file, line: line)
+        center.post(name: resume, object: nil)
+        runMainLoop(for: 0.1)
+        XCTAssertGreaterThan(probe.frames, 0, file: file, line: line)
+        frames.stop()
+    }
+
+    func testNoFramesWhileTheDisplaysSleep() {
+        // A sleeping display takes no frames, so waiting for a drawable would block the main thread.
+        assertFramesPause(after: NSWorkspace.screensDidSleepNotification, until: NSWorkspace.screensDidWakeNotification)
+    }
+
+    func testNoFramesWhileTheMacSleeps() {
+        // Extra stays on through system sleep.
+        assertFramesPause(after: NSWorkspace.willSleepNotification, until: NSWorkspace.didWakeNotification)
+    }
+
+    func testNoFramesWhileAnotherUserSessionIsActive() {
+        // Extra stays on through a session switch, while nothing shows this session's windows.
+        assertFramesPause(after: NSWorkspace.sessionDidResignActiveNotification,
+                          until: NSWorkspace.sessionDidBecomeActiveNotification)
+    }
+
+    func testFramesResumeOnlyWhenEveryPauseHasEnded() {
+        let probe = Probe(), center = NotificationCenter()
+        let frames = makeFrames(probe, center: center)
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        center.post(name: NSWorkspace.willSleepNotification, object: nil)
+        center.post(name: NSWorkspace.didWakeNotification, object: nil)
+        runMainLoop(for: 0.1)
+        XCTAssertEqual(probe.frames, 0, "The displays can still be asleep after the Mac wakes.")
         center.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
         runMainLoop(for: 0.1)
         XCTAssertGreaterThan(probe.frames, 0)
         frames.stop()
+    }
+
+    /// The steady timer never fires here, so only the app switch presents.
+    private func makeSwitchFrames(_ probe: Probe, center: NotificationCenter) -> BrightnessBoostFrameTimer {
+        BrightnessBoostFrameTimer(interval: 60, switchBurst: (count: 3, interval: 0.01), center: center,
+                                  canPresent: { probe.canPresent }, present: { probe.frames += 1 })
+    }
+
+    func testAnAppSwitchPresentsAFrameAtOnce() {
+        // Every ⌘Tab dimmed the boost for a moment (2026-10-19); the steady frame can be 0.2 s away.
+        let probe = Probe(), center = NotificationCenter()
+        let frames = makeSwitchFrames(probe, center: center)
+        center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        XCTAssertEqual(probe.frames, 1)
+        frames.stop()
+    }
+
+    func testAnAppSwitchPresentsAShortBurst() {
+        let probe = Probe(), center = NotificationCenter()
+        let frames = makeSwitchFrames(probe, center: center)
+        center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        runMainLoop(for: 0.2)
+        XCTAssertEqual(probe.frames, 4, "One frame at once, then the burst of three.")
+        frames.stop()
+    }
+
+    func testAnAppSwitchWhilePausedPresentsNothing() {
+        let probe = Probe(), center = NotificationCenter()
+        let frames = makeSwitchFrames(probe, center: center)
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        runMainLoop(for: 0.1)
+        XCTAssertEqual(probe.frames, 0)
+        frames.stop()
+    }
+
+    func testStopEndsABurst() {
+        let probe = Probe(), center = NotificationCenter()
+        let frames = makeSwitchFrames(probe, center: center)
+        center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        frames.stop()
+        runMainLoop(for: 0.1)
+        XCTAssertLessThanOrEqual(probe.frames, 1, "A closed overlay takes no burst frames.")
     }
 
     func testStopEndsTheFrames() {

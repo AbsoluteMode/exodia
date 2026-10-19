@@ -2,7 +2,7 @@ import AppKit
 import Darwin
 
 /// Backlight levels are 0...1. Extra brightness multiplies the composited desktop
-/// through EDR on top of the hardware maximum.
+/// through EDR on top of the current backlight level.
 enum ScreenBrightnessScale {
     /// Sustained full-screen range of XDR MacBook Pro panels over their SDR maximum.
     static let maximumExtra = 2.0
@@ -43,11 +43,12 @@ protocol ScreenBrightnessDevice {
                      onFailure: @escaping () -> Void) -> BrightnessOverlay?
 }
 
-/// Hover Brightness: the island display's backlight plus an Extra switch.
-/// Extra raises the backlight to its maximum and adds an EDR multiplier overlay.
-/// It stays on after the hover closes and through outside backlight changes
-/// (brightness keys, automatic brightness, idle dimming). Switching it off returns
-/// the earlier level; moving the slider below the maximum ends it at the new level.
+/// Hover Display: the island display's backlight plus an Extra switch.
+/// Extra is a fixed EDR multiplier overlay on top of whatever the backlight is, and it
+/// never writes the backlight itself. The slider, the Mac's brightness keys, automatic
+/// brightness, idle dimming, closing the strip, sleep and a session switch leave it on.
+/// Only the switch ends it, apart from heat, a display change or lost headroom, an
+/// overlay failure and quit.
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
 final class ScreenBrightnessController: ObservableObject {
@@ -65,7 +66,7 @@ final class ScreenBrightnessController: ObservableObject {
     @Published private(set) var display: ScreenBrightnessDisplay?
     @Published private(set) var isAvailable = false
     @Published private(set) var notice: String?
-    /// Extra starts by raising a readable backlight, so an unadjustable display has no switch.
+    /// Extra is offered next to a working slider only, so an unadjustable display has neither.
     var supportsExtra: Bool { isAvailable && display?.supportsExtra == true }
 
     private let device: ScreenBrightnessDevice
@@ -74,8 +75,6 @@ final class ScreenBrightnessController: ObservableObject {
     private let now: () -> Date
     private var overlay: BrightnessOverlay?
     private var overlayGeneration = 0
-    /// Where Extra started, so ending it returns that display to its earlier level.
-    private var extraOrigin: (display: CGDirectDisplayID, level: Double)?
     /// A write settles only on its own display; another display's reading is current.
     private var lastWrite: (display: CGDirectDisplayID, date: Date)?
     private var timer: Timer?
@@ -90,6 +89,8 @@ final class ScreenBrightnessController: ObservableObject {
              return NSScreen.screens.first { $0.sidekeyDisplayUUID == uuid }?.brightnessDisplayID
          },
          observeSystem: Bool = true,
+         center: NotificationCenter = .default,
+         workspaceCenter: NotificationCenter = NSWorkspace.shared.notificationCenter,
          extraAllowed: @escaping () -> Bool = {
              let state = ProcessInfo.processInfo.thermalState
              return state != .serious && state != .critical
@@ -100,16 +101,13 @@ final class ScreenBrightnessController: ObservableObject {
         self.extraAllowed = extraAllowed
         self.now = now
         guard observeSystem else { return }
-        let workspace = NSWorkspace.shared.notificationCenter
-        observe(.default, NSApplication.didChangeScreenParametersNotification) { $0.refresh() }
-        observe(.default, IslandScreenResolver.selectionDidChangeNotification) { $0.refresh() }
-        // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
-        // Extra never comes back by itself after sleep, a session switch or relaunch.
-        observe(workspace, NSWorkspace.willSleepNotification) { $0.stopExtra() }
-        observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { $0.stopExtra() }
+        let workspace = workspaceCenter
+        observe(center, NSApplication.didChangeScreenParametersNotification) { $0.refresh() }
+        observe(center, IslandScreenResolver.selectionDidChangeNotification) { $0.refresh() }
+        // Sleep and a session switch leave Extra on; its frames pause meanwhile.
         observe(workspace, NSWorkspace.didWakeNotification) { $0.refresh() }
         observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.refresh() }
-        observe(.default, ProcessInfo.thermalStateDidChangeNotification) { $0.thermalStateDidChange() }
+        observe(center, ProcessInfo.thermalStateDidChangeNotification) { $0.thermalStateDidChange() }
     }
 
     /// The strip is visible: read the current level and follow outside changes.
@@ -130,12 +128,12 @@ final class ScreenBrightnessController: ObservableObject {
         let selectedID = selectedDisplayID()
         let target = displays.first { $0.id == selectedID } ?? displays.first
         if display?.id != target?.id {
-            endExtra(restoring: true)
+            endExtra()
             notice = nil
         }
         if display != target { display = target }
         guard let target, let hardware = device.read(target.id), hardware.isFinite else {
-            endExtra(restoring: true)
+            endExtra()
             if isAvailable { isAvailable = false }
             if level != 0 { level = 0 }
             updatePolling()
@@ -149,7 +147,7 @@ final class ScreenBrightnessController: ObservableObject {
                 overlay?.update(multiplier: ScreenBrightnessScale.extraMultiplier(
                     potentialHeadroom: target.potentialHeadroom))
             } else {
-                endExtra(restoring: true)
+                endExtra()
             }
         }
         let current = ScreenBrightnessScale.clampedLevel(hardware)
@@ -157,18 +155,10 @@ final class ScreenBrightnessController: ObservableObject {
         updatePolling()
     }
 
-    /// The slider. Moving it below the maximum is the user's own level, so it ends Extra;
-    /// at the maximum Extra stays on.
+    /// The slider. Extra stays on at any level, as with the Mac's own brightness keys.
     func setLevel(_ requested: Double) {
         guard isAvailable, let display else { return }
-        var next = ScreenBrightnessScale.clampedLevel(requested)
-        if isExtraOn {
-            if next < ScreenBrightnessScale.hardwareMaximum {
-                endExtra(restoring: false)
-            } else {
-                next = 1
-            }
-        }
+        let next = ScreenBrightnessScale.clampedLevel(requested)
         guard write(next, to: display.id) else {
             refresh()
             notice = Self.writeFailedNotice
@@ -182,9 +172,9 @@ final class ScreenBrightnessController: ObservableObject {
         if enabled { startExtra() } else { stopExtra() }
     }
 
-    /// Ends Extra and returns the display to the level it had before.
+    /// Ends Extra; the backlight stays where it is.
     func stopExtra(notice newNotice: String? = nil) {
-        endExtra(restoring: true)
+        endExtra()
         if let newNotice { notice = newNotice }
         refresh()
     }
@@ -196,7 +186,7 @@ final class ScreenBrightnessController: ObservableObject {
     }
 
     func shutdown() {
-        endExtra(restoring: true)
+        endExtra()
         timer?.invalidate()
         timer = nil
         for (center, token) in observers { center.removeObserver(token) }
@@ -209,14 +199,6 @@ final class ScreenBrightnessController: ObservableObject {
             notice = Self.coolingNotice
             return
         }
-        // Right after the slider the panel can still report the level from before it.
-        let reading = isSettling(display.id) ? nil : device.read(display.id).map(ScreenBrightnessScale.clampedLevel)
-        let origin = (display: display.id, level: reading ?? level)
-        guard write(1, to: display.id) else {
-            refresh()
-            notice = Self.writeFailedNotice
-            return
-        }
         let multiplier = ScreenBrightnessScale.extraMultiplier(potentialHeadroom: display.potentialHeadroom)
         let generation = overlayGeneration
         guard let created = device.makeOverlay(for: display.id, multiplier: multiplier, onFailure: { [weak self] in
@@ -224,35 +206,22 @@ final class ScreenBrightnessController: ObservableObject {
             guard let self, self.overlayGeneration == generation else { return }
             self.stopExtra(notice: Self.extraUnavailableNotice)
         }) else {
-            // The backlight keeps the maximum when the earlier level cannot be written back.
-            level = write(origin.level, to: origin.display) ? origin.level : 1
             notice = Self.extraUnavailableNotice
             return
         }
         overlay = created
-        extraOrigin = origin
         isExtraOn = true
-        level = 1
         notice = nil
         created.update(multiplier: multiplier)
         updatePolling()
     }
 
-    private func endExtra(restoring: Bool) {
+    private func endExtra() {
         overlayGeneration += 1
         overlay?.close()
         overlay = nil
-        let origin = extraOrigin
-        extraOrigin = nil
         guard isExtraOn else { return }
         isExtraOn = false
-        if restoring, let origin {
-            if write(origin.level, to: origin.display) {
-                if origin.display == display?.id { level = origin.level }
-            } else if origin.display == display?.id {
-                notice = Self.writeFailedNotice
-            }
-        }
         updatePolling()
     }
 

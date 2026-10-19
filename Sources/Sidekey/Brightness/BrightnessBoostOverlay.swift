@@ -84,26 +84,47 @@ final class BrightnessBoostOverlay: BrightnessOverlay {
 final class BrightnessBoostFrameTimer {
     /// Five frames a second, as BrightIntosh presents the same overlay.
     nonisolated static let interval: TimeInterval = 0.2
+    /// Every ⌘Tab dimmed the boost for a moment while WindowServer kept its headroom
+    /// (2026-10-19), so an app switch gets a frame at once and then a quarter second of them.
+    nonisolated static let switchBurst = (count: 15, interval: 1.0 / 60)
     private let canPresent: @MainActor () -> Bool
     private let present: @MainActor () -> Void
     private let center: NotificationCenter
     private var timer: Timer?
+    private let switchBurst: (count: Int, interval: TimeInterval)
+    private var burst: Timer?
+    private var burstFramesLeft = 0
     private var observers: [NSObjectProtocol] = []
-    /// Sleeping displays take no frames, and the next drawable would block the main thread up to a second.
-    private var displaysAsleep = false
+    /// Sleeping displays, a sleeping Mac and another user's session take no frames, and the
+    /// next drawable would block the main thread up to a second. Extra stays on through all three.
+    private static let pauses: [(start: Notification.Name, end: Notification.Name)] = [
+        (NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification),
+        (NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification),
+        (NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification),
+    ]
+    /// Each pause ends only with its own notification: the displays can still sleep after the Mac wakes.
+    private var activePauses: Set<Notification.Name> = []
 
     init(interval: TimeInterval = BrightnessBoostFrameTimer.interval,
+         switchBurst: (count: Int, interval: TimeInterval) = BrightnessBoostFrameTimer.switchBurst,
          center: NotificationCenter = NSWorkspace.shared.notificationCenter,
          canPresent: @escaping @MainActor () -> Bool, present: @escaping @MainActor () -> Void) {
         self.canPresent = canPresent
         self.present = present
+        self.switchBurst = switchBurst
         self.center = center
-        observers = [(NSWorkspace.screensDidSleepNotification, true), (NSWorkspace.screensDidWakeNotification, false)]
-            .map { name, asleep in
-                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.displaysAsleep = asleep }
-                }
-            }
+        observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                            object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.presentSwitchBurst() }
+        })
+        for pause in Self.pauses {
+            observers.append(center.addObserver(forName: pause.start, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { _ = self?.activePauses.insert(pause.start) }
+            })
+            observers.append(center.addObserver(forName: pause.end, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { _ = self?.activePauses.remove(pause.start) }
+            })
+        }
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
                 // Released without stop(): nothing is left to present.
@@ -111,7 +132,7 @@ final class BrightnessBoostFrameTimer {
                     timer.invalidate()
                     return
                 }
-                if !self.displaysAsleep, self.canPresent() { self.present() }
+                if self.mayPresent { self.present() }
             }
         }
         self.timer = timer
@@ -121,8 +142,37 @@ final class BrightnessBoostFrameTimer {
     func stop() {
         timer?.invalidate()
         timer = nil
+        burst?.invalidate()
+        burst = nil
         for token in observers { center.removeObserver(token) }
         observers.removeAll()
+    }
+
+    private var mayPresent: Bool { activePauses.isEmpty && canPresent() }
+
+    /// Another switch during a burst restarts its count.
+    private func presentSwitchBurst() {
+        guard mayPresent else { return }
+        present()
+        burstFramesLeft = switchBurst.count
+        guard burst == nil, burstFramesLeft > 0 else { return }
+        let burst = Timer(timeInterval: switchBurst.interval, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, self.burstFramesLeft > 0 else {
+                    timer.invalidate()
+                    self?.burst = nil
+                    return
+                }
+                self.burstFramesLeft -= 1
+                if self.mayPresent { self.present() }
+                if self.burstFramesLeft == 0 {
+                    timer.invalidate()
+                    self.burst = nil
+                }
+            }
+        }
+        self.burst = burst
+        RunLoop.main.add(burst, forMode: .common)
     }
 }
 

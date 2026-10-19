@@ -275,6 +275,8 @@ struct IslandView: View {
     @State private var hoverPanelHeightHold: CGFloat?
     /// Text entry holds the drawer open without taking focus on ordinary hover.
     @State private var hoverSearchFocused = false
+    /// A brightness-key glance: the strip shows without keyboard focus and closes sooner.
+    @State private var hoverPanelGlance = false
     /// Invalidation token for the programmatic-expansion auto-collapse timer:
     /// each change to `programmaticHoverExpansion` AND each ⌥N panel request
     /// bumps it (`armProgrammaticExpansionCollapse`), so a stale deferred
@@ -384,10 +386,11 @@ struct IslandView: View {
     /// change. The gate consults the latch's PRIOR value, so the open vs
     /// stay-open distinction is preserved.
     private func recomputeMouseExpanded() {
-        let next = IslandHoverGate.mouseExpanded(
+        let next = Self.mouseHoldsDrawer(
             pillHovering: pillHovering,
             panelHovering: panelHovering,
-            wasExpanded: mouseExpanded
+            wasExpanded: mouseExpanded,
+            glance: hoverPanelGlance
         )
         if mouseExpanded != next {
             mouseExpanded = next
@@ -403,6 +406,31 @@ struct IslandView: View {
     /// hover before auto-collapsing. Long enough to read the surfaced panel,
     /// short enough that a keyboard-opened drawer never feels stuck.
     private static let programmaticExpansionTimeout: TimeInterval = 4
+    /// A brightness key shows the strip for a glance only.
+    private static let brightnessGlanceTimeout: TimeInterval = 2
+
+    static func programmaticCollapseDelay(glance: Bool) -> TimeInterval {
+        glance ? brightnessGlanceTimeout : programmaticExpansionTimeout
+    }
+
+    /// A glance leaves the keyboard with the user's app.
+    static func panelWantsKeyboardFocus(_ mode: IslandHoverPanelMode, searchFocused: Bool, glance: Bool) -> Bool {
+        searchFocused || (mode.needsKeyboardFocus && !glance)
+    }
+
+    /// A brightness key replaces the tools or the strip itself, never another panel under the
+    /// pointer or a search being typed.
+    static func brightnessGlanceMayOpen(over mode: IslandHoverPanelMode, hovering: Bool, searchFocused: Bool) -> Bool {
+        !searchFocused && (!hovering || mode == .controls || mode == .brightness)
+    }
+
+    /// A glance opened without the pointer crossing the pill, so reaching its strip from below
+    /// counts as entering the drawer rather than as the drawer's fading band.
+    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool, glance: Bool) -> Bool {
+        IslandHoverGate.mouseExpanded(
+            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance
+        )
+    }
 
     /// Maps a Hover-slot inline-panel request (from a ⌥N hotkey) onto the
     /// private panel-mode state. `outputLanguagePicker` only opens in Smart mode
@@ -1098,7 +1126,9 @@ struct IslandView: View {
                             onSearchFocusChange: { focused in
                                 hoverSearchFocused = focused
                                 onKeyboardFocusRequest(
-                                    isHoverExpanded && (focused || hoverPanelMode.needsKeyboardFocus)
+                                    isHoverExpanded && Self.panelWantsKeyboardFocus(
+                                        hoverPanelMode, searchFocused: focused, glance: hoverPanelGlance
+                                    )
                                 )
                                 onHoverChange(isHoverExpanded)
                             },
@@ -1260,6 +1290,11 @@ struct IslandView: View {
                 // directions. On exit it collapses the keyboard-opened drawer (D4);
                 // on enter it hands animation control back to the hover path.
                 appState.programmaticHoverExpansion = false
+                // The pointer reached a glance: the strip is the user's now.
+                if hoverPanelGlance {
+                    hoverPanelGlance = false
+                    requestPanelKeyboardFocus(hoverPanelMode, glance: false)
+                }
             } else if !hoverSearchFocused {
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
@@ -1289,7 +1324,11 @@ struct IslandView: View {
                 : nil
             hoverPanelHeightHold = hold
             onHoverPanelBandHeightChange(Self.heldHoverPanelHeight(height(newValue), hold: hold))
-            onKeyboardFocusRequest(isHoverExpanded && (hoverSearchFocused || newValue.needsKeyboardFocus))
+            onKeyboardFocusRequest(
+                isHoverExpanded && Self.panelWantsKeyboardFocus(
+                    newValue, searchFocused: hoverSearchFocused, glance: hoverPanelGlance
+                )
+            )
             if newValue != .history {
                 historyPreviewAnchor = nil
             }
@@ -1320,6 +1359,7 @@ struct IslandView: View {
             onHoverChange(expanded)
             if !expanded {
                 hoverSearchFocused = false
+                hoverPanelGlance = false
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
             }
@@ -1338,7 +1378,20 @@ struct IslandView: View {
         // IslandActions closure directly in `AppDelegate`.
         .onChange(of: appState.programmaticHoverPanelRequest) { _, request in
             guard let request, isHoverExpanded else { return }
-            hoverPanelMode = Self.panelMode(for: request.panel, mode: dropMode)
+            if request.isGlance, !Self.brightnessGlanceMayOpen(
+                over: hoverPanelMode, hovering: isHovering, searchFocused: hoverSearchFocused
+            ) {
+                // The pointer or the search holds the drawer; the key only changed the level.
+                appState.programmaticHoverExpansion = false
+                return
+            }
+            // Under the pointer the strip opens as from its tile, otherwise for a glance. The
+            // mode may not change (⌥N on a glance, a key on the open strip), so ask here too.
+            let glance = request.isGlance && !isHovering
+            let mode = Self.panelMode(for: request.panel, mode: dropMode)
+            hoverPanelGlance = glance
+            hoverPanelMode = mode
+            requestPanelKeyboardFocus(mode, glance: glance)
             // A repeat ⌥N while the drawer is already open leaves
             // `programmaticHoverExpansion` at true (true -> true is not a
             // change event), so the expansion onChange never re-fires and the
@@ -1437,6 +1490,13 @@ struct IslandView: View {
         }
     }
 
+    /// The search and inline tools take keyboard focus; a glance leaves it with the user's app.
+    private func requestPanelKeyboardFocus(_ mode: IslandHoverPanelMode, glance: Bool) {
+        onKeyboardFocusRequest(
+            isHoverExpanded && Self.panelWantsKeyboardFocus(mode, searchFocused: hoverSearchFocused, glance: glance)
+        )
+    }
+
     /// Arms (or re-arms) the programmatic-expansion auto-collapse window:
     /// bumps the generation so any pending deferred collapse goes stale, then
     /// schedules a fresh one. Shared by the expansion onChange (first ⌥N) and
@@ -1446,7 +1506,7 @@ struct IslandView: View {
     private func armProgrammaticExpansionCollapse() {
         programmaticExpansionCollapseGeneration += 1
         let generation = programmaticExpansionCollapseGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.programmaticExpansionTimeout) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.programmaticCollapseDelay(glance: hoverPanelGlance)) {
             guard programmaticExpansionCollapseGeneration == generation else { return }
             if !isHovering && !hoverSearchFocused {
                 appState.programmaticHoverExpansion = false
