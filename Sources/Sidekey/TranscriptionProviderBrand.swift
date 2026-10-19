@@ -61,26 +61,41 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
     /// OpenAI-compatible endpoint.
     static let customLLM = TranscriptionProviderBrand(systemName: "server.rack", label: "Custom LLM")
 
+    /// Brand for the provider account a route runs on: the built-in
+    /// providers keep their own mark, a server shows the rack symbol with the
+    /// name the user gave it.
     @MainActor
-    static func currentDrop() -> TranscriptionProviderBrand? {
-        let prefs = SelfKeyPreferences.shared
-        switch prefs.transcriptionLevel {
-        case nil:
-            return nil
-        case .yourKey:
-            return byok(prefs.selectedProvider)
+    static func brand(for account: ProviderAccount, in routing: AIRoutingStore) -> TranscriptionProviderBrand {
+        switch account {
+        case .soniox:
+            return TranscriptionProviderBrand(assetName: "soniox", label: "Soniox")
+        case .deepgram:
+            return TranscriptionProviderBrand(assetName: "deepgram", label: "Deepgram")
+        case .elevenLabs:
+            return TranscriptionProviderBrand(assetName: "elevenlabs", label: "ElevenLabs")
+        case .openRouter:
+            return .openRouter
+        case .server(let id):
+            return TranscriptionProviderBrand(systemName: "server.rack", label: routing.server(id)?.name ?? "Server")
         }
     }
 
+    /// Brand of the provider the current Drop take runs on: the route the take
+    /// latched when it began, so a mode switch mid-take does not change it.
+    /// `nil` when the take had no route (Not set).
     @MainActor
-    static func currentDropCleanup() -> TranscriptionProviderBrand? {
-        switch SelfKeyPreferences.shared.llmLevel {
-        case nil:
-            return nil
-        case .yourKey:
-            return .openRouter
-        case .custom:
-            return .customLLM
-        }
+    static func currentDrop(take: DropTake? = nil, routing: AIRoutingStore? = nil) -> TranscriptionProviderBrand? {
+        let routing = routing ?? .shared
+        guard let route = (take ?? .shared).route else { return nil }
+        return brand(for: route.account, in: routing)
+    }
+
+    /// Brand of the provider Drop Smart's LLM cleanup runs on; `nil` when the
+    /// feature is Not set.
+    @MainActor
+    static func currentDropCleanup(routing: AIRoutingStore? = nil) -> TranscriptionProviderBrand? {
+        let routing = routing ?? .shared
+        guard let route = routing.route(for: .dropSmartCleanup) else { return nil }
+        return brand(for: route.account, in: routing)
     }
 }

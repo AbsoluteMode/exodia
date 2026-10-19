@@ -94,4 +94,41 @@ final class AgentSettingsStoreTests: XCTestCase {
         s.claudeEffort = "bogus"
         XCTAssertEqual(s.options(for: .claude).effort, "low")
     }
+
+    // MARK: - OpenCode model from the agent route
+
+    private func routing(_ name: String) -> AIRoutingStore {
+        AIRoutingStore(defaults: freshDefaults(name))
+    }
+
+    func test_opencode_model_comes_from_the_agent_route() {
+        let r = routing(#function)
+        r.setRoute(FeatureRoute(account: .openRouter, model: "anthropic/claude-sonnet-5.5"), for: .agent)
+        let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
+        s.openCodeModel = "x/y"
+        XCTAssertEqual(s.options(for: .opencode).model, "anthropic/claude-sonnet-5.5")
+        XCTAssertEqual(s.selectedOpenCodeModel, "anthropic/claude-sonnet-5.5")
+    }
+
+    func test_no_agent_route_means_no_model() {
+        let r = routing(#function)
+        let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
+        s.openCodeModel = "x/y"
+        XCTAssertNil(s.options(for: .opencode).model)
+        XCTAssertNil(s.selectedOpenCodeModel)
+    }
+
+    func test_agent_route_on_another_provider_means_no_opencode_model() {
+        let r = routing(#function)
+        r.setRoute(FeatureRoute(account: .deepgram, model: "nova-3"), for: .agent)
+        let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
+        XCTAssertNil(s.selectedOpenCodeModel)
+    }
+
+    func test_agent_route_model_is_normalized_for_opencode() {
+        let r = routing(#function)
+        r.setRoute(FeatureRoute(account: .openRouter, model: "openrouter/anthropic/claude-sonnet-5.5"), for: .agent)
+        let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
+        XCTAssertEqual(s.selectedOpenCodeModel, "anthropic/claude-sonnet-5.5")
+    }
 }

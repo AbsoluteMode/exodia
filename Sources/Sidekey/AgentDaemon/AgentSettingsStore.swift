@@ -39,10 +39,14 @@ final class AgentSettingsStore: ObservableObject {
     private var catalogUpdatedAt: Date?
     private var codexConfig: CodexConfigSnapshot
     private let defaults: UserDefaults
+    /// `nil` means the shared store, looked up when the model is read.
+    private let injectedRouting: AIRoutingStore?
+    private var routing: AIRoutingStore { injectedRouting ?? .shared }
 
-    init(defaults: UserDefaults = .standard, codexConfig: CodexConfigSnapshot = CodexConfigReader().read()) {
+    init(defaults: UserDefaults = .standard, codexConfig: CodexConfigSnapshot = CodexConfigReader().read(), routing: AIRoutingStore? = nil) {
         self.codexConfig = codexConfig
         self.defaults = defaults
+        self.injectedRouting = routing
         self.openCodeAllowActions = defaults.object(forKey: Keys.openCodeAllowActions) as? Bool ?? true
         // Property observers do not fire on initial assignment in init, so this
         // load does not write back.
@@ -80,9 +84,13 @@ final class AgentSettingsStore: ObservableObject {
         }
     }
 
+    /// The model OpenCode runs: the `Agent` feature's route when it is on
+    /// OpenRouter, else none. The old `openCodeModel` preference is no longer
+    /// read here.
     var selectedOpenCodeModel: String? {
-        guard let value = openCodeModel.map(OpenCodeEnvironment.normalizeModel),
-              !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
+        guard let route = routing.route(for: .agent), route.account == .openRouter else { return nil }
+        let value = OpenCodeEnvironment.normalizeModel(route.model)
+        guard !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
         return value
     }
 
