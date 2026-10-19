@@ -4,7 +4,7 @@ import os
 
 /// The session event tap behind Brightness keys, on its own thread. It asks only for
 /// system-defined events and returns every event untouched except the brightness presses
-/// Exodia keeps. Nothing about an event is logged or stored.
+/// Whytap keeps. Nothing about an event is logged or stored.
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
 final class BrightnessKeyEventTap: BrightnessKeyTapping {

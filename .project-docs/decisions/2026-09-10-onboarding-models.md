@@ -14,8 +14,8 @@ sources:
   - type: commit
     reference: d6ce4339:Sources/Sidekey/Onboarding/OnboardingModelsScreen.swift
     confirmed_at: 2026-09-10
-  - type: repository
-    reference: Sources/Sidekey/Settings/SettingsModelsViewModel.swift
+  - type: commit
+    reference: a3165080780d57635e8c4da48e9a91719fa082ee:Sources/Sidekey/Settings/SettingsModelsViewModel.swift
     confirmed_at: 2026-09-10
 related: [../project.md, 2026-10-17-local-workspace.md]
 ---

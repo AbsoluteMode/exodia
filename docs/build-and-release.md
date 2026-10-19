@@ -1,13 +1,14 @@
 # Local builds and community releases
 
-Most users install a ready-made Exodia DMG and update through the island's
+Most users install a ready-made Whytap DMG and update through the island's
 **Update** button. Source builds remain available for customization. Both the
 development build and default community release pipeline work without an Apple
 Developer account, Developer ID certificate, notarization or App Store Connect key.
 
-In [Releases](https://github.com/AbsoluteMode/exodia/releases), Exodia community
-builds use Exodia-named assets. Earlier Whytap assets are historical; when no
-Exodia package is listed, use a local source build until one is published.
+In [Releases](https://github.com/AbsoluteMode/whytap/releases), Whytap community
+builds use Whytap-named assets. Existing Exodia packages remain downloadable
+until the next public Whytap release; do not rename or relabel a sealed archive.
+The repository rename preserves releases and redirects existing Exodia URLs.
 
 ## Build and run a customization
 
@@ -20,14 +21,14 @@ processes, so it is not the way to update the shared installed production app.
 Use macOS 14.2 or newer and Xcode 26 or newer with its command-line tools:
 
 ```bash
-git clone https://github.com/AbsoluteMode/exodia.git
-cd exodia
+git clone https://github.com/AbsoluteMode/whytap.git
+cd whytap
 swift build
 swift test
 ./scripts/dev-run.sh --run
 ```
 
-The script builds `build/Exodia-Beta-dev.app` at a stable path with the beta
+The script builds `build/Whytap-Beta-dev.app` at a stable path with the beta
 bundle identity. It uses an existing local `Sidekey Dev` signing identity or
 falls back to ad-hoc signing. Do not launch the main app with `swift run`.
 Ad-hoc rebuilds may require granting macOS permissions again.
@@ -116,20 +117,20 @@ For CLI packaging without a live Finder layout session, set
 verification remain the same. The default keeps the Finder layout step.
 
 Community mode skips Apple notarization. Publication still requires
-authenticated GitHub release access and Exodia's Sparkle Ed25519 private key
+authenticated GitHub release access and Whytap's Sparkle Ed25519 private key
 through `SPARKLE_ED_PRIVATE_KEY` or `SPARKLE_ED_PRIVATE_KEY_FILE`. Keep its
 matching public key in `Resources/sparkle-public-ed-key.txt`. Never commit or
 print the private key. `upload-release.sh` verifies the generated archive
 signature before upload.
 
-Sparkle signatures authenticate update archives using Exodia's own key. They
+Sparkle signatures authenticate update archives using Whytap's own key. They
 are independent of Apple code signing and do not make a community download
 Apple-notarized. First-download Gatekeeper warnings remain; see
 [installation](install.md).
 
 ### Community code-signing identity
 
-`build-dmg.sh` signs the app, its nested code and the DMG with Exodia's
+`build-dmg.sh` signs the app, its nested code and the DMG with Whytap's
 self-signed code-signing certificate, committed as
 `Resources/community-signing-certificate.pem` (CN "Exodia Community Code
 Signing", SHA-1 `39da363652f6df4b52ac950998e16c98fd39bc6b`, valid until
@@ -185,17 +186,17 @@ certificate.
 `EXODIA_LEGACY_SIGNED_RELEASE=1` explicitly selects the optional Developer ID and
 notarization path. Only that mode requires `TEAM_ID`, a Developer ID certificate
 and `ASC_API_KEY_ID`, `ASC_API_KEY_ISSUER_ID`, `ASC_API_KEY_P8`. It is not the default
-Exodia delivery path.
+Whytap delivery path.
 
 ## Channels and updates
 
 | Flavor | Bundle ID | App | Sparkle feed |
 | --- | --- | --- | --- |
-| `prod` | `com.rootwise.sidekey` | `Exodia.app` | `https://github.com/AbsoluteMode/exodia/releases/latest/download/appcast.xml` |
-| `beta` | `com.rootwise.sidekey.beta` | `Exodia-Beta.app` | `https://github.com/AbsoluteMode/exodia/releases/download/beta/appcast.xml` |
+| `prod` | `com.rootwise.sidekey` | `Whytap.app` | `https://github.com/AbsoluteMode/whytap/releases/latest/download/appcast.xml` |
+| `beta` | `com.rootwise.sidekey.beta` | `Whytap-Beta.app` | `https://github.com/AbsoluteMode/whytap/releases/download/beta/appcast.xml` |
 
 Production tags are `v<version>` and include the versioned DMG,
-`Exodia-latest.dmg` and `appcast.xml`. Beta releases are prereleases with a rolling
+`Whytap-latest.dmg` and `appcast.xml`. Beta releases are prereleases with a rolling
 `beta` feed. Every update is a complete archive, verified by Sparkle before
 installation.
 
@@ -209,11 +210,11 @@ skipping the version. No installation guarantee applies to force quit, crashes,
 process kills or power loss. The updater behavior is defined in
 `Sources/Sidekey/Updates/UpdateController.swift` and `IslandUpdateUserDriver.swift`.
 
-The package is named Exodia, while Swift targets, bundle IDs, Keychain services,
+The package is named Whytap, while Swift targets, bundle IDs, Keychain services,
 UserDefaults keys and data directories retain compatibility names. Keep these
 stable to preserve user data. A separate fork must choose its own identities,
 Sparkle key pair, code-signing certificate and update feed; see
-[trademarks](../TRADEMARK.md). Exodia's certificate cannot sign without
-Exodia's key: delete `Resources/community-signing-certificate.pem`, then run
+[trademarks](../TRADEMARK.md). Whytap's certificate cannot sign without
+Whytap's key: delete `Resources/community-signing-certificate.pem`, then run
 `community-signing-bootstrap.sh` with the fork's own Doppler project or
 `--key-file`, or publish ad hoc.

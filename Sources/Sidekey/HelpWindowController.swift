@@ -81,7 +81,7 @@ enum HelpWindowContent {
                 contents: configuration.agentCloseShortcut.contents
             ),
             // Bare Escape is a fixed (non-configurable) close for the agent
-            // answer window. While the window is up, Exodia registers a
+            // answer window. While the window is up, Whytap registers a
             // Carbon Escape hotkey, so the next Escape closes the answer
             // instead of reaching the app underneath.
             HelpHotkeyRowSpec(
@@ -184,7 +184,7 @@ final class HelpWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Exodia Hotkeys"
+        window.title = "Whytap Hotkeys"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
@@ -230,7 +230,7 @@ private struct HelpView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Help")
                     .font(.system(size: 28, weight: .semibold))
-                Text("Shortcuts, guides, and answers for Exodia.")
+                Text("Shortcuts, guides, and answers for Whytap.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

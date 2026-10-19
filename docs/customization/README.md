@@ -1,17 +1,17 @@
-# Customize Exodia with your coding agent
+# Customize Whytap with your coding agent
 
 Use a local source checkout with Claude Code, Codex, OpenCode or another coding
 harness. Each reads the same architecture, commands and contracts in `AGENTS.md`
 or `CLAUDE.md`. The helpers below do not depend on a particular agent provider.
 
 For the maintainer's parallel feature sessions, first read
-[Parallel development, one working Exodia](../../.project-docs/processes/shared-app-development.md).
+[Parallel development, one working Whytap](../../.project-docs/processes/shared-app-development.md).
 Workers build/test in their own worktrees; one integrator updates the shared
 installed app and reports its included features and acceptance steps. The
 standalone launch examples below do not authorize worktree app launches in
 that workflow.
 
-Start the harness in the Exodia checkout and give it a concrete request, for example:
+Start the harness in the Whytap checkout and give it a concrete request, for example:
 
 > Add a Monitor dashboard for my servers. Read AGENTS.md and run the customization
 > discovery command first. Reuse the existing dashboard contract, keep connection
@@ -71,7 +71,7 @@ target is `Sources/SidekeyApp/`; `Sidekey` is the internal module name.
 
 For an explicitly requested standalone customization outside parallel feature
 work, `python3 scripts/customize.py build` and `run` wrap `scripts/dev-run.sh`, which packages and signs
-`build/Exodia-Beta-dev.app`. They never install over the production application.
+`build/Whytap-Beta-dev.app`. They never install over the production application.
 The development app still has access to some existing local stores, including
 meeting notes; use injected temporary stores for automated checks. The run command
 may prompt for macOS permissions. Do not launch the app with `swift run`, reset TCC

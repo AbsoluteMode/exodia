@@ -4,6 +4,8 @@ import Foundation
 /// GitHub receives only an already encrypted archive. Authentication and the
 /// recovery credential are separate; no secret enters a URL or process argv.
 actor GitHubBackupTransport {
+    // Existing encrypted destinations and archive markers survive the product rename.
+    // WHY: .project-docs/decisions/2026-10-19-whytap-name.md
     static let repository = "Exodia-Backup"
     static let partBytes = 16 * 1024 * 1024
     // GitHub permits 1,000 assets per release. Reserve one for the index;
@@ -22,7 +24,7 @@ actor GitHubBackupTransport {
             case .authentication: return "GitHub could not sign you in. Reconnect with a valid token or GitHub CLI login."
             case .permission: return "GitHub needs access to Exodia-Backup. Give the token Contents read and write access; creating the private repository also requires repository creation permission."
             case .publicRepository: return "Exodia-Backup is public. Your backups are encrypted, but automatic uploads are paused. Make the repository private, then reconnect."
-            case .unavailable: return "GitHub is unavailable or its request limit was reached. Your local copy is safe; Exodia will retry."
+            case .unavailable: return "GitHub is unavailable or its request limit was reached. Your local copy is safe; Whytap will retry."
             case .invalidResponse: return "GitHub returned an unexpected response. Reconnect and try again."
             case .incomplete: return "This GitHub backup is incomplete or damaged. Choose another version."
             case .noCLI: return "GitHub CLI was not found. Connect with an access token, or install GitHub CLI and run gh auth login."
@@ -79,7 +81,7 @@ actor GitHubBackupTransport {
         if (response as? HTTPURLResponse)?.statusCode == 404 {
             _ = try await json(path: "/user/repos", method: "POST", body: [
                 "name": Self.repository, "private": true, "auto_init": true,
-                "description": "Encrypted Exodia backups. Keep your recovery code in a separate password manager."
+                "description": "Encrypted Whytap backups. Keep your recovery code in a separate password manager."
             ])
             try await requirePrivateRepository()
         } else {
