@@ -297,15 +297,26 @@ correction & learning loop
 recovery, и для восстановления по частичному транскрипту.
 
 **Настройки API & Models (Settings → API & Models):** вкладка из двух блоков.
-*API keys* — чипы провайдеров с точкой статуса (зелёная — ключ работает, жёлтая —
-ключ с урезанными правами или проверить не удалось, красная — ключ не принят
-или кончились деньги) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
+*API keys* — прямоугольные чипы провайдеров без цветных индикаторов (статус
+ключа — «Key works», «Limited key», «Key not accepted» и т. п. — во всплывающем
+окне чипа) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
 Anthropic (только для строки Agent) и свои OpenAI-compatible серверы. Ключи
 лежат в Keychain, на экран не возвращаются; проверка ключа — бесплатный запрос
-к провайдеру. *Models* — по строке на каждую AI-фичу и одна выпадашка
-«Provider · model-id»: Drop Fast и Drop Smart (real-time), Drop Smart cleanup
-(LLM), Meetings (recorded), Meeting notes (LLM), Agent (LLM with tools), Agent
-voice и Voice search (real-time), Translation (LLM) и Subtitles audio (real-time). Модель каждой фичи читается при каждом вызове;
+к провайдеру. *Models* — по строке на функцию, в строке выпадашка «Provider · model-id» на
+каждый её маршрут: Drop Fast (real-time), Drop Smart (real-time + LLM очистки),
+Meetings (recorded + LLM заметок), Agent (LLM with tools), Agent voice и Voice
+search (real-time), Translation (LLM) и Subtitles audio (real-time). Над карточкой — тихая пометка «N features have no model ·
+Show»: Show прокручивает к ним и на пару секунд подсвечивает их строки. В меню модели — только ID модели (короткая
+пометка вроде «with speakers» в той же строке); неподходящие модели не
+показываются. У Deepgram в меню только модели, обновлённые за последние 12
+месяцев (дата — по самой новой `version` в каталоге), плюс вшитые и выбранная;
+каталог при этом полный, маршрут на старой модели работает. У строки на OpenRouter есть второе меню — провайдер: Auto
+(выбирает OpenRouter, для диктовки — по скорости) или один провайдер модели,
+закреплённый без подмены (`provider.order` + `allow_fallbacks: false`, так же
+для агента в конфиге OpenCode). У каждого провайдера — медианная задержка до
+первого токена и скорость (ток/с) за 30 минут из
+`GET /models/{id}/endpoints` с ключом OpenRouter; без цифр — прочерк. Новая
+модель начинается с Auto. Модель каждой фичи читается при каждом вызове;
 Whytap сам не меняет ни модель, ни провайдера. Статус показывается в строке
 только при проблеме (Not verified, Deprecated alias, Removed by provider, Not
 supported yet, Key problem, Not set). Каталоги моделей подтягиваются у

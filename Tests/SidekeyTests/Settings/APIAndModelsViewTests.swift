@@ -5,7 +5,7 @@ import XCTest
 final class APIAndModelsViewTests: XCTestCase {
     private let files = [
         "APIAndModelsView.swift", "ModelMenu.swift", "KeyChipPopover.swift",
-        "AddKeySheet.swift", "AssignModelsSheet.swift",
+        "AddKeySheet.swift", "AssignModelsSheet.swift", "ProviderMenu.swift",
     ]
 
     func test_tab_uses_mac_components_and_verbatim_strings() throws {
@@ -16,7 +16,7 @@ final class APIAndModelsViewTests: XCTestCase {
         for text in [
             "\"API keys\"", "\"Models\"", "\"Add key\"", "\"Replace key\"", "\"Remove\"", "\"Check now\"",
             "\"Refresh models\"", "\"Other model ID…\"", "checked when picked", "\"Use\"", "\"Not now\"",
-            "· Set up\"", "Not verified", "Removed by provider", "Key problem", "Not set", "Not supported yet",
+            "\"Show\"", "Not verified", "Removed by provider", "Key problem", "Not set", "Not supported yet",
             "No features use this key.", "will have no model.", "http://localhost:8000/v1",
         ] {
             XCTAssertTrue(s.contains(text), text)
@@ -31,7 +31,7 @@ final class APIAndModelsViewTests: XCTestCase {
         XCTAssertFalse(s.contains("TextField(\"Key"))
     }
 
-    func test_tab_has_a_single_model_menu_and_no_provider_dropdown() throws {
+    func test_tab_has_a_single_model_menu_and_no_account_dropdown() throws {
         let view = try source("APIAndModelsView.swift")
         XCTAssertEqual(view.components(separatedBy: "ModelMenu(").count - 1, 1)
         XCTAssertTrue(view.contains("ScrollViewReader"))

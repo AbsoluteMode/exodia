@@ -30,9 +30,8 @@ struct PickerOption: Equatable {
 struct PickerSection: Equatable {
     let account: ProviderAccount
     let title: String
+    /// Models the feature cannot use are left out, except the selected one.
     let options: [PickerOption]
-    /// `"Not supported yet: a, b, c +N (reason)"`, or `nil` when every model fits.
-    let notSupportedSummary: String?
     /// The latest catalog refresh failed: the list is the cached one.
     let refreshFailed: Bool
 }
@@ -150,19 +149,15 @@ struct ModelStatusResolver {
                 add(model.id)
             }
             for model in (snapshot?.models ?? []).sorted(by: { $0.id < $1.id })
-            where model.aliasOf == nil || isSelected(model.id) {
+            where (model.aliasOf == nil && !Self.isStale(model, fetchedAt: snapshot?.fetchedAt)) || isSelected(model.id) {
                 add(model.id)
             }
             if let selected, selected.account == account { add(selected.model) }
 
             var options: [PickerOption] = []
-            var unsupported: [(model: String, reason: String)] = []
             for id in ids {
                 let state = verdict(model: id, account: account, for: feature)
-                if case .notSupported(let reason) = state, !isSelected(id) {
-                    unsupported.append((id, reason))
-                    continue
-                }
+                if case .notSupported = state, !isSelected(id) { continue }
                 options.append(PickerOption(
                     model: id, state: state, isSelected: isSelected(id),
                     hint: hint(model: id, account: account, feature: feature, use: use)
@@ -172,10 +167,19 @@ struct ModelStatusResolver {
                 account: account,
                 title: title(of: account),
                 options: options,
-                notSupportedSummary: Self.summary(of: unsupported),
                 refreshFailed: snapshot?.lastRefreshFailed ?? false
             )
         }
+    }
+
+    /// A model whose provider dates its versions (Deepgram) and that has not
+    /// been updated for this long before the catalog was fetched is left out
+    /// of pickers; it stays in the catalog, so a route on it keeps working.
+    static let staleAfter: TimeInterval = 365 * 86_400
+
+    static func isStale(_ model: CatalogModel, fetchedAt: Date?) -> Bool {
+        guard let updated = model.updatedAt, let fetchedAt else { return false }
+        return fetchedAt.timeIntervalSince(updated) > staleAfter
     }
 
     func missingProviderHint(for feature: AIFeature) -> String? {
@@ -325,25 +329,6 @@ struct ModelStatusResolver {
         case .dropFast, .dropSmart, .meetingNotes, .agent, .agentVoice, .voiceSearch, .translation, .subtitlesAudio:
             return nil
         }
-    }
-
-    private static let namesPerReason = 3
-
-    private static func summary(of unsupported: [(model: String, reason: String)]) -> String? {
-        guard !unsupported.isEmpty else { return nil }
-        var reasons: [String] = []
-        var byReason: [String: [String]] = [:]
-        for item in unsupported {
-            if byReason[item.reason] == nil { reasons.append(item.reason) }
-            byReason[item.reason, default: []].append(item.model)
-        }
-        let groups = reasons.map { reason -> String in
-            let names = byReason[reason] ?? []
-            var text = names.prefix(namesPerReason).joined(separator: ", ")
-            if names.count > namesPerReason { text += " +\(names.count - namesPerReason)" }
-            return "\(text) (\(reason))"
-        }
-        return "Not supported yet: " + groups.joined(separator: "; ")
     }
 
     private static func phrase(for kind: AIProviderKind) -> String {

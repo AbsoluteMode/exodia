@@ -152,12 +152,12 @@ final class APIAndModelsViewModelTests: XCTestCase {
         let vm = env.makeViewModel()
 
         XCTAssertEqual(vm.chips.map(\.account), [.soniox, .elevenLabs, .openRouter, .server(server.id)])
-        XCTAssertEqual(vm.chips[0], KeyChip(account: .soniox, title: "Soniox", dot: .green, statusText: "Key works", checkedAt: env.now))
-        XCTAssertEqual(vm.chips[1].dot, .red, "an unreadable key is a key problem, never no key")
-        XCTAssertEqual(vm.chips[2].dot, .red)
+        XCTAssertEqual(vm.chips[0], KeyChip(account: .soniox, title: "Soniox", statusText: "Key works", checkedAt: env.now))
+        XCTAssertEqual(vm.chips[1].statusText, "Couldn't read the key from the Keychain",
+                       "an unreadable key is a key problem, never no key")
         XCTAssertEqual(vm.chips[2].statusText, "Out of credit or key limit reached")
         XCTAssertEqual(vm.chips[3].title, "Lab")
-        XCTAssertEqual(vm.chips[3].dot, .yellow)
+        XCTAssertEqual(vm.chips[3].statusText, "Not checked yet")
         XCTAssertEqual(vm.addableKinds, [.deepgram, .anthropic, .openAICompatible])
     }
 
@@ -453,5 +453,115 @@ final class APIAndModelsViewModelTests: XCTestCase {
 
         XCTAssertNil(row(.agentVoice, in: vm)?.message)
         XCTAssertEqual(env.routing.route(for: .agentVoice), route)
+    }
+}
+
+// MARK: - OpenRouter provider
+
+@MainActor
+final class APIAndModelsProviderTests: XCTestCase {
+    private final class FakeEndpoints: OpenRouterEndpointsFetching, @unchecked Sendable {
+        private let lock = NSLock()
+        var result: Result<[OpenRouterEndpoint], Error> = .success([])
+        private(set) var calls: [(model: String, key: String)] = []
+        func endpoints(model: String, apiKey: String) async throws -> [OpenRouterEndpoint] {
+            try lock.withLock {
+                calls.append((model, apiKey))
+                return try result.get()
+            }
+        }
+    }
+
+    private func endpoint(_ tag: String, _ name: String, tps: Double?) -> OpenRouterEndpoint {
+        OpenRouterEndpoint(tag: tag, providerName: name, quantization: nil, latencyMs: 300, tokensPerSecond: tps, isUp: true)
+    }
+
+    private func make() throws -> (APIAndModelsViewModel, AIRoutingStore, FakeEndpoints, ProviderKeyStore) {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("catalog-\(suite).json")
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: file)
+        }
+        try Data("{}".utf8).write(to: file)
+        let routing = AIRoutingStore(defaults: defaults)
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        let fake = FakeEndpoints()
+        let vm = APIAndModelsViewModel(
+            routing: routing, keys: keys,
+            catalogs: ModelCatalogStore(fileURL: file), checks: ModelCheckStore(defaults: defaults),
+            keyStatuses: KeyStatusStore(defaults: defaults), endpoints: fake,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }, inputLanguage: { nil }
+        )
+        return (vm, routing, fake, keys)
+    }
+
+    func test_groups_pair_speech_with_its_llm_and_cover_every_feature_once() throws {
+        let (vm, _, _, _) = try make()
+        let features = vm.groups.flatMap { $0.rows.map(\.feature) }
+        XCTAssertEqual(features.sorted { $0.rawValue < $1.rawValue }, AIFeature.allCases.sorted { $0.rawValue < $1.rawValue })
+        XCTAssertEqual(vm.groups.map(\.title), ["Drop Fast", "Drop Smart", "Meetings", "Agent", "Agent voice", "Voice search"])
+        XCTAssertEqual(vm.groups.first { $0.title == "Drop Smart" }?.rows.map(\.feature), [.dropSmart, .dropSmartCleanup])
+        XCTAssertEqual(vm.groups.first { $0.title == "Meetings" }?.rows.map(\.feature), [.meetings, .meetingNotes])
+    }
+
+    func test_only_openrouter_rows_offer_a_provider_and_auto_is_the_default() throws {
+        let (vm, routing, _, _) = try make()
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "x/m"), for: .meetingNotes)
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropFast)
+        vm.selectProvider(nil, for: .meetingNotes)
+
+        let notes = try XCTUnwrap(vm.rows.first { $0.feature == .meetingNotes })
+        XCTAssertEqual(notes.provider, ProviderChoice(model: "x/m", pinned: nil, label: "Auto"))
+        XCTAssertNil(vm.rows.first { $0.feature == .dropFast }?.provider)
+    }
+
+    func test_loads_providers_with_the_openrouter_key_and_names_the_pin() async throws {
+        let (vm, routing, fake, keys) = try make()
+        try keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "x/m"), for: .meetingNotes)
+        fake.result = .success([endpoint("slow/fp8", "Slow", tps: 20), endpoint("fast", "Fast", tps: 200)])
+
+        await vm.loadProviders(for: .meetingNotes)
+        await vm.loadProviders(for: .meetingNotes)
+
+        XCTAssertEqual(fake.calls.count, 1, "a fresh list is reused")
+        XCTAssertEqual(fake.calls.first?.key, "or-key")
+        guard case .loaded(let list, _) = vm.providerLists["x/m"] else { return XCTFail("not loaded") }
+        XCTAssertEqual(list.map(\.tag), ["fast", "slow/fp8"])
+
+        vm.selectProvider("slow/fp8", for: .meetingNotes)
+        XCTAssertEqual(routing.route(for: .meetingNotes)?.provider, "slow/fp8")
+        XCTAssertEqual(vm.rows.first { $0.feature == .meetingNotes }?.provider?.label, "Slow")
+    }
+
+    func test_failed_load_is_retried_on_force() async throws {
+        let (vm, routing, fake, keys) = try make()
+        try keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "x/m"), for: .agent)
+        fake.result = .failure(URLError(.notConnectedToInternet))
+        await vm.loadProviders(for: .agent)
+        XCTAssertEqual(vm.providerLists["x/m"], .failed)
+        fake.result = .success([endpoint("a", "A", tps: 1)])
+        await vm.loadProviders(for: .agent, force: true)
+        if case .loaded = vm.providerLists["x/m"] {} else { XCTFail("retry did not load") }
+    }
+
+    func test_without_a_key_nothing_is_requested() async throws {
+        let (vm, routing, fake, _) = try make()
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "x/m"), for: .agent)
+        await vm.loadProviders(for: .agent)
+        XCTAssertTrue(fake.calls.isEmpty)
+    }
+
+    func test_repicking_the_current_model_keeps_the_pin() async throws {
+        let (vm, routing, _, keys) = try make()
+        try keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "anthropic/claude-sonnet-5.5", provider: "anthropic"),
+                         for: .agent)
+        await vm.select(model: "anthropic/claude-sonnet-5.5", account: .openRouter, for: .agent)
+        XCTAssertEqual(routing.route(for: .agent)?.provider, "anthropic")
     }
 }
