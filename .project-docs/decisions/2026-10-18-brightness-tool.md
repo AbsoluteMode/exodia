@@ -2,11 +2,11 @@
 id: brightness-tool-2026-10-18
 type: decision
 title: Brightness is a catalog hover tool with a backlight slider, an Extra switch and battery time
-summary: A short inline strip sets the island display's backlight, offers an EDR Extra switch that adds a fixed boost until the user switches it off, and shows the battery time left; optional Brightness keys show the strip instead of the macOS indicator. Saved and default layouts are unchanged.
+summary: A short inline strip sets the island display's backlight, offers an Extra switch that scales the display's transfer table into the EDR headroom, as Vivid does, until the user switches it off, and shows a battery time left that follows the last half hour's load and the current brightness; optional Brightness keys show the strip instead of the macOS indicator. Saved and default layouts are unchanged.
 status: confirmed
-tags: [hover, brightness, edr, battery, display, settings]
+tags: [hover, brightness, edr, gamma, battery, display, settings]
 canonical_for: [brightness-tool]
-verified_at: 2026-10-19
+verified_at: 2026-10-20
 sources:
   - type: user-confirmed
     reference: On 2026-10-18 the user asked for a separate Brightness hover tool building on the earlier Vivid/XDR research, with a white slider continuing into a yellow extra-brightness zone, the expected runtime on battery and a plain strip opened from hover. The same day they replaced the yellow zone with a separate Extra switch.
@@ -14,15 +14,21 @@ sources:
   - type: user-confirmed
     reference: On 2026-10-19 the user reported the boost steady after the frame fix (the washed-out look they saw then came from Vivid running at the same time), then a dim moment on every ⌘Tab, even a quick tap without the switcher panel. They noted that Extra survived lowering the brightness through macOS but ended with Exodia's slider, and asked for Extra as a fixed addition to the brightness that ends only when switched off, reachable from Settings -> Toolbox as well as hover. They then asked for the brightness keys to show the hover strip instead of the macOS indicator, with two brightness-up presses at full brightness turning Extra on.
     confirmed_at: 2026-10-19
+  - type: user-confirmed
+    reference: Later on 2026-10-19, with installed build 1472, the user reported that Vivid looked brighter than Extra and that the brightness still blinked on every app switch, then that Vivid does not blink on ⌘Tab. They reported the drawer closing on a quick move up to the strip from the third row (waiting first worked), the strip's Extra switch drawn grey instead of blue, and asked for a smart battery estimate that follows the battery charge, the screen brightness and the average load of the last half hour or hour, recomputed on every change.
+    confirmed_at: 2026-10-19
   - type: repository
     reference: Sources/Sidekey/Brightness/ScreenBrightnessController.swift
-    confirmed_at: 2026-10-19
+    confirmed_at: 2026-10-20
   - type: repository
-    reference: Sources/Sidekey/Brightness/BrightnessBoostOverlay.swift
-    confirmed_at: 2026-10-19
+    reference: Sources/Sidekey/Brightness/GammaBrightnessBoost.swift
+    confirmed_at: 2026-10-20
+  - type: repository
+    reference: Sources/Sidekey/Brightness/BrightnessHeadroomTrigger.swift
+    confirmed_at: 2026-10-20
   - type: repository
     reference: Sources/Sidekey/Brightness/BatteryRuntime.swift
-    confirmed_at: 2026-10-19
+    confirmed_at: 2026-10-20
   - type: repository
     reference: Sources/Sidekey/Brightness/IslandBrightnessStrip.swift
     confirmed_at: 2026-10-19
@@ -62,6 +68,15 @@ sources:
   - type: trace
     reference: Independent read-only reviews of PR #30 on 2026-10-19. Codex found the boost lost with focus, the restore target lost after a failed write and the first transparent frame; Argon (Gemini) agreed on the cause and found the stale origin within the settle window and frames requested from sleeping displays. Claims were checked against the code and by failing tests.
     confirmed_at: 2026-10-19
+  - type: trace
+    reference: Read-only observation of Vivid on the same MacBook Pro XDR panel, 2026-10-19, through public window, screen and Quartz reads only. Vivid keeps a 1x1 pt window at the display's top-right corner (bounds 1727,0) and a second 36x36 pt window of unknown purpose, both at layer 1000; the built-in display's transfer table (capacity 1024) was scaled linearly to 1.45 at white (0, 0.3629, 0.7257, 1.0886, 1.45) at a current EDR headroom of 2.6667 and a potential of 16. The headroom hint rose from 1.007 to 2.667 within about 0.7 s of Vivid starting (19:16:22.742 -> 23.441).
+    confirmed_at: 2026-10-19
+  - type: url
+    reference: https://github.com/niklasr22/BrightIntosh (GPL, read for ideas only, no code copied) — a 1x1 trigger window one level above its full-screen overlay at the shielding level, presented five times a second, a brightness factor of 1 + 0.5 x min(headroom / 2.66, 1) on its list of 600-nit built-in panels (1 + 0.59 x min(headroom / 3.2, 1) on other built-in panels), suspension on screensaver, session and protected-data changes, and CGDisplayRestoreColorSyncSettings resetting every display's table.
+    confirmed_at: 2026-10-19
+  - type: trace
+    reference: Local runs on 2026-10-19/20. Each fix was written test-first. GammaBrightnessBoostTests 25, ScreenBrightnessControllerTests 32, BrightnessBoostFrameTimerTests 9, BrightnessHoverToolTests 19, BrightnessKeysTests 44, BatteryRuntimeTests 27 and BatteryRuntimeMonitorTests 5; the Brightness, battery and Toolbox filter 177 tests, 0 failures. Four mutations of the table boost and eight of the battery estimate were each caught.
+    confirmed_at: 2026-10-20
   - type: url
     reference: https://developer.apple.com/videos/play/wwdc2022/10114/ (Display EDR content with Core Image, Metal, and SwiftUI)
     confirmed_at: 2026-10-19
@@ -78,7 +93,12 @@ expected runtime on battery, opened as a plain strip from hover. They then
 replaced the yellow Extra continuation of the slider with a separate switch.
 After the first live checks they asked for Extra as a fixed boost that only
 the switch ends, for the switch in Settings as well, and for the Mac's
-brightness keys to show the strip instead of the macOS indicator.
+brightness keys to show the strip instead of the macOS indicator. With build
+1472 installed they found Vivid brighter than Extra and Extra blinking on
+every app switch, which Vivid does not, the drawer closing on a quick move
+from the third row and the switch drawn grey. They asked for a battery time
+that follows the charge, the brightness and the last half hour's average load
+and is recomputed on every change.
 macOS has no public backlight API for Apple displays, and brightness above the
 SDR maximum exists only as EDR headroom that apps fill with their own content.
 
@@ -88,14 +108,19 @@ SDR maximum exists only as EDR headroom that apps fill with their own content.
 `.openPanel(.brightness)`. It is offered from the Toolbox catalog and search
 (brightness, display, vivid, xdr, battery, plus the Russian aliases);
 `HoverLayoutStore.defaultSlots` and saved layouts are unchanged. Its capsule
-title is Display and shows NN% or Extra, and no status for an unreadable display.
+title is Display. Hover capsules draw no status captions; its VoiceOver label
+adds NN% or Extra, and nothing for an unreadable display.
 
 **Strip.** 68 points: Back, a white Control Center style capsule slider with the
 sun at its start, the Extra switch and one status line (an orange notice, or
 the battery). The band is 76 points, 126 with music. The mode takes keyboard
-focus like Monitor, so the slider and switch receive clicks. Opened from a
-lower tile, the band keeps the previous height as transparent hover space under
-the top-aligned drawer until the pointer reaches the strip.
+focus like Monitor, so the slider and switch receive clicks. The switch is
+`MacSwitch` at its compact 30x18-point size, in the accent color when on even
+though the island's window is never the active app's key window. Opened from
+a lower tile, the band keeps the previous height as transparent hover space
+under the top-aligned drawer until the pointer is over the drawer's final
+frame (`IslandView.releasesHeldHoverZone`), including while the drawer is
+still shrinking to it.
 
 **Backlight.** `DisplayServicesGetBrightness` and `DisplayServicesSetBrightness`
 are resolved with `dlopen` from the private DisplayServices framework, for the
@@ -107,32 +132,60 @@ panel can still report the earlier level, so key presses in a row step from
 the written level. A pinned capsule reads the level once when hover opens.
 
 **Extra.** Offered when `maximumPotentialExtendedDynamicRangeColorComponentValue`
-exceeds 1.01. Turning it on never writes the backlight: it orders a
-click-through panel at `CGShieldingWindowLevel` on all Spaces and over
-full-screen apps. Its 1x1 `rgba16Float` extended-linear sRGB `CAMetalLayer`
-wants EDR content and uses `compositingFilter = "multiply"`, so WindowServer
-multiplies the desktop by the EDR white `min(2, potential headroom)` at
-whatever level the backlight has. The panel becomes visible after the first
-rendered frame and has `sharingType = .none`. A multiplier or frame change
-draws at once; `BrightnessBoostFrameTimer` also presents a frame every 0.2
-seconds while the overlay exists, with the strip open or closed, whenever its
-window is visible (and until the first frame succeeds). On
-`NSWorkspace.didActivateApplicationNotification` it presents a frame at once
-and then 15 more at 1/60-second intervals; another switch during that burst
-restarts its count. No frame is presented between `screensDidSleep` and
-`screensDidWake`, `willSleep` and `didWake`, or `sessionDidResignActive` and
-`sessionDidBecomeActive`, and each pause ends only with its own notification.
+exceeds 1.01. Turning it on never writes the backlight. As Vivid does, Extra
+scales the display's transfer table into the EDR headroom that a trigger keeps
+raised; the display applies the table after WindowServer has composited the
+desktop.
+
+`BrightnessHeadroomTrigger` is a click-through, non-activating 1x1-point panel
+in the display's top-right corner, where a built-in display's rounded corner
+hides it, at `CGShieldingWindowLevel` on all Spaces and over full-screen apps,
+with `sharingType = .none`. Its `rgba16Float` extended-linear sRGB Metal layer
+wants EDR content and clears to 2.0. The panel becomes visible after its first
+rendered frame; a failed frame or four missed drawables in a row end Extra.
+`BrightnessBoostFrameTimer` presents a frame every 0.2 seconds while the
+trigger exists, with the strip open or closed, whenever its window is visible
+(and until the first frame succeeds), and then lets the boost check the table,
+also while the window is not visible. Nothing happens between
+`screensDidSleep` and `screensDidWake`, `willSleep` and `didWake`, or
+`sessionDidResignActive` and `sessionDidBecomeActive`; each pause ends only
+with its own notification.
+
+`GammaBrightnessBoost` writes nothing until the current EDR headroom exceeds
+1.05; if it does not within 5 seconds, Extra ends with the Extra notice. It
+then reads the display's own table (`CGGetDisplayTransferByTable`, up to 256
+entries) and writes it scaled by `min(1.45, 1.055 x headroom^(1/2.4) - 0.055)`,
+the headroom in the sRGB encoding the table holds. From a headroom of about
+2.35 the factor stays at 1.45, about 2.35 times SDR light at white. While the
+headroom first rises, each step is followed at once. Any other change is
+written once the table has differed from it for 1.5 seconds; without headroom
+the display gets its own table while Extra stays on, and returning headroom
+rises at once again. After every frame the
+boost compares each channel's white with the table it wrote, within 0.003
+because Quartz may resample a table. A table that already ends above 1.01
+belongs to another booster such as Vivid: at the start or later, Extra ends
+with "Another app is adjusting this display." and leaves that table alone. A
+table back at SDR white is a reset, such as a display reconfiguration or a
+profile change: it becomes the display's own table and is boosted again, and
+a third reset within 10 seconds also counts as another app. An unreadable
+table or a refused write ends Extra with the Extra notice. While another
+user's session is active the display has its own table, and Extra engages
+again when the session returns. Ending Extra writes the display's own table
+back before the trigger closes, or restores every display's ColorSync table if
+Quartz refuses that write; Quartz also gives the displays their own tables
+back when the process exits.
 
 **Lifetime.** Extra is a fixed boost on top of the current backlight. It stays
 on through the slider at any level, the Mac's brightness keys, automatic
-brightness, idle dimming, closing the strip, display and system sleep and a
-session switch, whose frames pause meanwhile. It ends when the user switches
-it off in the strip or in Settings, and otherwise only on a serious or
-critical thermal state (the cooling notice, which also blocks turning it on),
-a display change, lost headroom or an unreadable display, an overlay failure
-(the Extra notice) and app quit. Ending it leaves the backlight where it is.
-Extra is never saved and never comes back by itself after relaunch. Each
-notice fits one line of a 310-point island.
+brightness, idle dimming, closing the strip, display and system sleep, a
+session switch and a loss of the current headroom. It ends when the user
+switches it off in the strip or in Settings, and otherwise only on a serious
+or critical thermal state (the cooling notice, which also blocks turning it
+on), a display change, a display that no longer offers EDR or cannot be read,
+another app's table (the other-app notice), a boost failure (the Extra notice)
+and app quit. Ending it gives the display its own table back and leaves the
+backlight where it is. Extra is never saved and never comes back by itself
+after relaunch. Each notice fits one line of a 310-point island.
 
 **Settings.** Settings -> Toolbox -> Display (`ToolboxDisplayPane`) is a card
 with the Extra switch, when the island display offers it, and the Brightness
@@ -155,7 +208,7 @@ reaches the maximum does not count, and repeats from holding the key neither
 count nor cancel. The window uses the time the tap saw each press, not the
 time a busy main thread handled it. A brightness-down press keeps Extra. Each
 press shows the strip as a glance: it closes after 2 seconds instead of the 4
-of a positional hotkey and leaves keyboard focus with the user's app. A glance
+of a tool hotkey and leaves keyboard focus with the user's app. A glance
 replaces the tools or the strip itself; it never opens over another panel
 under the pointer or a search being typed, which leave the level changed
 without it. Under the pointer the strip opens as from its tile, with focus,
@@ -164,8 +217,8 @@ focus. While a meeting suggestion, a recording or the agent blocks expansion,
 the level changes without the strip. The keys stay with macOS while hover
 widgets are hidden, while the island display is not adjustable, and with
 Command, Control, Option or Shift other than Option-Shift; Fn and Caps Lock do
-not matter. A press belongs to whoever received its first event, Exodia or
-macOS, and its repeats and release follow it; a press Exodia did not see
+not matter. A press belongs to whoever received its first event, Whytap or
+macOS, and its repeats and release follow it; a press Whytap did not see
 begin, such as one held while the tap is installed, stays with macOS. The
 presses outlive each tap, so one held while the hotkeys are rebuilt keeps its
 owner. After more than 0.1 seconds without a tap, or once macOS disabled it, a
@@ -180,56 +233,104 @@ installed; the first key handler stays, so the gesture keeps its first press.
 **Battery.** IOKit power sources give the percentage, power state and macOS's
 time to empty. AppleSmartBattery gives the remaining charge
 (`AppleRawCurrentCapacity` x `Voltage`) and the load accumulators in
-`PowerTelemetryData`. The monitor samples every 5 seconds while the strip is
-visible. On battery macOS's estimate comes first; without it, the remaining
-watt-hours over the smoothed per-update average load (EMA weight 0.5,
-discarded after a 5-minute gap). On power the same calculation shows
-"N h if unplugged", otherwise "On power" or "Charging". Times round to 5
-minutes under an hour, then to 10.
+`PowerTelemetryData`. `BatteryRuntimeMonitor` reads them once a minute from
+launch on a Mac with a battery, and every 5 seconds while the strip is
+visible. A sample is the system load that the accumulators average
+between two readings 30 to 180 seconds apart, with the built-in display's
+light averaged over the same span (`ScreenBrightnessScale.displayLoad`): the
+level squared, times 2.35 while Extra is on that display, and 0 with the lid
+closed. A longer gap such as sleep, a counter reset or a clock change starts
+a new span without a sample; an empty history starts from the latest instant
+load, and loads under 0.5 W are dropped. The estimate uses the last 30
+minutes: the load's least-squares slope over the light, drawn toward a prior
+of 5 W per unit of light with the weight of one unit of spread and bounded to
+1-15 W and so that the display takes at most 80 % of the mean load at the
+mean light, moves the display's
+share from the history's mean light to the current one, for a load of at
+least 0.5 W. While the strip is visible, every level or Extra change it sees
+recomputes the line at once without reading the battery; with the strip
+closed, a change enters the light average at the next reading. On battery
+macOS's estimate comes first while fewer than five samples exist or the
+history gives no time, adjusted by the same slope from the recent mean light
+to the current one; otherwise the history gives the time. On power the
+history shows "N h if unplugged", otherwise "On power" or "Charging". Times
+are at most 24 hours and round to 5 minutes under an hour, then to 10.
 
-Battery readings and brightness key events are never stored, logged or sent;
-only the Brightness keys switch is saved. The strip and Extra need no
-permission; Brightness keys need the Accessibility permission the hotkeys use.
+The history stays in memory. Battery readings, their half hour of samples and
+brightness key events are never written to disk, logged or sent; only the
+Brightness keys switch is saved. The strip and Extra need no permission;
+Brightness keys need the Accessibility permission the hotkeys use.
 
 ## Why
 
 - The separate switch is the user's correction: one explicit on/off instead of
   a slider zone whose meaning changes past the end.
 - The fixed boost is the user's correction of 2026-10-19: Extra survived the
-  Mac's own keys but ended with Exodia's slider. Without a level to restore,
+  Mac's own keys but ended with the strip's slider. Without a level to restore,
   there is no restore that can fail and no write of a backlight level the user
   did not choose. Sleep and a session switch keep it for the same reason: only
   the switch ends it.
 - Catalog-only follows the Toolbox contract: a new tool does not replace the
   user's selections or change the default layout.
-- A multiply overlay needs no screen capture, Screen Recording permission,
-  gamma tables or shaders, and closing the window removes the effect at once.
-- 2.0 is about the sustained full-screen XDR range over the SDR maximum on
-  MacBook Pro panels; WindowServer limits the result to the current headroom.
-- A uniform multiplier needs no full-resolution half-float drawable.
+- The table follows the user's report that Vivid, which scales the table, does
+  not blink on ⌘Tab. The display applies the table after WindowServer
+  composites the desktop, so recompositing on an app switch cannot dim it. The
+  former multiply overlay dimmed on every switch, with or without the switcher
+  panel, while WindowServer kept the headroom and the backlight through nine
+  switches (sources), and build 1472 still dimmed with an app-switch burst of
+  60-hertz overlay frames. That recompositing caused the dim moment is the
+  leading explanation, not yet confirmed on the panel.
+- 1.45 is the white of Vivid's table on the same panel at a headroom of 2.67
+  (sources). In linear light it is about 2.35 times SDR white, where the
+  multiply overlay gave 2.0, which fits the user's report that Vivid looked
+  brighter. Below a headroom of about 2.35 the factor is the headroom itself
+  in the table's sRGB encoding, so the boosted white never asks for more than
+  the panel can show.
+- Nothing is written before the headroom exceeds 1.05: a table above SDR white
+  without headroom clips the bright end. Vivid's headroom rose within about
+  0.7 seconds; 5 seconds leaves room for a slow start.
+- The first rise and a return are followed at once so Extra comes up with the
+  headroom. Other changes wait 1.5 seconds, because stepping the table down and back up for a brief
+  dip would itself blink; without headroom the display's own table avoids a
+  clipped white.
+- Another app's table is left alone: scaling Vivid's table again would clip,
+  and writing ours over it would fight the other app frame by frame. A table
+  back at SDR white is macOS resetting it, as a reconfiguration or a profile
+  change does; three resets within 10 seconds mean another app keeps writing it.
+- The table belongs to the display, not to the session, so another user's
+  session gets the display's own table.
+- The trigger is 1x1 point in the top-right corner, as Vivid places its own,
+  where a built-in display's rounded corner hides it. Any white above SDR
+  engages the panel's whole headroom: the former full-screen layer drew 2.0
+  and WindowServer still raised the headroom to the panel's 2.67.
 - Without focus, WindowServer keeps a layer's EDR headroom only about 0.8
   seconds after its last frame. Redrawing on change plus a 2-second keepalive,
   and only while the strip was open, made the boost blink: the headroom hint
-  fell to 1 when Exodia lost focus and between keepalive frames. Five frames a
-  second, BrightIntosh's rate for the same overlay, fit three frames in that
-  hold. Frames pause while the window is not visible, while the displays or
-  the Mac sleep and during another user's session: a sleeping display does not
-  consume them, and waiting for a drawable would block the main thread for up
-  to a second. The notifications make the pause independent of when the
-  occlusion state changes.
-- The app-switch burst: through nine switches WindowServer kept the headroom
-  and the backlight, yet the user saw a dim moment on every ⌘Tab, panel or
-  not. The leading explanation is a composite at the switch without a recent
-  overlay frame, so an activation gets one at once and a quarter second of
-  60-hertz frames. It is not yet confirmed on the panel.
+  fell to 1 when the app lost focus and between keepalive frames. Five frames a
+  second, BrightIntosh's rate for its trigger, fit three frames in that hold.
+  Frames pause while the window is not visible, while the displays or the Mac
+  sleep and during another user's session: a sleeping display does not consume
+  them, and waiting for a drawable would block the main thread for up to a
+  second. The notifications make the pause independent of when the occlusion
+  state changes. The table is still checked while the window is not visible,
+  because a hidden trigger loses the headroom too.
 - Display replaces the Brightness capsule title, which wrapped to two lines in
   the 43-point text column of a 310-point island (the user's screenshot).
+- `MacSwitch` replaces the system switch, which draws its on state grey in a
+  window that is not the active app's key window, and the island never is
+  (the user's screenshot).
+- The height hold keeps the drawer open: the strip is much shorter than the
+  grid, and a pointer left on a lower tile would otherwise fall outside it.
+  The hold ends only over the drawer's final frame because a quick move from
+  the third row entered the drawer while it was still shrinking, ended the
+  hold there and closed the drawer under the pointer (the user's report:
+  waiting first worked).
 - Extra costs power and heat, so heat ends it and nothing turns it on without
   the user.
 - Brightness keys are off by default because they take keys from macOS and
   need Accessibility.
-- A press follows its first event so macOS never receives half of one Exodia
-  took and Exodia never takes the rest of one macOS began. Codex found both
+- A press follows its first event so macOS never receives half of one Whytap
+  took and Whytap never takes the rest of one macOS began. Codex found both
   halves broken at a tap boundary (round 3).
 - The presses survive 0.1 seconds without a tap because the hotkeys' rebuild
   installs the next tap within milliseconds. A longer gap or a disabled tap
@@ -245,43 +346,73 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
 - A glance takes no keyboard focus so a key press while typing leaves the text
   field focused, and it does not replace a panel the user is using.
 - The keys have no Help window row, `HotkeyHintView` or `HotkeyConfiguration`
-  entry: they are the Mac's own keys, not an Exodia hotkey.
+  entry: they are the Mac's own keys, not a Whytap hotkey.
 - The Settings pane has no description above its card so every state fits the
   Toolbox area without the window changing height.
-- Polling only while the strip is visible keeps hover free of background work;
-  with Extra on, the overlay's frames are the only background work.
-- On battery the user compares with the system's own number; the accumulator
-  estimate fills the gaps and is the only source on power.
+- The backlight is polled only while the strip is visible. In the background
+  the battery is read once a minute for the history and, with Extra on, the
+  trigger presents five frames a second with a table read after each.
+- The battery line follows the user's request of 2026-10-19: the charge, the
+  brightness and the average load of the last half hour, recomputed on every
+  change. The display is the one large load the strip controls, so its share
+  moves with the slider and Extra.
+- The display's watts per unit of light are learnt from the history because
+  panels and workloads differ. While the brightness has barely changed the
+  history shows no slope, so an assumed 5 W prior carries the estimate; the
+  bounds keep one noisy half hour from giving most of the load to the display.
+- The light is the level squared, an assumption about how DisplayServices'
+  level maps to backlight power rather than a measurement; 2.35 for Extra is
+  exact at white only and overstates darker content.
+- macOS's estimate comes first until five samples exist, about five minutes
+  after launch, because one or two samples swing with a single reading.
+  Adjusting it for the brightness keeps the line moving with the slider
+  meanwhile.
+- A span longer than 180 seconds, such as sleep, adds no sample because the
+  light and the load during it are unknown. The display's own sleep is not
+  detected: a display sleeps with an idle Mac, and counting its light as 0
+  would credit the idle Mac's lower load to the display.
+- The history stays in memory, so nothing about usage is written to disk;
+  after a relaunch macOS's estimate covers the first minutes.
 - The settle is per display, so another display's reading stays current after
   a switch.
-- The height hold keeps the drawer open: the strip is much shorter than the
-  grid, and a pointer left on a lower tile would otherwise fall outside it.
 - `powerplug.fill` is used because `powerplug.portrait.fill` needs macOS 15.
 
 ## What was tested
 
-- `ScreenBrightnessControllerTests` (24) with fake devices: read-only opening,
-  per-display settle, Extra adding the multiplier without a backlight write,
+- `ScreenBrightnessControllerTests` (32) with fake devices: read-only opening,
+  per-display settle, Extra starting the boost without a backlight write,
   switching it off leaving the backlight as it is, the slider and outside
   changes keeping it at any level, sleep and a session switch keeping it, a
-  display change ending it and reading the new display at once, an overlay or
-  render failure ending it with a notice, a late failure from a closed
-  overlay, an unreadable display that is never written and has no switch, and
-  thermal pressure blocking Extra and pausing only an active one. The six
-  fixed-boost tests failed first against the earlier model, for example
-  `["write 1 1.0", "overlay 1"]` instead of `["overlay 1"]`; six tests of the
-  earlier restore model were removed with it.
-- `BrightnessBoostFrameTimerTests` (13), written before the timer existed:
-  frames arrive without calls from the strip, none while the overlay cannot
-  present, while the displays or the Mac sleep or during another session, and
-  again only after every pause has ended; none after stop or release; three
-  frames fit in the measured 0.77-second hold. The display-sleep test failed
-  first (the timer had no sleep state). The two app-switch tests failed first
-  with 0 frames instead of 1. The pause and stop checks of the burst passed at
-  once and were proved by mutation: without the pause check a switch while
-  paused presented 1 frame instead of 0, and without stopping the burst a
-  closed overlay received 4 frames.
-- `BrightnessKeysTests` (38), written before the keys existed (the first run
+  display change ending it and reading the new display at once, a failed or
+  unavailable boost ending it with the Extra notice, another app's table
+  ending it with its own notice, a late end from a closed boost, an
+  unreadable display that is never written and has no switch, thermal
+  pressure blocking Extra and pausing only an active one, and the built-in
+  display's light for the battery (the level squared, Extra only on that
+  display, 0 without one, none when unreadable, the slider's level while the
+  reading settles). The six fixed-boost tests failed first against the
+  earlier model, for example `["write 1 1.0", "overlay 1"]` instead of
+  `["overlay 1"]`; six tests of the earlier restore model were removed with it.
+- `GammaBrightnessBoostTests` (25) with a fake `DisplayGammaAccess`, never a
+  real display: no write before the headroom exceeds 1.05 and the Extra notice
+  after 5 seconds without it, the scaled table once engaged and its first
+  rise followed at once, the factor matching Vivid's 1.45 and never exceeding the
+  headroom, a lower headroom followed only once it holds, a brief dip keeping
+  the table, lost headroom giving the table back until it returns, another
+  booster's table never stacked at the start and left alone later, a reset
+  boosted again from the new table, resets far apart each boosted and a third
+  within 10 seconds ending as another app, unreadable tables and refused
+  writes (the table given back, ColorSync when that write fails too), ends
+  reported once, close in every phase, and another session suspending and
+  resuming the boost.
+- `BrightnessBoostFrameTimerTests` (9), written before the timer existed:
+  frames arrive without calls from the strip, none while the trigger cannot
+  present (the table is still checked), while the displays or the Mac sleep
+  or during another session, and again only after every pause has ended; none
+  after stop or release; three frames fit in the measured 0.77-second hold.
+  The display-sleep test failed first (the timer had no sleep state). The
+  app-switch burst and its four tests were removed with the overlay.
+- `BrightnessKeysTests` (44), written before the keys existed (the first run
   failed with 65 assertion failures): press and release parsing, other system
   keys left alone, Option-Shift and the other modifiers, sixteenth and fine
   steps to the next mark and at both ends, the two-press gesture (the press
@@ -296,21 +427,34 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
   panels it replaces, 2 seconds, the pointer holding it from below, which
   failed first). Seven mutations of the parsing, filter, handler and setting
   were each caught.
-- `BatteryRuntimeTests` and `BatteryRuntimeMonitorTests`: estimate priority,
-  accumulators, counter reset, stale gaps, clamps, rounding, symbols available on
-  macOS 14 and no republishing of unchanged samples.
-- `BrightnessHoverToolTests` (16): catalog-only registration, search aliases, a
+- `BatteryRuntimeTests` (27) and `BatteryRuntimeMonitorTests` (5) with recorded
+  snapshots, never the real battery or display: macOS's estimate first on
+  battery and with few samples, adjusted for a brightness change and kept as
+  is without watt-hours; the history's time without macOS's estimate and on
+  power; the accumulators averaged between updates, unchanged accumulators and
+  close readings adding no sample, a counter reset, a gap such as sleep, the
+  half-hour window, an empty history starting from the latest load, tiny
+  loads, the display's light averaged over each span and an unknown light
+  keeping the last known one; the display's share learnt from brightness
+  changes and kept plausible, a lower brightness giving more time and Extra
+  taking time; clamps, rounding and symbols available on macOS 14; and the
+  monitor publishing only changes, recomputing on a display change without
+  reading the battery, recording from launch without a strip and recording
+  nothing without a battery.
+- `BrightnessHoverToolTests` (19): catalog-only registration, search aliases, a
   capsule title that fits one line at 310 points (it failed with Brightness),
-  capsule status, band heights and the hold, key focus, slider mapping, every
-  text at 310 points, the real strip in an unordered offscreen window at 310 and
-  330 points in seven states, and polling only while it is shown. This test
-  caught a false pass: with `sizingOptions = []` the hosting view reports a zero
-  `fittingSize`, so the first height check measured nothing. It now compares the
-  ideal height exactly (68 points, 44 without a status line). The Settings pane
-  reads the display without polling, retries a refused tap when shown (failed
-  first) and fits 188 points in five display states with each of three key
-  states; with a description above the card and a separate orange line it
-  measured 215.5 to 285.5 points and failed 11 assertions.
+  capsule status, band heights and the hold released only over the drawer's
+  final frame, key focus, slider mapping, every text and notice at 310 points,
+  the switch in the accent color only when on in an inactive window, the time
+  left following the slider, the real strip in an unordered offscreen window
+  at 310 and 330 points in seven states, and polling only while it is shown.
+  This test caught a false pass: with `sizingOptions = []` the hosting view
+  reports a zero `fittingSize`, so the first height check measured nothing. It
+  now compares the ideal height exactly (68 points, 44 without a status line).
+  The Settings pane reads the display without polling, retries a refused tap
+  when shown (failed first) and fits 188 points in five display states with
+  each of three key states; with a description above the card and a separate
+  orange line it measured 215.5 to 285.5 points and failed 11 assertions.
 - Fourteen offscreen strip PNGs and fifteen Settings pane PNGs were inspected:
   text fits, nothing is truncated and the unavailable state has no switch.
 - Battery probe: the first sample read 75 %, 62.6 Wh and a 20.8 W load, and
@@ -342,7 +486,7 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
   6 skipped, 0 failures (68.987 s).
 - Codex review round 3 (static, at 539689e) reported four defects in press
   ownership and timing. Three were reproduced by tests that failed first: a
-  repeat of a press Exodia did not see begin was taken (3 assertions), the
+  repeat of a press the tap did not see begin was taken (3 assertions), the
   presses in progress kept their owner after a longer gap and after macOS
   disabled the tap (4 assertions), and two presses 2 seconds apart handed
   over together turned Extra on. The fourth, stopping the tap during a press,
@@ -353,6 +497,22 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
   during a press still gives its rest to macOS, by design. The Brightness keys
   and hover filter passed 60 tests (44 + 16) and the full `swift test` 3,066
   tests, 6 skipped, 0 failures (69.548 s).
+- Table boost, hover release, switch and battery model (2026-10-19/20), each
+  written test-first. The gamma, frame, hover-release and battery tests first
+  failed to build, because the code they call did not exist yet; the switch
+  test failed on the grey on state. The Brightness, battery and Toolbox filter
+  then passed 177 tests with 0 failures. Four mutations of the table boost
+  were each caught by 6 tests with 7 failures: stacking another booster's
+  table, following every headroom change at once, checking the table only
+  while a frame can be presented and reporting every end as unavailable.
+  Eight mutations of the battery model were each caught by 1 to 5 tests: no
+  recompute from the strip, Extra on any display counting for the built-in
+  one, no settle for the light, no five-sample minimum, no cap on the
+  display's share, no light averaged over a span, macOS's estimate not
+  adjusted for the light and no gap check. After the table boost, before the
+  battery model, the full `swift test` executed 3,446 tests, 7 skipped, with 3
+  failures, all in `PackagingRebrandTests`, whose child-process pipe main
+  fixed in #57; that suite then passed 17 tests with 0 failures on its own.
 
 ## Rejected alternatives
 
@@ -364,17 +524,33 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
   switch ends it now; frames pause instead.
 - Brightness in the default slots (an earlier draft): it would change new
   installations' layout; the catalog and search cover discovery.
-- Gamma tables: they remap the existing output range instead of adding EDR
-  headroom, and override the display's calibration while active.
-- A full-resolution drawable: memory for a uniform value.
+- A full-screen multiply overlay (the Extra of builds up to 1472): WindowServer
+  composites it with the desktop, the user saw it dim on every app switch, and
+  it reached 2.0 times SDR white against Vivid's 2.35.
+- An app-switch burst of a frame at once and 15 more at 1/60 second: build 1472
+  had it and still dimmed on every ⌘Tab.
+- A scaled table without an EDR trigger: without headroom a table above SDR
+  white clips instead of brightening.
+- Scaling another app's table, or writing ours over it: Vivid's table already
+  ends at 1.45, so ours would clip it or fight it frame by frame.
+- Following every headroom change at once: a brief dip would step the table
+  down and back up, itself a blink.
+- A full-screen trigger or drawable: one pixel engages the whole headroom.
 - One global settle after writes: it would hide another display's level.
 - Resuming Extra after relaunch: the screen would brighten unasked.
-- Our estimate ahead of macOS's on battery: noisier, and different from what the
-  system shows.
-- Drawing only while the strip is open: the boost blinked once Exodia lost focus.
-- `preferredDynamicRange = .high` with `contentsHeadroom` (Codex's proposal):
-  kept as the next hypothesis; it does not explain the drop 0.77 seconds after
-  a frame without a focus change.
+- macOS's estimate always first on battery, with an EMA (weight 0.5) of the
+  per-update load as the fallback (the earlier battery model): it followed
+  neither the brightness nor the last half hour, which the user asked for.
+- A fixed display wattage instead of a learnt one: panels and brightness curves
+  differ; the prior covers only the start.
+- Keeping the battery history across launches: it would write usage to disk,
+  and macOS's estimate covers the first minutes.
+- Counting a sleeping display as dark: a display sleeps with an idle Mac, so
+  the idle load would be credited to the display.
+- Drawing only while the strip is open: the boost blinked once the app lost focus.
+- `preferredDynamicRange = .high` with `contentsHeadroom` for the overlay
+  (Codex's proposal): the overlay itself was replaced, and the change would not
+  explain the drop 0.77 seconds after a frame without a focus change.
 - Ending Extra on HDR suppression notifications: Extra would end whenever
   another app is in front, the opposite of the feature.
 - Two frames a second (Argon's proposal): 0.5 seconds leaves 0.27 seconds under
@@ -396,23 +572,31 @@ Checked live on 2026-10-19 in the dev build, not the installed app: the first
 Extra wrote the backlight maximum on the user's XDR panel and raised the
 headroom hint to 2.67 (about 1600 nits), then blinked as described above.
 After five frames a second the user reported the boost steady, apart from a
-dim moment on every ⌘Tab. Not verified: the strip in a key window offscreen
-(the switch renders grey because the window is not key), real pointer movement
-and the height hold, the power and heat of Extra, whether ScreenCaptureKit
-honours `sharingType = .none` on current macOS, and the on-power line with a
-charger connected. macOS's own estimate moves from minute to minute.
+dim moment on every ⌘Tab, which installed build 1472 still showed. Not
+verified: real pointer movement and the height hold, the power and heat of
+Extra, whether ScreenCaptureKit honours `sharingType = .none` on current
+macOS, and the on-power line with a charger connected. macOS's own estimate
+moves from minute to minute.
 
-Pending the user's live check: whether the app-switch burst removes the ⌘Tab
-dip and what a quarter second of 60-hertz frames per switch costs; the fixed
-boost at a low backlight and through sleep; Extra from Settings and a click on
-either Settings switch (offscreen tests render the switches but do not click
-them); and the Brightness keys: no macOS indicator, the glance, two presses at
-the maximum, Option-Shift steps and the tap after wake. Also unchecked: whether
-a transparent window reports itself visible before its first frame, a slider
-drag that drifts below the strip (Argon expects the drawer to close mid-drag),
-and the Display capsule on one line. Open with the user: whether sleep and a
-session switch should keep Extra (it follows "ends only when switched off"),
-and a Help window row for the keys. A live Extra check brightens the user's
-screen and needs their consent.
+Pending the user's live check in the next build, with Vivid off: Extra through
+the table on ⌘Tab, a quick tap and with the switcher panel; Extra coming up
+without a step; the boost at a low backlight and through sleep, including
+whether macOS resets the table three times within 10 seconds after wake,
+which would end Extra as another app; Night Shift, True Tone and f.lux with
+Extra on; whether the 1x1 trigger shows in the square corner of an external
+display; the quick move from the third row; the blue switch; and the time left
+moving with the slider and Extra. Still pending from the earlier round: Extra
+from Settings and a click on either Settings switch (offscreen tests render
+the switches but do not click them), the Brightness keys (no macOS indicator,
+the glance, two presses at the maximum, Option-Shift steps and the tap after
+wake), a slider drag that drifts below the strip (Argon expects the drawer to
+close mid-drag) and the Display capsule on one line. The battery model rests
+on assumptions: the level squared as the display's light, the 5 W prior and
+2.35 for Extra, exact at white only; a change made outside the strip enters
+the light average at the next minute's reading. Open with the user: whether
+sleep and a session switch should keep Extra (it follows "ends only when
+switched off"), and a Help window row for the keys. A live Extra check
+brightens the user's screen and needs their consent.
 
 2026-10-19 · [AbsoluteMode/exodia#30](https://github.com/AbsoluteMode/exodia/pull/30), branch `claude/brightness-tool-battery-587fda`.
+2026-10-20 · table boost, hover release, switch and battery model: branch `claude/display-extra-gamma-587fda`.

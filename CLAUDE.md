@@ -332,31 +332,50 @@ Brightness inside hover:
   capsule. HoverLayoutStore.defaultSlots and saved layouts are unchanged.
   HoverSlotRouter resolves .openPanel(.brightness) to IslandBrightnessStrip:
   Back, a white capsule backlight slider, an Extra switch and one status line
-  (a notice, or the battery time left). The strip is 68 pt (76 pt band, 126 pt
-  with music) and needsKeyboardFocus for its controls. Opened from a lower
-  tile, the band keeps the previous height as transparent hover space under the
-  top-aligned drawer until the pointer reaches the strip (onContinuousHover
-  releases it), so the drawer does not close under the pointer.
+  (a notice, or the battery time left). The switch is the Settings MacSwitch
+  at its 30x18 compact size, blue while on: the island is never the active
+  app's key window, where the native switch draws its on state gray. The strip
+  is 68 pt (76 pt band, 126 pt with music) and needsKeyboardFocus for its
+  controls. Opened from a lower tile, the band keeps the previous height as
+  transparent hover space under the top-aligned drawer until the pointer is
+  over the drawer's final frame (onContinuousHover with
+  IslandView.releasesHeldHoverZone): the shrinking drawer's animated frame
+  still covers the held zone, and releasing there closed the drawer under a
+  quick move up from the third row.
   ScreenBrightnessController follows the island display (IslandScreenResolver)
   and reads/writes its backlight through private DisplayServices (dlopen); an
   unreadable display gets a disabled slider and no switch. Showing the strip
   only reads, polling every 0.5 s while it is visible; a pinned capsule
-  refreshes NN%/Extra when hover opens. Extra exists only for potential EDR
-  headroom > 1.01 and never writes the backlight: it orders a click-through
-  shielding-level BrightnessBoostOverlay (1x1 rgba16Float extended-linear
-  MTKView, multiply compositing, multiplier min(2, headroom), sharingType none)
-  over whatever level the backlight has. BrightnessBoostFrameTimer presents a
-  frame every 0.2 s while the overlay window is visible, strip open or not:
-  without focus WindowServer keeps the boost only ~0.8 s after the last frame,
-  so the former 2 s keepalive blinked. Each app activation adds a frame at once
-  and 15 more at 1/60 s, because every ⌘Tab dimmed the boost (pending live
-  check). Frames pause during display sleep, system sleep and another user's
-  session, each until its own end notification. Extra is a fixed boost: the
-  slider at any level, brightness keys, automatic brightness, idle dimming,
-  closing the strip, sleep and a session switch keep it. Only its switch (strip
-  or Settings) ends it, apart from serious thermal state, a display change or
-  lost headroom, an overlay failure and quit; ending it leaves the backlight as
-  it is. Extra is never persisted or resumed after relaunch.
+  refreshes its NN%/Extra VoiceOver status when hover opens. Extra exists only
+  for potential EDR headroom > 1.01 and never writes the backlight. As Vivid
+  does it, GammaBrightnessBoost scales the display's own transfer table by
+  min(1.45, the sRGB-encoded current headroom), Vivid's measured factor on the
+  same panel (white about 2.35x SDR), and BrightnessHeadroomTrigger keeps that
+  headroom engaged: a click-through shielding-level 1x1 pt window in the
+  display's top-right corner, hidden by a built-in display's rounded corner,
+  with an rgba16Float extended-linear MTKView cleared to 2 and sharingType
+  none. The display applies the table after WindowServer composites, so an app
+  switch cannot dim it; the former full-screen multiply layer dimmed on every
+  ⌘Tab. Nothing is written until the headroom exceeds 1.05 (none within 5 s
+  ends Extra as unavailable). While the headroom first rises or returns, each
+  step is followed at once; any other change applies once it holds 1.5 s.
+  Without headroom the display has its own table and Extra stays on. A table
+  already above SDR white (Vivid) or rewritten by another app is left alone
+  and ends Extra with "Another app is adjusting this display."; a reset by a
+  reconfiguration or profile change is boosted again, and a third reset within
+  10 s counts as another app. BrightnessBoostFrameTimer presents a trigger
+  frame every 0.2 s, strip open or not, then checks the table: without focus
+  WindowServer keeps the headroom only ~0.8 s after the last frame. Frames
+  pause during display sleep, system sleep and another user's session, each
+  until its own end notification; another user's session also gets the
+  display's own table until this one is active again. Extra is a fixed boost:
+  the slider at any level, brightness keys, automatic brightness, idle
+  dimming, closing the strip, sleep and a session switch keep it. Only its
+  switch (strip or Settings) ends it, apart from serious thermal state, a
+  display change or lost EDR support, another app's table, a boost failure and
+  quit. Ending it gives the display its own table back (ColorSync's if Quartz
+  refuses it; Quartz also restores it when the process exits) and leaves the
+  backlight as it is. Extra is never persisted or resumed after relaunch.
   Settings -> Toolbox -> Display (ToolboxDisplayPane) holds the Extra and
   Brightness keys switches without a slider; it reads the display on appear,
   never polls and fits the 188 pt Toolbox area in every state. Brightness keys
@@ -373,11 +392,19 @@ Brightness inside hover:
   macOS disabled, the presses in progress finish with macOS. The tap needs
   Accessibility, is reinstalled with the hotkeys and retried when the Settings
   pane appears. They are the Mac's keys, not a Whytap hotkey: no Help row.
-  BatteryRuntimeMonitor reads IOKit
-  power sources and AppleSmartBattery every 5 s while the strip is visible: on
-  battery macOS's estimate wins, otherwise remaining Wh over the smoothed
-  accumulator load; on power the line shows the time if unplugged. Battery
-  readings and key events are never stored, logged or sent. WHY:
+  BatteryRuntimeMonitor reads IOKit power sources and AppleSmartBattery once a
+  minute from launch, and every 5 s while the strip is visible. Each sample is
+  the system load that PowerTelemetryData's accumulators average between two
+  updates 30-180 s apart (a longer gap such as sleep adds none), with the
+  built-in display's light averaged over the same span: level squared, x2.35
+  with Extra on it, 0 with the lid closed. Over the last 30 minutes the load's
+  slope over that light (ridge toward a 5 W prior, 1-15 W, at most 80% of the
+  mean load) moves the display's share to the current light, so a slider or
+  Extra change recomputes the line at once without reading the battery. On
+  battery macOS's estimate comes first until five samples exist, adjusted the
+  same way for the light change since it was made; on power the line shows the
+  time if unplugged. The history stays in memory: battery readings and key
+  events are never written to disk, logged or sent. WHY:
   .project-docs/decisions/2026-10-18-brightness-tool.md
 
 Hover tool search and pointer routing:
