@@ -23,19 +23,44 @@ extension ProviderAccount {
 /// `makeStore` is the test seam: production uses the login Keychain, tests
 /// inject an in-memory `TokenStore`.
 struct ProviderKeyStore {
+    /// What the Keychain holds for one account.
+    enum KeyLookup: Equatable {
+        /// A usable key, without surrounding whitespace.
+        case key(String)
+        /// No key: nothing is stored, or only whitespace.
+        case absent
+        /// The Keychain could not be read (locked, access denied, a damaged
+        /// item), so a key may well exist. Not the same as `absent`: a server
+        /// that needs its key must not be connected to without it.
+        case unreadable
+    }
+
     private let makeStore: (String) -> any TokenStore
 
     init(makeStore: @escaping (String) -> any TokenStore = { KeychainStore(service: BuildConfig.keychainService, account: $0) }) {
         self.makeStore = makeStore
     }
 
-    /// The key without surrounding whitespace. `nil` when nothing is stored,
-    /// when only whitespace is, or when the Keychain cannot be read: in each
-    /// case the account simply has no usable key.
+    /// Looks the account's key up and keeps "there is none" (`absent`) apart
+    /// from "the Keychain would not say" (`unreadable`). A `TokenStore` reports
+    /// an item that is not there as `nil`, and every other failure by throwing.
+    func lookup(account: String) -> KeyLookup {
+        let stored: String?
+        do {
+            stored = try makeStore(account).read()
+        } catch {
+            return .unreadable
+        }
+        let key = stored?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return key.isEmpty ? .absent : .key(key)
+    }
+
+    /// The key from `lookup`, or `nil` for either of the other answers. For
+    /// callers that cannot act differently on an unreadable Keychain; the route
+    /// resolver tells the two apart with `lookup`.
     func read(account: String) -> String? {
-        guard let stored = try? makeStore(account).read() else { return nil }
-        let key = stored.trimmingCharacters(in: .whitespacesAndNewlines)
-        return key.isEmpty ? nil : key
+        guard case .key(let key) = lookup(account: account) else { return nil }
+        return key
     }
 
     /// Stores the key without surrounding whitespace, replacing any earlier one.

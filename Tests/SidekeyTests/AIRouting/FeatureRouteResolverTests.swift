@@ -44,6 +44,15 @@ final class FeatureRouteResolverTests: XCTestCase {
         }
     }
 
+    /// A Keychain slot that is there but will not be read: locked, access
+    /// denied or a damaged item.
+    private struct UnreadableTokenStore: TokenStore {
+        struct Failure: Error {}
+        func save(_ token: String) throws {}
+        func read() throws -> String? { throw Failure() }
+        func delete() throws {}
+    }
+
     /// Shaped like the consumers later tasks add: the resolver is a default
     /// argument of a main-actor init and of a main-actor static function. Tests
     /// pass their own resolver, so the defaults are compiled but never run.
@@ -124,6 +133,32 @@ final class FeatureRouteResolverTests: XCTestCase {
         assertThrows(.missingKey(.dropFast)) { try env.resolver.resolve(.dropFast) }
     }
 
+    /// A key that cannot be read is not "no key". For a built-in provider that
+    /// is a missing key; for a server, whose key is optional, it has to be one
+    /// too, or an unreadable key would become a connection without any key.
+    func test_unreadable_key_is_a_missing_key_for_every_account() throws {
+        let env = makeEnv()
+        let server = env.routing.addServer(name: "Home GPU", baseURL: "https://gpu.local:8000")
+        let accounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .server(server.id)]
+        for account in accounts {
+            try saveKey("key-\(account.storageID)", for: account, in: env)
+        }
+
+        for broken in accounts {
+            let brokenName = try XCTUnwrap(broken.keychainAccount(in: env.routing))
+            // Only this account's slot is unreadable; every other key reads fine.
+            let keys = ProviderKeyStore(makeStore: { name -> any TokenStore in
+                if name == brokenName { return UnreadableTokenStore() }
+                return InMemoryTokenStore(account: name, box: env.box)
+            })
+            let resolver = FeatureRouteResolver(routing: env.routing, keys: keys)
+
+            assertThrows(.missingKey(.dropFast)) {
+                try resolver.resolve(FeatureRoute(account: broken, model: "some-model"), for: .dropFast)
+            }
+        }
+    }
+
     // MARK: - Servers
 
     func test_server_without_key_resolves_with_nil_key() throws {
@@ -137,6 +172,31 @@ final class FeatureRouteResolverTests: XCTestCase {
             resolved,
             ResolvedRoute(feature: .dropFast, account: .server(server.id), model: "whisper-large-v3", apiKey: nil, server: server)
         )
+    }
+
+    func test_keyless_server_never_gets_another_accounts_key() throws {
+        let env = makeEnv()
+        let keyless = env.routing.addServer(name: "Home GPU", baseURL: "https://gpu.local:8000")
+        let other = env.routing.addServer(name: "Office", baseURL: "https://llm.office.example")
+        try saveKey("soniox-key", for: .soniox, in: env)
+        try saveKey("router-key", for: .openRouter, in: env)
+        try saveKey("office-key", for: .server(other.id), in: env)
+        env.routing.setRoute(FeatureRoute(account: .server(keyless.id), model: "whisper-large-v3"), for: .dropFast)
+
+        let resolved = try env.resolver.resolve(.dropFast)
+
+        XCTAssertNil(resolved.apiKey)
+        XCTAssertEqual(resolved.server, keyless)
+    }
+
+    func test_server_key_slot_holding_only_whitespace_is_keyless() throws {
+        let env = makeEnv()
+        let server = env.routing.addServer(name: "Home GPU", baseURL: "https://gpu.local:8000")
+        env.routing.setRoute(FeatureRoute(account: .server(server.id), model: "whisper-large-v3"), for: .dropFast)
+        // Written straight into the slot: present, but only whitespace.
+        try InMemoryTokenStore(account: server.keyAccount, box: env.box).save(" \n")
+
+        XCTAssertNil(try env.resolver.resolve(.dropFast).apiKey)
     }
 
     func test_each_server_resolves_with_its_own_key() throws {
@@ -201,6 +261,34 @@ final class FeatureRouteResolverTests: XCTestCase {
         env.routing.setRoute(FeatureRoute(account: .deepgram, model: "  nova-3\n"), for: .dropFast)
 
         XCTAssertEqual(try env.resolver.resolve(.dropFast).model, "nova-3")
+    }
+
+    // MARK: - Keychain access
+
+    /// A route that cannot run anyway must not cost a Keychain read: reading an
+    /// item can raise a system access prompt.
+    func test_a_route_that_cannot_run_does_not_touch_the_keychain() {
+        final class Touches { var accounts: [String] = [] }
+        let touches = Touches()
+        let env = makeEnv()
+        let keys = ProviderKeyStore(makeStore: { name -> any TokenStore in
+            touches.accounts.append(name)
+            return InMemoryTokenStore(account: name, box: env.box)
+        })
+        let resolver = FeatureRouteResolver(routing: env.routing, keys: keys)
+        let blankURL = env.routing.addServer(name: "Blank", baseURL: " ")
+
+        assertThrows(.notSet(.dropFast)) {
+            try resolver.resolve(FeatureRoute(account: .soniox, model: " "), for: .dropFast)
+        }
+        assertThrows(.notSet(.dropFast)) {
+            try resolver.resolve(FeatureRoute(account: .server(UUID()), model: "some-model"), for: .dropFast)
+        }
+        assertThrows(.missingBaseURL(.dropFast)) {
+            try resolver.resolve(FeatureRoute(account: .server(blankURL.id), model: "some-model"), for: .dropFast)
+        }
+
+        XCTAssertEqual(touches.accounts, [])
     }
 
     // MARK: - Candidate routes
