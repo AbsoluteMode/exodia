@@ -2,7 +2,7 @@
 id: one-running-copy-2026-10-19
 type: decision
 title: One running Exodia copy across production, beta and worktrees
-summary: A common lifetime lease taken before AppDelegate starts lets only one copy run hotkeys, providers and permission flows; build-only dev commands leave other copies alone; Settings shows the running build's identity.
+summary: A common lifetime lease taken before AppDelegate starts lets only one copy run hotkeys, providers and permission flows; build-only dev commands leave other copies alone; Settings shows the app name, version and project links.
 status: confirmed
 tags: [installation, hotkeys, permissions, development]
 canonical_for: [application-instance-ownership]
@@ -13,6 +13,9 @@ sources:
     confirmed_at: 2026-10-19
   - type: user-confirmed
     reference: 2026-10-19 integration chat; merge the Codex fixes, but sign with the PR #33 certificate whose key is in Doppler.
+    confirmed_at: 2026-10-19
+  - type: user-confirmed
+    reference: On 2026-10-19 the user requested only Whytap and its display version in the Settings footer, plus whytap.ai and GitHub links, removing Production, build number, source revision and app path.
     confirmed_at: 2026-10-19
   - type: commit
     reference: 6ebf481c15b1e343f0a9d90891979b7817dc90a8
@@ -51,8 +54,10 @@ Old binaries launched later cannot honor the new protocol. Packaging writes the
 Build-only development commands do not kill other copies, register themselves
 in LaunchServices or purge global caches. When the usual dev bundle is running,
 the script assembles a separate candidate instead of replacing it. Settings
-exposes the actual channel, version, build, revision and bundle path so users
-can identify a running copy.
+shows the actual app name and display version, followed by whytap.ai and GitHub
+links that open in the browser only when clicked. At the user's request, the
+footer omits channel, build number, revision and path. Detailed identity remains
+available from bundle metadata for integration diagnostics.
 
 ## Signing is decided separately
 
