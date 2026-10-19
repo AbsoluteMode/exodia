@@ -11,6 +11,45 @@ identifiers are still `Sidekey`. The public source repository is
 services and Application Support paths so existing settings and permissions
 survive the rename. WHY: .project-docs/decisions/2026-10-17-exodia-name.md
 
+## Parallel development and the shared application
+
+Read `.project-docs/processes/shared-app-development.md` for every feature task
+and before integrating or updating the user's app. The user approved parallel
+feature sessions with regular checked integration and one working application.
+
+- Each feature uses its own branch/worktree. Workers build/test without
+  launching, registering or installing their bundles. Do not run `dev-run.sh`
+  or `customize.py build/run` from feature sessions; even build-only dev
+  packaging on some branches stops other dev processes.
+- Keep `/Applications/Exodia.app` (`com.rootwise.sidekey`) as the user's one
+  working app, preserving signing identity, permissions and data. Source for
+  shared updates is checked `origin/main`; first reconcile any fixes already
+  installed from a feature branch. Do not replace them with older main code.
+- Run exactly one Exodia instance across all channels: beta shares meetings,
+  staging and clipboard history with production and competes for hotkeys.
+  Production app/DMG packaging is reserved for the integrator under the lock.
+- Any session may integrate ready work, but only one holds the shared
+  `exodia-integration.lock` in `git rev-parse --git-common-dir`. Follow the
+  runbook's owner/recovery protocol. Preserve all other sessions' WIP; use a
+  clean integration worktree when the primary checkout is occupied.
+- Review overlaps, validate the final combined candidate and merge through a
+  PR with exact head/base checks. Routine checked integration/local refresh
+  needs no repeated approval. Public publishing remains a separate action.
+- Build a production candidate without interrupting the installed app. Verify
+  its signature/identity against the installed app and require a newer build
+  number without downgrading the display version. Keep the last working
+  bundle. Recording, dictation, agent work, unsaved work or
+  unknown activity defers replacement; never force-quit to install a feature.
+- Maintain build/CURRENT_BUILD.md in the primary checkout with separate
+  ready, merged, pending and verified-running states, source SHA, included
+  features and 1–3 acceptance steps. Report what actually runs and what to
+  check after promotion. A merge alone does not update the running app.
+- Before integration/app actions, fetch and reread current `origin/main`'s
+  guidance even in older worktrees. Resolve technical overlaps from accepted
+  requirements; report incompatible product choices or unresolved risks.
+
+WHY: .project-docs/decisions/2026-10-19-shared-working-app.md
+
 ## Architecture
 
 ```

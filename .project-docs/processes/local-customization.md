@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: scripts/dev-run.sh
     confirmed_at: 2026-10-17
-related: []
+related: [shared-app-development.md]
 ---
 
 # Local source customization
@@ -30,6 +30,12 @@ The complete procedure is [Customize Exodia](../../docs/customization/README.md)
 It includes hover integration, JSON dashboard contracts and local data boundaries.
 `build` and `run` use the stable beta development bundle. Scaffold commands only
 create drafts, and existing output directories are rejected.
+
+For the maintainer's parallel sessions, follow
+[the shared application procedure](shared-app-development.md) before these
+helpers: feature workers use non-launching Swift builds/tests and the integrator
+alone updates the installed production app. Even build-only dev packaging may
+stop another development process.
 
 Build and test locally. The helpers do not publish, release, replace the installed
 production app or modify user stores. Keep the source capability map current when
