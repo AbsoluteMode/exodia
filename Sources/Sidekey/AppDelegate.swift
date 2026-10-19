@@ -3615,7 +3615,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { active in AppState.shared.caseApprovalActive = active }
         let broker = CaseBroker(
             service: CaseVaultService.shared,
-            resolver: CaseSystemCallerResolver(inspector: inspector),
+            resolver: CaseSystemCallerResolver(
+                inspector: inspector,
+                builtInOpenCodePIDs: { CaseBuiltInAgentProcesses.shared.pids }),
             approvals: approvals,
             authenticator: LocalCaseAuthenticator())
         let server = CaseBrokerServer(

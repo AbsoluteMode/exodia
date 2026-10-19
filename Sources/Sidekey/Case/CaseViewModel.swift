@@ -125,6 +125,15 @@ enum CaseViewModelError: Error, Equatable {
     /// resetVault() called without a prior armResetVault() call. Prevents
     /// accidental single-click destruction of vault data.
     case resetNotArmed
+    /// Touch ID for a registration or Bypass failed or was cancelled.
+    case authenticationFailed
+    case alreadyRegistered
+    case invalidAppName
+    case missingApp
+    /// The app-wide mode cannot be «как у приложения».
+    case invalidAppOperation
+    /// Timed approval outside 1...240 minutes.
+    case invalidMinutes
 }
 
 @MainActor
@@ -148,6 +157,9 @@ final class CaseViewModel: ObservableObject {
     /// second. Published because the panel keys its "Confirm Reset" label and
     /// warning copy off this — arming must trigger a SwiftUI re-render.
     @Published private(set) var isResetArmed = false
+    /// What the last registration change could not set up in the client
+    /// (Claude Code, Codex, Cursor, the CLI link). Registration itself stands.
+    @Published private(set) var clientSetupProblems: [String] = []
     /// Projects whose keys the UI shows; General starts expanded.
     @Published var expandedProjectIDs: Set<UUID> = [CaseProject.generalID]
     @Published var query = "" {
@@ -168,6 +180,7 @@ final class CaseViewModel: ObservableObject {
     private var idleLockCancellable: CaseIdleLockCancellable?
     private var idleLockGeneration = 0
     private var serviceSubscription: AnyCancellable?
+    private let clients: CaseClientConfiguring
 
     init(
         service: CaseVaultService = .shared,
@@ -175,8 +188,10 @@ final class CaseViewModel: ObservableObject {
         pasteboard: CasePasteboardWriting = SystemCasePasteboard(),
         now: @escaping () -> Date = Date.init,
         unlockedSessionSeconds: Int = CaseViewModel.defaultUnlockedSessionSeconds,
-        scheduleIdleLock: IdleLockScheduler? = nil
+        scheduleIdleLock: IdleLockScheduler? = nil,
+        clients: CaseClientConfiguring = CaseClientSetup.live()
     ) {
+        self.clients = clients
         self.service = service
         self.authenticator = authenticator
         self.pasteboard = pasteboard
@@ -273,6 +288,7 @@ final class CaseViewModel: ObservableObject {
         idleLockCancellable = nil
         rows = []
         inputMode = .name
+        clientSetupProblems = []
         unlockState = .locked
     }
 
@@ -397,6 +413,164 @@ final class CaseViewModel: ObservableObject {
     var registeredAppNames: [String] {
         guard unlockState == .unlocked else { return [] }
         return payload?.apps.map(\.displayName) ?? []
+    }
+
+    // MARK: App access
+
+    static let timedApprovalRange = 1...240
+    static let maxAppNameCharacters = 64
+
+    /// Registered apps in registration order (empty while locked).
+    var registrations: [CaseAppRegistration] {
+        guard unlockState == .unlocked else { return [] }
+        return payload?.apps ?? []
+    }
+
+    var timedApprovalMinutes: Int {
+        payload?.timedApprovalMinutes ?? CaseVaultPayload.defaultTimedApprovalMinutes
+    }
+
+    /// Projects for per-project modes: General first, then by name.
+    var accessProjects: [CaseProject] {
+        guard unlockState == .unlocked, let payload else { return [] }
+        let others = payload.projects.filter { $0.id != CaseProject.generalID }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return payload.projects.filter { $0.id == CaseProject.generalID } + others
+    }
+
+    /// Known clients found on this Mac that are not registered yet.
+    func availableClientsToRegister() async -> [CaseKnownClient] {
+        let detected = await clients.detectInstalledClients()
+        let registered = Set(registrations.map(\.identity))
+        return detected.filter { !registered.contains($0.identity) }
+    }
+
+    /// Registers an app in Approve mode after Touch ID, then adds the Case
+    /// MCP entry to its client config. A client failure is reported in
+    /// `clientSetupProblems` and the result, never undoing the registration.
+    @discardableResult
+    func registerApp(_ identity: CaseAppIdentity, name: String) async throws -> CaseRegistrationResult {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= Self.maxAppNameCharacters else {
+            throw CaseViewModelError.invalidAppName
+        }
+        if case .executablePath(let path) = identity {
+            guard path.hasPrefix("/"), path != "/" else { throw CaseViewModelError.invalidAppName }
+        }
+        let current = try unlockedPayload()
+        guard !current.apps.contains(where: { $0.identity == identity }) else {
+            throw CaseViewModelError.alreadyRegistered
+        }
+        try await authenticateAccessChange(reason: "Зарегистрировать \(trimmed) в Case")
+        _ = try unlockedPayload()
+
+        let appID = UUID()
+        let timestamp = now()
+        try service.mutate { payload in
+            guard !payload.apps.contains(where: { $0.identity == identity }) else {
+                throw CaseViewModelError.alreadyRegistered
+            }
+            payload.apps.append(CaseAppRegistration(
+                id: appID, displayName: trimmed, identity: identity,
+                defaultMode: .approve, projectModes: [:], createdAt: timestamp))
+        }
+        refreshRows()
+        scheduleIdleLock()
+        let report = await clients.connect(identity)
+        clientSetupProblems = report.problems
+        return CaseRegistrationResult(appID: appID, problems: report.problems)
+    }
+
+    /// `project == nil` sets the app's mode; for a project, `mode == nil` is
+    /// «как у приложения». Touch ID only when the change opens Bypass.
+    func setMode(_ mode: CaseAccessMode?, for appID: UUID, project projectID: UUID?) async throws {
+        let current = try unlockedPayload()
+        guard let app = current.apps.first(where: { $0.id == appID }) else {
+            throw CaseViewModelError.missingApp
+        }
+        if let projectID {
+            guard current.project(projectID) != nil else { throw CaseViewModelError.missingProject }
+        } else if mode == nil {
+            throw CaseViewModelError.invalidAppOperation
+        }
+        if Self.opensBypass(app: app, mode: mode, projectID: projectID) {
+            try await authenticateAccessChange(reason: "Включить Bypass для \(app.displayName)")
+            _ = try unlockedPayload()
+        }
+        try service.mutate { payload in
+            guard let index = payload.apps.firstIndex(where: { $0.id == appID }) else {
+                throw CaseViewModelError.missingApp
+            }
+            if let projectID {
+                guard payload.project(projectID) != nil else { throw CaseViewModelError.missingProject }
+                payload.apps[index].projectModes[projectID] = mode
+            } else if let mode {
+                payload.apps[index].defaultMode = mode
+            }
+        }
+        refreshRows()
+        scheduleIdleLock()
+    }
+
+    /// No Touch ID: access closes at once, then the client entry is removed.
+    @discardableResult
+    func unregisterApp(_ appID: UUID) async throws -> CaseClientSetupReport {
+        let current = try unlockedPayload()
+        guard let app = current.apps.first(where: { $0.id == appID }) else {
+            throw CaseViewModelError.missingApp
+        }
+        try service.mutate { payload in
+            payload.apps.removeAll { $0.id == appID }
+        }
+        refreshRows()
+        scheduleIdleLock()
+        let report = await clients.disconnect(app.identity)
+        clientSetupProblems = report.problems
+        return report
+    }
+
+    func setTimedApprovalMinutes(_ minutes: Int) throws {
+        guard Self.timedApprovalRange.contains(minutes) else {
+            throw CaseViewModelError.invalidMinutes
+        }
+        _ = try unlockedPayload()
+        try service.mutate { payload in
+            payload.timedApprovalMinutes = minutes
+        }
+        refreshRows()
+        scheduleIdleLock()
+    }
+
+    static func parseTimedMinutes(_ text: String) -> Int? {
+        guard let value = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              timedApprovalRange.contains(value) else { return nil }
+        return value
+    }
+
+    func dismissClientSetupProblems() {
+        clientSetupProblems = []
+    }
+
+    /// Only a change that can let an app run commands without asking needs
+    /// Touch ID: explicit Bypass, or «как у приложения» over an app in Bypass.
+    private static func opensBypass(app: CaseAppRegistration, mode: CaseAccessMode?, projectID: UUID?) -> Bool {
+        guard let projectID else {
+            return mode == .bypass && app.defaultMode != .bypass
+        }
+        let stored = app.projectModes[projectID]
+        switch mode {
+        case .bypass: return stored != .bypass
+        case nil: return app.defaultMode == .bypass && stored == .approve
+        case .approve: return false
+        }
+    }
+
+    private func authenticateAccessChange(reason: String) async throws {
+        do {
+            try await authenticator.authenticate(reason: reason)
+        } catch {
+            throw CaseViewModelError.authenticationFailed
+        }
     }
 
     func copySecret(_ secretID: UUID) throws {

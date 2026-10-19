@@ -85,8 +85,8 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
                        "Удалить проект servers и 21 ключ?")
     }
 
-    func test_access_row_stays_hidden_until_access_screen_exists() throws {
-        XCTAssertFalse(IslandCaseVaultPanel.isAccessScreenAvailable)
+    func test_access_row_opens_the_access_screen() throws {
+        XCTAssertTrue(IslandCaseVaultPanel.isAccessScreenAvailable)
         let sources = try panelSources()
         XCTAssertTrue(sources.contains("Подключить ›"))
     }

@@ -21,9 +21,8 @@ enum IslandCaseVaultStyle {
 struct IslandCaseVaultPanel: View {
     @ObservedObject var viewModel: CaseViewModel
 
-    /// The «ИИ … / Подключить ›» row opens the access screen, which does not
-    /// exist yet; the row stays hidden until it does.
-    static let isAccessScreenAvailable = false
+    /// The «ИИ … / Подключить ›» row opens «Доступ приложений» in place.
+    static let isAccessScreenAvailable = true
 
     /// While searching every matching project is shown expanded.
     static func isExpanded(_ section: CaseProjectSection, expandedIDs: Set<UUID>, isSearching: Bool) -> Bool {
@@ -46,6 +45,7 @@ struct IslandCaseVaultPanel: View {
     @State private var pendingDeleteProjectID: UUID?
     @State private var dragState = CaseDragState()
     @State private var lastError: String?
+    @State private var showingAccess = false
     @FocusState private var inputFocused: Bool
 
     private let topScrollID = "case-list-top"
@@ -56,7 +56,14 @@ struct IslandCaseVaultPanel: View {
     var body: some View {
         Group {
             if viewModel.isUnlocked {
-                unlockedPanel
+                if showingAccess {
+                    IslandCaseAccessPanel(viewModel: viewModel, onBack: {
+                        viewModel.dismissClientSetupProblems()
+                        showingAccess = false
+                    })
+                } else {
+                    unlockedPanel
+                }
             } else {
                 lockedPanel
             }
@@ -470,6 +477,7 @@ struct IslandCaseVaultPanel: View {
                 .layoutPriority(-1)
             Spacer(minLength: 4)
             Button {
+                showingAccess = true
                 onOpenAccessScreen?()
             } label: {
                 Text("Подключить ›")
