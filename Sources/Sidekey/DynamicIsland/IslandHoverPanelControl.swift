@@ -14,7 +14,7 @@ struct IslandHoverPanelControl: View {
     /// can show a planet in Auto mode and a selected-language flag
     /// inside the same orb footprint.
     var iconPresentation: IslandHoverIconPresentation? = nil
-    /// Optional current value beside the icon, below the tool title.
+    /// Current value for VoiceOver; capsules show only their icon and title.
     let label: String?
     let circleSize: CGFloat
     let accessibilityLabel: String
@@ -23,10 +23,12 @@ struct IslandHoverPanelControl: View {
     /// Renders the tile faded + non-emphasised. Used by Output Language in
     /// Fast mode, where the tile is inactive (tap shows a notice).
     var isDimmed: Bool = false
+    /// Light the Record icon while a meeting recording is active.
+    var isRecording: Bool = false
     /// When `true`, a small red unread dot sits on the tile's top-trailing
     /// edge. Used by the "Notifs" tile to flag unread notifications.
     var showsDot: Bool = false
-    /// Hide the title/status text while preserving the capsule footprint.
+    /// Hide the title while preserving the capsule footprint.
     var showsLabel: Bool = true
     /// The grid supplies its exact available cell width, including fractional
     /// widths from the current screen's notch geometry.
@@ -122,23 +124,14 @@ struct IslandHoverPanelControl: View {
                 .frame(width: Self.iconSize, height: Self.iconSize)
 
             if showsLabel {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(Self.displayTitle(title))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.96))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.9)
-                        .layoutPriority(1)
-                    if let statusText {
-                        Text(statusText)
-                            .font(.system(size: 10, weight: .regular))
-                            .foregroundStyle(.white.opacity(hovering ? 0.78 : 0.64))
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.9)
-                    }
-                }
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                Text(Self.displayTitle(title))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.96))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.9)
+                    .layoutPriority(1)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             } else {
                 Spacer(minLength: 0)
             }
@@ -169,6 +162,8 @@ struct IslandHoverPanelControl: View {
             }
             iconView.frame(width: Self.iconSize, height: Self.iconSize)
         }
+        .shadow(color: isRecording ? .red.opacity(0.65) : .clear, radius: 5)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isRecording)
         .overlay(alignment: .topTrailing) {
             if showsDot {
                 Circle()
@@ -202,7 +197,7 @@ struct IslandHoverPanelControl: View {
         case .systemImage(let systemImage):
             Image(systemName: systemImage)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.blue)
+                .foregroundStyle(isRecording ? Color.red : Color.blue)
                 .symbolRenderingMode(.monochrome)
 
         case .flag(let flag):
@@ -280,7 +275,7 @@ struct IslandHoverPanelControl: View {
     private var fallbackSystemIcon: some View {
         Image(systemName: systemImage)
             .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(Color.blue)
+            .foregroundStyle(isRecording ? Color.red : Color.blue)
             .symbolRenderingMode(.monochrome)
     }
 }
