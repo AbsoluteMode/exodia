@@ -2,21 +2,24 @@
 id: delete-meeting-and-staged-audio-2026-10-18
 type: decision
 title: Delete removes everything of a meeting; a stored meeting keeps no staged audio
-summary: Delete on a finished meeting removes its staged recording, row, note and transcript files; launch recovery frees the whole staged directory of a meeting that already has a note.
+summary: Delete on a finished meeting removes its staged recording, row, note and transcript files, the row only once both files are gone; a note save after Delete writes nothing; launch recovery frees the whole staged directory of a meeting that already has a note.
 status: confirmed
 tags: [meetings, recovery, storage]
 canonical_for: [meeting-deletion, staged-audio-cleanup]
-verified_at: 2026-10-18
+verified_at: 2026-10-19
 sources:
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsCoordinator.swift
-    confirmed_at: 2026-10-18
+    confirmed_at: 2026-10-19
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsStore.swift
-    confirmed_at: 2026-10-18
+    confirmed_at: 2026-10-19
   - type: repository
     reference: Tests/SidekeyTests/Meetings/MeetingsStagedAudioCleanupTests.swift
-    confirmed_at: 2026-10-18
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: Tests/SidekeyTests/Meetings/MeetingsStoreDeleteTests.swift
+    confirmed_at: 2026-10-19
 related: [2026-10-18-silent-meetings.md, 2026-09-07-soniox-meeting-files.md]
 ---
 
@@ -47,10 +50,15 @@ Two code paths created or kept such leftovers:
 2. A finished meeting (`ready` or `failed`) has "Delete…" in its row context
    menu. A confirmation comes first; Cancel is the default button.
    `MeetingsCoordinator.deleteMeeting(id:)` removes the staged directory first,
-   then calls `MeetingsStore.delete(id:)`, which removes the row and then the
-   note and transcript files. A meeting that is unknown or still being
-   processed is refused, and any failure leaves the meeting in the list and is
-   shown to the user.
+   then calls `MeetingsStore.delete(id:)`. It deletes the row inside a
+   transaction, removes the transcript and then the note file, and commits
+   only when both are gone; any failure rolls the row back. A meeting that is
+   unknown or still being processed is refused, and any failure leaves the
+   meeting in the list with its note and is shown to the user.
+3. A note save that lands after Delete (the editor saves after a 500 ms
+   debounce) writes nothing. `MeetingsStore.update` updates the row first and
+   writes `<id>.md` only when a row matched; `saveNoteEdit` drops the save
+   without an alert.
 
 ## Rationale
 
@@ -69,6 +77,23 @@ Two code paths created or kept such leftovers:
   when it finishes.
 - An unknown id never removes a staged directory: audio without a meeting may
   be a lost recording, and that is the user's decision.
+- The failure alert says the meeting is still in the list. When the row was
+  deleted and committed before the files, a file that could not be removed
+  left the meeting gone from the list while the alert said otherwise. With the
+  row's delete committed only after the files, the alert is true: a failed row
+  delete has touched no file yet, and a failed file removal is rolled back.
+- The transcript goes before the note, and the first failure stops the
+  removal. A meeting that stays listed after a failure therefore keeps its
+  note; at worst its transcript is already gone, which the user asked for,
+  and a second Delete finishes the job.
+- A save that lands after Delete belongs to a note the user has just deleted,
+  so Delete wins. Writing the file before the row update recreated `<id>.md`
+  without a row: the deleted text was back on disk with no way to remove it
+  from the app. The save gets no alert because the user has nothing to do.
+- Known limit: if `COMMIT` itself fails after both files are gone (a disk I/O
+  error, or another process holding the database open; the app itself uses
+  one connection), the row stays without its note. The alert is still true,
+  and a second Delete succeeds because missing files are fine.
 
 ## Verification
 
@@ -94,6 +119,21 @@ caught by the test written for it.
 Not verified: the context menu and the alert in the running app. Both act on
 real meetings, so they were not exercised outside unit tests.
 
+2026-10-19 follow-up, tests named after the break each catches:
+
+- a save that lands after Delete brings no note back (store and coordinator);
+- a transcript that cannot be removed keeps the meeting listed with its note;
+- a note that cannot be removed keeps the meeting listed;
+- a row whose delete fails (a test trigger refuses it) keeps the note and the
+  transcript.
+
+All but the last failed before the change for the expected reason. The last
+passed then, because the row went first; it fails when the files are removed
+before the row without a transaction. Removing the note before the transcript
+is caught by the transcript test. A file removal is made to fail with the
+user-immutable flag, which keeps the directory and the database journal
+writable.
+
 ## Alternatives
 
 - Sweep old staged directories automatically at launch. Not done here:
@@ -105,6 +145,13 @@ real meetings, so they were not exercised outside unit tests.
   stay on disk.
 - Delete the row first and the staged recording second. Rejected: a failure
   in between leaves a manifest that brings the deleted meeting back.
+- Keep the row-first order and make the alert say the meeting was deleted but
+  some files remain. Rejected: those files then have no row, so nothing in
+  the app can retry or remove them.
+- Remove the files first and the row second, without a transaction.
+  Rejected: a failed row delete then leaves a listed meeting without its note.
+- Move the files aside and restore them on failure. Rejected: more moving
+  parts, and the restore can fail as well.
 - Clean remote Soniox resources on Delete. Not done: it needs the API key and
   the network at Delete time. The checkpoint with their ids goes with the staged
   directory, and the confirmation says "removed from this Mac". A failed

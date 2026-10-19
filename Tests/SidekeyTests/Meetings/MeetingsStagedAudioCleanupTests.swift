@@ -195,6 +195,47 @@ final class MeetingsStagedAudioCleanupTests: XCTestCase {
         XCTAssertEqual(rows.map(\.id), [id], "the user must still see the meeting and be able to retry")
     }
 
+    /// Break caught: the row is deleted although the note stays on disk. The
+    /// alert then says the meeting is still in the list while it is gone, and
+    /// it can no longer be deleted again.
+    func test_delete_meeting_keeps_the_row_when_the_note_cannot_be_removed() async throws {
+        let store = try makeStore()
+        let id = UUID()
+        try await store.insert(meta: meta(id: id, status: .ready), markdown: "# Planning\n\nBody.")
+        let coordinator = makeCoordinator(store: store, processor: SpyDirectProcessor())
+        // The user-immutable flag makes the unlink fail while the directory,
+        // and with it the database journal, stays writable.
+        let notePath = meetingsRoot.appendingPathComponent("\(id.uuidString).md").path
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: notePath)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: notePath) }
+
+        let deleted = await coordinator.deleteMeeting(id: id)
+
+        XCTAssertFalse(deleted)
+        let rows = try await store.list()
+        XCTAssertEqual(rows.map(\.id), [id], "a failed Delete must leave the meeting in the list")
+    }
+
+    /// Break caught: a debounced note save that lands after Delete writes
+    /// `<id>.md` again, so the deleted note comes back on disk.
+    func test_note_save_landing_after_delete_does_not_bring_the_note_back() async throws {
+        let store = try makeStore()
+        let id = UUID()
+        try await store.insert(meta: meta(id: id, status: .ready), markdown: "# Planning\n\nBody.")
+        let coordinator = makeCoordinator(store: store, processor: SpyDirectProcessor())
+        let deleted = await coordinator.deleteMeeting(id: id)
+
+        await coordinator.saveNoteEdit(id: id, markdown: "# Planning\n\nLate edit.", clientVersion: 1)
+
+        XCTAssertTrue(deleted)
+        XCTAssertEqual(
+            try fileNames(in: meetingsRoot, mentioning: id), [],
+            "a late save must not recreate the note of a deleted meeting"
+        )
+        let rows = try await store.list()
+        XCTAssertTrue(rows.isEmpty)
+    }
+
     /// Break caught: removing a staged directory just because its name was
     /// passed in. Audio without a meeting may be a lost recording.
     func test_delete_unknown_meeting_returns_false_and_leaves_the_staged_dir_alone() async throws {

@@ -260,8 +260,8 @@ final class MeetingsEditBridgeTests: XCTestCase {
     }
 
     /// A save for a meeting the store has never seen must not create a
-    /// phantom row: the markdown write is harmless, but the row update
-    /// matches nothing and the list stays empty.
+    /// phantom row: the row update matches nothing, so no note is written
+    /// and the list stays empty.
     func test_save_for_unknown_meeting_does_not_create_row() async throws {
         let config = MeetingsConfig(defaults: testDefaults)
         config.isEnabled = true
