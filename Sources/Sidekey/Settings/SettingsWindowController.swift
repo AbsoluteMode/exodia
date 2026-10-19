@@ -8,8 +8,8 @@ import UserNotifications
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let permissionsViewModel: PermissionsSettingsViewModel
-    private let modelsViewModel: SettingsModelsViewModel
-    private let selection = SettingsWindowSelection()
+    private let apiAndModelsViewModel: APIAndModelsViewModel
+    let selection = SettingsWindowSelection()
     private let agentModeViewModel: AgentModeViewModel
     private var toolboxDeps = ToolboxDeps()
     /// Deps threaded into the Other tab via `configureOtherDeps(...)`.
@@ -35,9 +35,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         notesControllerProvider: @escaping () -> MeetingsContentController? = { nil }
     ) {
         let permissionsViewModel = PermissionsSettingsViewModel(onComplete: {}, autoComplete: false)
-        let modelsViewModel = SettingsModelsViewModel()
+        let apiAndModelsViewModel = APIAndModelsViewModel()
         self.permissionsViewModel = permissionsViewModel
-        self.modelsViewModel = modelsViewModel
+        self.apiAndModelsViewModel = apiAndModelsViewModel
         self.privacyPreferences = privacyPreferences ?? .shared
         self.screenshotProtectionChanged = screenshotProtectionChanged
 
@@ -92,8 +92,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Bring the window forward and refresh the selected tab.
-    func show(tab: SettingsWindowTab = .models) {
-        selection.select(tab)
+    func show(tab: SettingsWindowTab = .apiAndModels, feature: AIFeature? = nil) {
+        if let feature {
+            selection.focus(feature)
+        } else {
+            selection.select(tab)
+        }
         if let window {
             NSApp.activate(ignoringOtherApps: true)
             SidekeyWindowChrome.centerOnMainScreen(window)
@@ -196,7 +200,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func makeRootView() -> SettingsWindowView {
         SettingsWindowView(
             permissionsViewModel: permissionsViewModel,
-            modelsViewModel: modelsViewModel,
+            apiAndModelsViewModel: apiAndModelsViewModel,
             selection: selection,
             agentModeViewModel: agentModeViewModel,
             toolboxDeps: toolboxDeps,
@@ -223,8 +227,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func loadIfNeeded(tab: SettingsWindowTab) async {
         switch tab {
-        case .models:
-            break
+        case .apiAndModels:
+            await apiAndModelsViewModel.onAppear()
         case .hotkeys:
             break
         case .permissions:

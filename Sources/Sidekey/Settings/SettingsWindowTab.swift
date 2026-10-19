@@ -1,5 +1,5 @@
 enum SettingsWindowTab: String, CaseIterable, Identifiable {
-    case models
+    case apiAndModels
     case hotkeys
     case permissions
     case notes
@@ -15,7 +15,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
     }
 
     static var defaultAvailable: SettingsWindowTab {
-        availableCases.first ?? .models
+        availableCases.first ?? .apiAndModels
     }
 
     var isAvailable: Bool {
@@ -24,8 +24,8 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .models:
-            return "Models"
+        case .apiAndModels:
+            return "API & Models"
         case .hotkeys:
             return "Hotkeys"
         case .permissions:
@@ -49,7 +49,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var fallbackSystemImageName: String {
         switch self {
-        case .models:
+        case .apiAndModels:
             return "cpu"
         case .hotkeys:
             return "keyboard"
@@ -70,7 +70,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var pdfResourceName: String? {
         switch self {
-        case .models, .hotkeys, .permissions, .notes, .agentMode, .toolbox, .projects, .other:
+        case .apiAndModels, .hotkeys, .permissions, .notes, .agentMode, .toolbox, .projects, .other:
             return nil
         }
     }

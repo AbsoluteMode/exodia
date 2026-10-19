@@ -7,8 +7,29 @@ import XCTest
 @MainActor
 final class SettingsWindowViewTests: XCTestCase {
 
-    func test_selection_defaults_to_models_tab() {
-        XCTAssertEqual(SettingsWindowSelection().selectedTab, .models)
+    func test_selection_defaults_to_api_and_models_tab() {
+        XCTAssertEqual(SettingsWindowSelection().selectedTab, .apiAndModels)
+    }
+
+    func test_focus_selects_the_tab_and_remembers_the_feature() {
+        let selection = SettingsWindowSelection(selectedTab: .other)
+
+        selection.focus(.dropSmartCleanup)
+
+        XCTAssertEqual(selection.selectedTab, .apiAndModels)
+        XCTAssertEqual(selection.focusedFeature, .dropSmartCleanup)
+    }
+
+    func test_shell_keeps_the_build_identity() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/Sidekey/Settings/SettingsWindowView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains("AppBuildIdentity.current.settingsTitle"))
+        XCTAssertTrue(source.contains("buildIdentity"))
+        XCTAssertTrue(source.contains("AppBuildIdentity.current.quitActionTitle"))
     }
 
     func test_selection_starting_on_notes_leaves_to_default_tab() {
@@ -17,7 +38,7 @@ final class SettingsWindowViewTests: XCTestCase {
 
         selection.leaveNotes()
 
-        XCTAssertEqual(selection.selectedTab, .models)
+        XCTAssertEqual(selection.selectedTab, .apiAndModels)
     }
 
     func test_selection_remembers_last_non_notes_tab() {

@@ -1101,7 +1101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             },
             openSettings: { [weak self] in
-                self?.openSettingsWindow(tab: .models)
+                self?.openSettingsWindow(tab: .apiAndModels)
             },
             openHelp: { [weak self] in
                 self?.openHelpWindow()
@@ -1224,8 +1224,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openSettingsWindow(tab: .hotkeys)
     }
 
-    private func openSettingsWindow(tab: SettingsWindowTab = .models) {
-        ensureSettingsWindowController().show(tab: tab)
+    private func openSettingsWindow(tab: SettingsWindowTab = .apiAndModels, feature: AIFeature? = nil) {
+        ensureSettingsWindowController().show(tab: tab, feature: feature)
     }
 
     @discardableResult
@@ -2686,10 +2686,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // The problem is one the user fixes in Settings (no model set
                 // for the feature yet, key or endpoint missing). On a fresh
                 // install nothing is set, so idling silently would look like
-                // a dead hotkey: open the Models tab, where the provider and
-                // key fields are one click away.
-                if case StreamingSessionSetupError.byokMisconfigured = error {
-                    openSettingsWindow(tab: .models)
+                // a dead hotkey: open API & Models on the failing feature's
+                // row, where its key and model are one click away.
+                if case StreamingSessionSetupError.byokMisconfigured(let routeError) = error {
+                    openSettingsWindow(tab: .apiAndModels, feature: routeError.feature)
                 }
                 return
             }
@@ -3041,7 +3041,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppState.shared.phase = .deliveryFailed
             os_log("drop cleanup failed: %{public}@", log: Self.log, type: .error, message)
             if DropOutputPolicy.requiresConfiguration(for: error) {
-                openSettingsWindow(tab: .models)
+                openSettingsWindow(tab: .apiAndModels, feature: .dropSmartCleanup)
             }
             return false
         }
