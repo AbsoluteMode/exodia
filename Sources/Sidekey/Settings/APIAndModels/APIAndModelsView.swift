@@ -47,6 +47,13 @@ struct APIAndModelsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     keysBlock
                     modelsBlock
+                    Button("API hints") { activeSheet = .hints }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .help("Free provider credits and included usage")
+                        .accessibilityLabel("API hints: free credits and included usage")
+                        .fixedSize()
+                        .padding(.leading, 6)
                 }
                 .padding(.horizontal, 24).padding(.vertical, 22)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -110,17 +117,7 @@ struct APIAndModelsView: View {
 
     private var keysBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                MacGroupTitle(title: "API keys")
-                Button("API hints") { activeSheet = .hints }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .help("Free provider credits and included usage")
-                    .accessibilityLabel("API hints: free credits and included usage")
-                    .fixedSize()
-                    .padding(.trailing, 6)
-                    .padding(.bottom, 7)
-            }
+            MacGroupTitle(title: "API keys")
             ChipFlowLayout(spacing: 8) {
                 ForEach(viewModel.chips) { chip in
                     chipButton(chip)
