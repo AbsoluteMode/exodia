@@ -18,6 +18,8 @@ enum HoverTool: String, CaseIterable, Hashable {
     case meetingRecord
     case monitor
     case brightness
+    case tasks
+    case calendar
     case quit
     case settings
 }
@@ -91,6 +93,12 @@ enum HoverToolRegistry {
         case .brightness:
             return HoverToolInfo(title: "Display", sfSymbol: "sun.max", kind: .inlinePanel,
                                  description: "Screen brightness, Extra boost and battery time")
+        case .tasks:
+            return HoverToolInfo(title: "To-do", sfSymbol: "checklist", kind: .action,
+                                 description: "Manage your local tasks in Exodia Planner")
+        case .calendar:
+            return HoverToolInfo(title: "Calendar", sfSymbol: "calendar", kind: .action,
+                                 description: "Your schedule from Exodia, Apple, Google, Outlook and Zoom")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
                                  kind: .navigate(.quitRow),

@@ -34,6 +34,7 @@ All paths below start at `Sources/Sidekey/`.
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
 | Drag/drop catalog and selected layout | `Settings/ToolboxSettingsView.swift` |
 | App services and hotkey dispatch | `AppDelegate.swift` (`onHoverSlotActivated`) |
+| Tasks and unified calendar window actions | `Planner/PlannerWindowController.swift`, `Planner/PlannerView.swift`, `Planner/PlannerCalendarView.swift` |
 | Positional hotkey labels and hints | `Settings/HotkeysSettingsView.swift`, `HelpWindowController.swift` |
 
 ## Tool contract

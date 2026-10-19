@@ -324,6 +324,14 @@ struct ToolboxSettingsView: View {
                 clipboardPane
             case .brightness:
                 ToolboxDisplayPane()
+            case .tasks, .calendar:
+                VStack(spacing: 14) {
+                    Text("Open your tasks and calendars in Exodia Planner.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Button("Open " + HoverToolRegistry.info(for: tool).title) {
+                        PlannerWindowController.shared.show(tool == .tasks ? .tasks : .calendar)
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             case .hotkeys, .notes, .meetingRecord, .monitor, .quit, .settings:
                 Color.clear
             }

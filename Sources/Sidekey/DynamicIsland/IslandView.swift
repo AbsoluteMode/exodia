@@ -1183,6 +1183,8 @@ struct IslandView: View {
                             historyPasteTargetName: actions.historyPasteTargetName,
                             onOpenNotes: actions.openMeetings,
                             onOpenMonitor: actions.openMonitor,
+                            onOpenTasks: actions.openTasks,
+                            onOpenCalendar: actions.openCalendar,
                             onOpenHelp: actions.openHelp,
                             onQuit: actions.quitApplication,
                             onToggleMeetingRecord: actions.toggleMeetingRecord,
@@ -2453,6 +2455,8 @@ private struct IslandDropModeHoverPanel: View {
     let historyPasteTargetName: () -> String?
     let onOpenNotes: () -> Void
     var onOpenMonitor: () -> Void = {}
+    var onOpenTasks: () -> Void = {}
+    var onOpenCalendar: () -> Void = {}
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
     /// Manual meeting-record toggle (the "Record" tile). Defaults to a
@@ -2781,6 +2785,8 @@ private struct IslandDropModeHoverPanel: View {
         case .openNotes: onOpenNotes()
         case .toggleMeetingRecord: onToggleMeetingRecord()
         case .openMonitor: onOpenMonitor()
+        case .openTasks: onOpenTasks()
+        case .openCalendar: onOpenCalendar()
         case .quit: onQuit()
         case .openPanel(let panel):
             switch panel {

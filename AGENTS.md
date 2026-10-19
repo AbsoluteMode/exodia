@@ -474,6 +474,19 @@ Agents get a resolved setup-guide path on every turn.
 Guide: docs/customization/notifications.md. WHY:
 .project-docs/decisions/2026-10-19-script-notifications.md
 
+Planner: catalog/search actions To-do and Calendar open one native planner window
+without changing saved layouts. PlannerStore atomically saves private local tasks
+and Exodia events; unreadable archives block writes. CalendarConnections combines
+selected EventKit calendars with direct Google Calendar, Microsoft Graph (including
+Teams links) and Zoom Calendar Service connections. Remote events are read-only;
+visible-range recurrence is provider-expanded, refresh runs only while the calendar
+view is visible, and matching UID/occurrence bounds collapse duplicate sources.
+OAuth uses browser S256 PKCE/state, a numeric loopback listener (Microsoft redirects
+to localhost), and Keychain credentials with durable refresh-token rotation. No
+shared OAuth registrations ship yet; live accounts require provider setup and
+separate acceptance. Tests use fake providers and temporary stores. Guide:
+docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md
+
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change
 contracts and source entry points; `doctor --json` checks build prerequisites.
@@ -630,7 +643,8 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
    and monitoring sources the user configured (including their credential store),
-   notification sources accessed by user-configured local scripts, OpenCode's own provider
+   notification sources accessed by user-configured local scripts, calendar providers
+   explicitly connected by the user (Google, Microsoft and Zoom), OpenCode's own provider
    traffic, its official GitHub release download, `google.com` opened in the
    browser, and the Sparkle feed on GitHub Releases.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any

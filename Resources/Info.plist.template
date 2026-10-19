@@ -33,6 +33,8 @@
     <false/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Exodia records audio to transcribe your speech.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Exodia shows your selected calendars and upcoming meetings together in Planner. Connected Apple calendars are read-only in Exodia.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>Exodia records the other participants' audio during meetings to transcribe what's said.</string>
     <key>NSAppleEventsUsageDescription</key>

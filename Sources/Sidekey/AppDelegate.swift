@@ -1107,6 +1107,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     panel: .monitor, token: self.hoverPanelRequestToken
                 )
             },
+            openTasks: { [weak self] in
+                self?.registerIslandHotkeyActivity()
+                PlannerWindowController.shared.show(.tasks)
+            },
+            openCalendar: { [weak self] in
+                self?.registerIslandHotkeyActivity()
+                PlannerWindowController.shared.show(.calendar)
+            },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .models)
             },
@@ -1720,7 +1728,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // invisible and reads as "the hotkey does nothing".
             let newMode = IslandPanel.shared.actions.toggleDropMode()
             AppState.shared.publishDropModeHotkeyToggle(newMode)
-        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .quit:
+        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .openTasks, .openCalendar, .quit:
             // Action/navigate tools open their own surfaces (window / toggle)
             // instantly — forcing the drawer open here would flash an empty
             // Hover for ~4s (Stage 3 review fix). Run the effect directly
