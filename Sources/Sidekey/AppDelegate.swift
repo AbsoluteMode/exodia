@@ -1924,7 +1924,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case nil: return nil
                 }
             },
-            resolveProjectContext: { ProjectKnowledgeStore.shared.activeProjectContext(query: $0) },
             audioTranscriber: BatchAgentAudioTranscriber(batch: batchTranscriber),
             responseStore: responseStore,
             chatStackStore: chatStackStore,

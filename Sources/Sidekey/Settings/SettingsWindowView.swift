@@ -272,8 +272,6 @@ struct SettingsWindowView: View {
                 selection: selection,
                 deps: toolboxDeps
             )
-        case .projects:
-            ProjectsSettingsView()
         }
     }
 }

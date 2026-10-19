@@ -23,7 +23,7 @@ sources:
   - type: trace
     reference: Claude Code consultation f5197223-847c-4567-8918-e8b07c33ab93 and reconciliation 72df1dc1-548c-4438-90ff-97b4192103e2; Gemini conversation 2cc05a31-563b-4135-96b7-3705be1e405e, explicit agreement recovered despite interrupted-stream job status.
     confirmed_at: 2026-10-19
-related: [../project.md, ../processes/shared-app-development.md]
+related: [2026-10-19-one-running-copy.md, ../project.md, ../processes/shared-app-development.md]
 ---
 
 # One shared working application

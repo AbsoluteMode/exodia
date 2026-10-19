@@ -141,11 +141,12 @@ Agent flow (OpenCode + OpenRouter):
   Actions are allowed by default so the agent can edit and run tests; the user
   can turn them off in Settings. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
-  AgentDaemonWorkingDirectory uses neutral agent/ or sibling
-  project-agents/<UUID>/ under Application Support/whytap. Each project has its
-  own AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
-  AgentController adds selected project evidence to each turn and uses scoped
-  resume IDs. Evidence is untrusted content, never executable instructions.
+  AgentDaemonWorkingDirectory uses agent/ under Application Support/whytap
+  with AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
+  Projects, folder indexing and automatic project evidence are removed. Old
+  project catalogs, indexes and project-agent workspaces remain unused on disk;
+  never migrate their content or resume IDs into the neutral workspace. WHY:
+  .project-docs/decisions/2026-10-19-remove-projects.md
   WhytapCustomizationContext.promptInstructions exposes resolved local Monitor
   paths, dashboard/collector contracts and source-kit discovery to the runtime
   agent, so creating a dashboard does not require finding the source checkout.
@@ -389,16 +390,6 @@ Settings -> Models. Settings opens on Models; screenshot protection is in
 Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
-
-Project knowledge: Settings -> Projects registers a user-selected folder and
-manual notes. ProjectKnowledgeStore keeps a local catalog and SQLite FTS5
-index, with explicit reindexing and path/line citations. Hidden files,
-symlinks, build directories and common credential filenames are excluded;
-indexing is bounded to 5,000 files and 32 MB of text. It does not scan the
-home directory automatically or use semantic embeddings. Retrieval requires
-an explicitly selected project. Matching excerpts and notes become context
-for that project's agent request and may go to its configured API provider.
-This is a knowledge foundation, not live meeting-question detection.
 
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change
