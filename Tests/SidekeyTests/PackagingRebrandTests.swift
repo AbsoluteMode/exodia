@@ -346,9 +346,12 @@ final class PackagingRebrandTests: XCTestCase {
         process.standardOutput = output
         process.standardError = output
         try process.run()
+        // Drain while the child runs; waiting first can fill the pipe and
+        // deadlock preflight even when the child is ready to finish.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return (process.terminationStatus,
-                String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+                String(decoding: data, as: UTF8.self))
     }
 
     /// Runs build-dmg.sh in a minimal committed checkout whose compiler stub exits 64.
