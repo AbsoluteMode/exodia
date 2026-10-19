@@ -5,15 +5,22 @@ suggestions or replace normal meeting notes.
 
 1. In **API & Models**, choose Soniox for **Meetings** and configure the usual
    **Meeting notes** route.
-2. In **Other**, enable **Meeting Notes** and **Meeting Assistant test capture**.
-   Testing adds a Soniox streaming transcription request.
+2. In **Other**, enable **Meeting Notes**. Capture itself is an internal opt-in,
+   absent from the interface at the user's request. Only for an explicitly
+   authorized test, enable the local flag with
+   `defaults write com.rootwise.sidekey sidekey.meetings.liveTestCapture -bool true`.
+   Testing adds a Soniox streaming transcription request. Removing the former
+   Settings controls preserves an already selected value.
 3. Start notes normally at the next call. Include separate speech from each
    side, then brief overlap. Exercise Pause/Resume if convenient.
 4. Stop normally and allow a few seconds for the independent stream to drain.
    The note processes as before.
-5. Use **Other → Meeting test files → Open folder**. UUID folders contain private
-   audio and text. Delete unwanted test folders in Finder; deleting a normal
-   note does not delete these bundles. Turn the toggle off after testing.
+5. In Finder, hold Option and choose **Go → Library**, then open
+   **Application Support → Sidekey → meeting-assistant-tests**.
+   UUID folders contain private audio and text. Delete unwanted test folders
+   in Finder; deleting a normal note does not delete these bundles. Disable
+   capture after testing with
+   `defaults write com.rootwise.sidekey sidekey.meetings.liveTestCapture -bool false`.
 
 An offline report without transcript content:
 
