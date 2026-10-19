@@ -46,6 +46,14 @@ final class NowPlayingCoordinator {
         controller.stop()
     }
 
+    /// App termination: stop polling and terminate the source's child
+    /// process before `applicationWillTerminate` returns.
+    /// WHY: .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+    func shutdown() {
+        started = false
+        controller.shutdown()
+    }
+
     /// Apply a live feature-flag change from the Settings toggle. Persists the
     /// new value to `NowPlayingConfig` (so it survives relaunch) AND reacts
     /// immediately: disabling stops polling and clears the snapshot so every

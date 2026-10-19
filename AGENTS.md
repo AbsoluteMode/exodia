@@ -390,6 +390,15 @@ Island display selection (multi-monitor):
   selectionDidChangeNotification. WHY:
   docs/decisions/2026-07-07-island-display-selection-not-nsscreen-main.md
 
+Now Playing:
+  MediaRemoteNowPlayingSource runs the vendored adapter as a long-lived child
+  (`perl run.pl <framework> stream --no-diff --micros`). The AppleScript
+  source is the fallback. applicationWillTerminate calls
+  NowPlayingCoordinator.shutdown(), which terminates that child synchronously
+  (the async stop() would never run before exit()); the stream keeps running
+  through sleep. WHY:
+  .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+
 Island idle-hide:
   ~20s without activity -> the compact pill fades to the bare notch (opacity
   0 + click-through; the window never moves or resizes). IslandIdleController

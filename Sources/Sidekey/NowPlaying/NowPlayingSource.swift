@@ -22,6 +22,16 @@ protocol NowPlayingSource: AnyObject {
     /// toggle races.
     func playPause(isPlaying: Bool)
     func next()
+    /// Release every background resource before the app exits. Must finish
+    /// synchronously: `applicationWillTerminate` returns straight into
+    /// `exit()`, so asynchronous cleanup never runs.
+    func shutdown()
+}
+
+extension NowPlayingSource {
+    /// Sources without child processes or other external resources have
+    /// nothing to release.
+    func shutdown() {}
 }
 
 // MARK: - Pure mapping layer (AppleScript-free, unit-testable)

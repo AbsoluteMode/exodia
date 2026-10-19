@@ -110,16 +110,27 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
     /// - Returns: `nil` when the bundled assets are missing (fail-closed —
     ///   the factory then falls back to AppleScript).
-    init?(bundle: Bundle = .main) {
+    convenience init?(bundle: Bundle = .main) {
         guard
             let runScript = Self.runScriptURL(bundle: bundle),
             let framework = Self.frameworkURL(bundle: bundle)
         else {
             return nil
         }
+        self.init(runScript: runScript, framework: framework)
+    }
+
+    /// Explicit asset paths. Tests point `runScript` at a stand-in perl
+    /// script to exercise the real process lifecycle without the adapter.
+    init(runScript: URL, framework: URL) {
         self.runScript = runScript
         self.framework = framework
         _ = Self.ignoreSIGPIPE
+    }
+
+    /// PID of the live stream process, or `nil`. Test seam only.
+    var streamProcessIdentifierForTesting: pid_t? {
+        queue.sync { process?.processIdentifier }
     }
 
     // MARK: - Lifecycle
@@ -142,6 +153,21 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
             self.teardownProcess()
             self.setLatest(nil)
             self.lock.lock(); self._previousInfo = nil; self.lock.unlock()
+        }
+    }
+
+    /// Synchronous stop for app termination. `stop()` hops onto `queue`
+    /// asynchronously, and the process exits before that block runs, which
+    /// left the `run.pl stream` child orphaned (PPID 1) after every quit.
+    /// Here the stream is terminated before this call returns, and the
+    /// cleared `started` flag stops any pending relaunch.
+    /// WHY: .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+    func shutdown() {
+        queue.sync {
+            started = false
+            teardownProcess()
+            setLatest(nil)
+            lock.lock(); _previousInfo = nil; lock.unlock()
         }
     }
 

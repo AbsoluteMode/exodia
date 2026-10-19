@@ -125,6 +125,13 @@ final class NowPlayingController: ObservableObject {
         AppState.shared.clearNowPlaying()
     }
 
+    /// App termination: stop polling and synchronously release the source
+    /// (the MediaRemote stream child process).
+    func shutdown() {
+        stop()
+        source.shutdown()
+    }
+
     // MARK: - Transport (forwarded to the active player)
 
     func previous() {
