@@ -26,6 +26,7 @@ struct AIRoutingState: Codable, Equatable {
 /// Routes change only through a user action or the one-time migration. The
 /// store never moves a feature to another provider by itself: a removed key or
 /// server leaves its features Not set.
+// WHY: .project-docs/decisions/2026-10-19-api-and-models.md
 @MainActor
 final class AIRoutingStore: ObservableObject {
     /// Shared by the Settings window and the runtime, so both see one state.

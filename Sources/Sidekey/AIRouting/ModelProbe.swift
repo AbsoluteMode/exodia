@@ -9,6 +9,7 @@ protocol ModelProbing: Sendable {
 /// second of silence for speech models, a one-word prompt for text models. The
 /// request goes only to the route's own provider. Logs the provider, the use,
 /// the outcome and the milliseconds taken; never a model id, a key or an answer.
+// WHY: .project-docs/decisions/2026-10-19-api-and-models.md
 struct ModelProbe: ModelProbing {
     private static let log = OSLog(subsystem: "com.rootwise.sidekey", category: "model-probe")
 

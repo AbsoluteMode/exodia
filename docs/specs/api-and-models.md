@@ -2,8 +2,11 @@
 
 > Вкладка называется «API & Models» (решение Максима 19.10; раньше в обсуждении — «Keys & models»).
 
-> Статус: дизайн. Макет утверждён Максимом 19.10.2026, код не начат.
-> База: `origin/main` 2a85e6d. Ветка `claude/keys-and-models`.
+> Статус: реализовано в ветке `claude/keys-and-models` (19.10.2026), ждёт PR и приёмки на рабочем приложении.
+> План — [docs/plans/api-and-models.md](../plans/api-and-models.md), решение —
+> [2026-10-19-api-and-models](../../.project-docs/decisions/2026-10-19-api-and-models.md).
+> Дополнение 19.10: Anthropic для строки Agent (Task 20), см. «Не цели v1».
+> Спека писалась на `origin/main` 2a85e6d; реализация сверена с a316508 (PR #35).
 
 ## Что строим
 
@@ -431,7 +434,7 @@ Models
   Показ на живом приложении — через интеграцию.
 - Документация:
   - `CLAUDE.md` через `.project-docs/agent-context.md` + `python3 scripts/customize.py sync-guidance --write`
-    (заменить «Settings -> Models» и описания маршрутов);
+    (заменить прежнее название вкладки и описания маршрутов);
   - `docs/privacy.md`, `docs/SPEC.md`, `README.md` (настройка ключей);
   - датированное решение в `.project-docs/decisions/` с якорями `// WHY:`;
   - PR с пометкой `[docs: …]`.

@@ -1,6 +1,7 @@
 import Foundation
 
 enum OpenCodeEnvironment {
+    // WHY: .project-docs/decisions/2026-10-19-api-and-models.md
     /// Separate OpenCode config, history, snapshots and caches for every project.
     /// The user's HOME remains intact for ordinary tools, but unrelated CLI
     /// credentials and global Claude memories are never imported by this runtime.

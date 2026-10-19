@@ -5,6 +5,7 @@ import Foundation
 /// stream, Retry, delivery) reads the mode from here, not from the current
 /// preference, so a mode switch in the island mid-take changes the next take
 /// and never this one. The Fast/Smart output rules stay in `DropOutputPolicy`.
+// WHY: .project-docs/decisions/2026-10-19-api-and-models.md
 @MainActor
 final class DropTake {
     static let shared = DropTake()

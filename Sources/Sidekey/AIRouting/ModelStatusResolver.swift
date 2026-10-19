@@ -58,6 +58,7 @@ extension OpenRouterLLMError {
 /// Derives what API & Models shows from the stores: the status of each
 /// feature's row, the picker sections and the group "Switch" actions. Pure
 /// reads of local state; it never touches the network.
+// WHY: .project-docs/decisions/2026-10-19-api-and-models.md
 @MainActor
 struct ModelStatusResolver {
     static let refusedReason = "The provider refused this model"

@@ -11,6 +11,7 @@ import Foundation
 /// provider is ever replaced, and a feature gets a route only where its account
 /// has a key. The old `UserDefaults` keys are read, never written or removed,
 /// so a rollback finds the Models tab as the user left it.
+// WHY: .project-docs/decisions/2026-10-19-api-and-models.md
 @MainActor
 struct AIRoutingMigration {
     private let prefs: SelfKeyPreferences
