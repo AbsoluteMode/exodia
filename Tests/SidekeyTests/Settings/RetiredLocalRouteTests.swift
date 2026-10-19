@@ -4,7 +4,7 @@ import XCTest
 /// On-device models were removed. A user whose audio and text stayed on this
 /// Mac, by choosing Local or by never choosing on Apple Silicon (where Local
 /// was the default), must not start sending them to a provider until they
-/// choose one in Settings -> Models, even when a provider key is stored.
+/// choose one in Settings, even when a provider key is stored.
 @MainActor
 final class RetiredLocalRouteTests: XCTestCase {
     private func makeDefaults() -> UserDefaults {
@@ -38,19 +38,54 @@ final class RetiredLocalRouteTests: XCTestCase {
         XCTAssertEqual(prefs.llmLevel, .yourKey)
     }
 
-    func test_drop_withRetiredLocal_doesNotUseStoredProviderKey() throws {
-        let prefs = SelfKeyPreferences(defaults: retiredLocalDefaults(), isAppleSilicon: true)
-        prefs.selectedProvider = .soniox
-        let keys = BYOKKeyStore.inMemory()
-        try keys.save(key: "soniox-key", for: .soniox)
+    /// The one-time migration over a Keychain that holds a Soniox key, with the
+    /// old settings in `defaults`. Returns the factory built on its result.
+    private func migratedFactory(
+        defaults: UserDefaults, isAppleSilicon: Bool, mutate: (SelfKeyPreferences) -> Void = { _ in }
+    ) throws -> (factory: TranscriptionSessionFactory, adapters: AdapterLog) {
+        let prefs = SelfKeyPreferences(defaults: defaults, isAppleSilicon: isAppleSilicon)
+        mutate(prefs)
+        let routing = AIRoutingStore(defaults: makeDefaults())
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        try keys.save("soniox-key", account: BYOKKeyStore.account(for: .soniox))
+        AIRoutingMigration(prefs: prefs, defaults: defaults, routing: routing, keys: keys).run()
+        let log = AdapterLog()
         let factory = TranscriptionSessionFactory(
-            prefs: prefs,
-            keyStore: keys,
-            vocab: VocabularyCache(defaults: makeDefaults())
+            resolver: FeatureRouteResolver(routing: routing, keys: keys),
+            vocab: VocabularyCache(defaults: makeDefaults()),
+            makeAdapter: { route in
+                log.count += 1
+                return try RealtimeAdapterFactory.make(route)
+            }
         )
-        XCTAssertThrowsError(try factory.make(language: "en")) { error in
-            XCTAssertEqual(error as? TranscriptionFactoryError, .notConfigured)
+        return (factory, log)
+    }
+
+    private final class AdapterLog {
+        var count = 0
+    }
+
+    func test_drop_withRetiredLocal_doesNotUseStoredProviderKey() throws {
+        for isAppleSilicon in [true, false] {
+            let (factory, adapters) = try migratedFactory(
+                defaults: retiredLocalDefaults(), isAppleSilicon: isAppleSilicon
+            ) { $0.selectedProvider = .soniox }
+            XCTAssertThrowsError(try factory.make(feature: .dropFast, language: "en"), "appleSilicon=\(isAppleSilicon)") {
+                XCTAssertEqual($0 as? FeatureRouteError, .notSet(.dropFast))
+            }
+            XCTAssertEqual(adapters.count, 0)
         }
+    }
+
+    func test_appleSilicon_withoutALevel_doesNotUseStoredProviderKey() throws {
+        let (factory, adapters) = try migratedFactory(defaults: makeDefaults(), isAppleSilicon: true) {
+            $0.selectedProvider = .soniox
+        }
+        XCTAssertThrowsError(try factory.make(feature: .dropFast, language: "en")) {
+            XCTAssertEqual($0 as? FeatureRouteError, .notSet(.dropFast))
+        }
+        XCTAssertEqual(adapters.count, 0)
     }
 
     func test_cleanup_withoutChoice_doesNotUseStoredOpenRouterKey() async throws {
@@ -103,17 +138,12 @@ final class RetiredLocalRouteTests: XCTestCase {
     }
 
     func test_choosingYourKey_afterRetiredLocal_buildsProviderSession() throws {
-        let prefs = SelfKeyPreferences(defaults: retiredLocalDefaults(), isAppleSilicon: true)
-        prefs.selectedProvider = .soniox
-        prefs.transcriptionLevel = .yourKey
-        let keys = BYOKKeyStore.inMemory()
-        try keys.save(key: "soniox-key", for: .soniox)
-        let factory = TranscriptionSessionFactory(
-            prefs: prefs,
-            keyStore: keys,
-            vocab: VocabularyCache(defaults: makeDefaults())
-        )
-        XCTAssertTrue(try factory.make(language: "en") is DirectProviderStreamingSession)
+        let (factory, adapters) = try migratedFactory(defaults: retiredLocalDefaults(), isAppleSilicon: true) {
+            $0.selectedProvider = .soniox
+            $0.transcriptionLevel = .yourKey
+        }
+        XCTAssertTrue(try factory.make(feature: .dropFast, language: "en") is DirectProviderStreamingSession)
+        XCTAssertEqual(adapters.count, 1)
     }
 }
 

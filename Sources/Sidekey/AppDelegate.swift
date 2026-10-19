@@ -9,7 +9,7 @@ import os.log
 /// Lives at file scope so the classification is unit-testable without
 /// standing up the AppDelegate.
 enum StreamingSessionSetupError: Error {
-    case byokMisconfigured(TranscriptionFactoryError)
+    case byokMisconfigured(FeatureRouteError)
 }
 
 /// Outcome of `AppDelegate.dropFlowRoute(phase:mode:hasStreamingSession:)`.
@@ -1944,7 +1944,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return nil }
                 // resilient: false — agent-voice must never resolve .degraded
                 // (the handler ignores it, silently dropping dictation).
-                return try? await self.makeStreamingSession(resilient: false)
+                return try? await self.makeStreamingSession(feature: .agentVoice, resilient: false)
             },
             islandAgentFlow: islandFlow,
             // The island answer panel renders its useful-links chip from this
@@ -1961,7 +1961,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return nil }
                 // resilient: false — Google-search must never resolve .degraded
                 // (the handler ignores it, silently dropping dictation).
-                return try? await self.makeStreamingSession(resilient: false)
+                return try? await self.makeStreamingSession(feature: .voiceSearch, resilient: false)
             },
             // Bridge live partials into the same island wing the agent uses
             // (Google rides the agent flow store via activeSourceIsGoogle).
@@ -2410,7 +2410,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// hardcoded `"pending"`) so a turn's started/completed/failed events
     /// correlate, plus a phase timeline to localise where a turn stalls.
     private var dropTurnTrace: DropTurnTrace?
-    private var dropTurnMode: TranscriptionMode = .fast
     /// Fires if a turn never reaches a terminal event — the infinite-hang case
     /// that otherwise emits NOTHING (only an orphaned `voice_turn_started`,
     /// because `run()` never returns so `handleStreamingResult` never runs).
@@ -2436,7 +2435,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let dropTurnWatchdogTimeout: Duration = .seconds(640)
 
     private func startDropTurnTelemetry() {
-        dropTurnMode = UserPreferencesCache.shared.currentMode
+        // The one place a new take starts: the mode and its route are fixed
+        // here and every later read of the take's mode uses `DropTake`.
+        let mode = UserPreferencesCache.shared.currentMode
+        DropTake.shared.begin(mode: mode, route: AIRoutingStore.shared.route(for: .drop(mode)))
         AppState.shared.dropDeliveryFailureMessage = nil
         lastDropPartial = ""
         let trace = DropTurnTrace()
@@ -2444,7 +2446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dropActivity.begin(reason: "drop voice turn")
         armDropTurnWatchdog(for: trace)
         armDropMaxHoldTimer(for: trace)
-        os_log("drop turn %{public}@ started mode=%{public}@", log: Self.log, type: .info, trace.turnId, dropTurnMode.rawValue)
+        os_log("drop turn %{public}@ started mode=%{public}@", log: Self.log, type: .info, trace.turnId, DropTake.shared.mode.rawValue)
     }
 
     private func completeDropTurnTelemetry() {
@@ -2659,7 +2661,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // enabled — agent-voice and Google-search pass resilient:false
                 // so they can never resolve .degraded (their handlers ignore it,
                 // which would silently drop the dictation).
-                session = try await makeStreamingSession(resilient: AgentFeatureGate.resilientDropDeliveryEnabled)
+                session = try await makeStreamingSession(
+                    feature: DropTake.shared.feature,
+                    resilient: AgentFeatureGate.resilientDropDeliveryEnabled
+                )
             } catch {
                 // Stale-turn gate: a newer turn claimed the window while we
                 // were suspended — its setup will surface its own failures;
@@ -2676,11 +2681,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 failDropTurnTelemetry(reason: "byok_misconfigured")
                 AppState.shared.phase = .idle
-                // The problem is one the user fixes in Settings -> Models
-                // (no provider chosen yet, BYOK key or endpoint missing).
-                // On a fresh install nothing is chosen, so idling silently
-                // would look like a dead hotkey: open the Models tab where
-                // the provider and key fields are one click away.
+                // The problem is one the user fixes in Settings (no model set
+                // for the feature yet, key or endpoint missing). On a fresh
+                // install nothing is set, so idling silently would look like
+                // a dead hotkey: open the Models tab, where the provider and
+                // key fields are one click away.
                 if case StreamingSessionSetupError.byokMisconfigured = error {
                     openSettingsWindow(tab: .models)
                 }
@@ -2774,31 +2779,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Builds the drop transcription session (direct BYOK to the user's
-    /// provider) through `TranscriptionSessionFactory`. Shared by the drop
-    /// flow and the agent voice factory so the construction recipe has one
-    /// source of truth. A thrown factory error (no provider chosen, or BYOK
-    /// enabled without a key) surfaces as `.byokMisconfigured`; the Settings
-    /// UI prevents enabling BYOK without a key.
+    /// Builds the real-time transcription session for `feature` (direct to the
+    /// provider of that feature's own route) through
+    /// `TranscriptionSessionFactory`. Shared by the drop flow, the agent voice
+    /// factory and voice search so the construction recipe has one source of
+    /// truth. A thrown route error (feature Not set, key missing, bad server
+    /// address or language) surfaces as `.byokMisconfigured`.
     ///
     /// `resilient` must be `true` ONLY for the Drop call site. Agent-voice and
     /// Google-search pass `false` explicitly — their result handlers treat
     /// `.degraded` as a no-op and would silently drop dictation if the flag
     /// were accidentally inherited.
     private func makeStreamingSession(
+        feature: AIFeature,
         resilient: Bool = false
     ) async throws -> any StreamingSessionRunning {
-        let factory = TranscriptionSessionFactory(
-            prefs: SelfKeyPreferences.shared,
-            keyStore: BYOKKeyStore(),
-            vocab: .shared
-        )
+        let factory = TranscriptionSessionFactory()
         do {
             return try factory.make(
+                feature: feature,
                 language: PrivacyPreferences.shared.selectedLanguage?.code,
                 resilient: resilient
             )
-        } catch let error as TranscriptionFactoryError {
+        } catch let error as FeatureRouteError {
             os_log(
                 "streaming: BYOK factory failed: %{public}@",
                 log: Self.log, type: .error,
@@ -2991,7 +2994,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rawText: String, targetApp: String?, targetPID: pid_t?,
         mode retryMode: TranscriptionMode? = nil
     ) async -> Bool {
-        let mode = retryMode ?? dropTurnMode
+        let mode = retryMode ?? DropTake.shared.mode
         let generation = streamingSetupGeneration
         let policy = DropOutputPolicy(mode: mode)
         let processStartedAt = ProcessInfo.processInfo.systemUptime
@@ -3082,7 +3085,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// side-effect wiring — phase, paste tail, retry-state, telemetry, and
     /// raw-partial salvage — is defined in exactly one place.
     private func dropDeliverySink(targetApp: String?, targetPID: pid_t?) -> DropBatchRecoverySink {
-        let mode = dropTurnMode
+        let mode = DropTake.shared.mode
         let generation = streamingSetupGeneration
         return DropBatchRecoverySink(
             setPhase: { AppState.shared.phase = $0 },

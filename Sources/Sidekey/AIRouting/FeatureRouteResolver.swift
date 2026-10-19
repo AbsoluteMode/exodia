@@ -61,8 +61,14 @@ struct FeatureRouteResolver {
         self.keys = keys
     }
 
+    /// The stored route, for a caller that has to look at it before the key is
+    /// read (the real-time factory checks the Deepgram language first).
+    func route(for feature: AIFeature) -> FeatureRoute? {
+        routing.route(for: feature)
+    }
+
     func resolve(_ feature: AIFeature) throws -> ResolvedRoute {
-        guard let route = routing.route(for: feature) else { throw FeatureRouteError.notSet(feature) }
+        guard let route = route(for: feature) else { throw FeatureRouteError.notSet(feature) }
         return try resolve(route, for: feature)
     }
 
