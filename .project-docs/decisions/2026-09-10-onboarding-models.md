@@ -15,7 +15,7 @@ sources:
     reference: d6ce4339:Sources/Sidekey/Onboarding/OnboardingModelsScreen.swift
     confirmed_at: 2026-09-10
   - type: repository
-    reference: Sources/Sidekey/Settings/SettingsModelsViewModel.swift
+    reference: Sources/Sidekey/Settings/SettingsModelsViewModel.swift@2991ff7
     confirmed_at: 2026-09-10
 related: [../project.md, 2026-10-17-local-workspace.md]
 ---
