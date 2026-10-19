@@ -44,6 +44,43 @@ final class NotifyRenderTests: XCTestCase {
                     to: directory.appendingPathComponent("icon-\(name)-\(hovered ? "hover" : "idle").png"))
             }
         }
+        let stacked = (0..<33).map { index in
+            LocalNotificationEvent(id: "stack-\(index)", source: "agent", sourceName: "Agent", title: "Finished",
+                body: "", link: nil, timestamp: Date(), customTint: index.isMultiple(of: 2) ? "#373A42" : "#C87554",
+                customLogo: index.isMultiple(of: 2) ? "codex" : "claude-code", presentation: .icon)
+        }
+        for count in [2, 3, 33] {
+            for hovered in [false, true] {
+                for height: CGFloat in [28, 38] {
+                    let view = IslandNotificationStackContent(events: Array(stacked.prefix(count)), height: height,
+                        hovered: hovered, rotation: 0, onTap: { _ in }, onDismiss: { _ in }, imageLoader: loadImage)
+                    try render(view, size: NSSize(width: 70, height: height),
+                        to: directory.appendingPathComponent("stack-\(count)-\(Int(height))-\(hovered ? "hover" : "idle").png"))
+                }
+            }
+        }
+        let comparison = VStack(spacing: 14) {
+            ForEach([2, 3, 33], id: \.self) { count in
+                HStack(spacing: 12) {
+                    Text("\(count)").frame(width: 25)
+                    ForEach([false, true], id: \.self) { hovered in
+                        IslandNotificationStackContent(events: Array(stacked.prefix(count)), hovered: hovered,
+                            rotation: 0, onTap: { _ in }, onDismiss: { _ in }, imageLoader: loadImage)
+                            .scaleEffect(3).frame(width: 210, height: 114)
+                    }
+                }
+            }
+        }.padding(14).foregroundStyle(.white).background(Color(white: 0.13))
+        try render(comparison, size: NSSize(width: 510, height: 400),
+            to: directory.appendingPathComponent("stack-comparison.png"))
+        let tools = HStack {
+            IslandHoverPanelControl(title: "Notify", systemImage: "bell", pdfResource: nil, label: nil,
+                circleSize: 30, accessibilityLabel: "Notify", showsDot: true, action: {})
+            IslandHoverPanelControl(title: "Monitor", systemImage: "chart.xyaxis.line", pdfResource: nil, label: nil,
+                circleSize: 30, accessibilityLabel: "Monitor", action: {})
+        }.padding(8).background(Color(white: 0.08))
+        try render(tools, size: NSSize(width: 210, height: 70),
+            to: directory.appendingPathComponent("notify-attention-monitor-quiet.png"))
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }
         let hub = LocalNotificationHub(directory: temporary)
@@ -52,6 +89,9 @@ final class NotifyRenderTests: XCTestCase {
         let supervisor = NotifyScriptSupervisor(directory: temporary, hub: hub)
         try render(NotifyHoverPanel(hub: hub, supervisor: supervisor, onBack: {}),
                    size: NSSize(width: 312, height: 235), to: directory.appendingPathComponent("history.png"))
+        await hub.clear()
+        try render(NotifyHoverPanel(hub: hub, supervisor: supervisor, onBack: {}),
+                   size: NSSize(width: 312, height: 235), to: directory.appendingPathComponent("history-cleared.png"))
 
         try render(settings(supervisor), size: NSSize(width: 760, height: 560),
                    to: directory.appendingPathComponent("settings-empty.png"))

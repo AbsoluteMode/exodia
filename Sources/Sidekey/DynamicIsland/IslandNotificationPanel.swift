@@ -20,9 +20,9 @@ private struct NotifyPanelRoot: View {
                 Group {
                     if event.resolvedPresentation == .icon {
                         GeometryReader { geometry in
-                            IslandNotificationIcon(event: event, height: geometry.size.height,
-                                onTap: { activate(event) }, onDismiss: { dismiss(event) },
-                                onHoverChanged: { hover($0, event: event) })
+                            IslandNotificationIcon(events: hub.iconStack, height: geometry.size.height,
+                                onTap: activate, onDismiss: dismiss,
+                                onHoverChanged: hub.setHovered)
                         }.frame(width: IslandNotificationIconContent.width)
                     } else {
                         IslandNotificationPill(event: event, deadline: deadline,
@@ -37,7 +37,7 @@ private struct NotifyPanelRoot: View {
                     .padding(.trailing, event.resolvedPresentation == .card ? 8 : 0)
                     .transition(reduceMotion || event.resolvedPresentation == .icon ? .opacity
                         : .move(edge: .trailing).combined(with: .opacity))
-                    .id(event.id)
+                    .id(event.resolvedPresentation == .icon ? "icon-stack" : event.id)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -47,13 +47,12 @@ private struct NotifyPanelRoot: View {
     }
 
     private func activate(_ event: LocalNotificationEvent) {
-        guard hub.current?.id == event.id else { return }
+        guard hub.isPresented(event.id) else { return }
         if let link = event.link { NSWorkspace.shared.open(link) }
-        hub.dismiss()
+        hub.dismiss(id: event.id)
     }
     private func dismiss(_ event: LocalNotificationEvent) {
-        guard hub.current?.id == event.id else { return }
-        hub.dismiss()
+        hub.dismiss(id: event.id)
     }
     private func hover(_ value: Bool, event: LocalNotificationEvent) {
         guard hub.current?.id == event.id else { return }

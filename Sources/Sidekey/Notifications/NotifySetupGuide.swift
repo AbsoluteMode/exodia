@@ -12,8 +12,16 @@ enum NotifySetupGuide {
         disappears after 5 seconds by default. Hover pauses dismissal/shaking,
         slightly enlarges the icon and reveals a small close button. Reduce Motion
         disables shake/scale. Clicking opens its link; close only dismisses.
+        Consecutive Small events share a counted stack (up to three visible
+        icons); hover fans them apart for individual links. New arrivals restart
+        its lifetime; expiry dismisses the whole stack. Large cards separate
+        stacks and retain queue order. The presentation is bounded to 33 events.
         History (including each event's color and logo) and source controls are in
         Notify. Find Notify with Search all tools or add it through Settings > Toolbox.
+        History keeps the newest 500 events. Unseen events leave a red dot on
+        Notify in hover/search until history is opened, including after a restart;
+        Monitor is not highlighted. Clear All clears history and current events
+        after confirmation and keeps connected sources enabled.
         Settings > Notifications lists all sources with Notification type (Large /
         Small) and individual on/off switches.
         No Whytap server or model request is needed to deliver a notification.

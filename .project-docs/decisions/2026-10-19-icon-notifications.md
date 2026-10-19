@@ -14,6 +14,9 @@ sources:
   - type: repository
     reference: Sources/Sidekey/DynamicIsland/IslandNotificationIcon.swift
     confirmed_at: 2026-10-19
+  - type: user-confirmed
+    reference: On 2026-10-19 the user requested a count for consecutive events, overlapping icons that fan apart on hover, Clear All, and a red attention dot only on Notify when returning to the hover drawer.
+    confirmed_at: 2026-10-19
 related: [2026-10-19-script-notifications.md]
 ---
 
@@ -45,6 +48,21 @@ existing integrations. Old history decodes as cards. Icon events may omit text,
 but history and VoiceOver always have a label. Default duration is five seconds,
 with the existing bounded duration override retained. Hover pauses expiry and
 shake; Reduce Motion disables shake and scale. Closing never opens the link.
+
+Consecutive Small arrivals form a single counted burst, newest first, with up to
+three visible layers inside the same wing. Hover fans the icons apart; each keeps
+its own action. The close button removes the newest layer. New arrivals restart
+the burst timer, including while paused on hover. Expiry dismisses the entire
+burst, without deleting history. A queued Large card separates bursts, preserving
+FIFO order between presentations. The existing bound of one current plus 32
+queued events becomes at most 33 presented/pending events, with excess events
+still archived.
+
+The archive retains the newest 500 events. Unseen events leave a red dot only on
+Notify in the hover drawer and search, even after temporary expiry or relaunch.
+Opening history marks it seen; new events while history is visible are marked
+seen as well. Monitor has no attention indicator. Clear All is a labelled action
+with confirmation; it clears history, current burst and queue, preserving sources.
 
 ## Rationale
 

@@ -524,7 +524,14 @@ selected screen and screenshot-protection preference. `presentation: "icon"`
 adds a text-free Small notification over the compact right wing, above hints,
 meetings and music. It shakes for up to 5 seconds, expires after 5 by default,
 grows slightly and reveals a close button on hover. Hover pauses dismissal and
-shake; Reduce Motion disables shake/scale. Card remains the backwards-compatible
+shake; Reduce Motion disables shake/scale. Consecutive Small events form a counted stack, newest first,
+with up to three visible icons that fan apart on hover for individual links.
+New arrivals restart the stack lifetime; expiry dismisses the entire stack.
+Large cards separate bursts and retain queue order; presentation is bounded to
+33 events. Notify retains 500 history events. Unseen events show a red dot only
+on Notify in hover/search until history is opened, including after a restart.
+Clear All confirms clearing history and current events, preserving sources.
+Card remains the backwards-compatible
 default (8 seconds). Settings -> Notifications offers Notification type (Large /
 Small) per source; events can override it. Icon titles may be omitted and use
 the source name for history/VoiceOver. Existing Codex chats support click-through

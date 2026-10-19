@@ -47,6 +47,9 @@ final class LocalNotificationHub: ObservableObject {
     static let shared = LocalNotificationHub(directory: NotifyPaths.root)
     @Published private(set) var history: [LocalNotificationEvent] = []
     @Published private(set) var current: LocalNotificationEvent?
+    /// Newest first. Consecutive small events share one temporary presentation,
+    /// while their independent IDs, links and history entries remain intact.
+    @Published private(set) var iconStack: [LocalNotificationEvent] = []
     @Published private(set) var deadline: Date?
     @Published private(set) var error: String?
     var unreadCount: Int { history.filter { !$0.read }.count }
@@ -56,6 +59,8 @@ final class LocalNotificationHub: ObservableObject {
     private var dismissTask: Task<Void, Never>?
     private var remaining: TimeInterval?
     private var suspended = false
+    private var hovered = false
+    private var timerGeneration = UUID()
 
     init(directory: URL) { archive = NotifyArchive(url: directory.appendingPathComponent("history.json")) }
     func load() async {
@@ -67,7 +72,20 @@ final class LocalNotificationHub: ObservableObject {
         do {
             guard let snapshot = try await archive.insert(event) else { return false }
             updateHistory(snapshot)
-            if !suspended && queue.count < 32 { queue.append(event); if current == nil { advance() } }
+            // Clear All may have completed while this disk operation was in
+            // flight. An older receipt must not replay an already-cleared item.
+            guard history.contains(where: { $0.id == event.id }) else { return true }
+            let presentedCount = current == nil ? 0 : max(1, iconStack.count)
+            if !suspended && presentedCount + queue.count < 33 {
+                if event.resolvedPresentation == .icon, !iconStack.isEmpty, queue.isEmpty {
+                    iconStack.insert(event, at: 0)
+                    current = event
+                    schedule(after: event.resolvedDuration)
+                } else {
+                    queue.append(event)
+                    if current == nil { advance() }
+                }
+            }
             return true
         } catch { self.error = "Couldn’t save notification history."; return false }
     }
@@ -76,20 +94,45 @@ final class LocalNotificationHub: ObservableObject {
         catch { self.error = "Couldn’t update notification history." }
     }
     func clear() async {
-        do { updateHistory(try await archive.clear()); queue.removeAll(); dismiss() }
+        do {
+            updateHistory(try await archive.clear())
+            // Keep genuinely newer arrivals if their archive receipt overtook
+            // this continuation; clearing history must not swallow the next event.
+            let retainedIDs = Set(history.map(\.id))
+            queue.removeAll { !retainedIDs.contains($0.id) }
+            iconStack.removeAll { !retainedIDs.contains($0.id) }
+            if let next = iconStack.first { current = next }
+            else if current.map({ !retainedIDs.contains($0.id) }) ?? true { advance() }
+        }
         catch { self.error = "Couldn’t clear notification history." }
     }
     func setSuspended(_ value: Bool) {
         suspended = value
-        if value { queue.removeAll(); dismiss() }
+        if value { queue.removeAll(); advance() }
     }
-    func dismiss() { advance() }
-    func setHovered(_ hovered: Bool) {
+    func isPresented(_ id: String) -> Bool {
+        iconStack.isEmpty ? current?.id == id : iconStack.contains { $0.id == id }
+    }
+    func dismiss() {
+        guard let id = current?.id else { return }
+        dismiss(id: id)
+    }
+    func dismiss(id: String) {
+        guard isPresented(id) else { return }
+        if !iconStack.isEmpty {
+            iconStack.removeAll { $0.id == id }
+            if let next = iconStack.first { current = next; return }
+        }
+        advance()
+    }
+    func setHovered(_ value: Bool) {
         guard current != nil else { return }
-        if hovered, remaining == nil {
+        guard hovered != value else { return }
+        hovered = value
+        if value {
             remaining = max(0, deadline?.timeIntervalSinceNow ?? 0)
             dismissTask?.cancel()
-        } else if !hovered, let seconds = remaining {
+        } else if let seconds = remaining {
             remaining = nil; schedule(after: seconds)
         }
     }
@@ -98,20 +141,32 @@ final class LocalNotificationHub: ObservableObject {
         historyRevision = snapshot.0; history = snapshot.1; error = nil
     }
     private func advance() {
-        dismissTask?.cancel(); remaining = nil
+        dismissTask?.cancel(); remaining = nil; hovered = false
+        timerGeneration = UUID()
+        iconStack.removeAll()
         if queue.isEmpty { current = nil; deadline = nil; return }
         let event = queue.removeFirst()
-        deadline = Date().addingTimeInterval(event.resolvedDuration)
-        current = event
-        schedule(after: event.resolvedDuration)
+        var next = event
+        if event.resolvedPresentation == .icon {
+            iconStack = [event]
+            while queue.first?.resolvedPresentation == .icon {
+                next = queue.removeFirst()
+                iconStack.insert(next, at: 0)
+            }
+        }
+        current = next
+        schedule(after: next.resolvedDuration)
     }
     private func schedule(after seconds: TimeInterval) {
+        dismissTask?.cancel()
+        let generation = UUID()
+        timerGeneration = generation
         deadline = Date().addingTimeInterval(seconds)
-        let id = current?.id
+        if hovered { remaining = seconds; return }
         dismissTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000)) }
             catch { return }
-            guard let self, self.current?.id == id else { return }
+            guard let self, self.timerGeneration == generation else { return }
             self.advance()
         }
     }

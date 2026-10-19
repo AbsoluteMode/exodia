@@ -13,6 +13,19 @@ music. The small icon gently shakes, grows slightly on hover and reveals a small
 close button beside it. It disappears automatically after 5 seconds by default;
 hover pauses dismissal and shaking. Reduce Motion disables shaking and scaling.
 Dismissal reveals the wing's current contents and retains the event in history.
+Consecutive Small events form one stack, newest on top, with a badge counting
+the active notifications. Up to three overlapping icons are visible; hover fans
+them apart so each can open its own link. Closing removes only the newest event
+and reveals the next layer. A new arrival restarts the stack's lifetime; expiry
+dismisses the whole stack. Large cards separate stacks and keep their queue order.
+The temporary presentation holds at most 33 events; every accepted event is still
+saved to history.
+
+Notify keeps the **500 newest notifications**. New, unseen history shows a red
+dot on the Notify tool in the island's hover drawer and search; Monitor receives
+no attention indicator. The dot survives temporary icon expiry and app restarts,
+and clears when Notify history is opened. **Clear All** clears history and current
+notifications after confirmation, without disconnecting sources.
 
 **Settings → Notifications** lists every connected source, its logo and current
 status, a **Notification type** selector (Large / Small), and an on/off switch. Turning it off stops its script
