@@ -94,7 +94,9 @@ A live Extra check needs the user's consent, because it brightens their screen.
 Use offscreen checks; do not open GUI test windows over the user's work.
 Search for an unpinned Output Lang, verify keyboard and pointer activation,
 clear with Escape, and check that clicking outside releases text focus. Ordinary
-hover must not take focus from another app.
+hover must not take focus from another app. In Vocab, typing and Enter keep the
+drawer open even when the pointer is hidden or leaves it. Escape releases editing
+focus without saving the draft; clicking another window also releases focus.
 
 ## Diagnose hover regressions
 

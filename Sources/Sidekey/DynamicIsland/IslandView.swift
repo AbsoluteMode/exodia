@@ -277,6 +277,9 @@ struct IslandView: View {
     @State private var hoverSearchFocused = false
     /// A brightness-key glance: the strip shows without keyboard focus and closes sooner.
     @State private var hoverPanelGlance = false
+    // NSTextView can hide the cursor during typing and end SwiftUI hover tracking.
+    // Hold Vocab open until its actual responder/window focus ends.
+    @State private var hoverVocabularyFocused = false
     /// Invalidation token for the programmatic-expansion auto-collapse timer:
     /// each change to `programmaticHoverExpansion` AND each ⌥N panel request
     /// bumps it (`armProgrammaticExpansionCollapse`), so a stale deferred
@@ -419,9 +422,11 @@ struct IslandView: View {
     }
 
     /// A brightness key replaces the tools or the strip itself, never another panel under the
-    /// pointer or a search being typed.
-    static func brightnessGlanceMayOpen(over mode: IslandHoverPanelMode, hovering: Bool, searchFocused: Bool) -> Bool {
-        !searchFocused && (!hovering || mode == .controls || mode == .brightness)
+    /// pointer or text being typed.
+    static func brightnessGlanceMayOpen(
+        over mode: IslandHoverPanelMode, hovering: Bool, searchFocused: Bool, vocabularyFocused: Bool = false
+    ) -> Bool {
+        !searchFocused && !vocabularyFocused && (!hovering || mode == .controls || mode == .brightness)
     }
 
     /// A glance opened without the pointer crossing the pill, so reaching its strip from below
@@ -532,7 +537,7 @@ struct IslandView: View {
         // ⌥N press — D4), then gate the result on the policy so neither path
         // forces the drawer open during a meeting suggestion / agent flow.
         !displayPreferences.hideIslandHoverWidgets
-            && (isHovering || hoverSearchFocused || appState.programmaticHoverExpansion)
+            && (isHovering || hoverSearchFocused || hoverVocabularyFocused || appState.programmaticHoverExpansion)
             && IslandHoverPolicy.allowsExpansion(
                 meetingSuggestionActive: appState.meetingSuggestionActive,
                 meetingRecordingActive: appState.meetingRecordingActive,
@@ -1134,6 +1139,16 @@ struct IslandView: View {
                                 )
                                 onHoverChange(isHoverExpanded)
                             },
+                            onVocabularyFocusChange: { focused in
+                                guard hoverPanelMode == .vocabularyEditor else { return }
+                                hoverVocabularyFocused = focused
+                                if !focused {
+                                    hoverPanelMode = .controls
+                                    appState.programmaticHoverExpansion = false
+                                    onKeyboardFocusRequest(hoverSearchFocused)
+                                }
+                                onHoverChange(isHoverExpanded)
+                            },
                             onSearchWillActivate: { tool in
                                 // Preserve keyboard-opened inline tools after search releases key focus.
                                 if HoverSlotRouter.effect(for: tool).requiresExpansion {
@@ -1297,7 +1312,7 @@ struct IslandView: View {
                     hoverPanelGlance = false
                     requestPanelKeyboardFocus(hoverPanelMode, glance: false)
                 }
-            } else if !hoverSearchFocused {
+            } else if !hoverSearchFocused && !hoverVocabularyFocused {
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
                 // The mouse left the island: drop any programmatic (⌥N)
@@ -1310,6 +1325,7 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: hoverPanelMode) { oldValue, newValue in
+            if newValue != .vocabularyEditor { hoverVocabularyFocused = false }
             hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
             let height = { (mode: IslandHoverPanelMode) in
                 Self.hoverPanelHeight(
@@ -1347,6 +1363,7 @@ struct IslandView: View {
         .onChange(of: displayPreferences.hideIslandHoverWidgets) { _, hidden in
             if hidden {
                 hoverSearchFocused = false
+                hoverVocabularyFocused = false
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
                 appState.programmaticHoverExpansion = false
@@ -1362,6 +1379,7 @@ struct IslandView: View {
             if !expanded {
                 hoverSearchFocused = false
                 hoverPanelGlance = false
+                hoverVocabularyFocused = false
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
             }
@@ -1381,9 +1399,10 @@ struct IslandView: View {
         .onChange(of: appState.programmaticHoverPanelRequest) { _, request in
             guard let request, isHoverExpanded else { return }
             if request.isGlance, !Self.brightnessGlanceMayOpen(
-                over: hoverPanelMode, hovering: isHovering, searchFocused: hoverSearchFocused
+                over: hoverPanelMode, hovering: isHovering, searchFocused: hoverSearchFocused,
+                vocabularyFocused: hoverVocabularyFocused
             ) {
-                // The pointer or the search holds the drawer; the key only changed the level.
+                // Text entry or the pointer holds the drawer; the key only changed the level.
                 appState.programmaticHoverExpansion = false
                 return
             }
@@ -1433,6 +1452,7 @@ struct IslandView: View {
         .onChange(of: appState.meetingSuggestionActive) { _, isActive in
             if isActive {
                 hoverSearchFocused = false
+                hoverVocabularyFocused = false
                 pillHovering = false
                 panelHovering = false
                 hoverPanelMode = .controls
@@ -1513,7 +1533,7 @@ struct IslandView: View {
         let generation = programmaticExpansionCollapseGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.programmaticCollapseDelay(glance: hoverPanelGlance)) {
             guard programmaticExpansionCollapseGeneration == generation else { return }
-            if !isHovering && !hoverSearchFocused {
+            if !isHovering && !hoverSearchFocused && !hoverVocabularyFocused {
                 appState.programmaticHoverExpansion = false
             }
         }
@@ -2408,6 +2428,7 @@ private struct IslandDropModeHoverPanel: View {
     @Binding var panelMode: IslandHoverPanelMode
     @ObservedObject var hoverHitBridge: IslandHoverHitBridge
     let onSearchFocusChange: (Bool) -> Void
+    let onVocabularyFocusChange: (Bool) -> Void
     let onSearchWillActivate: (HoverTool) -> Void
     @ObservedObject var hoverStore: HoverLayoutStore
     /// Live hotkey config so the per-tile keycap hints render the CURRENT
@@ -2503,7 +2524,8 @@ private struct IslandDropModeHoverPanel: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if panelMode == .vocabularyEditor {
                 IslandVocabularyEditorPanel(
-                    viewModel: vocabularyViewModel
+                    viewModel: vocabularyViewModel,
+                    onFocusChange: onVocabularyFocusChange
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if panelMode == .fillerEditor {
