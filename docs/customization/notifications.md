@@ -73,8 +73,10 @@ A `logo` names an SF Symbol or an image in `logos/`, without its extension.
 PNG, JPEG and PDF are supported up to 2 MiB; remote logo URLs and paths are not.
 History stores each event's actual presentation. A link is optional and opens
 only on a user click; supported schemes are http(s), tg, slack, linear, github
-and mailto, plus `codex://threads/<thread-id>` for existing local Codex chats.
-Other Codex actions, new-chat links and query parameters are rejected. A
+and mailto, plus `codex://threads/<thread-id>` for existing local Codex chats and
+`claude://code/continue?session=local_<uuid>` for an existing local Code session
+in Claude Desktop. Other agent-app actions, new-chat links and additional query
+parameters are rejected. A
 notification without a link simply dismisses. Clicks never execute a command.
 
 For example, an agent source can emit a small Codex completion notification:
@@ -87,8 +89,14 @@ The bundled `codex` and `claude-code` logos are available. Configure a real
 source of completion/needs-input events separately; choosing a logo does not
 connect either app. The link must identify the exact originating session. For
 Claude Code, use its supported hooks and the actual host's supported session
-link; don't invent a universal Claude Code URL or replace it with an app-only
-activation. Never send a prompt or approve an operation in order to test delivery.
+link. Claude Desktop 2.42304.0 uses its native `local_<uuid>` session ID for the
+continuation route above. This differs from the CLI/hook `session_id`: match it
+against `cliSessionId` in Desktop's local `claude-code-sessions` metadata, then
+use that record's `sessionId`. Do not derive one by prepending `local_` to the
+hook ID. This route was verified in the installed app's URL handler; live
+navigation remains a manual acceptance check. Other terminals/IDEs need their
+own supported destination. Never send a prompt or approve an operation in order
+to test delivery.
 
 ## Lifetime, failures and privacy
 

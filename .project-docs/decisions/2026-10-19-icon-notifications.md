@@ -69,8 +69,12 @@ Expose Large / Small per source and retain per-event overrides for agents.
 Codex session links use its documented `codex://threads/<thread-id>` route,
 restricted to existing sessions without query parameters. Real completion and
 needs-input integrations remain source-specific; branding does not establish
-connectivity. Claude Code's destination depends on the host, so no universal
-session URL or executable-on-click contract is invented.
+connectivity. Claude Desktop 2.42304.0 has an existing local-session continuation
+route `claude://code/continue?session=local_<uuid>` in its installed URL handler.
+Only that route is accepted, with no other parameters. Desktop's native session
+ID differs from the hook/CLI ID and must be resolved through its session metadata.
+Live navigation is a manual acceptance check. Other Claude Code hosts need
+their own supported destination; clicks never execute arbitrary commands.
 
 ## Supersedes / superseded by
 

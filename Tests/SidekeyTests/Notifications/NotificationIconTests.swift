@@ -2,6 +2,23 @@ import XCTest
 @testable import Sidekey
 
 final class NotificationIconContractTests: XCTestCase {
+    func testClaudeDesktopOnlyOpensAnExactExistingCodeSession() throws {
+        let script = NotifyScript(id: "claude", name: "Claude Code", command: ["/bin/echo"], presentation: .icon)
+        let session = "local_00000000-1111-2222-3333-444444444444"
+        let link = "claude://code/continue?session=\(session)"
+        func payload(_ link: String) throws -> NotifyPayload {
+            try JSONDecoder().decode(NotifyPayload.self, from: JSONSerialization.data(withJSONObject: ["link": link]))
+        }
+        XCTAssertEqual(try LocalNotificationEvent.make(payload(link), script: script).link?.absoluteString, link)
+        for invalid in ["claude://code/new", "claude://code/continue?session=last",
+                        "claude://code/continue?session=unknown", "claude://code/continue?session=\(session)&q=run",
+                        "claude://code/continue?session=\(session)&session=\(session)",
+                        "claude://user@code/continue?session=\(session)", link + "#fragment",
+                        "claude://claude.ai/new?q=run"] {
+            XCTAssertThrowsError(try LocalNotificationEvent.make(payload(invalid), script: script), invalid)
+        }
+    }
+
     func testIconSourceNeedsNoTextAndDefaultsToFiveSeconds() throws {
         let script = NotifyScript(id: "codex", name: "Codex", command: ["/bin/echo"],
                                   logo: "codex", presentation: .icon)

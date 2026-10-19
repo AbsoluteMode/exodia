@@ -75,8 +75,10 @@ enum NotifySetupGuide {
         Link is optional: a pill without a link only dismisses. Links open only
         after a user click; supported schemes: https, http, tg, slack, linear,
         github, mailto, plus codex://threads/<thread-id> for an existing local
-        Codex chat (no query/fragment or new-chat links). No executable, file or
-        JavaScript links; a click never runs a command.
+        Codex chat (no query/fragment or new-chat links), and
+        claude://code/continue?session=local_<uuid> for an existing local session
+        in Claude Desktop (only the one session parameter; no fragment). No
+        executable, file or JavaScript links; a click never runs a command.
 
         logo is an SF Symbol or a local image name without extension. Put <name>.png,
         .jpg, .jpeg or .pdf (at most 2 MiB) in logos; no paths or remote image URLs.
@@ -86,9 +88,12 @@ enum NotifySetupGuide {
         {"id":"session-123:turn-456:done","title":"Finished","presentation":"icon","logo":"codex","tint":"#373A42","link":"codex://threads/session-123"}
         A logo alone doesn't connect Codex or Claude Code. Configure actual
         completion/needs-input signals, and use the exact originating session's
-        supported link. Claude Code hooks can supply events; its click target
-        depends on the terminal/IDE/desktop host. Do not invent a universal URL,
-        send prompts or approve operations to test delivery.
+        supported link. Claude Desktop 2.42304.0 supports the continuation route
+        above. Its local_<uuid> ID differs from the hook session_id: match that
+        ID against cliSessionId in Desktop's claude-code-sessions metadata and
+        take the record's sessionId; never just prepend local_. Other terminal
+        or IDE hosts need their own supported link. Do not send prompts or
+        approve operations to test delivery.
 
         ## Verify and maintain
 

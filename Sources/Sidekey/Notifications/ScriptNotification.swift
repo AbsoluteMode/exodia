@@ -108,9 +108,10 @@ struct LocalNotificationEvent: Codable, Identifiable, Equatable, Sendable {
         if let raw = payload.link {
             guard raw.count <= 2048, !raw.contains(where: { $0.isNewline }), let url = URL(string: raw),
                   let scheme = url.scheme?.lowercased(),
-                  ["https", "http", "tg", "slack", "linear", "github", "mailto", "codex"].contains(scheme),
+                  ["https", "http", "tg", "slack", "linear", "github", "mailto", "codex", "claude"].contains(scheme),
                   !["http", "https"].contains(scheme) || url.host != nil,
-                  scheme != "codex" || Self.isCodexSessionLink(url)
+                  scheme != "codex" || Self.isCodexSessionLink(url),
+                  scheme != "claude" || Self.isClaudeCodeSessionLink(url)
             else { throw NotifyError.invalidOutput }
             link = url
         }
@@ -128,6 +129,18 @@ struct LocalNotificationEvent: Codable, Identifiable, Equatable, Sendable {
             && url.query == nil && url.fragment == nil
             && id.range(of: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$", options: .regularExpression) != nil
             && id != "new"
+    }
+
+    private static func isClaudeCodeSessionLink(_ url: URL) -> Bool {
+        // Claude Desktop's existing-session OS entry point. Its native session
+        // ID differs from the CLI/hook ID; integrations must resolve that mapping.
+        guard url.host == "code", url.path == "/continue", url.user == nil,
+              url.password == nil, url.port == nil, url.fragment == nil,
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              items.count == 1, items[0].name == "session", let id = items[0].value
+        else { return false }
+        return id.range(of: "^local_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                        options: .regularExpression) != nil
     }
 }
 

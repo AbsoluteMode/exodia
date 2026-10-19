@@ -521,6 +521,10 @@ default (8 seconds). Settings -> Notifications offers Notification type (Large /
 Small) per source; events can override it. Icon titles may be omitted and use
 the source name for history/VoiceOver. Existing Codex chats support click-through
 via codex://threads/<thread-id>; no query/fragment or new-chat/action links.
+Claude Desktop local Code sessions accept
+claude://code/continue?session=local_<uuid>, restricted to that one parameter.
+Native sessionId is resolved from Desktop metadata by the hook's cliSessionId;
+it is not the hook ID with a prefix. Other Claude routes are rejected.
 Bundled logos include codex and claude-code. Actual agent event sources are
 configured separately. WHY:
 .project-docs/decisions/2026-10-19-icon-notifications.md. Hover pauses dismissal.
