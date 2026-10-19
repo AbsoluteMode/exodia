@@ -105,15 +105,26 @@ final class AgentSettingsStoreTests: XCTestCase {
         let r = routing(#function)
         r.setRoute(FeatureRoute(account: .openRouter, model: "anthropic/claude-sonnet-5.5"), for: .agent)
         let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
-        s.openCodeModel = "x/y"
         XCTAssertEqual(s.options(for: .opencode).model, "anthropic/claude-sonnet-5.5")
         XCTAssertEqual(s.selectedOpenCodeModel, "anthropic/claude-sonnet-5.5")
+    }
+
+    func test_model_label_names_the_route_provider_and_model() {
+        let r = routing(#function)
+        r.setRoute(FeatureRoute(account: .openRouter, model: "openrouter/anthropic/claude-sonnet-5.5"), for: .agent)
+        let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
+        XCTAssertEqual(s.selectedOpenCodeModelLabel, "OpenRouter · anthropic/claude-sonnet-5.5")
+    }
+
+    func test_model_label_is_nil_without_a_usable_agent_model() {
+        let r = routing(#function)
+        let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
+        XCTAssertNil(s.selectedOpenCodeModelLabel)
     }
 
     func test_no_agent_route_means_no_model() {
         let r = routing(#function)
         let s = AgentSettingsStore(defaults: freshDefaults(#function + ".settings"), codexConfig: .init(), routing: r)
-        s.openCodeModel = "x/y"
         XCTAssertNil(s.options(for: .opencode).model)
         XCTAssertNil(s.selectedOpenCodeModel)
     }

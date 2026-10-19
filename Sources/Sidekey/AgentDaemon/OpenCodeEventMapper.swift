@@ -43,7 +43,7 @@ struct OpenCodeEventMapper {
             let error = event["error"] as? [String: Any] ?? [:]
             let name = (error["name"] as? String ?? error["type"] as? String ?? "").lowercased()
             if name.contains("auth") {
-                return [.error(code: "opencode_auth", message: "Check your OpenRouter key in Settings → Agents.", retryable: false)]
+                return [.error(code: "opencode_auth", message: "Check your OpenRouter key in Settings → API & Models.", retryable: false)]
             }
             return [.error(code: "opencode_error", message: "OpenCode couldn’t complete the request. Check the selected model and your OpenRouter balance, then retry.", retryable: true)]
         default:

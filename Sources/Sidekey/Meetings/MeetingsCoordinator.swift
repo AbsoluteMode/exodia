@@ -1223,7 +1223,7 @@ final class MeetingsCoordinator {
 
         // No provider is configured: the recording stays staged (manifest +
         // chunks) and is retried on the next launch once the user has set up
-        // BYOK keys in Settings -> Models.
+        // BYOK keys in Settings -> API & Models.
         os_log(
             "handleFinalizedEvent no processor configured (meetingId: %{public}@) — recording kept for later",
             log: Self.log, type: .error,

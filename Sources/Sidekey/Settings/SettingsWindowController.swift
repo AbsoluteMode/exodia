@@ -182,7 +182,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         case .codex:
             return "Install Codex, run `codex login`, then press Connect again. See developers.openai.com/codex."
         case .opencode:
-            return "Install OpenCode in Settings → Agents, then connect your OpenRouter key."
+            return "Install OpenCode in Settings → Agents, then press Connect."
         }
     }
 
@@ -193,7 +193,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         case .codex:
             return "Open a terminal, run `codex login`, sign in, then press Connect again."
         case .opencode:
-            return "Save your OpenRouter API key in Settings → Agents, then press Connect."
+            return "Add your OpenRouter key in Settings → API & Models, then press Connect."
         }
     }
 

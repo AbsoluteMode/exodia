@@ -264,7 +264,8 @@ struct SettingsWindowView: View {
                 settings: AgentSettingsStore.shared,
                 store: AgentProviderStore.shared,
                 agentEnabled: agentEnabled,
-                onAgentToggle: onAgentToggle
+                onAgentToggle: onAgentToggle,
+                openAPIAndModels: { selection.focus($0) }
             )
         case .toolbox:
             ToolboxSettingsView(

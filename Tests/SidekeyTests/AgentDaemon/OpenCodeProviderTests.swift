@@ -102,6 +102,27 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertFalse(started)
         guard case .error(let code, _, _) = events.first else { return XCTFail("Expected missing model error") }
         XCTAssertEqual(code, "missing_model")
+        if case .error(_, let message, _) = events.first {
+            XCTAssertEqual(message, "Choose a model in API & Models.")
+        }
+    }
+
+    func testMissingKeyAndInvalidModelPointToAPIAndModels() async {
+        let noKey = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { nil },
+            runStreaming: { _, _, _, _, _, _, _ in CodexProcessHandle.noop })
+        var events: [AgentSSEEvent] = []
+        for await event in noKey.run(prompt: "hello", resumeSessionID: nil, options: AgentRunOptions()) { events.append(event) }
+        guard case .error(let code, let message, _) = events.first else { return XCTFail("Expected missing key error") }
+        XCTAssertEqual(code, "missing_key")
+        XCTAssertEqual(message, "Add your OpenRouter key in Settings → API & Models.")
+
+        let badModel = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { "test-key" },
+            runStreaming: { _, _, _, _, _, _, _ in CodexProcessHandle.noop })
+        events = []
+        for await event in badModel.run(prompt: "hello", resumeSessionID: nil, options: AgentRunOptions(model: "has space")) { events.append(event) }
+        guard case .error(let badCode, let badMessage, _) = events.first else { return XCTFail("Expected missing model error") }
+        XCTAssertEqual(badCode, "missing_model")
+        XCTAssertEqual(badMessage, "Choose a model in API & Models.")
     }
 
     func testMapperDoesNotFinishOnToolStepOrRepeatParts() {
@@ -121,6 +142,7 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertTrue(mapper.failed)
         guard case .error(let code, let message, _) = events.first else { return XCTFail("Expected error") }
         XCTAssertEqual(code, "opencode_auth")
+        XCTAssertEqual(message, "Check your OpenRouter key in Settings → API & Models.")
         XCTAssertFalse(message.contains("secret-key"))
         XCTAssertFalse(message.contains("private prompt"))
     }

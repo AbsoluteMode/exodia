@@ -86,14 +86,14 @@ final class OpenCodeProvider: CLIProvider {
             sessionLock.withLock { currentRunID = runID; storedSessionID = nil }
             guard let binary = locate() else { return fail("not_installed", "Install OpenCode in Settings → Agents.") }
             guard let key = try? readKey(), !key.isEmpty else {
-                return fail("missing_key", "Save your OpenRouter key in Settings → Agents.")
+                return fail("missing_key", "Add your OpenRouter key in Settings → API & Models.")
             }
             guard let rawModel = options.model else {
-                return fail("missing_model", "Choose an OpenRouter model in Settings → Agents.")
+                return fail("missing_model", "Choose a model in API & Models.")
             }
             let model = OpenCodeEnvironment.normalizeModel(rawModel)
             guard !model.isEmpty, !model.contains(where: \.isWhitespace) else {
-                return fail("missing_model", "Choose a valid OpenRouter model in Settings → Agents.")
+                return fail("missing_model", "Choose a model in API & Models.")
             }
             let workingDir: URL
             let env: [String: String]

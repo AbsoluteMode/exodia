@@ -17,11 +17,7 @@ final class AgentSettingsStore: ObservableObject {
     @Published var codexModel: String?        { didSet { write(Keys.codexModel, codexModel) } }
     @Published var codexEffort: String?       { didSet { write(Keys.codexEffort, codexEffort) } }
     @Published var codexServiceTier: String?  { didSet { write(Keys.codexServiceTier, codexServiceTier) } }
-    @Published var openCodeModel: String? { didSet { write(Keys.openCodeModel, openCodeModel) } }
     @Published var openCodeAllowActions: Bool { didSet { defaults.set(openCodeAllowActions, forKey: Keys.openCodeAllowActions) } }
-    @Published private(set) var openRouterCatalog: [OpenRouterModelOption] = []
-    @Published private(set) var openRouterCatalogLoading = false
-    @Published private(set) var openRouterCatalogError: String?
 
     private enum Keys {
         static let claudeModel = "agent.claude.model"
@@ -29,7 +25,6 @@ final class AgentSettingsStore: ObservableObject {
         static let codexModel = "agent.codex.model"
         static let codexEffort = "agent.codex.effort"
         static let codexServiceTier = "agent.codex.serviceTier"
-        static let openCodeModel = "agent.opencode.model"
         static let openCodeAllowActions = "agent.opencode.allowActions"
     }
 
@@ -63,7 +58,6 @@ final class AgentSettingsStore: ObservableObject {
         self.codexModel = defaults.string(forKey: Keys.codexModel)
         self.codexEffort = defaults.string(forKey: Keys.codexEffort)
         self.codexServiceTier = defaults.string(forKey: Keys.codexServiceTier)
-        self.openCodeModel = defaults.string(forKey: Keys.openCodeModel)
     }
 
     /// Resolve the overrides for one provider into the run-time options struct.
@@ -90,13 +84,20 @@ final class AgentSettingsStore: ObservableObject {
     }
 
     /// The model OpenCode runs: the `Agent` feature's route when it is on
-    /// OpenRouter, else none. The old `openCodeModel` preference is no longer
-    /// read here.
+    /// OpenRouter, else none. The old `agent.opencode.model` preference is only
+    /// read by the routing migration.
     var selectedOpenCodeModel: String? {
         guard let route = routing.route(for: .agent), route.account == .openRouter else { return nil }
         let value = OpenCodeEnvironment.normalizeModel(route.model)
         guard !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
         return value
+    }
+
+    /// `"<provider> · <model id>"` for the agent route, or `nil` without a
+    /// usable model. New agent providers add a case to `selectedOpenCodeModel`.
+    var selectedOpenCodeModelLabel: String? {
+        guard let route = routing.route(for: .agent), let model = selectedOpenCodeModel else { return nil }
+        return "\(route.account.kind.displayName) · \(model)"
     }
 
     /// The selected model's limits from the OpenRouter catalog snapshot; `nil`
@@ -111,25 +112,6 @@ final class AgentSettingsStore: ObservableObject {
                                  reasoning: entry.supportsReasoning ?? false,
                                  contextLimit: context,
                                  outputLimit: entry.maxOutputTokens ?? 16_384)
-    }
-
-    func refreshOpenRouterCatalog(
-        load: () async throws -> [OpenRouterModelOption] = {
-            try await OpenRouterLLMClient().listModels(apiKey: OpenRouterLLMKeyStore().read())
-        }
-    ) async {
-        guard !openRouterCatalogLoading else { return }
-        openRouterCatalogLoading = true
-        defer { openRouterCatalogLoading = false }
-        do {
-            let models = try await load()
-            try Task.checkCancellation()
-            openRouterCatalog = models.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
-            openRouterCatalogError = nil
-        } catch is CancellationError {
-        } catch {
-            openRouterCatalogError = "Couldn’t refresh OpenRouter models. Check your key and network, then retry."
-        }
     }
 
     /// The user's explicit pick when it is a level this CLI accepts, else Low.

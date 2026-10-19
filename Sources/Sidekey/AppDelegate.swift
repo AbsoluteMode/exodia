@@ -372,7 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Restore standard text-editing shortcuts (⌘V/⌘C/⌘X/⌘A) for the app's
         // text fields. Accessory apps have no menu bar, so without this the
-        // Settings → Models API-key field (and any other field) can't paste.
+        // Settings → API & Models API-key field (and any other field) can't paste.
         AppMainMenu.installIfNeeded()
 
         // Avoid a cold PDF decode in the Dynamic Island's first drop-recording
