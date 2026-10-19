@@ -396,7 +396,9 @@ Now Playing:
   source is the fallback. applicationWillTerminate calls
   NowPlayingCoordinator.shutdown(), which terminates that child synchronously
   (the async stop() would never run before exit()); the stream keeps running
-  through sleep. WHY:
+  through sleep. For SIGKILL/crash the stream runs under a perl guard
+  (parentWatchGuardScript) that ends it when the app's end of the guard's
+  stdin closes; vendored run.pl stays untouched. WHY:
   .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
 
 Island idle-hide:

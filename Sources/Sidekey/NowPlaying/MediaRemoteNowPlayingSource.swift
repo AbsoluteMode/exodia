@@ -11,7 +11,8 @@ import os.log
 /// **Shape:** push-based cache, identical external contract to
 /// `AppleScriptNowPlayingSource`, so `NowPlayingController` / `Coordinator` /
 /// `Config` are unchanged. A long-lived `perl run.pl <framework> stream
-/// --no-diff --micros` process emits one self-contained JSON line per
+/// --no-diff --micros` process (wrapped in `parentWatchGuardScript`, so it
+/// dies with the app even on SIGKILL/crash) emits one self-contained JSON line per
 /// update; a `readabilityHandler` frames lines off the main thread, decodes
 /// each into a `NowPlayingSnapshot`, and stores it under a lock.
 /// `currentSnapshot()` returns the cached value synchronously (the
@@ -69,6 +70,37 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
     private static let restartEventThreshold = 100
     /// Delay before relaunching after the stream exits/crashes.
     private static let relaunchDelay: TimeInterval = 0.2
+
+    /// Parent-death guard around the vendored stream (`run.pl` stays
+    /// untouched). `/usr/bin/perl -e <this> -- run.pl <framework> stream …`
+    /// forks the real stream with stdin on /dev/null and blocks reading its
+    /// own stdin, the write end of which only this app holds. The kernel
+    /// closes that end whenever the app dies, including SIGKILL and crashes,
+    /// so EOF makes the guard terminate the stream and exit. SIGTERM (our
+    /// recycle/shutdown) is forwarded to the stream; when the stream exits
+    /// on its own the guard exits too, so the relaunch path still sees it.
+    /// WHY: .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+    static let parentWatchGuardScript = """
+        use POSIX ();
+        my $pid;
+        $SIG{CHLD} = sub { POSIX::_exit(0) if $pid && waitpid($pid, POSIX::WNOHANG()) == $pid };
+        $SIG{TERM} = $SIG{INT} = $SIG{HUP} = sub { kill('TERM', $pid) if $pid; POSIX::_exit(0) };
+        $pid = fork();
+        POSIX::_exit(1) unless defined $pid;
+        if ($pid == 0) {
+          open(STDIN, '<', '/dev/null');
+          exec('/usr/bin/perl', @ARGV) or POSIX::_exit(127);
+        }
+        my $buf;
+        while (1) {
+          my $n = sysread(STDIN, $buf, 4096);
+          last if defined $n && $n == 0;
+          next if defined $n;
+          last unless $!{EINTR};
+        }
+        kill('TERM', $pid);
+        POSIX::_exit(0);
+        """
 
     // MARK: - State
 
@@ -133,6 +165,14 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
         queue.sync { process?.processIdentifier }
     }
 
+    /// Close the guard's stdin exactly as the kernel does when the app
+    /// dies. Test seam only.
+    func closeStreamStdinForTesting() {
+        queue.sync {
+            (process?.standardInput as? Pipe)?.fileHandleForWriting.closeFile()
+        }
+    }
+
     // MARK: - Lifecycle
 
     /// Start the streaming process. Idempotent. Called by the factory right
@@ -193,7 +233,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        proc.arguments = [
+        proc.arguments = ["-e", Self.parentWatchGuardScript, "--"] + [
             runScript.path,
             framework.path,
             "stream", "--no-diff", "--micros",

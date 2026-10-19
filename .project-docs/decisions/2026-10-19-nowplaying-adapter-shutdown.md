@@ -2,7 +2,7 @@
 id: nowplaying-adapter-shutdown-2026-10-19
 type: decision
 title: Terminate the MediaRemote stream child synchronously on quit
-summary: applicationWillTerminate now stops Now Playing through a synchronous shutdown, so the run.pl stream child no longer outlives an ordinary quit or Sparkle relaunch; kill/crash coverage is a separate pending choice.
+summary: applicationWillTerminate stops Now Playing through a synchronous shutdown, and a perl stdin-EOF guard around the untouched vendored run.pl ends the stream when the app is killed or crashes.
 status: confirmed
 tags: [nowplaying, lifecycle, processes]
 canonical_for: [nowplaying-adapter-lifecycle]
@@ -10,6 +10,9 @@ verified_at: 2026-10-19
 sources:
   - type: repository
     reference: Sources/Sidekey/NowPlaying/MediaRemoteNowPlayingSource.swift
+    confirmed_at: 2026-10-19
+  - type: user-confirmed
+    reference: 2026-10-19 chat; "делай сторож через закрытие stdin, run.pl не трогай"
     confirmed_at: 2026-10-19
   - type: repository
     reference: Sources/Sidekey/AppDelegate.swift
@@ -70,13 +73,30 @@ termination handler relaunches it if macOS ever kills it.
   though the app ignores SIGPIPE, so an orphan would only die on a write to
   the dead pipe, which the long-lived orphans show does not reliably happen.
 
-## Pending: kill and crash
+## Kill and crash: stdin-EOF guard
 
-SIGKILL, a crash or `kill <pid>` bypass `applicationWillTerminate`. Covering
-them needs the child to notice its parent died; that choice is waiting for
-Maxim and is not part of this change.
+SIGKILL, a crash or an external `kill` bypass `applicationWillTerminate`.
+The stream now launches as `/usr/bin/perl -e <parentWatchGuardScript> --
+run.pl <framework> stream …`. The guard forks the real stream (stdin on
+/dev/null, stdout inherited) and blocks reading its own stdin, whose write
+end only the app holds. The kernel closes that end whenever the app dies, so
+EOF makes the guard SIGTERM the stream and exit. SIGTERM to the guard
+(recycle, shutdown) is forwarded; a stream that exits on its own ends the
+guard, so the existing relaunch still fires. Maxim chose this on 2026-10-19
+with the condition that vendored `run.pl` stays untouched.
+
+Checked: unit tests close the app's stdin end (parent death), kill the
+stream (guard exits, relaunch follows) and shut down (both PIDs gone); a
+compiled Swift parent was SIGKILLed by hand and both guard and stream
+exited within a second.
 
 ## Rejected
+
+- Patching vendored `run.pl`: Maxim asked to keep it untouched, and the
+  native stream loop gives perl no point to poll `getppid()`.
+- Polling `getppid()` from a wrapper: periodic wakeups and up to one
+  interval of delay, while stdin EOF is immediate and free.
+- A separate process group: does not help with SIGKILL of the app alone.
 
 - Calling the existing async `stop()` on quit: the block never runs before
   `exit()`.
