@@ -304,7 +304,7 @@ Anthropic (только для строки Agent) и свои OpenAI-compatible
 к провайдеру. *Models* — по строке на каждую AI-фичу и одна выпадашка
 «Provider · model-id»: Drop Fast и Drop Smart (real-time), Drop Smart cleanup
 (LLM), Meetings (recorded), Meeting notes (LLM), Agent (LLM with tools), Agent
-voice и Voice search (real-time). Модель каждой фичи читается при каждом вызове;
+voice и Voice search (real-time), Translation (LLM) и Subtitles audio (real-time). Модель каждой фичи читается при каждом вызове;
 Whytap сам не меняет ни модель, ни провайдера. Статус показывается в строке
 только при проблеме (Not verified, Deprecated alias, Removed by provider, Not
 supported yet, Key problem, Not set). Каталоги моделей подтягиваются у
@@ -467,3 +467,14 @@ Auto-detect когда пользователь на голосовой встр
 После approval спецификации — план разработки M1 ([writing-plans](docs/plans/) с stages и validation gates).
 
 Самый правильный первый stage M1: **Voice Actions on Selection** + **Edit last insert** + **Voice Clipboard**. Это даст вау быстрее чем любая другая фича.
+
+## Переводчик и субтитры
+
+Translate и Subtitles доступны через поиск инструментов и каталог Toolbox;
+у каждого настраивается именованная горячая клавиша. Открывают общее плавающее
+окно: текстовый перевод с автонаправлением RU↔EN или явным языком и перевод
+системного звука в субтитры с оригиналом. Translation — общая выбранная LLM;
+Subtitles audio — отдельная выбранная STT. Оба новых маршрута изначально Not set.
+Очереди ограничены; отставание останавливает захват с ошибкой. Закрытие окна,
+Cancel и сон завершают захват и запросы; Stop ждёт финальные фразы. Записи и
+автоматической истории нет. Подробности и ограничения: [translation.md](translation.md).

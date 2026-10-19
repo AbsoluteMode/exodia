@@ -184,6 +184,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
             AssignItem(feature: .meetings, account: .soniox, model: "stt-async-v5"),
             AssignItem(feature: .agentVoice, account: .soniox, model: "stt-rt-v5"),
             AssignItem(feature: .voiceSearch, account: .soniox, model: "stt-rt-v5"),
+            AssignItem(feature: .subtitlesAudio, account: .soniox, model: "stt-rt-v5"),
         ])
     }
 
@@ -418,7 +419,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
         XCTAssertNil(env.makeViewModel().unsetBanner)
 
         env.addKey(.soniox)
-        XCTAssertEqual(env.makeViewModel().unsetBanner, "8 features have no model")
+        XCTAssertEqual(env.makeViewModel().unsetBanner, "10 features have no model")
 
         for feature in AIFeature.allCases where feature != .dropFast {
             env.routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: feature)

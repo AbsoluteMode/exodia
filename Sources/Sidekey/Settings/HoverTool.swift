@@ -18,6 +18,8 @@ enum HoverTool: String, CaseIterable, Hashable {
     case meetingRecord
     case monitor
     case brightness
+    case translate
+    case subtitles
     case quit
     case settings
 }
@@ -91,6 +93,12 @@ enum HoverToolRegistry {
         case .brightness:
             return HoverToolInfo(title: "Display", sfSymbol: "sun.max", kind: .inlinePanel,
                                  description: "Screen brightness, Extra boost and battery time")
+        case .translate:
+            return HoverToolInfo(title: "Translate", sfSymbol: "character.bubble", kind: .action,
+                                 description: "Translate text with your chosen LLM")
+        case .subtitles:
+            return HoverToolInfo(title: "Subtitles", sfSymbol: "captions.bubble", kind: .action,
+                                 description: "Translate system audio into live subtitles")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
                                  kind: .navigate(.quitRow),

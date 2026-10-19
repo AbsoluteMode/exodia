@@ -78,6 +78,8 @@ Whytap сам узнаёт у провайдера актуальный спис
 | `agent` | Agent | LLM with tools | `OpenCodeProvider` (`--model openrouter/<id>`) |
 | `agentVoice` | Agent voice | real-time | `makeStreamingSession(resilient: false)` для голоса агента |
 | `voiceSearch` | Voice search | real-time | `makeStreamingSession(resilient: false)` для поиска Google |
+| `translation` | Translation | LLM | `TranslationService`: текст и финальные фразы субтитров |
+| `subtitlesAudio` | Subtitles audio | real-time | `LiveSubtitleModel`: только системный звук |
 
 Запасные пути отдельных строк не получают:
 

@@ -172,3 +172,7 @@ refused with an error instead of being truncated.
 If an archive is damaged, incomplete, or needs a newer version of Whytap, it
 is refused. Choose another saved version or update Whytap. Losing every copy
 of the data or every recovery method cannot be repaired by encryption.
+
+Translation language choices and the Original toggle are included under
+API & Models · languages. Translation/Subtitles audio provider routes use the
+existing routing document. Submitted text and subtitle lines are never included.

@@ -59,6 +59,8 @@ enum IslandHoverToolSearch {
         case .notifs: return "notify notification notifications alerts уведомления оповещения"
         case .monitor: return "dashboard server status монитор серверы"
         case .brightness: return "screen brightness sun hdr xdr vivid extra boost battery яркость экран солнце батарея"
+        case .translate: return "translator translation text llm перевод переводчик текст"
+        case .subtitles: return "translator live captions system audio video перевод субтитры системный звук"
         case .quit: return "exit выход"
         case .settings: return "preferences настройки"
         }
