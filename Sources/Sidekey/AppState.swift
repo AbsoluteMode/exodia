@@ -57,6 +57,9 @@ final class AppState: ObservableObject {
     @Published var rightOptionHeld: Bool = false
     @Published var toolsExpanded: Bool = false
     @Published var meetingSuggestionActive: Bool = false
+    /// A Case Approve prompt is attached under the island (`CaseApprovalController`).
+    /// Holds idle-hide off and keeps the hover drawer closed while it is up.
+    @Published var caseApprovalActive: Bool = false
     @Published var meetingSuggestionDeadline: Date?
 
     @Published private(set) var meetingRecordingActive: Bool = false

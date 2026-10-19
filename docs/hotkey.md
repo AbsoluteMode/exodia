@@ -281,6 +281,30 @@ Whytap take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
   Accessibility change. As with every monitor, key contents are never logged
   or stored (invariant #2).
 
+## Case Approve keys
+
+A Case Approve prompt (an AI app asks to run a command with keys of a
+project) is a card attached under the island at the island's width. Its
+answers are fixed, not rebindable, and matched by **physical key**
+(`kVK_ANSI_Y` / `kVK_ANSI_N` / `kVK_ANSI_A` / `kVK_Escape`), so they work on
+any layout (Russian «н», «т», «ф» are the same keys):
+
+- **Y** — allow once; **N** or **Escape** — deny; **A** — allow this app
+  this project for N minutes (the button reads «На N мин», N default 15).
+- `CaseApprovalKeyTap`, an active head-insert session tap for key down/up
+  (needs Accessibility), exists only while a prompt is queued. Only those
+  four keys are swallowed (with their repeats and key-up); every other key,
+  and the four with ⌘, ⌃ or ⌥, go to the app underneath.
+- For 300 ms after each prompt appears nothing is swallowed or answered
+  (keys and clicks), so typing in another app cannot answer by accident.
+  Autorepeat of a key held before that passes through.
+- 60 s without an answer denies. Several requests queue; one is shown at a
+  time with a «+N» badge for the rest, and each gets its own arming delay.
+- Without Accessibility the tap is not created and the prompt is answered
+  by clicking. Key contents are never logged or stored (invariant #2).
+- The buttons show the keys with `HotkeyHintView` (`.keycaps`), and the Help
+  window has one row per answer (Case — allow / deny / allow for minutes).
+
 ## Canonical reference
 
 `HelpWindowController.swift` shows every existing hotkey through

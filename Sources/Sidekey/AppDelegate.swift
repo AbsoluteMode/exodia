@@ -196,6 +196,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nowPlayingCoordinator: NowPlayingCoordinator?
     /// Case broker socket for the bundled `whytap` helper; running app only.
     private var caseBrokerServer: CaseBrokerServer?
+    /// Case Approve prompts in the island (Y / N / A keys) and their panel.
+    private var caseApprovalController: CaseApprovalController?
+    private var caseApprovalPanel: CaseApprovalPanel?
+    private var caseApprovalCancellable: AnyCancellable?
     private var nowPlayingController: NowPlayingController?
 
     /// Volume ducking: smoothly lowers the system output volume while the user
@@ -502,6 +506,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Terminate the MediaRemote `run.pl stream` child synchronously;
         // otherwise it outlives the app as an orphan (PPID 1).
         nowPlayingCoordinator?.shutdown()
+        // Waiting Approve prompts are denied (and the key tap removed) before the socket closes.
+        caseApprovalController?.cancelAll()
         caseBrokerServer?.stop()
         caseBrokerServer = nil
         IslandPanel.shared.hide()
@@ -3593,17 +3599,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// subsystems. When the flag is off, `start()` is a logged no-op.
     /// Starts the Case broker socket. Only a packaged app serves it (tests
     /// and `swift run` never do); the helper is trusted by the cdhash of
-    /// `Contents/Helpers/whytap` in this same bundle. Approve prompts are
-    /// denied until the island approval prompt is installed.
+    /// `Contents/Helpers/whytap` in this same bundle. Approve requests show the
+    /// island prompt (`CaseApprovalController`).
     private func installCaseBroker() {
         guard caseBrokerServer == nil, Bundle.main.bundleURL.pathExtension == "app",
               let bundleID = Bundle.main.bundleIdentifier
         else { return }
         let inspector = CaseSystemProcessInspector()
+        let approvals = CaseApprovalController()
+        caseApprovalController = approvals
+        caseApprovalPanel = CaseApprovalPanel(controller: approvals)
+        caseApprovalCancellable = approvals.$current
+            .map { $0 != nil }
+            .removeDuplicates()
+            .sink { active in AppState.shared.caseApprovalActive = active }
         let broker = CaseBroker(
             service: CaseVaultService.shared,
             resolver: CaseSystemCallerResolver(inspector: inspector),
-            approvals: CaseDenyingApprovalPresenter(),
+            approvals: approvals,
             authenticator: LocalCaseAuthenticator())
         let server = CaseBrokerServer(
             socketURL: CaseBrokerPaths.socketURL(bundleID: bundleID),
@@ -3842,7 +3855,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard IslandHoverPolicy.allowsExpansion(
             meetingSuggestionActive: appState.meetingSuggestionActive,
             meetingRecordingActive: appState.meetingRecordingActive,
-            agentFlowActive: IslandPanel.shared.agentFlow.isActive
+            agentFlowActive: IslandPanel.shared.agentFlow.isActive,
+            caseApprovalActive: appState.caseApprovalActive
         ) else { return }
         appState.programmaticHoverExpansion = true
         hoverPanelRequestToken += 1
@@ -3876,7 +3890,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nowPlayingActive: appState.nowPlaying != nil,
             rightModifierHeld: appState.rightCommandHeld || appState.rightOptionHeld,
             programmaticHoverExpansion: appState.programmaticHoverExpansion,
-            notificationActive: LocalNotificationHub.shared.current != nil
+            notificationActive: LocalNotificationHub.shared.current != nil,
+            caseApprovalActive: appState.caseApprovalActive
         )
     }
 

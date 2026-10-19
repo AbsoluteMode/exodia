@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import WhytapCaseKit
 
-// MARK: Approval prompt seam (implemented by Task 10's island prompt)
+// MARK: Approval prompt seam (implemented by `CaseApprovalController`)
 
 struct CaseApprovalRequest: Equatable {
     let appName: String
@@ -20,13 +20,6 @@ enum CaseApprovalOutcome: Equatable {
 @MainActor
 protocol CaseApprovalPresenting: AnyObject {
     func requestApproval(_ r: CaseApprovalRequest) async -> CaseApprovalOutcome
-}
-
-/// Stand-in until the island prompt exists: every Approve request is denied,
-/// so nothing runs without a person's decision.
-@MainActor
-final class CaseDenyingApprovalPresenter: CaseApprovalPresenting {
-    func requestApproval(_ r: CaseApprovalRequest) async -> CaseApprovalOutcome { .deny }
 }
 
 // MARK: Caller resolution seam
