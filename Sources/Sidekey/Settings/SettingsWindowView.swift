@@ -250,11 +250,6 @@ struct SettingsWindowView: View {
                 googleEnabled: otherGoogleEnabled,
                 onMeetingsToggle: otherOnMeetingsToggle,
                 onGoogleToggle: otherOnGoogleToggle,
-                onMeetingRecordToggle: {
-                    Task { @MainActor in
-                        await AppState.shared.meetingsCoordinator?.toggleManualRecording()
-                    }
-                },
                 privacyPreferences: privacyPreferences,
                 screenshotProtectionChanged: screenshotProtectionChanged
             )

@@ -243,8 +243,7 @@ Manual Meeting Notes recording has a configurable global hotkey (default
 bypassing the detector nudge (empty pre-record lead-in, detector cooldown
 engaged); press again stops it through the regular finalize path. The same
 toggle backs the Hover `Record` tile (Toolbox catalog, not in the default
-slots) and the "Record a meeting now" button in Settings → Other — all
-three converge on `MeetingsCoordinator.toggleManualRecording()`.
+slots); both converge on `MeetingsCoordinator.toggleManualRecording()`.
 
 - Binding: `HotkeyConfiguration.meetingRecordShortcut`, row in
   Settings → Hotkeys, standard physical-key conflict model, Carbon tap
