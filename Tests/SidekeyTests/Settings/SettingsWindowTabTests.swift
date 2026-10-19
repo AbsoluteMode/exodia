@@ -3,8 +3,10 @@ import XCTest
 
 @MainActor
 final class SettingsWindowTabTests: XCTestCase {
-    func test_models_is_the_first_settings_tab() {
-        XCTAssertEqual(SettingsWindowTab.allCases.first, .models)
+    func test_api_and_models_is_the_first_and_default_tab() {
+        XCTAssertEqual(SettingsWindowTab.allCases.first, .apiAndModels)
+        XCTAssertEqual(SettingsWindowTab.defaultAvailable, .apiAndModels)
+        XCTAssertEqual(SettingsWindowSelection().selectedTab, .apiAndModels)
     }
 
     func test_hotkeys_is_the_second_settings_tab() {
@@ -27,11 +29,6 @@ final class SettingsWindowTabTests: XCTestCase {
         XCTAssertEqual(SettingsWindowTab.allCases.dropFirst(5).first, .toolbox)
     }
 
-    func test_default_tab_is_models() {
-        XCTAssertEqual(SettingsWindowTab.defaultAvailable, .models)
-        XCTAssertEqual(SettingsWindowSelection().selectedTab, .models)
-    }
-
     func test_every_tab_is_available() {
         XCTAssertEqual(SettingsWindowTab.availableCases, SettingsWindowTab.allCases)
         for tab in SettingsWindowTab.allCases {
@@ -46,10 +43,16 @@ final class SettingsWindowTabTests: XCTestCase {
         }
     }
 
-    func test_models_tab_metadata() {
-        XCTAssertEqual(SettingsWindowTab.models.title, "Models")
-        XCTAssertNil(SettingsWindowTab.models.pdfResourceName)
-        XCTAssertEqual(SettingsWindowTab.models.fallbackSystemImageName, "cpu")
+    func test_api_and_models_tab_metadata() {
+        XCTAssertEqual(SettingsWindowTab.apiAndModels.title, "API & Models")
+        XCTAssertEqual(SettingsWindowTab.apiAndModels.id, "apiAndModels")
+        XCTAssertNil(SettingsWindowTab.apiAndModels.pdfResourceName)
+        XCTAssertEqual(SettingsWindowTab.apiAndModels.fallbackSystemImageName, "cpu")
+    }
+
+    func test_no_models_tab_left() {
+        let titles = SettingsWindowTab.allCases.map { $0.title }
+        XCTAssertFalse(titles.contains("Models"), "the Models tab is replaced by API & Models")
     }
 
     func test_hotkeys_tab_metadata_uses_hover_icon() {

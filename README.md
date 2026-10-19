@@ -45,18 +45,18 @@ Source and custom builds remain available; see [Development](#development).
 |---|---|---|
 | Dictation (Drop) | Your key (BYOK): Soniox, Deepgram, ElevenLabs, or a self-hosted OpenAI-compatible endpoint | the provider you chose, with your key |
 | Smart cleanup of dictated text | OpenRouter with your key, or a custom OpenAI-compatible endpoint (Ollama, LM Studio, vLLM) | the endpoint you chose |
-| Agent (Right Command) | OpenCode with your OpenRouter key and selected model | tools and memory on your Mac; inference at your selected provider |
+| Agent (Right Command) | OpenCode with your OpenRouter or Anthropic key and selected model | tools and memory on your Mac; inference at your selected provider |
 | Meeting Notes | Your speech provider (Soniox labels speakers), then your LLM for the summary | the providers you chose |
 
 Exodia no longer ships on-device speech or text models. If you used **Local**
 before, Exodia does not switch you to a provider on its own: dictation opens
-**Settings, Models** until you choose a speech provider, and recorded meetings
+**Settings, API & Models** until you choose a speech model, and recorded meetings
 wait for both speech and an LLM. Fast uses no cleanup LLM. Smart requires the
 LLM you chose: if it fails, Exodia keeps the transcript in memory and shows
 Retry instead of silently inserting unprocessed text.
 
 Keys you enter are stored in the macOS Keychain and sent only to the
-provider you selected. Transcripts, notes and history are SQLite files under
+provider you selected for that feature. Transcripts, notes and history are SQLite files under
 `~/Library/Application Support/`.
 
 ## Set up in Settings
@@ -64,10 +64,16 @@ provider you selected. Transcripts, notes and history are SQLite files under
 Exodia opens directly to the island. There is no onboarding wizard or account.
 Open **Settings** from the island's hover controls:
 
-1. In **Models**, select a speech provider and enter your API key. Save to
-   check the connection and store the key in macOS Keychain.
-2. Optionally configure OpenRouter or your own endpoint for text cleanup and
-   meeting summaries.
+1. In **API & Models**, click **Add key** under **API keys**, pick a provider
+   (Soniox, Deepgram, ElevenLabs, OpenRouter, Anthropic for the agent, or your
+   own OpenAI-compatible server) and paste its key. Exodia checks it with a
+   free request and stores it in macOS Keychain. A dot on each provider chip
+   shows whether the key works.
+2. Under **Models**, give each feature a model: Drop Fast, Drop Smart, Drop
+   Smart cleanup, Meetings, Meeting notes, Agent, Agent voice and Voice search.
+   After you add a key, **Set up** offers to assign it to the features it can
+   serve; nothing is assigned until you choose. A model that is not in Exodia's
+   built-in list is checked with a tiny synthetic request when you pick it.
 3. In **Permissions**, grant Accessibility and Microphone for dictation.
    Meeting recording also needs System Audio Recording. Features may request
    a missing permission when you use them.
@@ -78,10 +84,11 @@ top of the screen is the main UI; there is no menu bar item.
 
 ## Connect your agent
 
-In **Settings, Agents**, install OpenCode or use an existing installation. Enter
-an OpenRouter key, choose a model from the catalog or enter its exact ID, then
-click **Save & connect**. OpenRouter charges your account for model requests.
-The connection check itself does not submit a paid model request.
+In **Settings, Agents**, install OpenCode or use an existing installation. Add
+an OpenRouter or Anthropic key and choose the **Agent** model in **API &
+Models** (from the catalog, or by its exact ID), then click **Save & connect**
+in Agents. The provider charges your account for model requests. The
+connection check itself does not submit a paid model request.
 
 The agent can edit files and run tests by default. **Allow agent actions** can
 be turned off in Settings. Its model configuration, memory and conversation

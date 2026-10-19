@@ -6,31 +6,28 @@ import Foundation
 /// `/chat/completions` endpoint the user owns (OpenRouter or a custom base
 /// URL). Nothing here talks to an Exodia server.
 struct PostProcessor {
-    let prefs: SelfKeyPreferences
-    let llmKeyStore: any OpenRouterLLMKeyStoring
-    let customLLMKeyStore: any OpenRouterLLMKeyStoring
+    let llmRoute: DirectLLMRouteResolver
     let openRouterClient: any OpenRouterLLMClienting
+    /// Where a model refusal is recorded; `nil` is `ModelCheckStore.shared`.
+    private let checks: ModelCheckStore?
 
+    /// Cleanup runs on the Drop Smart cleanup route, read at every call.
     @MainActor
     init() {
         self.init(
-            prefs: .shared,
-            llmKeyStore: OpenRouterLLMKeyStore(),
-            customLLMKeyStore: CustomLLMKeyStore(),
+            llmRoute: .live(.dropSmartCleanup),
             openRouterClient: OpenRouterLLMClient(profile: .dictation)
         )
     }
 
     init(
-        prefs: SelfKeyPreferences,
-        llmKeyStore: any OpenRouterLLMKeyStoring = OpenRouterLLMKeyStore(),
-        customLLMKeyStore: any OpenRouterLLMKeyStoring = CustomLLMKeyStore(),
-        openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(profile: .dictation)
+        llmRoute: DirectLLMRouteResolver,
+        openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(profile: .dictation),
+        checks: ModelCheckStore? = nil
     ) {
-        self.prefs = prefs
-        self.llmKeyStore = llmKeyStore
-        self.customLLMKeyStore = customLLMKeyStore
+        self.llmRoute = llmRoute
         self.openRouterClient = openRouterClient
+        self.checks = checks
     }
 
     /// `screenshot` parameter is preserved for caller compatibility but is
@@ -45,12 +42,7 @@ struct PostProcessor {
     /// Retry on failure; Fast bypasses this processor entirely.
     func process(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil) async throws -> String {
         _ = screenshot
-        let resolver = DirectLLMRouteResolver(
-            prefs: prefs,
-            llmKeyStore: llmKeyStore,
-            customLLMKeyStore: customLLMKeyStore
-        )
-        guard let route = try await resolver.routeIfEnabled() else {
+        guard let route = try await llmRoute.routeIfEnabled() else {
             throw OpenRouterLLMError.notConfigured
         }
         let messages = Self.openRouterMessages(
@@ -60,7 +52,21 @@ struct PostProcessor {
             outputLanguage: outputLanguage,
             transcriptionMode: transcriptionMode
         )
-        return try await openRouterClient.complete(endpoint: route.endpoint, model: route.model, messages: messages)
+        do {
+            let cleaned = try await openRouterClient.complete(endpoint: route.endpoint, model: route.model, messages: messages)
+            // The model works: an earlier refusal badge for it goes.
+            await MainActor.run {
+                (checks ?? .shared).clearRefusal(feature: .dropSmartCleanup, model: route.model)
+            }
+            return cleaned
+        } catch let error as OpenRouterLLMError where error.isModelRefusal {
+            // The row says so until this model works or is picked again; Drop still inserts the
+            // raw text (the caller's concern, as for any cleanup failure).
+            await MainActor.run {
+                (checks ?? .shared).recordRefusal(feature: .dropSmartCleanup, model: route.model, at: Date())
+            }
+            throw error
+        }
     }
 
     static func openRouterMessages(

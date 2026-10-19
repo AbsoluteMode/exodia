@@ -108,7 +108,7 @@ final class MeetingsCoordinator {
     /// Shown on a meeting row when a recording finished but no provider is
     /// chosen to process it. The staged audio is kept and re-dispatched later.
     static let processorNotConfiguredMessage =
-        "Add your own provider keys in Settings > Models to process this meeting."
+        "Choose models for Meetings and Meeting notes in Settings > API & Models to process this meeting."
 
     // MARK: - Stage 4 recorder factory + active recorder
 
@@ -1223,7 +1223,7 @@ final class MeetingsCoordinator {
 
         // No provider is configured: the recording stays staged (manifest +
         // chunks) and is retried on the next launch once the user has set up
-        // BYOK keys in Settings -> Models.
+        // BYOK keys in Settings -> API & Models.
         os_log(
             "handleFinalizedEvent no processor configured (meetingId: %{public}@) — recording kept for later",
             log: Self.log, type: .error,

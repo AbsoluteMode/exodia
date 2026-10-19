@@ -87,7 +87,7 @@ struct SelfKeyPreferences {
     static let defaultOpenRouterModel = "openai/gpt-4o-mini"
     static let defaultCustomLLMModel = "local-model"
 
-    /// `nil` = not configured: Drop opens Settings -> Models instead of
+    /// `nil` = not configured: Drop opens Settings -> API & Models instead of
     /// recording. See `storedLevel(forKey:)` for the retired Local route.
     var transcriptionLevel: TranscriptionIsolationLevel? {
         get { storedLevel(forKey: Key.level) }

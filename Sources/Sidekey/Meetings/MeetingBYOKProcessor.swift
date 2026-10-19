@@ -45,49 +45,51 @@ enum MeetingBYOKProcessingError: Error, CustomStringConvertible, Equatable {
 final class MeetingBYOKProcessor: MeetingDirectProcessing {
     private static let log = OSLog(subsystem: "com.sidekey.meetings", category: "byok-processor")
 
-    private let prefs: SelfKeyPreferences
-    private let keyStore: BYOKKeyStore
+    private let routing: AIRoutingStore
+    private let keys: ProviderKeyStore
     private let vocab: VocabularyCache
-    private let llmRouteResolver: DirectLLMRouteResolver
+    private let notesRoute: DirectLLMRouteResolver
     private let openRouterClient: any OpenRouterLLMClienting
+    private let checks: ModelCheckStore
     private let fileManager: FileManager
     private let sonioxSession: URLSession
+    private let makeAdapter: (ResolvedRoute) throws -> BYOKTranscriptionAdapter
 
     convenience init() {
         self.init(
-            prefs: .shared,
-            keyStore: BYOKKeyStore(),
+            routing: .shared,
+            keys: ProviderKeyStore(),
             vocab: .shared,
-            llmRouteResolver: .live(),
-            openRouterClient: OpenRouterLLMClient(),
-            fileManager: .default
+            notesRoute: .live(.meetingNotes)
         )
     }
 
     init(
-        prefs: SelfKeyPreferences,
-        keyStore: BYOKKeyStore = BYOKKeyStore(),
+        routing: AIRoutingStore,
+        keys: ProviderKeyStore = ProviderKeyStore(),
         vocab: VocabularyCache,
-        llmRouteResolver: DirectLLMRouteResolver,
+        notesRoute: DirectLLMRouteResolver,
         openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(),
+        checks: ModelCheckStore? = nil,
         fileManager: FileManager = .default,
-        sonioxSession: URLSession = .shared
+        sonioxSession: URLSession = .shared,
+        makeAdapter: @escaping (ResolvedRoute) throws -> BYOKTranscriptionAdapter = RealtimeAdapterFactory.make
     ) {
-        self.prefs = prefs
-        self.keyStore = keyStore
+        self.routing = routing
+        self.keys = keys
         self.vocab = vocab
-        self.llmRouteResolver = llmRouteResolver
+        self.notesRoute = notesRoute
         self.openRouterClient = openRouterClient
+        self.checks = checks ?? .shared
         self.fileManager = fileManager
         self.sonioxSession = sonioxSession
+        self.makeAdapter = makeAdapter
     }
 
     func shouldProcessDirectly() -> Bool {
-        // Both stages run on providers the user chose. Without a chosen level
-        // (never chosen, or the retired on-device route) the meeting stays
-        // staged until they choose one in Settings -> Models.
-        let cloudBYOKLLM = prefs.llmLevel == .yourKey || prefs.llmLevel == .custom
-        return prefs.transcriptionLevel == .yourKey && cloudBYOKLLM
+        // Recording and notes each run on the model chosen for them. Until both
+        // are chosen in Settings -> API & Models the meeting stays staged.
+        routing.route(for: .meetings) != nil && routing.route(for: .meetingNotes) != nil
     }
 
     func process(
@@ -97,19 +99,20 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         meetingsStore: MeetingsStore?
     ) async throws -> UUID {
         guard let meetingsStore else { throw MeetingBYOKProcessingError.missingStore }
-        guard let route = try await llmRouteResolver.routeIfEnabled() else {
+        guard let route = try await notesRoute.routeIfEnabled() else {
             throw MeetingBYOKProcessingError.directLLMDisabled
         }
 
+        let transcriptionRoute = try resolveMeetingsRoute()
         let transcript: String
         let segments: [TranscriptSegment]
-        if prefs.selectedProvider == .soniox {
-            guard let key = try keyStore.read(for: .soniox), !key.isEmpty else {
+        if transcriptionRoute.account == .soniox {
+            guard let key = transcriptionRoute.apiKey, !key.isEmpty else {
                 throw MeetingBYOKProcessingError.missingTranscriptionKey
             }
-            let result = try await SonioxMeetingTranscriber(apiKey: key, session: sonioxSession).transcribe(
-                chunkURLs: event.chunkURLs, language: language, terms: vocab.terms
-            )
+            let result = try await SonioxMeetingTranscriber(
+                apiKey: key, model: transcriptionRoute.model, session: sonioxSession
+            ).transcribe(chunkURLs: event.chunkURLs, language: language, terms: vocab.terms)
             // WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
             if result.segments.isEmpty {
                 return try await storeNoSpeechMeeting(
@@ -120,7 +123,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
             transcript = TranscriptMarkdownFormatter.format(segments)
         } else {
             transcript = try await MeetingBYOKTranscriber(
-                adapter: makeTranscriptionAdapter(), terms: vocab.terms
+                adapter: try makeAdapterMapped(transcriptionRoute), terms: vocab.terms
             ).transcribe(chunkURLs: event.chunkURLs, language: language)
             segments = [TranscriptSegment(speaker: nil, start: 0,
                 end: max(0, event.totalDurationSeconds), text: transcript)]
@@ -204,25 +207,37 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         return event.meetingId
     }
 
-    private func makeTranscriptionAdapter() throws -> BYOKTranscriptionAdapter {
-        let provider = prefs.selectedProvider
-        guard let key = (try? keyStore.read(for: provider)), !key.isEmpty else {
-            throw MeetingBYOKProcessingError.missingTranscriptionKey
+    /// The Meetings route and its own provider's key. A missing key never
+    /// borrows another provider's.
+    private func resolveMeetingsRoute() throws -> ResolvedRoute {
+        do {
+            return try FeatureRouteResolver(routing: routing, keys: keys).resolve(.meetings)
+        } catch {
+            throw Self.processingError(for: error)
         }
-        let model = prefs.transcriptionModel(for: provider)
-        switch provider {
-        case .openAI, .selfHosted:
-            let baseURL = provider == .selfHosted ? prefs.selfHostedBaseURL : nil
-            guard let url = BYOKRealtimeURL.openAIRealtime(baseURL: baseURL) else {
-                throw MeetingBYOKProcessingError.missingSelfHostedBaseURL
-            }
-            return OpenAIRealtimeAdapter(apiKey: key, url: url, model: model)
-        case .deepgram:
-            return DeepgramBYOKAdapter(apiKey: key, model: model)
-        case .soniox:
-            return SonioxBYOKAdapter(apiKey: key, model: model)
-        case .elevenLabs:
-            return ElevenLabsBYOKAdapter(apiKey: key, model: model)
+    }
+
+    /// Deepgram's language policy is checked when the adapter opens, so it
+    /// still surfaces unchanged from `open`.
+    private func makeAdapterMapped(_ route: ResolvedRoute) throws -> BYOKTranscriptionAdapter {
+        do {
+            return try makeAdapter(route)
+        } catch {
+            throw Self.processingError(for: error)
+        }
+    }
+
+    private static func processingError(for error: Error) -> Error {
+        guard let routeError = error as? FeatureRouteError else { return error }
+        switch routeError {
+        case .notSet:
+            return MeetingBYOKProcessingError.directLLMDisabled
+        case .missingKey:
+            return MeetingBYOKProcessingError.missingTranscriptionKey
+        case .missingBaseURL, .invalidBaseURL:
+            return MeetingBYOKProcessingError.missingSelfHostedBaseURL
+        case .invalidLanguageConfiguration(_, let configuration):
+            return configuration
         }
     }
 
@@ -246,14 +261,23 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         }
         context.append("<transcript>\n\(transcript)\n</transcript>")
 
-        return try await openRouterClient.complete(
-            endpoint: route.endpoint,
-            model: route.model,
-            messages: [
-                OpenRouterChatMessage(role: "system", content: Self.noteSystemPrompt),
-                OpenRouterChatMessage(role: "user", content: context.joined(separator: "\n\n")),
-            ]
-        )
+        do {
+            let markdown = try await openRouterClient.complete(
+                endpoint: route.endpoint,
+                model: route.model,
+                messages: [
+                    OpenRouterChatMessage(role: "system", content: Self.noteSystemPrompt),
+                    OpenRouterChatMessage(role: "user", content: context.joined(separator: "\n\n")),
+                ]
+            )
+            // The model works: an earlier refusal badge for it goes.
+            checks.clearRefusal(feature: .meetingNotes, model: route.model)
+            return markdown
+        } catch let error as OpenRouterLLMError where error.isModelRefusal {
+            // The Meeting notes row shows the refusal until this model works or is picked again.
+            checks.recordRefusal(feature: .meetingNotes, model: route.model, at: Date())
+            throw error
+        }
     }
 
     private func cleanupStagingDirectory(for event: MeetingRecorder.FinalizedEvent) {

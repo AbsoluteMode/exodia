@@ -410,6 +410,11 @@ final class AgentControllerTests: XCTestCase {
             return false
         }
         XCTAssertTrue(hasNotConnected, "expected a not-connected message; blocks: \(store.blocks)")
+        let notConnectedMessage = store.blocks.compactMap { block -> String? in
+            if case .stateError(let b) = block, b.code == "not_connected" { return b.message }
+            return nil
+        }.first
+        XCTAssertEqual(notConnectedMessage, "Connect OpenCode in Settings → Agents. Its model is set in API & Models.")
         XCTAssertEqual(controller.state, .idle)
         // The "connect first" prompt surfaces as a transient wing notice — the
         // turn never dispatched, so no answer panel opens.

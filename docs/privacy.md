@@ -17,10 +17,17 @@ is a verifiable claim rather than a slogan.
   evict the oldest excess entries and their images. It does not import the
   existing pasteboard payload on launch.
   History → Clipboard displays the latest 20 retained copies with scrolling.
-- Active API keys you enter ("Your key") are stored in the macOS Keychain under the
-  app's own service name (`com.rootwise.sidekey`). Encrypted local history and
-  optional recovery archives can also contain those keys, protected by the
-  independent backup key. No plaintext key export file is created.
+- API keys you enter in Settings → API & Models ("Your key") are stored in the
+  macOS Keychain under the app's own service name (`com.rootwise.sidekey`).
+  Key values are never shown again after saving and are never written to
+  UserDefaults, plaintext files or logs. UserDefaults holds only which provider
+  and model each feature uses, plus the names and addresses of your own servers.
+  Encrypted local history and optional recovery archives can also contain the
+  Soniox, Deepgram, ElevenLabs, OpenRouter and legacy custom-endpoint keys,
+  protected by the independent backup key. No plaintext key export file is created.
+- Cached model catalogs (a file in the app's Caches folder) and the results of
+  key and model checks (provider, model, status, time; never a key, audio or
+  text) stay on the Mac.
 - Logs go to the unified system log (`os_log`, subsystem
   `com.rootwise.sidekey`). They never contain transcripts, prompts, replies
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
@@ -55,8 +62,11 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 | Route | Where data goes | When |
 |---|---|---|
 | Meeting detector (FluidAudio Silero VAD) | nowhere; a one-time download from Hugging Face fetches the model | the first time the detector checks for speech |
-| Your key: speech (Soniox, Deepgram, ElevenLabs, or a self-hosted endpoint speaking the OpenAI Realtime protocol) and text (OpenRouter or a custom OpenAI-compatible endpoint) | the provider or endpoint you selected, with your key (a custom text endpoint may need none) | while the selected route is in use |
-| Agent (OpenCode) | OpenRouter and the selected model provider, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
+| Your key: speech (Soniox, Deepgram, ElevenLabs, or a self-hosted endpoint speaking the OpenAI Realtime protocol) and text (OpenRouter or a custom OpenAI-compatible endpoint) | the provider or endpoint chosen for that feature in API & Models, with your key (a custom endpoint may need none). Each feature's data goes only to its own provider, including its recovery path; nothing moves to another provider | while the feature's route is in use |
+| Agent (OpenCode) | the provider chosen for the Agent row (OpenRouter or Anthropic) and its selected model, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
+| Key checks | the provider of the key: a free request (model list, key or account endpoint) that sends only the key. A restricted ElevenLabs key may need a minimal paid speech request, made only when you save the key or press Check now | when you save a key, press Check now, or open API & Models and the last result is a day old |
+| Model catalogs | the public model lists of OpenRouter and Deepgram (no key), and the model lists of Soniox and Anthropic (your key); a custom server's `/models` list. Only the request itself is sent, no audio or text | when you open API & Models and the cache is a day old, save a key, or press Refresh models |
+| Model probes | the provider of the feature you are choosing a model for: 1 second of digital silence for speech models, the prompt "Reply with OK." (plus one fictitious tool for agent models) for text models. Never your audio, transcripts, prompts or notes. Costs a fraction of a cent | only when you pick a model that is not in the built-in list, or press Check now |
 | Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Exodia | after you explicitly configure and enable Backup |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
@@ -65,7 +75,7 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 
 OpenAI itself is not offered for speech. An older saved OpenAI choice reads as
 Soniox and sends audio there only with a Soniox key you stored; without one,
-dictation opens Settings → Models instead of recording.
+dictation opens Settings → API & Models instead of recording.
 
 Each provider has its own data-use terms; check them before pasting a key.
 Data-use policies depend on the selected provider and its account settings.

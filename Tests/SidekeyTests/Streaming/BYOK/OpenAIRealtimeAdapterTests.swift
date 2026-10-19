@@ -62,4 +62,26 @@ final class OpenAIRealtimeAdapterTests: XCTestCase {
         XCTAssertEqual(got.last, .done("hello"))
         await session.close()
     }
+
+    // The upgrade request: a user's own server may run without a key, and a
+    // bare "Bearer " header is something a gateway can reject.
+    func test_handshake_has_no_authorization_without_key() {
+        let url = URL(string: "wss://gpu.local:8000/v1/realtime?intent=transcription")!
+
+        let request = OpenAIRealtimeAdapter.handshakeRequest(url: url, apiKey: "")
+
+        XCTAssertEqual(request.url, url)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func test_handshake_sends_bearer_with_key() {
+        let url = URL(string: "wss://gpu.local:8000/v1/realtime?intent=transcription")!
+
+        let request = OpenAIRealtimeAdapter.handshakeRequest(url: url, apiKey: "sk-test")
+
+        XCTAssertEqual(request.url, url)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sk-test")
+        // GA Realtime API: the beta header would select the retired beta shape.
+        XCTAssertNil(request.value(forHTTPHeaderField: "OpenAI-Beta"))
+    }
 }

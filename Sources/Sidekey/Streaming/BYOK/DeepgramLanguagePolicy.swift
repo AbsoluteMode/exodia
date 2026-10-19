@@ -7,9 +7,9 @@ enum DeepgramLanguageConfigurationError: Error, Equatable, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .automaticLanguageUnavailable:
-            return "Auto is unavailable for this saved Deepgram model. Choose an input language, or choose nova-3 and Save."
+            return "Auto language isn't available for this Deepgram model. Pick nova-3 or choose an input language."
         case .unsupportedLanguage:
-            return "This input language isn't supported by the selected Deepgram model. Choose a supported input language below."
+            return "This Deepgram model doesn't support the current input language. Pick another model or input language."
         }
     }
 }
