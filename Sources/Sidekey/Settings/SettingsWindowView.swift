@@ -84,15 +84,16 @@ struct SettingsWindowView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Scrollable tab list
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(SettingsWindowTab.availableCases) { tab in
-                    sidebarTabButton(tab)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(SettingsWindowTab.availableCases) { tab in
+                        sidebarTabButton(tab)
+                    }
                 }
+                .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
+                .padding(.vertical, SettingsSidebarStyle.verticalPadding)
             }
-            .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
-            .padding(.vertical, SettingsSidebarStyle.verticalPadding)
-
-            Spacer(minLength: 0)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             // Pinned support + Quit rows stay visible even when the settings
             // tab list grows beyond the available window height.
@@ -108,6 +109,7 @@ struct SettingsWindowView: View {
             }
                 .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
                 .padding(.vertical, 10)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(width: SettingsSidebarStyle.width, alignment: .topLeading)
     }
@@ -269,6 +271,8 @@ struct SettingsWindowView: View {
             )
         case .notifications:
             SettingsNotificationsView()
+        case .backup:
+            SettingsBackupView()
         }
     }
 }

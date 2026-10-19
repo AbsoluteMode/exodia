@@ -17,8 +17,10 @@ is a verifiable claim rather than a slogan.
   evict the oldest excess entries and their images. It does not import the
   existing pasteboard payload on launch.
   History → Clipboard displays the latest 20 retained copies with scrolling.
-- API keys you enter ("Your key") are stored in the macOS Keychain under the
-  app's own service name (`com.rootwise.sidekey`).
+- Active API keys you enter ("Your key") are stored in the macOS Keychain under the
+  app's own service name (`com.rootwise.sidekey`). Encrypted local history and
+  optional recovery archives can also contain those keys, protected by the
+  independent backup key. No plaintext key export file is created.
 - Logs go to the unified system log (`os_log`, subsystem
   `com.rootwise.sidekey`). They never contain transcripts, prompts, replies
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
@@ -55,6 +57,7 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 | Meeting detector (FluidAudio Silero VAD) | nowhere; a one-time download from Hugging Face fetches the model | the first time the detector checks for speech |
 | Your key: speech (Soniox, Deepgram, ElevenLabs, or a self-hosted endpoint speaking the OpenAI Realtime protocol) and text (OpenRouter or a custom OpenAI-compatible endpoint) | the provider or endpoint you selected, with your key (a custom text endpoint may need none) | while the selected route is in use |
 | Agent (OpenCode) | OpenRouter and the selected model provider, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
+| Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Exodia | after you explicitly configure and enable Backup |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
@@ -83,3 +86,19 @@ The hold-Space detector reads keyboard events only to recognise the trigger
 key and Escape. The Brightness keys tap receives only system-defined events,
 such as the brightness, volume and media keys, and acts only on the
 brightness keys. Key contents are never logged or stored.
+
+## Encrypted recovery copies
+
+Backup is optional. Exodia encrypts the portable workspace before copying or
+uploading it, including provider keys and independently recoverable Case data.
+The recovery code is saved once outside Exodia; a local Keychain copy allows
+routine backups without repeatedly requesting it. GitHub authentication is not
+the decryption key. The code is excluded from Exodia's clipboard history when
+copied through its recovery-code button, marked private for other clipboard
+applications, and cleared after two minutes if the clipboard has not changed.
+Other applications decide how they handle private clipboard markers.
+
+Restore verifies a whole archive before applying selected groups on the next
+normal launch. Imported jobs and executable configurations do not run on their
+own. External clipboard file originals, SSH keys and credentials managed by
+other applications are not silently copied. [Coverage and recovery](backup.md).

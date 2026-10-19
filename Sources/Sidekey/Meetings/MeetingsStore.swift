@@ -140,7 +140,7 @@ enum MeetingsStoreError: Error, CustomStringConvertible {
 /// BLOB column) so users can inspect / diff notes with regular CLI
 /// tools, and so the BlockNote viewer (Stage 8b) can `loadFileURL` the
 /// markdown directly without a round-trip through the actor.
-actor MeetingsStore: MeetingsStoring {
+actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
     private static let log = OSLog(subsystem: "com.sidekey.meetings", category: "store")
 
     /// Database file name inside `rootDirectory`. Spec-fixed.
@@ -849,6 +849,94 @@ actor MeetingsStore: MeetingsStoring {
                     "Could not remove \(url.lastPathComponent): \(error)"
                 )
             }
+        }
+    }
+
+    // MARK: - Complete-artifact backup export
+
+    /// Coherent, immutable export of the catalog and its sidecars for the
+    /// encrypted artifact backup.
+    ///
+    /// WHY this lives in the store: the database rows and the `<uuid>.md` /
+    /// `<uuid>-transcript.json` files are two halves of one meeting, and
+    /// SQLite's snapshot mechanism knows nothing about the files. Running
+    /// inside the actor is the barrier — no insert, note update, title change
+    /// or delete can interleave — so the `VACUUM INTO` copy and the sidecars
+    /// copied right after describe the same state. Copying the live
+    /// `meetings.sqlite` byte-for-byte would instead capture whatever
+    /// transaction happened to be open.
+    ///
+    /// The exported copy is verified with `PRAGMA integrity_check` before it
+    /// is handed back, so a damaged snapshot fails the backup instead of
+    /// becoming an unusable "successful" one.
+    /// WHY: .project-docs/decisions/2026-10-19-config-backup.md
+    func exportArtifactGeneration(into directory: URL) async throws -> [ArtifactExportedFile] {
+        guard let db, isOpen else {
+            throw MeetingsStoreError.filesystem("meetings store is closed")
+        }
+        let manager = FileManager.default
+        let databaseDirectory = directory.appendingPathComponent("db", isDirectory: true)
+        let notesDirectory = directory.appendingPathComponent("notes", isDirectory: true)
+        for folder in [databaseDirectory, notesDirectory] {
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true,
+                                        attributes: [.posixPermissions: 0o700])
+        }
+        let snapshot = databaseDirectory.appendingPathComponent(Self.databaseFileName)
+        if manager.fileExists(atPath: snapshot.path) {
+            try manager.removeItem(at: snapshot)
+        }
+        let quoted = snapshot.path.replacingOccurrences(of: "'", with: "''")
+        try Self.executeRaw(db: db, sql: "VACUUM INTO '\(quoted)'")
+        try Self.verifyIntegrity(of: snapshot)
+        var files = [ArtifactExportedFile(relativePath: "db/" + Self.databaseFileName, url: snapshot)]
+
+        // The rows come from the same actor-isolated state as the snapshot, so
+        // the sidecars copied below belong to exactly those rows. A meeting
+        // that never produced a note (a failed one, for instance) has no file;
+        // a READY meeting without its note is a damaged profile, and a backup
+        // that quietly dropped it would restore a row with no content.
+        for row in try list() {
+            let id = row.id
+            if row.progressStatus == .ready,
+               !manager.fileExists(atPath: markdownURL(for: id).path) {
+                throw ArtifactBackupError.requiredFileMissing("\(id.uuidString).md")
+            }
+            for source in [markdownURL(for: id), transcriptURL(for: id)] {
+                guard manager.fileExists(atPath: source.path) else { continue }
+                let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                    throw MeetingsStoreError.filesystem("unexpected sidecar at \(source.lastPathComponent)")
+                }
+                let destination = notesDirectory.appendingPathComponent(source.lastPathComponent)
+                if manager.fileExists(atPath: destination.path) {
+                    try manager.removeItem(at: destination)
+                }
+                try manager.copyItem(at: source, to: destination)
+                try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+                files.append(ArtifactExportedFile(relativePath: "notes/" + source.lastPathComponent,
+                                                  url: destination))
+            }
+        }
+        return files
+    }
+
+    nonisolated private static func verifyIntegrity(of database: URL) throws {
+        var handle: OpaquePointer?
+        let open = sqlite3_open_v2(database.path, &handle, SQLITE_OPEN_READONLY, nil)
+        guard open == SQLITE_OK, let handle else {
+            if let handle { sqlite3_close(handle) }
+            throw MeetingsStoreError.sqliteOpenFailed(code: open, message: "export snapshot")
+        }
+        defer { sqlite3_close(handle) }
+        var stmt: OpaquePointer?
+        let prepared = sqlite3_prepare_v2(handle, "PRAGMA integrity_check", -1, &stmt, nil)
+        guard prepared == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: prepared, message: "integrity_check")
+        }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0),
+              String(cString: raw) == "ok" else {
+            throw MeetingsStoreError.invalidRow("meetings export failed its integrity check")
         }
     }
 
