@@ -27,7 +27,7 @@ related: [2026-10-18-silent-meetings.md, 2026-09-07-soniox-meeting-files.md]
 
 ## Context
 
-An inventory of `~/Library/Application Support/Sidekey/meetings-staging` on
+An inventory of `Application Support/Sidekey/meetings-staging` on
 2026-10-18 found 52 directories and 6.2 GB. 49 of them belonged to meetings
 that were already stored, left by the retired cloud pipeline and its
 migration. The app removes a staged directory only at the end of a successful
@@ -39,7 +39,7 @@ Two code paths created or kept such leftovers:
   `manifest.json` and left the audio and the Soniox checkpoint behind.
 - A failed meeting had no way out. The list has no Delete, and
   `MeetingsStore.delete(id:)`, which nothing called, removed only the database
-  row and left `<id>.md` and `<id>-transcript.json` on disk. A silent
+  row and left the Markdown note and `<id>-transcript.json` on disk. A silent
   509-second recording stayed in the list as a red row from 8 September.
 
 ## Decision
@@ -57,7 +57,7 @@ Two code paths created or kept such leftovers:
    meeting in the list with its note and is shown to the user.
 3. A note save that lands after Delete (the editor saves after a 500 ms
    debounce) writes nothing. `MeetingsStore.update` updates the row first and
-   writes `<id>.md` only when a row matched; `saveNoteEdit` drops the save
+   writes the Markdown note only when a row matched; `saveNoteEdit` drops the save
    without an alert.
 
 ## Rationale
@@ -87,7 +87,7 @@ Two code paths created or kept such leftovers:
   note; at worst its transcript is already gone, which the user asked for,
   and a second Delete finishes the job.
 - A save that lands after Delete belongs to a note the user has just deleted,
-  so Delete wins. Writing the file before the row update recreated `<id>.md`
+  so Delete wins. Writing the file before the row update recreated the Markdown note
   without a row: the deleted text was back on disk with no way to remove it
   from the app. The save gets no alert because the user has nothing to do.
 - Known limit: if `COMMIT` itself fails after both files are gone (a disk I/O

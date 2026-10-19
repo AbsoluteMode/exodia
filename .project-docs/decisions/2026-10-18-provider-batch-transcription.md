@@ -32,7 +32,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Streaming/BYOK/ProviderBatchTranscriberTests.swift
     confirmed_at: 2026-10-18
-related: [2026-10-18-remove-local-models.md, 2026-10-18-no-default-realtime-host.md, 2026-09-10-byok-and-local-builds.md, 2026-10-18-silent-meetings.md]
+related: [../project.md, 2026-10-18-remove-local-models.md, 2026-10-18-no-default-realtime-host.md, 2026-09-10-byok-and-local-builds.md, 2026-10-18-silent-meetings.md]
 ---
 
 # Batch transcription with the user's own provider
@@ -71,7 +71,7 @@ has already chosen one of them and stored its key.
   | Soniox | file API: `POST /v1/files`, `POST /v1/transcriptions` with `stt-async-v5`, `GET /v1/transcriptions/{id}` every 500 ms, `GET .../transcript` |
   | Deepgram | `POST /v1/listen` (pre-recorded), the WAV as the body, `Token` key, the selected model |
   | ElevenLabs | `POST /v1/speech-to-text`, multipart, `scribe_v2`, `xi-api-key` |
-  | Self-hosted | `https://<realtime host>[:port]/v1/audio/transcriptions`, multipart with the user's model, Bearer key |
+  | Self-hosted | `https://<realtime host>[:port]/v1/audio/transcriptions`, multipart with the user's model, `Bearer` authorization |
 
   OpenAI cannot be selected for transcription, so it has no route.
 - Self-hosted keeps the host and port of the realtime base URL and uses

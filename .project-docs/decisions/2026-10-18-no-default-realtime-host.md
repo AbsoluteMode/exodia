@@ -17,7 +17,7 @@ sources:
   - type: trace
     reference: Full local swift test on main bbfc076 plus this change, 2,839 tests, 5 skipped, 0 failures in 48.160 seconds.
     confirmed_at: 2026-10-18
-related: [../project.md, 2026-10-18-remove-local-models.md]
+related: [2026-10-18-provider-batch-transcription.md, ../project.md, 2026-10-18-remove-local-models.md]
 ---
 
 # No default host for the self-hosted realtime route
@@ -35,7 +35,7 @@ URL but not one that `URLComponents` cannot parse, such as
 `http://my host:8000`. Such a value reached the fallback:
 
 - Settings → Models: Test connection, and the connection check that Save runs
-  first, sent the self-hosted key as a Bearer token to api.openai.com. The key
+  first, sent the self-hosted key using the `Bearer` scheme to api.openai.com. The key
   left for a third party even when OpenAI rejected it.
 - If OpenAI accepted the key, the probe passed and the route was saved. Drop
   and meeting processing then streamed audio to api.openai.com, a provider the

@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: docs/build-and-release.md
     confirmed_at: 2026-09-10
-related: [../project.md, 2026-10-17-source-first-distribution.md, 2026-10-18-remove-local-models.md]
+related: [2026-10-18-provider-batch-transcription.md, ../project.md, 2026-10-17-source-first-distribution.md, 2026-10-18-remove-local-models.md]
 ---
 
 # BYOK presentation and local builds

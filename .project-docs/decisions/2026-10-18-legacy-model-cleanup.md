@@ -25,7 +25,7 @@ related: [../project.md, 2026-10-18-remove-local-models.md]
 ## Context
 
 PR #22 removed the on-device route. Its three model stores had downloaded
-weights into `~/Library/Application Support/Sidekey`:
+weights into `Application Support/Sidekey`:
 
 - `LocalTranscriptionModels`: Parakeet TDT 0.6B v3 (Core ML);
 - `LocalLLMModels`: MLX Qwen3 4B Instruct at 4 bits, about 2.3 GB on its own;
@@ -34,7 +34,7 @@ weights into `~/Library/Application Support/Sidekey`:
 Nothing reads these folders after #22, so a user who downloaded the models
 keeps a few GB of dead data. Every flavor (prod, beta, dev) resolved the same
 path. FluidAudio keeps its own cache in
-`~/Library/Application Support/FluidAudio/Models`; the meeting detector's
+`Application Support/FluidAudio/Models`; the meeting detector's
 Silero VAD lives there and is still needed.
 
 ## Decision

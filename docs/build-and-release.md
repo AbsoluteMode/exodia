@@ -11,6 +11,12 @@ Exodia package is listed, use a local source build until one is published.
 
 ## Build and run a customization
 
+For the maintainer's parallel feature sessions, follow the
+[shared application procedure](../.project-docs/processes/shared-app-development.md).
+Feature worktrees use non-launching Swift builds/tests. The commands below
+describe a standalone source customization; dev packaging can stop other beta
+processes, so it is not the way to update the shared installed production app.
+
 Use macOS 14.2 or newer and Xcode 26 or newer with its command-line tools:
 
 ```bash
