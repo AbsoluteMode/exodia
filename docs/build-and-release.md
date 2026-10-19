@@ -38,7 +38,9 @@ bundles in LaunchServices. If the usual development bundle is running, the
 script assembles a separate candidate. New builds coordinate one running copy
 across production, beta and worktrees before starting providers or permissions.
 The second copy offers to activate the existing app; it never stops a recording.
-Settings shows the actual app path, channel, version, build and source revision.
+Settings shows the app name and display version, plus website and GitHub links.
+The compact footer omits channel, build number, source revision and bundle path;
+those diagnostics remain in bundle metadata and the common runtime lease.
 
 Development version `0.0.0-dev` / build `9999` keeps published binary updates
 from replacing the custom app. Update the checkout with your coding agent,

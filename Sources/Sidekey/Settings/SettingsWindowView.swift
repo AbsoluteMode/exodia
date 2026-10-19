@@ -117,25 +117,19 @@ struct SettingsWindowView: View {
     private var buildIdentity: some View {
         let identity = AppBuildIdentity.current
         return VStack(alignment: .leading, spacing: 3) {
-            Text("\(identity.name) · \(identity.channel)")
+            Text("\(identity.name) \(identity.version)")
                 .font(.system(size: 11, weight: .medium))
-            Text(identity.versionDescription)
-                .font(.system(size: 10))
-            if let revision = identity.shortRevision {
-                Text("Source \(revision)")
-                    .font(.system(size: 9, design: .monospaced))
+            HStack(spacing: 8) {
+                Link("whytap.ai", destination: URL(string: "https://whytap.ai")!)
+                Text("·").accessibilityHidden(true)
+                Link("GitHub", destination: BuildConfig.landingURL)
             }
-            Text(identity.bundlePath)
-                .font(.system(size: 9))
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .help(identity.bundlePath)
-                .textSelection(.enabled)
+                .font(.system(size: 10))
         }
         .foregroundStyle(MacSettingsTheme.text2)
         .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
         .padding(.bottom, 6)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
