@@ -132,9 +132,12 @@ Meeting Notes:
   MeetingsCoordinator.deleteMeeting removes the staged recording first (while
   its manifest exists, launch recovery would bring the meeting back), then the
   row and its note and transcript files; a meeting still processing is
-  refused. Launch recovery frees the whole staged directory of a meeting that
-  already has a note, and keeps the audio when the note is missing. Remote
-  Soniox resources are not cleaned by Delete. WHY:
+  refused. The row's delete commits only after the transcript and then the
+  note are gone, so a failed Delete leaves the meeting listed with its note.
+  A note save that lands after Delete writes nothing (MeetingsStore.update
+  checks the row first). Launch recovery frees the whole staged directory of
+  a meeting that already has a note, and keeps the audio when the note is
+  missing. Remote Soniox resources are not cleaned by Delete. WHY:
   .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
   Manual start: Option M (configurable), the Record hover tile, or Settings ->
   Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the

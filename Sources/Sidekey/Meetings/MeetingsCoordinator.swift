@@ -1594,7 +1594,9 @@ final class MeetingsCoordinator {
 
     /// Persist a note edit. Called by `MeetingsEditBridge` once a 500 ms
     /// debounce window expires. Writes the new markdown into the local store
-    /// with a bumped version so the sidebar / viewer stay in step.
+    /// with a bumped version so the sidebar / viewer stay in step. A save that
+    /// lands after Delete finds no meeting and is dropped quietly: nothing is
+    /// written and no alert is shown.
     func saveNoteEdit(id: UUID, markdown: String, clientVersion: Int) async {
         guard let store = meetingsStore else {
             os_log(
@@ -1605,7 +1607,14 @@ final class MeetingsCoordinator {
         }
         let version = clientVersion + 1
         do {
-            try await store.update(id: id, markdown: markdown, version: version)
+            guard try await store.update(id: id, markdown: markdown, version: version) else {
+                os_log(
+                    "save skipped: meeting no longer stored (meetingId: %{public}@)",
+                    log: Self.log, type: .info,
+                    id.uuidString
+                )
+                return
+            }
             try await store.updateTitle(id: id, title: Self.extractH1Title(from: markdown))
             os_log(
                 "save persisted (meetingId: %{public}@, version: %{public}d)",
@@ -1679,11 +1688,13 @@ final class MeetingsCoordinator {
         return true
     }
 
-    // MARK: - Manual refresh (sidebar context menu)
+    // MARK: - Title repair (list shown, meeting selected)
 
     /// Re-derive the sidebar title from the stored note and refresh the open
-    /// notes surfaces. Wired to the sidebar's "Refresh" context-menu item;
-    /// safe to call from any context.
+    /// notes surfaces. The notes UI calls it for every meeting when the list
+    /// is shown (`MeetingsContentController.refreshAllOnShow`) and for one
+    /// meeting when it is selected (`sidebarDidSelectMeeting`); safe to call
+    /// from any context.
     func repairLocalTitle(id: UUID) async {
         guard let store = meetingsStore else {
             os_log(
