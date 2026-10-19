@@ -152,11 +152,8 @@ final class ScreenBrightnessController: ObservableObject {
                 endExtra(restoring: true)
             }
         }
-        let settling = lastWrite.map {
-            $0.display == target.id && now().timeIntervalSince($0.date) < Self.writeSettleInterval
-        } ?? false
         let current = ScreenBrightnessScale.clampedLevel(hardware)
-        if !settling, level != current { level = current }
+        if !isSettling(target.id), level != current { level = current }
         updatePolling()
     }
 
@@ -212,8 +209,9 @@ final class ScreenBrightnessController: ObservableObject {
             notice = Self.coolingNotice
             return
         }
-        let origin = (display: display.id,
-                      level: device.read(display.id).map(ScreenBrightnessScale.clampedLevel) ?? level)
+        // Right after the slider the panel can still report the level from before it.
+        let reading = isSettling(display.id) ? nil : device.read(display.id).map(ScreenBrightnessScale.clampedLevel)
+        let origin = (display: display.id, level: reading ?? level)
         guard write(1, to: display.id) else {
             refresh()
             notice = Self.writeFailedNotice
@@ -226,8 +224,8 @@ final class ScreenBrightnessController: ObservableObject {
             guard let self, self.overlayGeneration == generation else { return }
             self.stopExtra(notice: Self.extraUnavailableNotice)
         }) else {
-            _ = write(origin.level, to: origin.display)
-            level = origin.level
+            // The backlight keeps the maximum when the earlier level cannot be written back.
+            level = write(origin.level, to: origin.display) ? origin.level : 1
             notice = Self.extraUnavailableNotice
             return
         }
@@ -248,8 +246,12 @@ final class ScreenBrightnessController: ObservableObject {
         extraOrigin = nil
         guard isExtraOn else { return }
         isExtraOn = false
-        if restoring, let origin, write(origin.level, to: origin.display), origin.display == display?.id {
-            level = origin.level
+        if restoring, let origin {
+            if write(origin.level, to: origin.display) {
+                if origin.display == display?.id { level = origin.level }
+            } else if origin.display == display?.id {
+                notice = Self.writeFailedNotice
+            }
         }
         updatePolling()
     }
@@ -258,6 +260,10 @@ final class ScreenBrightnessController: ObservableObject {
         guard device.write(value, to: id) else { return false }
         lastWrite = (id, now())
         return true
+    }
+
+    private func isSettling(_ id: CGDirectDisplayID) -> Bool {
+        lastWrite.map { $0.display == id && now().timeIntervalSince($0.date) < Self.writeSettleInterval } ?? false
     }
 
     /// Only a visible strip polls. Extra alone follows display and power notifications.

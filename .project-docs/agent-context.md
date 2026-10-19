@@ -221,7 +221,8 @@ Monitor inside hover:
 
 Brightness inside hover:
   Brightness is an inlinePanel tool offered only from the Toolbox catalog and
-  search; HoverLayoutStore.defaultSlots and saved layouts are unchanged.
+  search; its capsule title is Display, which fits one line of the narrowest
+  capsule. HoverLayoutStore.defaultSlots and saved layouts are unchanged.
   HoverSlotRouter resolves .openPanel(.brightness) to IslandBrightnessStrip:
   Back, a white capsule backlight slider, an Extra switch and one status line
   (a notice, or the battery time left). The strip is 68 pt (76 pt band, 126 pt
@@ -236,13 +237,18 @@ Brightness inside hover:
   refreshes NN%/Extra when hover opens. Extra exists only for potential EDR
   headroom > 1.01: it writes the backlight maximum, then orders a click-through
   shielding-level BrightnessBoostOverlay (1x1 rgba16Float extended-linear
-  MTKView, multiply compositing, multiplier min(2, headroom), redrawn on change
-  plus a 2 s keepalive while refreshed and visible, sharingType none). Extra
-  survives outside backlight changes and closing the strip; moving the slider
-  below the maximum ends it at the new level. Switching it off, a display
-  change or lost headroom, sleep, session resign, serious thermal state, an
-  overlay failure and quit restore the level from before Extra. Extra is never
-  persisted or resumed after wake or relaunch. BatteryRuntimeMonitor reads IOKit
+  MTKView, multiply compositing, multiplier min(2, headroom), sharingType none).
+  BrightnessBoostFrameTimer presents a frame every 0.2 s while the overlay
+  window is visible, strip open or not, and pauses while the displays sleep:
+  without focus WindowServer keeps the boost only ~0.8 s after the last frame,
+  so the former 2 s keepalive blinked. Extra survives outside backlight
+  changes, closing the strip and display-only sleep; moving the slider below
+  the maximum ends it at the new level. Switching it off, a display change or
+  lost headroom, system sleep, session resign, serious thermal state, an
+  overlay failure and quit restore the level from before Extra (within 0.75 s
+  of a slider write, the written level); a failed restore write shows the
+  write notice. Extra is never persisted or resumed after system wake or
+  relaunch. BatteryRuntimeMonitor reads IOKit
   power sources and AppleSmartBattery every 5 s while the strip is visible: on
   battery macOS's estimate wins, otherwise remaining Wh over the smoothed
   accumulator load; on power the line shows the time if unplugged. Nothing is

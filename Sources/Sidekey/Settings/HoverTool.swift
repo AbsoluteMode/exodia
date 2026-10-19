@@ -85,7 +85,7 @@ enum HoverToolRegistry {
             return HoverToolInfo(title: "Monitor", sfSymbol: "waveform.path.ecg", kind: .inlinePanel,
                                  description: "Open server status and custom dashboards")
         case .brightness:
-            return HoverToolInfo(title: "Brightness", sfSymbol: "sun.max", kind: .inlinePanel,
+            return HoverToolInfo(title: "Display", sfSymbol: "sun.max", kind: .inlinePanel,
                                  description: "Screen brightness, Extra boost and battery time")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",

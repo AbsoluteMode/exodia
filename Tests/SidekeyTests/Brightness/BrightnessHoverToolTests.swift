@@ -10,7 +10,7 @@ final class BrightnessHoverToolTests: XCTestCase {
 
     func testBrightnessIsAnInlinePanelOfferedOnlyFromTheCatalog() {
         let info = HoverToolRegistry.info(for: .brightness)
-        XCTAssertEqual(info.title, "Brightness")
+        XCTAssertEqual(info.title, "Display")
         XCTAssertEqual(info.kind, .inlinePanel)
         XCTAssertEqual(HoverSlotRouter.effect(for: .brightness), .openPanel(.brightness))
         XCTAssertTrue(HoverSlotRouter.effect(for: .brightness).requiresExpansion)
@@ -19,9 +19,20 @@ final class BrightnessHoverToolTests: XCTestCase {
     }
 
     func testSearchFindsBrightnessByItsOwnWordsInBothLanguages() {
-        for query in ["brightness", "яркость", "vivid", "xdr", "battery", "батарея"] {
+        for query in ["brightness", "display", "яркость", "vivid", "xdr", "battery", "батарея"] {
             XCTAssertEqual(IslandHoverToolSearch.results(for: query).first, .brightness, query)
         }
+    }
+
+    func testCapsuleTitleFitsOneLineOfTheNarrowestCapsule() {
+        // 310 pt island: the text column is the capsule minus 6 pt padding on both sides,
+        // the icon disk and 5 pt spacing. A longer single word breaks mid-word ("Brightne" / "ss").
+        let column = IslandHoverControlsLayout.tileWidth(panelWidth: 310) - 12 - IslandHoverPanelControl.iconSize - 5
+        let title = HoverToolRegistry.info(for: .brightness).title
+        let width = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+        ]).size().width
+        XCTAssertLessThanOrEqual(width, column, title)
     }
 
     func testCapsuleStatusShowsTheLevelOrExtra() {

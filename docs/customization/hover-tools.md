@@ -62,7 +62,8 @@ All paths below start at `Sources/Sidekey/`.
    Monitor is `.inlinePanel` / `.openPanel(.monitor)` for every hover launcher;
    keep its dashboard picker and Back flow inside the drawer. Brightness is
    `.inlinePanel` / `.openPanel(.brightness)`, offered from the catalog and
-   search only. Its strip is shorter than the tools, so the band keeps the
+   search only, with the capsule title Display. Its strip is shorter than the
+   tools, so the band keeps the
    previous height until the pointer reaches the strip.
 
 `scaffold-hover` creates an isolated view and checklist, not a registered feature.
@@ -83,7 +84,7 @@ hit regions match the compact island width, and music uses that same width.
 Cover 310-point and 312-point examples, including fractional capsule widths;
 History's 300-point reservation must fit its 280-point preview plus eight-point
 gap with zero drawer overhang. Check pure status updates and Monitor picker -> dashboard -> Back in the same drawer.
-Open Brightness from a lower row and check that the drawer stays open while the
+Open Display (Brightness) from a lower row and check that the drawer stays open while the
 pointer moves up to the strip. Fake devices cover the backlight and Extra in
 tests; a live Extra check needs the user's consent, because it brightens their screen.
 Use offscreen checks; do not open GUI test windows over the user's work.

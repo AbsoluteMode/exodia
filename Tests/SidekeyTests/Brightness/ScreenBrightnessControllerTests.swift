@@ -119,6 +119,21 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertEqual(device.events.last, "write 1 0.4")
     }
 
+    func testExtraRightAfterTheSliderReturnsToTheSliderLevel() {
+        let f = Fixture(), device = f.device, controller = f.controller
+        device.applyWrites = false
+        controller.beginInteraction()
+        controller.setLevel(0.8)
+
+        // Within the settle window the panel still reports the earlier 40%.
+        controller.setExtra(true)
+        f.clock.advance(1)
+        controller.setExtra(false)
+
+        XCTAssertEqual(controller.level, 0.8)
+        XCTAssertEqual(device.events, ["write 1 0.8", "write 1 1.0", "overlay 1", "write 1 0.8"])
+    }
+
     func testSliderBelowTheMaximumEndsExtraAtTheNewLevel() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
 
@@ -312,6 +327,32 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertEqual(device.events, ["write 1 1.0", "overlay-failed 1", "write 1 0.4"])
     }
 
+    func testAFailedRollbackShowsTheMaximumTheBacklightKept() {
+        let f = Fixture(), device = f.device, controller = f.controller
+        device.canCreateOverlay = false
+        device.nextWrites = [true, false]
+        controller.beginInteraction()
+
+        controller.setExtra(true)
+
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 1)
+        XCTAssertEqual(controller.notice, ScreenBrightnessController.extraUnavailableNotice)
+        XCTAssertEqual(device.events, ["write 1 1.0", "overlay-failed 1", "write-failed 1 0.4"])
+    }
+
+    func testAFailedRestoreAfterExtraSaysSo() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+        device.canWrite = false
+
+        controller.setExtra(false)
+
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.notice, ScreenBrightnessController.writeFailedNotice)
+        XCTAssertEqual(controller.level, 1)
+        XCTAssertEqual(device.events.last, "write-failed 1 0.4")
+    }
+
     func testRenderFailureEndsExtraWithANotice() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
 
@@ -383,6 +424,8 @@ private final class FakeBrightnessDevice: ScreenBrightnessDevice {
     var connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16)]
     var hardware: [CGDirectDisplayID: Double] = [1: 0.4]
     var canWrite = true
+    /// Results of the next writes, in order; after them `canWrite` decides.
+    var nextWrites: [Bool] = []
     var canCreateOverlay = true
     /// A real panel can report the previous level for a moment after a write.
     var applyWrites = true
@@ -395,7 +438,8 @@ private final class FakeBrightnessDevice: ScreenBrightnessDevice {
     func read(_ id: CGDirectDisplayID) -> Double? { hardware[id] }
 
     func write(_ level: Double, to id: CGDirectDisplayID) -> Bool {
-        guard canWrite, hardware[id] != nil else {
+        let succeeds = nextWrites.isEmpty ? canWrite : nextWrites.removeFirst()
+        guard succeeds, hardware[id] != nil else {
             events.append("write-failed \(id) \(level)")
             return false
         }
