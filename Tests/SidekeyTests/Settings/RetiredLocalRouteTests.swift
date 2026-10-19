@@ -120,18 +120,22 @@ final class RetiredLocalRouteTests: XCTestCase {
     }
 
     func test_meetings_withRetiredLocal_areNotProcessedByProviders() throws {
-        let prefs = SelfKeyPreferences(defaults: retiredLocalDefaults(), isAppleSilicon: true)
+        // The retired on-device level migrates to no routes, even with keys
+        // stored: nothing picks a provider for the meeting by itself.
+        let defaults = retiredLocalDefaults()
+        let prefs = SelfKeyPreferences(defaults: defaults, isAppleSilicon: true)
         prefs.selectedProvider = .soniox
-        let keys = BYOKKeyStore.inMemory()
-        try keys.save(key: "soniox-key", for: .soniox)
+        let routing = AIRoutingStore(defaults: makeDefaults())
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        try keys.save("soniox-key", account: BYOKKeyStore.account(for: .soniox))
+        try keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        AIRoutingMigration(prefs: prefs, defaults: defaults, routing: routing, keys: keys).run()
         let processor = MeetingBYOKProcessor(
-            prefs: prefs,
-            keyStore: keys,
+            routing: routing,
+            keys: keys,
             vocab: VocabularyCache(defaults: makeDefaults()),
-            llmRouteResolver: DirectLLMRouteResolver(
-                feature: .meetingNotes,
-                routing: AIRoutingStore(defaults: makeDefaults())
-            )
+            notesRoute: DirectLLMRouteResolver(feature: .meetingNotes, routing: routing, keys: keys)
         )
         XCTAssertFalse(processor.shouldProcessDirectly())
     }

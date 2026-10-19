@@ -76,7 +76,7 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
             else { polls += 1; body = ["status": polls == 1 ? "processing" : "completed"] }
             return (200, [:], try JSONSerialization.data(withJSONObject: body))
         }
-        let client = SonioxMeetingTranscriber(apiKey: "test-key", session: session, pollInterval: .zero)
+        let client = SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session, pollInterval: .zero)
         let result = try await client.transcribe(chunkURLs: [url], language: "ru", terms: ["Whytap"])
         XCTAssertEqual(result.text, "Recovered meeting transcript")
         XCTAssertEqual(result.segments, [TranscriptSegment(speaker: "Speaker 1", start: 0.1, end: 0.5, text: result.text)])
@@ -92,11 +92,31 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 
+    func test_the_job_is_created_with_the_model_it_was_given() async throws {
+        let url = try chunk()
+        let fileID = fileID, jobID = jobID
+        StubURLProtocol.handler = { request in
+            let path = request.url!.path
+            if request.httpMethod == "DELETE" { return (204, [:], Data()) }
+            let body: [String: Any]
+            if path == "/v1/files" { body = ["id": fileID] }
+            else if path == "/v1/transcriptions" { body = ["id": jobID] }
+            else if path.hasSuffix("/transcript") { body = ["text": "", "tokens": []] }
+            else { body = ["status": "completed"] }
+            return (200, [:], try JSONSerialization.data(withJSONObject: body))
+        }
+        let client = SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-test-model", session: session, pollInterval: .zero)
+        _ = try await client.transcribe(chunkURLs: [url], language: nil, terms: [])
+        let createIndex = try XCTUnwrap(StubURLProtocol.capturedRequests.firstIndex { $0.url?.path == "/v1/transcriptions" })
+        let createBody = try XCTUnwrap(JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies[createIndex]) as? [String: Any])
+        XCTAssertEqual(createBody["model"] as? String, "stt-async-test-model")
+    }
+
     func testResumeExistingJobWithoutUploadingAndKeepCheckpointOnNetworkFailure() async throws {
         let url = try chunk()
         try save(.init(fileID: fileID, transcriptionID: jobID, diarizationEnabled: true))
         StubURLProtocol.handler = { _ in throw URLError(.networkConnectionLost) }
-        let client = SonioxMeetingTranscriber(apiKey: "test-key", session: session, pollInterval: .zero)
+        let client = SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session, pollInterval: .zero)
         do {
             _ = try await client.transcribe(chunkURLs: [url], language: nil, terms: [])
             XCTFail("Expected network failure")
@@ -111,7 +131,7 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
     func testTimeoutKeepsJobForLaterRetry() async throws {
         let url = try chunk()
         try save(.init(fileID: fileID, transcriptionID: jobID, diarizationEnabled: true))
-        let client = SonioxMeetingTranscriber(apiKey: "test-key", session: session, timeout: 0)
+        let client = SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session, timeout: 0)
         do {
             _ = try await client.transcribe(chunkURLs: [url], language: nil, terms: [])
             XCTFail("Expected timeout")
@@ -129,7 +149,7 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
             return (200, [:], Data("{\"status\":\"error\"}".utf8))
         }
         do {
-            _ = try await SonioxMeetingTranscriber(apiKey: "test-key", session: session)
+            _ = try await SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session)
                 .transcribe(chunkURLs: [url], language: nil, terms: [])
             XCTFail("Expected provider error")
         } catch {}
@@ -189,7 +209,7 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
             else { body = ["status": "completed"] }
             return (200, [:], try JSONSerialization.data(withJSONObject: body))
         }
-        let client = SonioxMeetingTranscriber(apiKey: "test-key", session: session, pollInterval: .zero)
+        let client = SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session, pollInterval: .zero)
         let result = try await client.transcribe(chunkURLs: [url], language: nil, terms: [])
         XCTAssertEqual(result, .init(text: "", segments: []))
         XCTAssertEqual(StubURLProtocol.capturedRequests.filter { $0.httpMethod == "DELETE" }.count, 2)
@@ -212,7 +232,7 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
             throw URLError(.networkConnectionLost)
         }
         do {
-            _ = try await SonioxMeetingTranscriber(apiKey: "test-key", session: session)
+            _ = try await SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session)
                 .transcribe(chunkURLs: [url], language: nil, terms: [])
             XCTFail("Must request fresh diarization")
         } catch {}

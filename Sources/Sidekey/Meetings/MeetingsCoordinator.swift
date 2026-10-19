@@ -108,7 +108,7 @@ final class MeetingsCoordinator {
     /// Shown on a meeting row when a recording finished but no provider is
     /// chosen to process it. The staged audio is kept and re-dispatched later.
     static let processorNotConfiguredMessage =
-        "Add your own provider keys in Settings > Models to process this meeting."
+        "Choose models for Meetings and Meeting notes in Settings > API & Models to process this meeting."
 
     // MARK: - Stage 4 recorder factory + active recorder
 
