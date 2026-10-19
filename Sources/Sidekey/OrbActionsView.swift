@@ -139,7 +139,7 @@ struct OrbActionsView: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Exodia actions")
+        .accessibilityLabel("Whytap actions")
     }
 
     @ViewBuilder

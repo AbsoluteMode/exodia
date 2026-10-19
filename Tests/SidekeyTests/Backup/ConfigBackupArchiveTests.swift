@@ -7,7 +7,7 @@ final class ConfigBackupArchiveTests: XCTestCase {
         let key = ConfigBackupArchive.makeKey()
         let snapshot = ConfigBackupSnapshot(reason: "Saved version", preferences: [
             "sidekey.models.byokProvider": .string("soniox"),
-            "sidekey.preferences.vocabularyTerms": .strings(["Exodia", "Максим"])
+            "sidekey.preferences.vocabularyTerms": .strings(["Whytap", "Максим"])
         ], credentials: ["byok.soniox.api_key": "synthetic-test-value"])
         let archive = try ConfigBackupArchive.seal(snapshot, key: key)
         let restoredKey = try ConfigBackupArchive.key(from: ConfigBackupArchive.recoveryCode(for: key))

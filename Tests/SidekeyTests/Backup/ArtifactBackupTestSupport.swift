@@ -47,7 +47,7 @@ final class StubCaseVaultKeys: ArtifactCaseKeyProviding {
     }
 }
 
-/// A disposable Exodia profile: the real relative layout under a temporary
+/// A disposable Whytap profile: the real relative layout under a temporary
 /// root, so the production path rules are what the tests exercise.
 struct ArtifactBackupTestProfile {
     let root: URL

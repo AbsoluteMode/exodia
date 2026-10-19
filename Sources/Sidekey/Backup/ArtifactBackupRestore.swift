@@ -78,7 +78,7 @@ struct ArtifactRestoreOutcome: Codable, Equatable {
     /// Where the data this restore replaced (or could not put back) is kept.
     var recoveryDirectory: String?
     var recoveredFileCount: Int?
-    /// True when Exodia could not prove it put everything back and preserved
+    /// True when Whytap could not prove it put everything back and preserved
     /// the evidence instead.
     var needsRecovery: Bool?
 }
@@ -765,7 +765,7 @@ struct ArtifactRestoreTransaction {
             write(ArtifactRestoreOutcome(
                 id: plan?.id ?? UUID(), finishedAt: Date(), state: .failed,
                 sections: plan?.sections ?? [],
-                message: "Exodia could not read its restore record, so it changed nothing and kept every file. Your previous data and the backup copy are preserved at \(root.path).",
+                message: "Whytap could not read its restore record, so it changed nothing and kept every file. Your previous data and the backup copy are preserved at \(root.path).",
                 warnings: [], recoveryDirectory: root.path, recoveredFileCount: nil, needsRecovery: true))
             throw ArtifactBackupError.restoreNeedsRecovery(root.path)
         }
@@ -795,7 +795,7 @@ struct ArtifactRestoreTransaction {
                     try? writePrivate(try JSONEncoder.artifactBackup.encode(retried), to: planURL)
                     write(ArtifactRestoreOutcome(
                         id: plan.id, finishedAt: Date(), state: .failed, sections: plan.sections,
-                        message: "Exodia could not reach the key for its restore record. Nothing was deleted; unlock this Mac and open Exodia again. Your files are preserved at \(root.path).",
+                        message: "Whytap could not reach the key for its restore record. Nothing was deleted; unlock this Mac and open Whytap again. Your files are preserved at \(root.path).",
                         warnings: [], recoveryDirectory: root.path, recoveredFileCount: nil,
                         needsRecovery: true))
                     throw ArtifactBackupError.keyUnavailable
@@ -833,7 +833,7 @@ struct ArtifactRestoreTransaction {
                                   failures: [String]) -> ArtifactRestoreOutcome {
         ArtifactRestoreOutcome(
             id: plan.id, finishedAt: Date(), state: .failed, sections: plan.sections,
-            message: "Exodia could not put everything back after a failed restore, so it preserved every original file, the backup copy and the restore record at \(root.path). Nothing was deleted.",
+            message: "Whytap could not put everything back after a failed restore, so it preserved every original file, the backup copy and the restore record at \(root.path). Nothing was deleted.",
             warnings: Array(failures.prefix(16)), recoveryDirectory: root.path,
             recoveredFileCount: nil, needsRecovery: true)
     }

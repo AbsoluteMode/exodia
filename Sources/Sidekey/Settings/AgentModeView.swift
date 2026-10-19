@@ -82,7 +82,7 @@ struct AgentModeView: View {
             MacGroupTitle(title: "OpenCode")
             MacCard {
                 MacRow(title: installed ? "OpenCode is installed" : "Install OpenCode",
-                       subtitle: "Exodia can install a verified copy for this app. Existing terminal installations stay available.") {
+                       subtitle: "Whytap can install a verified copy for this app. Existing terminal installations stay available.") {
                     MacButton(title: installing ? "Installing…" : installed ? "Update app copy" : "Install", style: .default) {
                         Task { await install() }
                     }.disabled(installing)

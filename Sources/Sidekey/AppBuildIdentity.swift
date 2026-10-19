@@ -3,6 +3,7 @@ import Foundation
 /// Describes the actual bundle, including a developer copy in another checkout.
 /// Paths are displayed locally in Settings and conflict dialogs, never logged.
 struct AppBuildIdentity: Equatable, Sendable {
+    // Keep metadata keys compatible with Exodia builds and the common runtime lease.
     static let instanceLeaseVersionKey = "ExodiaInstanceLeaseVersion"
     static let supportedInstanceLeaseVersion = 1
 
@@ -18,7 +19,7 @@ struct AppBuildIdentity: Equatable, Sendable {
         bundleIdentifier = info["CFBundleIdentifier"] as? String ?? ""
         name = info["CFBundleDisplayName"] as? String
             ?? info["CFBundleName"] as? String
-            ?? "Exodia"
+            ?? "Whytap"
         version = info["CFBundleShortVersionString"] as? String ?? "Unknown version"
         build = info["CFBundleVersion"] as? String ?? "Unknown build"
         sourceRevision = info["ExodiaSourceRevision"] as? String

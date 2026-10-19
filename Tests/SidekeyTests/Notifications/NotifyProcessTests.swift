@@ -83,6 +83,9 @@ final class NotifyScriptSupervisorTests: XCTestCase {
         ], source: "test", directory: URL(fileURLWithPath: "/tmp/notify-fixture"))
         XCTAssertEqual(environment["PATH"], "/usr/bin:/bin")
         XCTAssertEqual(environment["EXODIA_NOTIFY_SOURCE"], "test")
+        XCTAssertEqual(environment["WHYTAP_NOTIFY_SOURCE"], "test")
+        XCTAssertEqual(environment["WHYTAP_NOTIFY_DIRECTORY"], "/tmp/notify-fixture")
+        XCTAssertEqual(environment["EXODIA_NOTIFY_DIRECTORY"], environment["WHYTAP_NOTIFY_DIRECTORY"])
         XCTAssertNil(environment["OPENROUTER_API_KEY"]); XCTAssertNil(environment["DOPPLER_TOKEN"])
         XCTAssertNil(environment["EXODIA_COMMUNITY_SIGNING_KEY"])
     }

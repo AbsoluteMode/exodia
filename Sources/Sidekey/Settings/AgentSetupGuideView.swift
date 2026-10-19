@@ -42,7 +42,7 @@ struct AgentSetupGuideContent {
 
     static let claude = make(
         providerName: "Claude Code",
-        cliDetail: "The Claude Code CLI — Exodia drives it as your agent.",
+        cliDetail: "The Claude Code CLI — Whytap drives it as your agent.",
         cliCommand: "npm install -g @anthropic-ai/claude-code",
         installURL: ClaudeCodeProvider().installURL,
         signInDetail: "Open Terminal, run claude, and log in with your Anthropic account.",
@@ -51,7 +51,7 @@ struct AgentSetupGuideContent {
 
     static let codex = make(
         providerName: "Codex",
-        cliDetail: "The Codex CLI — Exodia drives it as your agent.",
+        cliDetail: "The Codex CLI — Whytap drives it as your agent.",
         cliCommand: "npm install -g @openai/codex",
         installURL: CodexProvider().installURL,
         signInDetail: "Open Terminal, run codex login, and sign in with your ChatGPT account.",

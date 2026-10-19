@@ -214,7 +214,7 @@ final class ModelProbeTests: XCTestCase {
         XCTAssertEqual(tools.count, 1)
         XCTAssertEqual(tools[0]["type"] as? String, "function")
         let function = try XCTUnwrap(tools[0]["function"] as? [String: Any])
-        XCTAssertEqual(function["name"] as? String, "exodia_probe")
+        XCTAssertEqual(function["name"] as? String, "whytap_probe")
         XCTAssertEqual(function["description"] as? String, "Probe tool. Do not call.")
     }
 
@@ -246,7 +246,7 @@ final class ModelProbeTests: XCTestCase {
         XCTAssertEqual(body["messages"] as? [[String: String]], [["role": "user", "content": "Reply with OK."]])
         let tools = try XCTUnwrap(body["tools"] as? [[String: Any]])
         XCTAssertEqual(tools.count, 1)
-        XCTAssertEqual(tools[0]["name"] as? String, "exodia_probe")
+        XCTAssertEqual(tools[0]["name"] as? String, "whytap_probe")
         XCTAssertEqual(tools[0]["description"] as? String, "Probe tool. Do not call.")
         let schema = try XCTUnwrap(tools[0]["input_schema"] as? [String: Any])
         XCTAssertEqual(schema["type"] as? String, "object")

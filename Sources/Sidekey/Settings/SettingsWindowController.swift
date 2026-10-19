@@ -68,7 +68,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Exodia Settings"
+        window.title = "Whytap Settings"
         // Keep the controller as the source of truth — destroying the
         // window on close would invalidate the `@ObservedObject` binding
         // and force a fresh fetch on every reopen.

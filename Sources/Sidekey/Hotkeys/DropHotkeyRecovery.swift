@@ -34,12 +34,12 @@ enum DropHotkeyStatus: Equatable {
         switch self {
         case .ready: return "Your Drop shortcut is ready."
         case .accessibilityRequired:
-            return "Allow Exodia under Privacy & Security → Accessibility (called Device Control and Data Access on newer macOS). If it is already on after an update, remove that entry and add this copy of Exodia again."
-        case .microphoneRequired: return "Allow Exodia to record your voice, then press your shortcut again."
+            return "Allow Whytap under Privacy & Security → Accessibility (called Device Control and Data Access on newer macOS). If it is already on after an update, remove that entry and add this copy of Whytap again."
+        case .microphoneRequired: return "Allow Whytap to record your voice, then press your shortcut again."
         case .inputMonitoringRequired:
-            return "macOS could not enable your hold shortcut. Retry, or allow Exodia in System Settings → Privacy & Security → Input Monitoring."
+            return "macOS could not enable your hold shortcut. Retry, or allow Whytap in System Settings → Privacy & Security → Input Monitoring."
         case .shortcutInUse:
-            return "Another app or another copy of Exodia is using this shortcut. Close that copy and retry, or choose another shortcut in Hotkeys."
+            return "Another app or another copy of Whytap is using this shortcut. Close that copy and retry, or choose another shortcut in Hotkeys."
         case .unavailable: return "Retry to enable your Drop shortcut. You can also choose another shortcut in Hotkeys."
         }
     }
@@ -100,7 +100,7 @@ enum DropHotkeyRecovery {
 }
 
 /// A repair session polls quietly for at most two minutes. User interaction
-/// (Refresh, Retry, reopening Exodia) may start another bounded session.
+/// (Refresh, Retry, reopening Whytap) may start another bounded session.
 struct DropHotkeyRecoveryPollBudget {
     private(set) var remaining = 120
     mutating func consume() -> Bool {

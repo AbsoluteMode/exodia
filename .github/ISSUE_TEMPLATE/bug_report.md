@@ -16,7 +16,7 @@ labels: bug
 **Environment**
 - macOS version:
 - Mac (Apple Silicon or Intel):
-- Exodia version (Settings window):
+- Whytap version (Settings window):
 - Speech route: your own key (which provider) / custom endpoint
 - Text route: OpenRouter / custom endpoint / none
 - Agent: Claude Code / Codex / none

@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Exodia",
+    name: "Whytap",
     // macOS 14.2 (Sonoma) is the deployment floor — matches
     // `LSMinimumSystemVersion` in `Resources/Info.plist.template`. 14.2
     // (not 14.0) because Meeting Notes' system-audio capture uses the
@@ -52,7 +52,7 @@ let package = Package(
             ],
             path: "Sources/Sidekey"
         ),
-        // The binary users install as Exodia.
+        // The binary users install as Whytap.
         .executableTarget(
             name: "SidekeyApp",
             dependencies: ["Sidekey"],

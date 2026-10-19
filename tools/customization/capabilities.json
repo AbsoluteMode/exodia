@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "product": "Exodia",
+  "product": "Whytap",
   "platform": "macOS 14.2+",
   "source_module": "Sidekey",
   "entry_document": "docs/customization/README.md",
@@ -22,7 +22,7 @@
     "install_dashboard": ["python3", "scripts/customize.py", "install-dashboard", "<snapshot.json>", "--flavor", "beta"]
   },
   "contracts": [
-    "No Exodia account, hosted backend, plans or telemetry.",
+    "No Whytap account, hosted backend, plans or telemetry.",
     "Provider keys belong in macOS Keychain, never source, arguments or logs.",
     "Launch development builds with scripts/dev-run.sh, never swift run.",
     "Build and test locally; GitHub Actions is disabled.",
