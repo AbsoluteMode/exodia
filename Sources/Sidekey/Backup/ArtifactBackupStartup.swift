@@ -10,7 +10,7 @@ enum ArtifactBackupStartup {
         while true {
             let progress = progressPanel()
             do {
-                try ArtifactBackupEngine.applyPendingRestore()
+                try performAttempt(showing: progress)
                 progress.close()
                 return true
             } catch ArtifactBackupError.restoreInterrupted {
@@ -30,6 +30,7 @@ enum ArtifactBackupStartup {
                 alert.accessoryView = code
                 alert.addButton(withTitle: "Retry")
                 alert.addButton(withTitle: "Quit")
+                alert.buttons[1].keyEquivalent = "\u{1b}"
                 alert.addButton(withTitle: "Show Recovery Files")
                 let canCancel = !transaction.hasApplyJournal && transaction.isArmed
                 if canCancel { alert.addButton(withTitle: "Cancel Restore") }
@@ -59,6 +60,30 @@ enum ArtifactBackupStartup {
                 }
             }
         }
+    }
+
+    /// The startup transaction owns no open runtime stores. Keep its disk and
+    /// cryptography work off the UI thread while a native modal loop remains
+    /// responsive; AppDelegate starts only after this attempt returns.
+    private final class AttemptResult: @unchecked Sendable {
+        // Accessed only on the main queue, including the completion closure.
+        var value: Result<Void, Error>?
+    }
+
+    private static func performAttempt(showing panel: NSPanel) throws {
+        let result = AttemptResult()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let attempt = Result<Void, Error> {
+                _ = try ArtifactBackupEnvironment().transaction().applyIfPending()
+            }
+            DispatchQueue.main.async {
+                result.value = attempt
+                NSApplication.shared.stopModal()
+            }
+        }
+        NSApplication.shared.runModal(for: panel)
+        guard let value = result.value else { throw ArtifactBackupError.restoreFailed }
+        try value.get()
     }
 
     private static func progressPanel() -> NSPanel {
