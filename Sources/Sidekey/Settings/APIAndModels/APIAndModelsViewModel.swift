@@ -1,15 +1,11 @@
 import Combine
 import Foundation
 
-/// The colour of a key chip's status dot.
-enum KeyDot: Equatable { case green, yellow, red }
-
 /// One provider account in the API keys row. Carries the check outcome, never
 /// the key.
 struct KeyChip: Equatable, Identifiable {
     let account: ProviderAccount
     let title: String
-    let dot: KeyDot
     let statusText: String
     let checkedAt: Date?
     var id: String { account.storageID }
@@ -25,7 +21,44 @@ struct FeatureRow: Equatable, Identifiable {
     let isChecking: Bool
     /// Why the last pick did not stick, or a Deepgram input-language warning.
     let message: String?
+    /// The provider choice of an OpenRouter route; `nil` for other accounts.
+    var provider: ProviderChoice? = nil
     var id: AIFeature { feature }
+}
+
+/// One line of the Models card: what the user turns on (Drop Smart, Meetings)
+/// with every route it runs on, speech first, then its LLM.
+struct FeatureGroup: Equatable, Identifiable {
+    let title: String
+    let rows: [FeatureRow]
+    var id: String { title }
+
+    /// Every feature exactly once. Drop Smart and Meetings each pair their
+    /// speech route with the LLM route that processes its text.
+    static let layout: [(title: String, features: [AIFeature])] = [
+        ("Drop Fast", [.dropFast]),
+        ("Drop Smart", [.dropSmart, .dropSmartCleanup]),
+        ("Meetings", [.meetings, .meetingNotes]),
+        ("Agent", [.agent]),
+        ("Agent voice", [.agentVoice]),
+        ("Voice search", [.voiceSearch]),
+    ]
+}
+
+/// Which OpenRouter provider an OpenRouter route runs on.
+struct ProviderChoice: Equatable {
+    let model: String
+    /// The pinned endpoint tag; `nil` is Auto.
+    let pinned: String?
+    /// `"Auto"`, or the pinned provider's name.
+    let label: String
+}
+
+/// The providers of one OpenRouter model, as last loaded.
+enum ProviderList: Equatable {
+    case loading
+    case loaded([OpenRouterEndpoint], at: Date)
+    case failed
 }
 
 /// One feature the "Use <Provider> for" window offers to assign.
@@ -50,9 +83,20 @@ struct AssignProposal: Equatable {
 final class APIAndModelsViewModel: ObservableObject {
     @Published private(set) var chips: [KeyChip] = []
     @Published private(set) var rows: [FeatureRow] = []
+
+    /// `rows` as the Models card shows them.
+    var groups: [FeatureGroup] {
+        FeatureGroup.layout.map { entry in
+            FeatureGroup(title: entry.title, rows: entry.features.compactMap { feature in
+                rows.first { $0.feature == feature }
+            })
+        }
+    }
     @Published private(set) var aliasGroups: [AliasGroupAction] = []
     @Published private(set) var unsetBanner: String?
     @Published var proposal: AssignProposal?
+    /// Keyed by OpenRouter model ID.
+    @Published private(set) var providerLists: [String: ProviderList] = [:]
 
     /// Built-in providers in the order the tab lists them and Set up picks them.
     private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .anthropic]
@@ -64,6 +108,7 @@ final class APIAndModelsViewModel: ObservableObject {
     private let keyStatuses: KeyStatusStore
     private let keyChecker: any ProviderKeyChecking
     private let probe: any ModelProbing
+    private let endpoints: any OpenRouterEndpointsFetching
     private let now: () -> Date
     private let inputLanguage: @MainActor () -> String?
     private let resolver: ModelStatusResolver
@@ -83,6 +128,7 @@ final class APIAndModelsViewModel: ObservableObject {
         keyStatuses: KeyStatusStore? = nil,
         keyChecker: any ProviderKeyChecking = ProviderKeyChecker(),
         probe: any ModelProbing = ModelProbe(),
+        endpoints: any OpenRouterEndpointsFetching = OpenRouterEndpointsClient(),
         now: @escaping () -> Date = Date.init,
         inputLanguage: (@MainActor () -> String?)? = nil
     ) {
@@ -97,6 +143,7 @@ final class APIAndModelsViewModel: ObservableObject {
         self.keyStatuses = keyStatuses
         self.keyChecker = keyChecker
         self.probe = probe
+        self.endpoints = endpoints
         self.now = now
         self.inputLanguage = inputLanguage ?? { PrivacyPreferences.shared.selectedLanguage?.code }
         self.resolver = ModelStatusResolver(
@@ -230,7 +277,12 @@ final class APIAndModelsViewModel: ObservableObject {
     /// whose earlier probe failed is probed again: picking it is the user
     /// asking to check it again, so a stored failure never bans it for good.
     func select(model: String, account: ProviderAccount, for feature: AIFeature) async {
-        let route = FeatureRoute(account: account, model: model)
+        // Re-picking the current model keeps its provider; a new model starts on Auto.
+        let current = routing.route(for: feature)
+        let route = FeatureRoute(
+            account: account, model: model,
+            provider: current?.account == account && current?.model == model ? current?.provider : nil
+        )
         let failedBefore = resolver.hasStoredProbeFailure(model: model, account: account, for: feature)
         switch resolver.verdict(model: model, account: account, for: feature, ignoringStoredFailure: true) {
         case .verified where !failedBefore:
@@ -241,6 +293,39 @@ final class APIAndModelsViewModel: ObservableObject {
         case .verified, .new:
             if await probePassed(route, for: [feature]) { assign(route, to: [feature]) }
         }
+    }
+
+    // MARK: - OpenRouter provider
+
+    /// How long a loaded provider list (with its speed figures) is reused.
+    static let providerListLifetime: TimeInterval = 5 * 60
+
+    /// Loads the providers of the feature's OpenRouter model with their speed,
+    /// using the OpenRouter key. A free metadata request.
+    func loadProviders(for feature: AIFeature, force: Bool = false) async {
+        guard let route = routing.route(for: feature), route.account == .openRouter,
+              let access = access(.openRouter), let key = access.apiKey
+        else { return }
+        let model = route.model
+        switch providerLists[model] {
+        case .loading: return
+        case .loaded(_, let at) where !force && now().timeIntervalSince(at) < Self.providerListLifetime: return
+        default: break
+        }
+        providerLists[model] = .loading
+        do {
+            let list = try await endpoints.endpoints(model: model, apiKey: key)
+            providerLists[model] = .loaded(OpenRouterEndpointsClient.sorted(list), at: now())
+        } catch {
+            providerLists[model] = .failed
+        }
+        recompute()
+    }
+
+    /// Pins the feature's OpenRouter model to one provider, or back to Auto.
+    func selectProvider(_ tag: String?, for feature: AIFeature) {
+        routing.setProvider(tag, for: feature)
+        recompute()
     }
 
     /// Probes the feature's current model again. The route does not change.
@@ -277,29 +362,13 @@ final class APIAndModelsViewModel: ObservableObject {
     /// Not set feature it serves. `nil` — Set up: for every Not set feature, the
     /// first keyed built-in provider with a recommended model. An empty
     /// proposal is not shown.
-    func proposeSetup(for account: ProviderAccount?) {
+    func proposeSetup(for account: ProviderAccount) {
         let unset = AIFeature.allCases.filter { resolver.status(for: $0) == .notSet }
-        let items: [AssignItem]
-        let title: String
-        if let account {
-            title = "Use \(self.title(of: account)) for"
-            items = unset.compactMap { feature in
-                ModelRegistry.recommended(for: feature, kind: account.kind)
-                    .map { AssignItem(feature: feature, account: account, model: $0) }
-            }
-        } else {
-            title = "Set up models"
-            let keyed = Self.builtInAccounts.filter { if case .key = lookup($0) { return true }; return false }
-            items = unset.compactMap { feature in
-                for candidate in keyed {
-                    if let model = ModelRegistry.recommended(for: feature, kind: candidate.kind) {
-                        return AssignItem(feature: feature, account: candidate, model: model)
-                    }
-                }
-                return nil
-            }
+        let items = unset.compactMap { feature in
+            ModelRegistry.recommended(for: feature, kind: account.kind)
+                .map { AssignItem(feature: feature, account: account, model: $0) }
         }
-        proposal = items.isEmpty ? nil : AssignProposal(title: title, items: items)
+        proposal = items.isEmpty ? nil : AssignProposal(title: "Use \(title(of: account)) for", items: items)
     }
 
     /// Use: assigns the checked registry models as they are, without a probe.
@@ -452,8 +521,22 @@ final class APIAndModelsViewModel: ObservableObject {
             selectionLabel: label,
             status: resolver.status(for: feature),
             isChecking: checking.contains(feature),
-            message: messages[feature] ?? route.flatMap(languageWarning(for:))
+            message: messages[feature] ?? route.flatMap(languageWarning(for:)),
+            provider: route.flatMap(providerChoice(for:))
         )
+    }
+
+    private func providerChoice(for route: FeatureRoute) -> ProviderChoice? {
+        guard route.account == .openRouter else { return nil }
+        guard let pinned = route.provider else {
+            return ProviderChoice(model: route.model, pinned: nil, label: "Auto")
+        }
+        var label = pinned
+        if case .loaded(let list, _) = providerLists[route.model],
+           let endpoint = list.first(where: { $0.tag == pinned }) {
+            label = endpoint.title
+        }
+        return ProviderChoice(model: route.model, pinned: pinned, label: label)
     }
 
     /// PR #35: a Deepgram model that cannot take the current input language.
@@ -469,18 +552,12 @@ final class APIAndModelsViewModel: ObservableObject {
 
     private func chip(for account: ProviderAccount) -> KeyChip {
         if lookup(account) == .unreadable {
-            return KeyChip(account: account, title: title(of: account), dot: .red,
+            return KeyChip(account: account, title: title(of: account),
                            statusText: "Couldn't read the key from the Keychain", checkedAt: nil)
         }
         let record = keyStatuses.record(for: account)
-        let dot: KeyDot
-        switch record?.status {
-        case .valid: dot = .green
-        case .rejected: dot = .red
-        case .limited, .unreachable, nil: dot = .yellow
-        }
         return KeyChip(
-            account: account, title: title(of: account), dot: dot,
+            account: account, title: title(of: account),
             statusText: record.map { Self.statusText(for: $0.status, account: account) } ?? "Not checked yet",
             checkedAt: record?.checkedAt
         )

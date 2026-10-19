@@ -9,7 +9,6 @@ struct NotifyHoverPanel: View {
     let showsBackButton: Bool
     @State private var showsSources = false
     @State private var pendingRemoval: String?
-    @State private var confirmsClear = false
 
     init(hub: LocalNotificationHub? = nil, supervisor: NotifyScriptSupervisor? = nil, showsBackButton: Bool = true, onBack: @escaping () -> Void) {
         self.hub = hub ?? .shared; self.supervisor = supervisor ?? .shared; self.onBack = onBack; self.showsBackButton = showsBackButton
@@ -24,10 +23,10 @@ struct NotifyHoverPanel: View {
                 Text("Notify").font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
                 Button {
                     if showsSources { NSWorkspace.shared.open(NotifyPaths.root) }
-                    else { confirmsClear = true }
+                    else { Task { await hub.clear() } }
                 } label: {
                     if showsSources { Image(systemName: "folder") }
-                    else { Label("Clear All", systemImage: "trash") }
+                    else { Text("Clear All") }
                 }
                 .buttonStyle(.plain).frame(width: 68, alignment: .trailing)
                 .disabled(!showsSources && hub.history.isEmpty)
@@ -71,10 +70,6 @@ struct NotifyHoverPanel: View {
             Button("Remove source", role: .destructive) { if let id = pendingRemoval { supervisor.remove(id: id) }; pendingRemoval = nil }
             Button("Cancel", role: .cancel) { pendingRemoval = nil }
         } message: { Text("Its script will stop. Notification history and script files will be kept.") }
-        .confirmationDialog("Clear all notifications?", isPresented: $confirmsClear) {
-            Button("Clear All", role: .destructive) { Task { await hub.clear() } }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("History and current notifications will be cleared. Connected sources stay enabled.") }
     }
     private func sectionButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {

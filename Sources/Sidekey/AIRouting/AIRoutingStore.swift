@@ -4,6 +4,10 @@ import Foundation
 struct FeatureRoute: Codable, Equatable, Sendable {
     var account: ProviderAccount
     var model: String
+    /// OpenRouter only: the endpoint tag (`"deepinfra/fp4"`) the model is
+    /// pinned to, with no fallback to other providers. `nil` is Auto, where
+    /// OpenRouter picks. Belongs to `model`: a new model starts on Auto.
+    var provider: String? = nil
 }
 
 /// Everything `AIRoutingStore` persists, as one JSON value.
@@ -74,6 +78,14 @@ final class AIRoutingStore: ObservableObject {
         var updated = state
         updated.routes[feature.rawValue] = route
         commit(updated)
+    }
+
+    /// Pins an OpenRouter route to one provider endpoint, or back to Auto
+    /// (`nil`). Other accounts have no provider choice and are left alone.
+    func setProvider(_ provider: String?, for feature: AIFeature) {
+        guard var route = route(for: feature), route.account == .openRouter else { return }
+        route.provider = provider
+        setRoute(route, for: feature)
     }
 
     /// Un-sets every feature that runs on `account`, for example after its key
