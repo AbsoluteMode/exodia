@@ -32,6 +32,8 @@ dist/
 .env
 .env.*
 *.pem
+# The public community certificate is committed; its private key is in Doppler.
+!Resources/community-signing-certificate.pem
 *.p8
 *.p12
 *.key

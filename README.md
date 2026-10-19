@@ -23,8 +23,10 @@ Choose the `Exodia-latest.dmg` asset from an Exodia release. Whytap-named assets
 are historical builds. If no Exodia asset is listed yet, use the source-build
 instructions under [Development](#development).
 
-Community builds use ad-hoc code signing, without Apple notarization. macOS may
-warn on the first download; see [installation and permissions](docs/install.md).
+Community builds are signed with Exodia's own self-signed certificate and are not
+notarized by Apple. macOS may warn on the first download; see
+[installation and permissions](docs/install.md). The stable signature lets macOS
+keep permissions such as Microphone across updates.
 Updates use the existing island **Update** button and verify the archive with
 Exodia's Sparkle Ed25519 key, which is independent of Apple signing. An update
 will not force a restart during a meeting recording, dictation or agent task.

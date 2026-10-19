@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 
 final class PackagingRebrandTests: XCTestCase {
@@ -102,45 +103,96 @@ final class PackagingRebrandTests: XCTestCase {
     }
 
     func test_communityBuildReachesCompilerWithoutAppleTools() throws {
-        let temporary = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let tools = temporary.appendingPathComponent("bin", isDirectory: true)
-        try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
-        let marker = temporary.appendingPathComponent("calls.txt")
-        let root = try projectRoot()
-        for relative in ["scripts/build-dmg.sh", "VERSION", "Package.resolved",
-                         "Resources/Info.plist.template", "Resources/sparkle-public-ed-key.txt",
-                         "Resources/blocknote/index.html"] {
-            let destination = temporary.appendingPathComponent(relative)
-            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
-                withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: root.appendingPathComponent(relative), to: destination)
+        let run = try runBuildFixture()
+        XCTAssertEqual(run.result.status, 64, run.result.output)
+        XCTAssertEqual(run.calls, "compiler\n")
+        XCTAssertTrue(run.result.output.contains("Code signing: adhoc"), run.result.output)
+    }
+
+    // WHY: .project-docs/decisions/2026-10-19-community-signing-identity.md
+    func test_communityCertificateBuildChecksItsKeyBeforeCompiling() throws {
+        let identities = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: identities) }
+        let identity = try makeSigningIdentity(in: identities, name: "release")
+        let other = try makeSigningIdentity(in: identities, name: "other")
+
+        let missing = try runBuildFixture(certificate: identity.certificate)
+        XCTAssertEqual(missing.result.status, 1, missing.result.output)
+        XCTAssertTrue(missing.result.output.contains("EXODIA_COMMUNITY_SIGNING_KEY"), missing.result.output)
+        XCTAssertNil(missing.calls, missing.result.output)
+
+        let mismatched = try runBuildFixture(certificate: identity.certificate,
+            environment: ["EXODIA_COMMUNITY_SIGNING_KEY_FILE": other.key.path])
+        XCTAssertEqual(mismatched.result.status, 1, mismatched.result.output)
+        XCTAssertTrue(mismatched.result.output.contains("does not match"), mismatched.result.output)
+        XCTAssertNil(mismatched.calls, mismatched.result.output)
+
+        // The keychain is prepared only after compiling, so no security call precedes it.
+        let matching = try runBuildFixture(certificate: identity.certificate,
+            environment: ["EXODIA_COMMUNITY_SIGNING_KEY": try String(contentsOf: identity.key, encoding: .utf8)])
+        XCTAssertEqual(matching.result.status, 64, matching.result.output)
+        XCTAssertEqual(matching.calls, "compiler\n")
+        XCTAssertTrue(matching.result.output.contains("Code signing: certificate:" + identity.sha1),
+                      matching.result.output)
+
+        let optedOut = try runBuildFixture(certificate: identity.certificate,
+            environment: ["EXODIA_COMMUNITY_SIGNING": "adhoc"])
+        XCTAssertEqual(optedOut.result.status, 64, optedOut.result.output)
+        XCTAssertEqual(optedOut.calls, "compiler\n")
+        XCTAssertTrue(optedOut.result.output.contains("Code signing: adhoc"), optedOut.result.output)
+    }
+
+    func test_communityPreflightReportsTheCommittedCertificate() throws {
+        let identities = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: identities) }
+        let identity = try makeSigningIdentity(in: identities, name: "release")
+        let run = try runBuildFixture(certificate: identity.certificate, arguments: ["--preflight-only"])
+        XCTAssertEqual(run.result.status, 0, run.result.output)
+        XCTAssertNil(run.calls, run.result.output)
+        let lastLine = try XCTUnwrap(run.result.output.split(separator: "\n").last)
+        let plan = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lastLine.utf8)) as? [String: Any])
+        XCTAssertEqual(plan["code_signing"] as? String, "certificate:" + identity.sha1)
+        XCTAssertEqual(plan["signing_certificate_sha1"] as? String, identity.sha1)
+        XCTAssertEqual(plan["signing_key_configured"] as? Bool, false)
+        XCTAssertEqual(plan["requires_apple_developer"] as? Bool, false)
+    }
+
+    /// Every community build's designated requirement pins this certificate's
+    /// SHA-1 and macOS privacy grants follow that requirement. Another
+    /// certificate makes every install grant Microphone and System Audio
+    /// Recording again, so replacing it must be a deliberate rotation.
+    func test_communitySigningCertificateIsPinned() throws {
+        let pem = try readProjectFile("Resources/community-signing-certificate.pem")
+        let body = pem.split(separator: "\n").filter { !$0.hasPrefix("-----") }.joined()
+        let der = try XCTUnwrap(Data(base64Encoded: body))
+        let sha1 = Insecure.SHA1.hash(data: der).map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(sha1, "39da363652f6df4b52ac950998e16c98fd39bc6b",
+                       "A new community certificate makes every install grant its macOS permissions again; rotate only for a leaked key")
+    }
+
+    /// `.gitignore` excludes `*.pem` as signing material, and the provenance check
+    /// lists untracked but not ignored files. An ignored certificate would let a
+    /// build sign with a file outside the release commit while a fresh clone signs
+    /// ad hoc.
+    func test_communitySigningCertificateIsNotIgnored() throws {
+        let result = try runTool(URL(fileURLWithPath: "/usr/bin/git"),
+            arguments: ["-C", try projectRoot().path, "check-ignore", "--no-index", "-q",
+                        "Resources/community-signing-certificate.pem"],
+            environment: ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"])
+        if result.status == 128 {
+            throw XCTSkip("not a Git checkout")
         }
-        try executable(at: tools.appendingPathComponent("swift"), contents: #"""
-        #!/bin/bash
-        echo compiler >> "$PROBE_MARKER"
-        exit 64
-        """#)
-        try executable(at: tools.appendingPathComponent("security"), contents: #"""
-        #!/bin/bash
-        echo unexpected-apple >> "$PROBE_MARKER"
-        exit 71
-        """#)
-        try executable(at: tools.appendingPathComponent("xcrun"), contents: #"""
-        #!/bin/bash
-        if [ "$*" = "--sdk macosx --show-sdk-version" ]; then
-            echo 26.4
-            exit 0
-        fi
-        echo unexpected-apple >> "$PROBE_MARKER"
-        exit 71
-        """#)
-        try prepareProvenanceFixture(temporary)
-        let result = try runScript(temporary.appendingPathComponent("scripts/build-dmg.sh"),
-            environment: ["PATH": tools.path + ":/usr/bin:/bin", "PROBE_MARKER": marker.path,
-                          "BUILD_VERSION": "42", "FLAVOR": "prod"])
-        XCTAssertEqual(result.status, 64, result.output)
-        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "compiler\n")
+        XCTAssertEqual(result.status, 1, "Git ignores Resources/community-signing-certificate.pem: \(result.output)")
+    }
+
+    func test_publishingRunRefusesLocalSigningOverrides() throws {
+        for override in [["EXODIA_COMMUNITY_SIGNING": "adhoc"],
+                         ["EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE": "/nonexistent/test.pem"]] {
+            let result = try runScript(try projectRoot().appendingPathComponent("scripts/user-release.sh"),
+                environment: ["PATH": "/usr/bin:/bin", "FLAVOR": "prod"].merging(override) { $1 })
+            XCTAssertEqual(result.status, 1, result.output)
+            XCTAssertTrue(result.output.contains("are for local builds"), result.output)
+        }
     }
 
     func test_developerIDPathRequiresExplicitLegacyOptIn() throws {
@@ -199,6 +251,55 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), result.output)
     }
 
+    func test_publicationRequiresTheCommittedSigningIdentity() throws {
+        let identities = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: identities) }
+        let identity = try makeSigningIdentity(in: identities, name: "release")
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for directory in ["scripts", "Resources", "build", "bin"] {
+            try FileManager.default.createDirectory(at: temporary.appendingPathComponent(directory),
+                withIntermediateDirectories: true)
+        }
+        let root = try projectRoot()
+        for relative in ["scripts/upload-release.sh", "Resources/Info.plist.template"] {
+            try FileManager.default.copyItem(at: root.appendingPathComponent(relative),
+                to: temporary.appendingPathComponent(relative))
+        }
+        try FileManager.default.copyItem(at: identity.certificate,
+            to: temporary.appendingPathComponent("Resources/community-signing-certificate.pem"))
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Exodia-9.9.9-build42.dmg"))
+        let marker = temporary.appendingPathComponent("publication-attempt.txt")
+        try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
+        #!/bin/bash
+        if [ "$1 $2" = "auth status" ] || [ "$1 $2" = "release view" ]; then exit 0; fi
+        echo unexpected-upload > "$PROBE_MARKER"
+        exit 74
+        """#)
+        try prepareProvenanceFixture(temporary)
+        let environment = ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                           "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
+                           "BUILD_VERSION": "42", "PROBE_MARKER": marker.path]
+
+        XCTAssertNotEqual(try sealFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg",
+                                          codeSigning: "certificate:ABC", expectSuccess: false), 0)
+        try sealFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg", codeSigning: "adhoc")
+        let adhoc = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+                                  environment: environment)
+        XCTAssertNotEqual(adhoc.status, 0)
+        XCTAssertTrue(adhoc.output.contains("archive code signing does not match"), adhoc.output)
+
+        // The upload derives the same identity from the committed certificate,
+        // passes provenance and stops only at the existing-release guard.
+        try sealFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg",
+                        codeSigning: "certificate:" + identity.sha1)
+        let signed = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+                                   environment: environment)
+        XCTAssertNotEqual(signed.status, 0)
+        XCTAssertTrue(signed.output.contains("already exists; refusing to overwrite"), signed.output)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), signed.output)
+    }
+
     func test_publicationRefusesExistingVersionBeforeKeysOrUpload() throws {
         let temporary = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporary) }
@@ -250,6 +351,79 @@ final class PackagingRebrandTests: XCTestCase {
                 String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
     }
 
+    /// Runs build-dmg.sh in a minimal committed checkout whose compiler stub exits 64.
+    /// `calls` lists the stubbed compiler and Apple tools that ran, nil when none did.
+    private func runBuildFixture(certificate: URL? = nil, arguments: [String] = [],
+                                 environment: [String: String] = [:]) throws
+        -> (result: (status: Int32, output: String), calls: String?) {
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let tools = temporary.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+        let marker = temporary.appendingPathComponent("calls.txt")
+        let root = try projectRoot()
+        for relative in ["scripts/build-dmg.sh", "VERSION", "Package.resolved",
+                         "Resources/Info.plist.template", "Resources/sparkle-public-ed-key.txt",
+                         "Resources/blocknote/index.html"] {
+            let destination = temporary.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: root.appendingPathComponent(relative), to: destination)
+        }
+        if let certificate {
+            try FileManager.default.copyItem(at: certificate,
+                to: temporary.appendingPathComponent("Resources/community-signing-certificate.pem"))
+        }
+        try executable(at: tools.appendingPathComponent("swift"), contents: #"""
+        #!/bin/bash
+        echo compiler >> "$PROBE_MARKER"
+        exit 64
+        """#)
+        try executable(at: tools.appendingPathComponent("security"), contents: #"""
+        #!/bin/bash
+        echo unexpected-apple >> "$PROBE_MARKER"
+        exit 71
+        """#)
+        try executable(at: tools.appendingPathComponent("xcrun"), contents: #"""
+        #!/bin/bash
+        if [ "$*" = "--sdk macosx --show-sdk-version" ]; then
+            echo 26.4
+            exit 0
+        fi
+        echo unexpected-apple >> "$PROBE_MARKER"
+        exit 71
+        """#)
+        try prepareProvenanceFixture(temporary)
+        let result = try runScript(temporary.appendingPathComponent("scripts/build-dmg.sh"),
+            arguments: arguments,
+            environment: ["PATH": tools.path + ":/usr/bin:/bin", "PROBE_MARKER": marker.path,
+                          "BUILD_VERSION": "42", "FLAVOR": "prod"].merging(environment) { $1 })
+        return (result, try? String(contentsOf: marker, encoding: .utf8))
+    }
+
+    /// A throwaway self-signed code-signing identity like the community one.
+    private func makeSigningIdentity(in directory: URL, name: String) throws
+        -> (certificate: URL, key: URL, sha1: String) {
+        let openssl = URL(fileURLWithPath: "/usr/bin/openssl")
+        let key = directory.appendingPathComponent(name + "-key.pem")
+        let certificate = directory.appendingPathComponent(name + "-certificate.pem")
+        let created = try runTool(openssl, arguments: ["req", "-x509", "-newkey", "rsa:2048", "-sha256",
+            "-days", "2", "-nodes", "-keyout", key.path, "-out", certificate.path,
+            "-subj", "/CN=Exodia Test Signing " + name,
+            "-addext", "basicConstraints=critical,CA:false",
+            "-addext", "keyUsage=critical,digitalSignature",
+            "-addext", "extendedKeyUsage=critical,codeSigning"], environment: ["PATH": "/usr/bin:/bin"])
+        XCTAssertEqual(created.status, 0, created.output)
+        let fingerprint = try runTool(openssl, arguments: ["x509", "-in", certificate.path, "-noout",
+            "-fingerprint", "-sha1"], environment: ["PATH": "/usr/bin:/bin"])
+        XCTAssertEqual(fingerprint.status, 0, fingerprint.output)
+        let sha1 = String(fingerprint.output.split(separator: "=").last ?? "")
+            .replacingOccurrences(of: ":", with: "").lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(sha1.count, 40, fingerprint.output)
+        return (certificate, key, sha1)
+    }
+
     private func prepareProvenanceFixture(_ directory: URL, archiveName: String? = nil) throws {
         let helper = directory.appendingPathComponent("scripts/release-provenance.py")
         try FileManager.default.copyItem(at: try projectRoot().appendingPathComponent("scripts/release-provenance.py"),
@@ -265,16 +439,30 @@ final class PackagingRebrandTests: XCTestCase {
             XCTAssertEqual(result.status, 0, result.output)
         }
         if let archiveName {
-            let captured = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
-                arguments: [helper.path, "capture", "--project-root", directory.path], environment: environment)
-            XCTAssertEqual(captured.status, 0, captured.output)
-            let result = try runTool(URL(fileURLWithPath: "/usr/bin/python3"), arguments: [helper.path, "seal",
-                "--project-root", directory.path, "--source-sha", captured.output.trimmingCharacters(in: .whitespacesAndNewlines),
-                "--archive", directory.appendingPathComponent("build/" + archiveName).path,
-                "--version", "9.9.9", "--build", "42", "--flavor", "prod", "--distribution", "community"],
-                environment: environment)
-            XCTAssertEqual(result.status, 0, result.output)
+            try sealFixture(directory, archiveName: archiveName, codeSigning: "adhoc")
         }
+    }
+
+    @discardableResult
+    private func sealFixture(_ directory: URL, archiveName: String, codeSigning: String,
+                             expectSuccess: Bool = true) throws -> Int32 {
+        let helper = directory.appendingPathComponent("scripts/release-provenance.py")
+        let environment = ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
+        let captured = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+            arguments: [helper.path, "capture", "--project-root", directory.path], environment: environment)
+        XCTAssertEqual(captured.status, 0, captured.output)
+        let result = try runTool(URL(fileURLWithPath: "/usr/bin/python3"), arguments: [helper.path, "seal",
+            "--project-root", directory.path, "--source-sha", captured.output.trimmingCharacters(in: .whitespacesAndNewlines),
+            "--archive", directory.appendingPathComponent("build/" + archiveName).path,
+            "--version", "9.9.9", "--build", "42", "--flavor", "prod", "--distribution", "community",
+            "--code-signing", codeSigning],
+            environment: environment)
+        if expectSuccess {
+            XCTAssertEqual(result.status, 0, result.output)
+        } else {
+            XCTAssertTrue(result.output.contains("code signing must be"), result.output)
+        }
+        return result.status
     }
 
     private func temporaryDirectory() throws -> URL {

@@ -354,10 +354,14 @@ Update flow (download-on-action):
   crashes, process kills or power loss. A final Sparkle delegate guard rechecks
   activity before an app-initiated relaunch. Feed = GitHub Releases
   (`BuildConfig.appcastURL`).
-  Community archives use our independent Sparkle Ed25519 signature and ad-hoc
-  app code signing, without Apple Developer/notarization. Source dev builds
-  (9999 / -dev) do not start the binary updater. WHY:
+  Community archives use our independent Sparkle Ed25519 signature, without
+  Apple Developer/notarization. The app is signed with Exodia's self-signed
+  community certificate when Resources/community-signing-certificate.pem is
+  committed (stable designated requirement, so TCC grants survive updates),
+  otherwise ad hoc. Source dev builds (9999 / -dev) do not start the binary
+  updater. WHY:
   .project-docs/decisions/2026-10-17-community-updates.md,
+  .project-docs/decisions/2026-10-19-community-signing-identity.md,
   docs/decisions/2026-06-17-update-download-on-action.md,
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
@@ -461,8 +465,9 @@ SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 
 # Community binary: local universal build, no Apple Developer
 FLAVOR=prod ./scripts/user-release.sh --preflight-only
-# Commit relevant build inputs before the build; retain the adjacent DMG manifest
-FLAVOR=prod ./scripts/user-release.sh --build-only
+# Commit relevant build inputs before the build; retain the adjacent DMG manifest.
+# Doppler supplies the community certificate's private key.
+doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh --build-only
 # Publishing also needs the project's Sparkle signing key and GitHub access
 FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
@@ -473,13 +478,19 @@ Developer membership, Developer ID or notarization; publishing requires our
 independent Sparkle Ed25519 signing key and GitHub access. Keep archive signature
 verification and app integrity checks. The former Apple-signed mode remains
 optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
-other OS protections. First downloads may require user approval and macOS
-permissions can require regranting. WHY:
-`.project-docs/decisions/2026-10-17-community-updates.md`.
+other OS protections. First downloads may require user approval. The community
+certificate is public; its private key lives only in Doppler
+(`EXODIA_COMMUNITY_SIGNING_KEY`, `sidekey/dev`) and is never committed or
+printed. Never replace the certificate except for a leaked key: its SHA-1 is in
+every build's designated requirement, so a new one makes every install regrant
+macOS permissions. WHY:
+`.project-docs/decisions/2026-10-17-community-updates.md`,
+`.project-docs/decisions/2026-10-19-community-signing-identity.md`.
 
 Release provenance is required: commit and clean Sources, Resources, Package.swift,
 Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
-seal archive SHA-256/size, version, build and flavor in `<DMG>.manifest.json`.
+seal archive SHA-256/size, version, build, flavor and code-signing identity in
+`<DMG>.manifest.json`.
 Upload-only requires the adjacent manifest. Reject missing/inconsistent
 provenance, changed HEAD or archive bytes before signing-key access/uploads, and
 target the release at the verified manifest's build commit. Rebuild after changing
