@@ -17,6 +17,9 @@ For the maintainer's parallel feature sessions, follow the
 Feature worktrees use non-launching Swift builds/tests. The commands below
 describe a standalone source customization; dev packaging can stop other beta
 processes, so it is not the way to update the shared installed production app.
+Finished feature agents automatically submit reviewed PRs to the persistent
+FIFO build queue. Its designated builder owns integration and local promotion;
+queue pickup does not bypass any release or safe-restart check.
 
 Use macOS 14.2 or newer and Xcode 26 or newer with its command-line tools:
 
