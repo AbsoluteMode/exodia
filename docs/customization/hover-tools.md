@@ -28,6 +28,7 @@ All paths below start at `Sources/Sidekey/`.
 | Capsule icon/title/status and explicit feedback | `DynamicIsland/IslandHoverPanelControl.swift`, `DynamicIsland/HoverToolPresentation.swift` |
 | Inline views, shared three-column geometry and bounded scrolling | `DynamicIsland/IslandView.swift`, `DynamicIsland/IslandDropModeControl.swift` |
 | Inline monitoring, picker and refresh lifecycle | `Monitor/MonitorHoverPanel.swift`, `Monitor/MonitorStore.swift` |
+| Inline brightness strip, backlight, Extra overlay and battery time | `Brightness/IslandBrightnessStrip.swift`, `Brightness/ScreenBrightnessController.swift`, `Brightness/BrightnessBoostOverlay.swift`, `Brightness/BatteryRuntime.swift` |
 | Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `DynamicIsland/IslandPanel.swift` |
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
 | Drag/drop catalog and selected layout | `Settings/ToolboxSettingsView.swift` |
@@ -59,7 +60,10 @@ All paths below start at `Sources/Sidekey/`.
 7. Use `HoverToolPresentation` for real mode/language/recording status, not a
    store read inside the control or an invented Enabled status for navigation.
    Monitor is `.inlinePanel` / `.openPanel(.monitor)` for every hover launcher;
-   keep its dashboard picker and Back flow inside the drawer.
+   keep its dashboard picker and Back flow inside the drawer. Brightness is
+   `.inlinePanel` / `.openPanel(.brightness)`, offered from the catalog and
+   search only. Its strip is shorter than the tools, so the band keeps the
+   previous height until the pointer reaches the strip.
 
 `scaffold-hover` creates an isolated view and checklist, not a registered feature.
 The native app has no executable plugin loader. Integrate the requested source
@@ -68,7 +72,7 @@ change and rebuild it with the canonical development script.
 ## Checks
 
 ```bash
-python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests|MonitorDashboardTests'
+python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests|MonitorDashboardTests|BrightnessHoverToolTests|ScreenBrightnessControllerTests|BatteryRuntimeTests|BatteryRuntimeMonitorTests'
 python3 scripts/customize.py build
 ```
 
@@ -79,6 +83,9 @@ hit regions match the compact island width, and music uses that same width.
 Cover 310-point and 312-point examples, including fractional capsule widths;
 History's 300-point reservation must fit its 280-point preview plus eight-point
 gap with zero drawer overhang. Check pure status updates and Monitor picker -> dashboard -> Back in the same drawer.
+Open Brightness from a lower row and check that the drawer stays open while the
+pointer moves up to the strip. Fake devices cover the backlight and Extra in
+tests; a live Extra check needs the user's consent, because it brightens their screen.
 Use offscreen checks; do not open GUI test windows over the user's work.
 Search for an unpinned Output Lang, verify keyboard and pointer activation,
 clear with Escape, and check that clicking outside releases text focus. Ordinary

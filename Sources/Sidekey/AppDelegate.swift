@@ -452,6 +452,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Return the backlight to its earlier level and remove the Extra overlay.
+        ScreenBrightnessController.shared.shutdown()
         removeWorkspacePowerObservers()
         recorder.cancel()
         // Cancel any in-flight streaming session so the WS task doesn't

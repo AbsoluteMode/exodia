@@ -57,6 +57,7 @@ enum IslandHoverToolSearch {
         case .notes: return "meetings meeting notes встречи заметки"
         case .meetingRecord: return "meeting recording record запись встречи"
         case .monitor: return "dashboard server status монитор серверы"
+        case .brightness: return "screen display sun hdr xdr vivid extra boost battery яркость экран солнце батарея"
         case .quit: return "exit выход"
         case .settings: return "preferences настройки"
         }

@@ -33,6 +33,11 @@ The app runs a fixed read-only Linux metrics collector through SSH; dashboards
 cannot embed commands or executable HTML. UT/Sferyx configuration belongs to
 the user’s local files and is absent from the source repository.
 
+Brightness reads and sets the display backlight through macOS DisplayServices
+and reads the battery charge and load through IOKit, only while its hover strip
+is open (plus one level read when hover opens with Brightness pinned). Nothing
+is stored, logged or sent, and it requests no macOS permissions.
+
 ## What can leave the device, and only when you choose it
 
 | Route | Where data goes | When |

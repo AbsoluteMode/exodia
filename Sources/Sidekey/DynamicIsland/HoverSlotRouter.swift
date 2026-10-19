@@ -16,6 +16,7 @@ enum HoverInlinePanel: Equatable {
     case inputLanguagePicker
     case outputLanguagePicker
     case monitor
+    case brightness
 }
 
 /// A one-shot "open this inline panel" request carried on `AppState`. The
@@ -118,6 +119,8 @@ enum HoverSlotRouter {
             return .toggleMeetingRecord
         case .monitor:
             return .openPanel(.monitor)
+        case .brightness:
+            return .openPanel(.brightness)
         case .quit:
             return .quit
         case .vocab:

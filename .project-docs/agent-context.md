@@ -150,8 +150,9 @@ Hover capsules and materials:
   Historical 2.2.5 icon-refinement proof covers 101 focused tests and 18
   source-matched offscreen renders with no visible/key windows (layout/text only).
   Bundled icon assets retain their own presentation. HoverToolPresentation
-  resolves state purely from mode, languages and recording: Fast/Smart, input
-  Auto/language, output Smart only/Off/language, and Recording/Not recording.
+  resolves state purely from mode, languages, recording and brightness:
+  Fast/Smart, input Auto/language, output Smart only/Off/language,
+  Recording/Not recording, and NN%/Extra (none for an unreadable display).
   Stateless navigation tools have no invented status.
   HoverLayoutStore.columns=3. Shared geometry uses 68 pt rows, a 76 pt row
   stride, 8 pt row/column gaps, 12 pt horizontal and 8 pt vertical insets.
@@ -208,6 +209,35 @@ Monitor inside hover:
   40 search PNGs with no visible/key windows. Synthetic no-op stores avoid real
   collectors/user data; native glass, real pointer/focus and installed-app
   acceptance remain separate. Guide: docs/customization/dashboards.md.
+
+Brightness inside hover:
+  Brightness is an inlinePanel tool offered only from the Toolbox catalog and
+  search; HoverLayoutStore.defaultSlots and saved layouts are unchanged.
+  HoverSlotRouter resolves .openPanel(.brightness) to IslandBrightnessStrip:
+  Back, a white capsule backlight slider, an Extra switch and one status line
+  (a notice, or the battery time left). The strip is 68 pt (76 pt band, 126 pt
+  with music) and needsKeyboardFocus for its controls. Opened from a lower
+  tile, the band keeps the previous height as transparent hover space under the
+  top-aligned drawer until the pointer reaches the strip (onContinuousHover
+  releases it), so the drawer does not close under the pointer.
+  ScreenBrightnessController follows the island display (IslandScreenResolver)
+  and reads/writes its backlight through private DisplayServices (dlopen); an
+  unreadable display gets a disabled slider and no switch. Showing the strip
+  only reads, polling every 0.5 s while it is visible; a pinned capsule
+  refreshes NN%/Extra when hover opens. Extra exists only for potential EDR
+  headroom > 1.01: it writes the backlight maximum, then orders a click-through
+  shielding-level BrightnessBoostOverlay (1x1 rgba16Float extended-linear
+  MTKView, multiply compositing, multiplier min(2, headroom), redrawn on change
+  plus a 2 s keepalive while refreshed and visible, sharingType none). Extra
+  survives outside backlight changes and closing the strip; moving the slider
+  below the maximum ends it at the new level. Switching it off, a display
+  change or lost headroom, sleep, session resign, serious thermal state, an
+  overlay failure and quit restore the level from before Extra. Extra is never
+  persisted or resumed after wake or relaunch. BatteryRuntimeMonitor reads IOKit
+  power sources and AppleSmartBattery every 5 s while the strip is visible: on
+  battery macOS's estimate wins, otherwise remaining Wh over the smoothed
+  accumulator load; on power the line shows the time if unplugged. Nothing is
+  stored, logged or sent. WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 
 Hover tool search and pointer routing:
   Search all tools searches the full catalog (titles, descriptions and aliases),
