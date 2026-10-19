@@ -41,6 +41,23 @@ def common_dir():
     return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir"))
 
 
+def canonical_pr(url):
+    match = re.fullmatch(r"https://github\.com/([\w.-]+)/([\w.-]+)/pull/([1-9]\d*)", url)
+    remote = re.fullmatch(r"(?:https://github\.com/|git@github\.com:)([\w.-]+)/([\w.-]+?)"
+                          r"(?:\.git)?", git("remote", "get-url", "origin"))
+    if not match or not remote:
+        raise ValueError("Use a GitHub PR from this repository's origin")
+    owner, repo, number = match.groups()
+    remote_owner, remote_repo = remote.groups()
+    # Old worktrees still use the pre-rename URL; it is the same GitHub PR.
+    if remote_owner.lower() == "absolutemode" and remote_repo.lower() in ("exodia", "whytap"):
+        if owner.lower() == "absolutemode" and repo.lower() in ("exodia", "whytap"):
+            return f"https://github.com/AbsoluteMode/whytap/pull/{number}"
+    if (owner.lower(), repo.lower()) != (remote_owner.lower(), remote_repo.lower()):
+        raise ValueError("The PR does not belong to this repository's origin")
+    return f"https://github.com/{remote_owner}/{remote_repo}/pull/{number}"
+
+
 @contextmanager
 def database():
     path = common_dir() / "exodia-build-queue.sqlite3"
@@ -116,9 +133,10 @@ def run(args):
     with database() as db:
         if args.command == "configure":
             previous = config(db).get("builder_thread")
-            if previous and previous != args.builder_thread:
+            if previous:
                 require_builder(db, args.actor)
-                if db.execute("SELECT 1 FROM tickets WHERE status='in_progress'").fetchone():
+                if previous != args.builder_thread and db.execute(
+                        "SELECT 1 FROM tickets WHERE status='in_progress'").fetchone():
                     raise ValueError("Finish or recover active work before transferring the builder")
             db.execute("INSERT OR REPLACE INTO config VALUES ('builder_thread', ?)",
                        (args.builder_thread,))
@@ -128,8 +146,7 @@ def run(args):
         if args.command == "enqueue":
             if not config(db).get("builder_thread"):
                 raise ValueError("Configure the builder before submitting work")
-            if not re.fullmatch(r"https://github\.com/[\w.-]+/[\w.-]+/pull/[1-9]\d*", args.pr):
-                raise ValueError("--pr must be a GitHub pull request URL")
+            args.pr = canonical_pr(args.pr)
             if not re.fullmatch(r"[0-9a-f]{40}", args.head):
                 raise ValueError("--head must be the exact full 40-character reviewed commit SHA")
             git("cat-file", "-e", args.head + "^{commit}")

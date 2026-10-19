@@ -19,6 +19,7 @@ class QueueTests(unittest.TestCase):
         self.repo = Path(self.temp.name) / "repo"
         self.repo.mkdir()
         self.git("init", "-q")
+        self.git("remote", "add", "origin", "https://github.com/example/app.git")
         self.git("-c", "user.name=Queue Test", "-c", "user.email=queue@example.invalid",
                  "commit", "--allow-empty", "-qm", "fixture")
         self.head = self.git("rev-parse", "HEAD").strip()
@@ -109,6 +110,23 @@ class QueueTests(unittest.TestCase):
         self.enqueue()
         self.enqueue(session="other-worker", ok=False)
         self.assertEqual(self.call("status")["tickets"][0]["session"], "worker")
+
+    def test_repository_rename_cannot_create_duplicate_pr_requests(self):
+        self.git("remote", "set-url", "origin", "git@github.com:AbsoluteMode/whytap.git")
+        def submit(repository):
+            return self.call("enqueue", "--pr", f"https://github.com/AbsoluteMode/{repository}/pull/1",
+                             "--head", self.head, "--title", "Fixture", "--checks", "Fixture checks",
+                             "--acceptance", "Fixture acceptance", "--session", "worker")
+        first = submit("exodia")
+        second = submit("whytap")
+        self.assertEqual(first["ticket"]["id"], second["ticket"]["id"])
+        self.assertFalse(second["created"])
+        self.enqueue(ok=False)
+
+    def test_worker_cannot_change_builder_callback_host(self):
+        self.call("configure", "--builder-thread", "builder", "--host", "different",
+                  actor="worker", ok=False)
+        self.assertEqual(self.call("status")["builder"]["builder_host"], "local")
 
     def test_notification_outbox_survives_restart_and_ack(self):
         self.enqueue()
