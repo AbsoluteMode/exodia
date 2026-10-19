@@ -195,9 +195,12 @@ final class BrightnessKeys: ObservableObject {
     }
 
     /// Launch and the permission repair call this. With the setting on, it installs the tap
-    /// unless it is already listening.
+    /// unless it is already listening. The first handler stays: Drop's repair calls this every
+    /// second while Drop is not installed, and a new handler would forget a press at the top.
     func start(showStrip: @escaping @MainActor () -> Void) {
-        handler = BrightnessKeyHandler(controller: controller, showStrip: showStrip, now: now)
+        if handler == nil {
+            handler = BrightnessKeyHandler(controller: controller, showStrip: showStrip, now: now)
+        }
         guard isEnabled, !isListening else { return }
         listen()
     }

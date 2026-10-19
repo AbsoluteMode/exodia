@@ -252,6 +252,18 @@ final class BrightnessKeysTests: XCTestCase {
         XCTAssertEqual(k.tap.starts, 1)
     }
 
+    func testStartingAgainBetweenTheTwoPressesStillTurnsExtraOn() {
+        // Drop's permission repair starts the keys every second while Drop is not installed.
+        let k = KeysFixture(self)
+        k.device.level = 1
+        k.keys.start(showStrip: {})
+        k.keys.setEnabled(true)
+        k.tap.deliver?(key(.up))
+        k.keys.start(showStrip: {})
+        k.tap.deliver?(key(.up))
+        XCTAssertTrue(k.controller.isExtraOn)
+    }
+
     func testTurningThemOffRemovesTheTap() {
         let k = KeysFixture(self)
         k.keys.start(showStrip: {})

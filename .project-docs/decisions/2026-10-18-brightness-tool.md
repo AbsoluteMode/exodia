@@ -167,6 +167,8 @@ matter. Whether a press goes to Exodia or to macOS is decided on its first
 event, and its repeats and release follow it. The tap is installed again with
 the hotkeys (wake, an Accessibility change) and given up when macOS disables
 it a fourth time in a row without an event, or at once without Accessibility.
+Drop's permission repair starts the keys again every second while Drop is not
+installed; the first key handler stays, so the gesture keeps its first press.
 
 **Battery.** IOKit power sources give the percentage, power state and macOS's
 time to empty. AppleSmartBattery gives the remaining charge
@@ -312,6 +314,11 @@ permission; Brightness keys need the Accessibility permission the hotkeys use.
   tests, 5 skipped, 0 failures (52.461 s). After the fixed boost, the
   app-switch frames, Settings and Brightness keys: 2,977 tests, 5 skipped, 0
   failures (56.562 s).
+- After merging main 6670612 (Projects removed, Drop's permission repair): a
+  test that starts the keys between the two presses at the top failed first
+  (Extra stayed off), then the Brightness, battery and hover filter passed 189
+  tests and the full `swift test` 3,044 tests, 5 skipped, 0 failures
+  (60.299 s).
 
 ## Rejected alternatives
 
