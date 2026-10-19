@@ -1,7 +1,7 @@
 import Foundation
 
 /// Describes the actual bundle, including a developer copy in another checkout.
-/// Paths are displayed locally in Settings and conflict dialogs, never logged.
+/// Paths are displayed locally in conflict dialogs, never logged.
 struct AppBuildIdentity: Equatable, Sendable {
     // Keep metadata keys compatible with Exodia builds and the common runtime lease.
     static let instanceLeaseVersionKey = "ExodiaInstanceLeaseVersion"
