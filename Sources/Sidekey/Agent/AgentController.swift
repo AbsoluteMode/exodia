@@ -1002,7 +1002,7 @@ final class AgentController: ObservableObject {
         responseStore.markErrorBlock(StateErrorBlock(
             title: "No agent connected",
             subtitle: "Connect in Settings",
-            message: "Connect OpenCode with your OpenRouter key in Settings → Agents.",
+            message: "Connect OpenCode in Settings → Agents. Its model is set in API & Models.",
             code: "not_connected",
             retryable: false
         ))
@@ -1697,7 +1697,7 @@ final class AgentController: ObservableObject {
             return agentError.retryable
         }
         // Retrying cannot help until a provider and its key are set in
-        // Settings -> Models.
+        // Settings -> API & Models.
         if error is BatchTranscriptionUnavailable {
             return false
         }

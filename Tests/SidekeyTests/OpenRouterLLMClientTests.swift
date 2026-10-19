@@ -162,4 +162,7 @@ final class OpenRouterLLMClientTests: XCTestCase {
         XCTAssertNil(OpenRouterReasoningCapabilities(mandatory: true, supportedEfforts: ["none"]).dictationSetting)
     }
 
+    func testNotConfiguredPointsToAPIAndModels() {
+        XCTAssertEqual(OpenRouterLLMError.notConfigured.description, "No LLM is chosen in Settings > API & Models.")
+    }
 }

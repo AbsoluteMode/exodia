@@ -9,7 +9,7 @@ import os.log
 /// Lives at file scope so the classification is unit-testable without
 /// standing up the AppDelegate.
 enum StreamingSessionSetupError: Error {
-    case byokMisconfigured(TranscriptionFactoryError)
+    case byokMisconfigured(FeatureRouteError)
 }
 
 /// Outcome of `AppDelegate.dropFlowRoute(phase:mode:hasStreamingSession:)`.
@@ -56,13 +56,15 @@ enum DropCancelRoute: Equatable {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = AudioRecorder()
-    /// Batch transcriber for the recorder fallback, the resilient-delivery
-    /// batch rung, Retry and agent batch voice: the provider and key chosen
-    /// in Settings -> Models, read on every take. Without that choice it is
+    /// Batch transcriber for the Drop recorder fallback, the resilient-delivery
+    /// batch rung and Retry: the provider, model and key of the route the take
+    /// started with (`DropTake`), read on every call. Without that key it is
     /// unavailable and the audio goes nowhere; it never falls back to another
     /// provider.
     /// WHY: .project-docs/decisions/2026-10-18-provider-batch-transcription.md
-    private let batchTranscriber: any BatchTranscribing = ProviderBatchTranscriber()
+    private let dropBatchTranscriber: any BatchTranscribing = ProviderBatchTranscriber.forDrop()
+    /// Batch transcriber for the agent's voice path: the Agent voice route.
+    private let agentBatchTranscriber: any BatchTranscribing = ProviderBatchTranscriber.forFeature(.agentVoice)
     /// In-flight streaming session for the Drop flow. Both `.fast` and
     /// `.smart` open one — they share the live realtime pipeline; `.smart`
     /// differs only after the stop, when the transcript runs through the
@@ -356,6 +358,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // first credential read (CAN-001). Idempotent, cheap.
         CredentialMigration().run()
 
+        // Carry the old Models-tab provider and model choices into per-feature
+        // routes, once. After the key migration so the keys are in the
+        // keychain; synchronous, reads only, no network.
+        AIRoutingMigration.live().run()
+
         // Free the retired on-device models' disk space once
         // (Application Support/Sidekey/Local*Models, up to a few GB); off the
         // main thread so launch never waits on the removal.
@@ -366,7 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Restore standard text-editing shortcuts (⌘V/⌘C/⌘X/⌘A) for the app's
         // text fields. Accessory apps have no menu bar, so without this the
-        // Settings → Models API-key field (and any other field) can't paste.
+        // Settings → API & Models API-key field (and any other field) can't paste.
         AppMainMenu.installIfNeeded()
 
         // Avoid a cold PDF decode in the Dynamic Island's first drop-recording
@@ -448,6 +455,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installWorkspacePowerObservers()
 
         startReady()
+        ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore)
+        BackupViewModel.shared.start()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -467,6 +476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        BackupViewModel.shared.stop()
         // Remove the Extra overlay; Extra never changes the backlight.
         ScreenBrightnessController.shared.shutdown()
         BrightnessKeys.shared.stop()
@@ -1108,7 +1118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             },
             openSettings: { [weak self] in
-                self?.openSettingsWindow(tab: .models)
+                self?.openSettingsWindow(tab: .apiAndModels)
             },
             openHelp: { [weak self] in
                 self?.openHelpWindow()
@@ -1231,8 +1241,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openSettingsWindow(tab: .hotkeys)
     }
 
-    private func openSettingsWindow(tab: SettingsWindowTab = .models) {
-        ensureSettingsWindowController().show(tab: tab)
+    private func openSettingsWindow(tab: SettingsWindowTab = .apiAndModels, feature: AIFeature? = nil) {
+        ensureSettingsWindowController().show(tab: tab, feature: feature)
     }
 
     @discardableResult
@@ -1941,7 +1951,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case nil: return nil
                 }
             },
-            audioTranscriber: BatchAgentAudioTranscriber(batch: batchTranscriber),
+            audioTranscriber: BatchAgentAudioTranscriber(batch: agentBatchTranscriber),
             responseStore: responseStore,
             chatStackStore: chatStackStore,
             // Stage 2 capability gate: read the live flag on every gesture so
@@ -1955,7 +1965,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return nil }
                 // resilient: false — agent-voice must never resolve .degraded
                 // (the handler ignores it, silently dropping dictation).
-                return try? await self.makeStreamingSession(resilient: false)
+                return try? await self.makeStreamingSession(feature: .agentVoice, resilient: false)
             },
             islandAgentFlow: islandFlow,
             // The island answer panel renders its useful-links chip from this
@@ -1972,7 +1982,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return nil }
                 // resilient: false — Google-search must never resolve .degraded
                 // (the handler ignores it, silently dropping dictation).
-                return try? await self.makeStreamingSession(resilient: false)
+                return try? await self.makeStreamingSession(feature: .voiceSearch, resilient: false)
             },
             // Bridge live partials into the same island wing the agent uses
             // (Google rides the agent flow store via activeSourceIsGoogle).
@@ -2421,7 +2431,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// hardcoded `"pending"`) so a turn's started/completed/failed events
     /// correlate, plus a phase timeline to localise where a turn stalls.
     private var dropTurnTrace: DropTurnTrace?
-    private var dropTurnMode: TranscriptionMode = .fast
     /// Fires if a turn never reaches a terminal event — the infinite-hang case
     /// that otherwise emits NOTHING (only an orphaned `voice_turn_started`,
     /// because `run()` never returns so `handleStreamingResult` never runs).
@@ -2447,7 +2456,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let dropTurnWatchdogTimeout: Duration = .seconds(640)
 
     private func startDropTurnTelemetry() {
-        dropTurnMode = UserPreferencesCache.shared.currentMode
+        // The one place a new take starts: the mode and its route are fixed
+        // here and every later read of the take's mode uses `DropTake`.
+        let mode = UserPreferencesCache.shared.currentMode
+        DropTake.shared.begin(mode: mode, route: AIRoutingStore.shared.route(for: .drop(mode)))
         AppState.shared.dropDeliveryFailureMessage = nil
         lastDropPartial = ""
         let trace = DropTurnTrace()
@@ -2455,7 +2467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dropActivity.begin(reason: "drop voice turn")
         armDropTurnWatchdog(for: trace)
         armDropMaxHoldTimer(for: trace)
-        os_log("drop turn %{public}@ started mode=%{public}@", log: Self.log, type: .info, trace.turnId, dropTurnMode.rawValue)
+        os_log("drop turn %{public}@ started mode=%{public}@", log: Self.log, type: .info, trace.turnId, DropTake.shared.mode.rawValue)
     }
 
     private func completeDropTurnTelemetry() {
@@ -2605,7 +2617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let startedAt = Date()
             do {
                 let prefs = PrivacyPreferences.shared
-                let raw = try await batchTranscriber.transcribe(
+                let raw = try await dropBatchTranscriber.transcribe(
                     audio: wav,
                     language: prefs.selectedLanguage?.code
                 )
@@ -2670,7 +2682,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // enabled — agent-voice and Google-search pass resilient:false
                 // so they can never resolve .degraded (their handlers ignore it,
                 // which would silently drop the dictation).
-                session = try await makeStreamingSession(resilient: AgentFeatureGate.resilientDropDeliveryEnabled)
+                session = try await makeStreamingSession(
+                    feature: DropTake.shared.feature,
+                    resilient: AgentFeatureGate.resilientDropDeliveryEnabled
+                )
             } catch {
                 // Stale-turn gate: a newer turn claimed the window while we
                 // were suspended — its setup will surface its own failures;
@@ -2687,13 +2702,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 failDropTurnTelemetry(reason: "byok_misconfigured")
                 AppState.shared.phase = .idle
-                // The problem is one the user fixes in Settings -> Models
-                // (no provider chosen yet, BYOK key or endpoint missing).
-                // On a fresh install nothing is chosen, so idling silently
-                // would look like a dead hotkey: open the Models tab where
-                // the provider and key fields are one click away.
-                if case StreamingSessionSetupError.byokMisconfigured = error {
-                    openSettingsWindow(tab: .models)
+                // The problem is one the user fixes in Settings (no model set
+                // for the feature yet, key or endpoint missing). On a fresh
+                // install nothing is set, so idling silently would look like
+                // a dead hotkey: open API & Models on the failing feature's
+                // row, where its key and model are one click away.
+                if case StreamingSessionSetupError.byokMisconfigured(let routeError) = error {
+                    openSettingsWindow(tab: .apiAndModels, feature: routeError.feature)
                 }
                 return
             }
@@ -2785,31 +2800,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Builds the drop transcription session (direct BYOK to the user's
-    /// provider) through `TranscriptionSessionFactory`. Shared by the drop
-    /// flow and the agent voice factory so the construction recipe has one
-    /// source of truth. A thrown factory error (no provider chosen, or BYOK
-    /// enabled without a key) surfaces as `.byokMisconfigured`; the Settings
-    /// UI prevents enabling BYOK without a key.
+    /// Builds the real-time transcription session for `feature` (direct to the
+    /// provider of that feature's own route) through
+    /// `TranscriptionSessionFactory`. Shared by the drop flow, the agent voice
+    /// factory and voice search so the construction recipe has one source of
+    /// truth. A thrown route error (feature Not set, key missing, bad server
+    /// address or language) surfaces as `.byokMisconfigured`.
     ///
     /// `resilient` must be `true` ONLY for the Drop call site. Agent-voice and
     /// Google-search pass `false` explicitly — their result handlers treat
     /// `.degraded` as a no-op and would silently drop dictation if the flag
     /// were accidentally inherited.
     private func makeStreamingSession(
+        feature: AIFeature,
         resilient: Bool = false
     ) async throws -> any StreamingSessionRunning {
-        let factory = TranscriptionSessionFactory(
-            prefs: SelfKeyPreferences.shared,
-            keyStore: BYOKKeyStore(),
-            vocab: .shared
-        )
+        let factory = TranscriptionSessionFactory()
         do {
             return try factory.make(
+                feature: feature,
                 language: PrivacyPreferences.shared.selectedLanguage?.code,
                 resilient: resilient
             )
-        } catch let error as TranscriptionFactoryError {
+        } catch let error as FeatureRouteError {
             os_log(
                 "streaming: BYOK factory failed: %{public}@",
                 log: Self.log, type: .error,
@@ -3002,7 +3015,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rawText: String, targetApp: String?, targetPID: pid_t?,
         mode retryMode: TranscriptionMode? = nil
     ) async -> Bool {
-        let mode = retryMode ?? dropTurnMode
+        let mode = retryMode ?? DropTake.shared.mode
         let generation = streamingSetupGeneration
         let policy = DropOutputPolicy(mode: mode)
         let processStartedAt = ProcessInfo.processInfo.systemUptime
@@ -3047,7 +3060,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppState.shared.phase = .deliveryFailed
             os_log("drop cleanup failed: %{public}@", log: Self.log, type: .error, message)
             if DropOutputPolicy.requiresConfiguration(for: error) {
-                openSettingsWindow(tab: .models)
+                openSettingsWindow(tab: .apiAndModels, feature: .dropSmartCleanup)
             }
             return false
         }
@@ -3093,7 +3106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// side-effect wiring — phase, paste tail, retry-state, telemetry, and
     /// raw-partial salvage — is defined in exactly one place.
     private func dropDeliverySink(targetApp: String?, targetPID: pid_t?) -> DropBatchRecoverySink {
-        let mode = dropTurnMode
+        let mode = DropTake.shared.mode
         let generation = streamingSetupGeneration
         return DropBatchRecoverySink(
             setPhase: { AppState.shared.phase = $0 },
@@ -3151,7 +3164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is untouched.
     private func recoverViaBatch(pcm: Data, targetApp: String?, targetPID: pid_t?) async {
         let prefs = PrivacyPreferences.shared
-        let transcriber = batchTranscriber
+        let transcriber = dropBatchTranscriber
         let hasBatchTranscriber = await transcriber.isAvailable()
         await Self.runBatchRecovery(
             pcm: pcm,
@@ -3177,7 +3190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) async {
         let partial = lastDropPartial
         let prefs = PrivacyPreferences.shared
-        let transcriber = batchTranscriber
+        let transcriber = dropBatchTranscriber
         let hasBatchTranscriber = await transcriber.isAvailable()
         await Self.resolveDelivery(
             result: result, stopRequested: stopRequested,

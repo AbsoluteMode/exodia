@@ -54,6 +54,30 @@ struct CaseVaultStore {
         }
 
         let envelopeData = try Data(contentsOf: fileURL)
+        let payload = try Self.decode(envelope: envelopeData, using: key)
+        if payload.schemaVersion > CaseVaultPayload.currentSchemaVersion {
+            // The vault was written by a newer build of the app. Decryption
+            // succeeded — the data is intact — but this version can't interpret
+            // the newer schema. Surface needsNewerApp so the UI directs the user
+            // to update; crucially, this must NOT be treated as undecryptable or
+            // offer a destructive Reset.
+            throw CaseVaultStoreError.needsNewerApp
+        }
+        guard payload.schemaVersion == CaseVaultPayload.currentSchemaVersion else {
+            // schemaVersion < current: an older format we no longer understand.
+            throw CaseVaultStoreError.unsupportedEnvelope
+        }
+        return payload
+    }
+
+    /// Decrypts a vault envelope that is already in memory.
+    ///
+    /// Restoring a backup must merge the archived vault into this Mac's vault
+    /// without ever writing the recovered ciphertext — let alone its contents
+    /// — to a temporary file, so the decode has to work on bytes rather than a
+    /// path. `load` is the same code reading from `fileURL`.
+    /// WHY: .project-docs/decisions/2026-10-19-config-backup.md
+    static func decode(envelope envelopeData: Data, using key: SymmetricKey) throws -> CaseVaultPayload {
         let envelope: CaseVaultEnvelope
         do {
             envelope = try JSONDecoder.caseVault.decode(CaseVaultEnvelope.self, from: envelopeData)
@@ -70,7 +94,6 @@ struct CaseVaultStore {
         else {
             throw CaseVaultStoreError.invalidEnvelope
         }
-
         let sealedBox: AES.GCM.SealedBox
         do {
             sealedBox = try AES.GCM.SealedBox(
@@ -81,21 +104,8 @@ struct CaseVaultStore {
         } catch {
             throw CaseVaultStoreError.invalidEnvelope
         }
-        let data = try AES.GCM.open(sealedBox, using: key, authenticating: associatedData())
-        let payload = try JSONDecoder.caseVault.decode(CaseVaultPayload.self, from: data)
-        if payload.schemaVersion > CaseVaultPayload.currentSchemaVersion {
-            // The vault was written by a newer build of the app. Decryption
-            // succeeded — the data is intact — but this version can't interpret
-            // the newer schema. Surface needsNewerApp so the UI directs the user
-            // to update; crucially, this must NOT be treated as undecryptable or
-            // offer a destructive Reset.
-            throw CaseVaultStoreError.needsNewerApp
-        }
-        guard payload.schemaVersion == CaseVaultPayload.currentSchemaVersion else {
-            // schemaVersion < current: an older format we no longer understand.
-            throw CaseVaultStoreError.unsupportedEnvelope
-        }
-        return payload
+        let data = try AES.GCM.open(sealedBox, using: key, authenticating: Self.staticAssociatedData())
+        return try JSONDecoder.caseVault.decode(CaseVaultPayload.self, from: data)
     }
 
     func save(_ payload: CaseVaultPayload, using key: SymmetricKey) throws {
@@ -141,7 +151,9 @@ struct CaseVaultStore {
         try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: backupFileURL.path)
     }
 
-    private func associatedData() -> Data {
+    private func associatedData() -> Data { Self.staticAssociatedData() }
+
+    private static func staticAssociatedData() -> Data {
         Data("com.rootwise.sidekey.case-vault.v1".utf8)
     }
 

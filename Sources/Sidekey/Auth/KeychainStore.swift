@@ -166,6 +166,11 @@ struct KeychainStore: TokenStore {
     /// Persists `token` under `(service, account)`. Overwrites any
     /// existing value.
     func save(_ token: String) throws {
+        defer {
+            if ConfigBackupRegistry.credentialAccounts.contains(account) {
+                NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil)
+            }
+        }
         #if DEBUG && SIDEKEY_FILE_TOKEN_STORE
         try fileStore.save(token)
         #else
@@ -231,6 +236,11 @@ struct KeychainStore: TokenStore {
     /// Removes the stored token. Idempotent — does not throw if no
     /// item exists.
     func delete() throws {
+        defer {
+            if ConfigBackupRegistry.credentialAccounts.contains(account) {
+                NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil)
+            }
+        }
         #if DEBUG && SIDEKEY_FILE_TOKEN_STORE
         try fileStore.delete()
         #else

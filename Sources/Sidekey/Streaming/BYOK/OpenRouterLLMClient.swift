@@ -51,7 +51,7 @@ struct OpenAICompatibleLLMEndpoint: Equatable {
 }
 
 enum OpenRouterLLMError: Error, CustomStringConvertible, Equatable {
-    /// No LLM route is chosen in Settings -> Models.
+    /// No LLM route is chosen in Settings -> API & Models.
     case notConfigured
     case missingKey
     case missingBaseURL
@@ -64,7 +64,7 @@ enum OpenRouterLLMError: Error, CustomStringConvertible, Equatable {
     var description: String {
         switch self {
         case .notConfigured:
-            return "No LLM is chosen in Settings > Models."
+            return "No LLM is chosen in Settings > API & Models."
         case .missingKey:
             return "LLM API key is missing."
         case .missingBaseURL:

@@ -61,6 +61,21 @@ Notify: карточки слева от острова, постоянная и
 подключённые источники и позволяет отключать и включать каждый отдельно,
 сохраняя настройку и историю. [Контракт](customization/notifications.md).
 
+## Backup
+
+Settings → Backup: локальная зашифрованная история настроек и ключей, возврат
+отдельного блока к сохранённой версии или source defaults. Облачная копия
+опциональна: приватный Exodia-Backup в GitHub пользователя либо выбранная
+папка. Один код восстановления сохраняется вне Exodia и проверяется обратной
+вставкой. В архив входят текущие настройки, ключи провайдеров, Case, встречи,
+сохранённые изображения и рабочие файлы приложения; внешние ссылки не
+подменяются обещанием сохранения оригиналов.
+
+На новом Mac: подключить источник, ввести код, проверить версию и выбрать
+данные. Изменения применяются при следующем обычном запуске; чужие задания
+и скрипты не запускаются автоматически. Бэкап не объединяет параллельные
+изменения с разных Mac. [Инструкция](backup.md).
+
 ## Roadmap
 
 Далее сохранён исторический roadmap. Упоминания Whytap, старых CLI и облачной
@@ -258,12 +273,32 @@ correction & learning loop
 смена режима относится к следующей записи. Правило действует и для batch
 recovery, и для восстановления по частичному транскрипту.
 
-**STT-провайдеры (Your key, выбор пользователя в Settings → Models):**
-Soniox (`stt-rt-v5`, по умолчанию), Deepgram (`nova-3`), ElevenLabs
-(`scribe_v2_realtime`) или self-hosted endpoint с протоколом OpenAI Realtime
-(модель вводит пользователь, по умолчанию `gpt-4o-transcribe`). Сам OpenAI не
-предлагается: сохранённый выбор OpenAI читается как Soniox. Drop — realtime
-streaming, не batch; заметки встреч с Soniox идут через file API
+**Настройки API & Models (Settings → API & Models):** вкладка из двух блоков.
+*API keys* — чипы провайдеров с точкой статуса (зелёная — ключ работает, жёлтая —
+ключ с урезанными правами или проверить не удалось, красная — ключ не принят
+или кончились деньги) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
+Anthropic (только для строки Agent) и свои OpenAI-compatible серверы. Ключи
+лежат в Keychain, на экран не возвращаются; проверка ключа — бесплатный запрос
+к провайдеру. *Models* — по строке на каждую AI-фичу и одна выпадашка
+«Provider · model-id»: Drop Fast и Drop Smart (real-time), Drop Smart cleanup
+(LLM), Meetings (recorded), Meeting notes (LLM), Agent (LLM with tools), Agent
+voice и Voice search (real-time). Модель каждой фичи читается при каждом вызове;
+Exodia сам не меняет ни модель, ни провайдера. Статус показывается в строке
+только при проблеме (Not verified, Deprecated alias, Removed by provider, Not
+supported yet, Key problem, Not set). Каталоги моделей подтягиваются у
+провайдера и кэшируются на сутки; новая модель вне вшитого реестра проходит
+синтетическую пробу при выборе и по Check now. Первый запуск новой сборки
+переносит прежние выборы в маршруты фич и не трогает старые ключи
+UserDefaults. Спека — [docs/specs/api-and-models.md](specs/api-and-models.md),
+решение —
+[2026-10-19-api-and-models](../.project-docs/decisions/2026-10-19-api-and-models.md).
+
+**STT-провайдеры (Your key, выбор пользователя в Settings → API & Models для
+каждой фичи):** Soniox (`stt-rt-v5`, по умолчанию), Deepgram (`nova-3`),
+ElevenLabs (`scribe_v2_realtime`) или self-hosted endpoint с протоколом OpenAI
+Realtime (модель вводит пользователь, по умолчанию `gpt-4o-transcribe`). Сам
+OpenAI не предлагается: сохранённый выбор OpenAI читается как Soniox. Drop —
+realtime streaming, не batch; заметки встреч с Soniox идут через file API
 (`stt-async-v5`).
 
 **Input language** — отдельный от Smart Output language выбор. Явный язык
@@ -272,24 +307,28 @@ Deepgram — `language`, ElevenLabs — `language_code`, self-hosted — пол�
 `language` совместимого протокола. Deepgram Auto использует `language=multi`:
 для `nova-3` это английский, испанский, французский, немецкий, хинди, русский,
 португальский, японский, итальянский и нидерландский. Остальные поддерживаемые
-языки выбираются явно. Settings → Models показывает это ограничение и
-поддерживаемые варианты. Неподдерживаемый язык известной Nova-модели и Auto
-неизвестной сохранённой модели останавливаются до передачи аудио; Drop
-открывает Models. Сохранённые язык, модель и провайдер сами не меняются.
+языки выбираются явно. Язык ввода общий для всех голосовых фич и выбирается в
+островке и в настройках митингов; строка Deepgram в Settings → API & Models
+показывает предупреждение, если её модель не подходит к текущему языку.
+Неподдерживаемый язык известной Nova-модели и Auto неизвестной сохранённой
+модели останавливаются до передачи аудио; Drop открывает API & Models на
+строке своей фичи. Сохранённые язык, модель и провайдер сами не меняются.
 Realtime и batch используют одну
 [политику языков Deepgram](../.project-docs/decisions/2026-10-19-deepgram-language-policy.md).
 
 **Local STT** (FluidAudio Parakeet TDT v3) убран 2026-10-18 вместе с MLX
 Qwen и локальной диаризацией. Сохранённый выбор Local не переключается на
-провайдера сам: Drop открывает Settings → Models, пока пользователь не выберет
-провайдера.
+провайдера сам: Drop открывает Settings → API & Models, пока пользователь не
+выберет провайдера.
 
 **Batch-распознавание** — только запасной путь: деградировавший поток, Retry
 после «Couldn't deliver», fallback рекордера и batch-голос агента. Весь take
-уходит тому же выбранному провайдеру с его ключом из Keychain: Soniox file API
-(`stt-async-v5`), Deepgram pre-recorded, ElevenLabs speech-to-text, self-hosted
-`/v1/audio/transcriptions` на хосте realtime-endpoint. Без выбранного
-провайдера или его ключа batch недоступен; другой провайдер не подставляется.
+уходит провайдеру той фичи, что вела Drop (Fast или Smart; для голоса агента —
+Agent voice), с его ключом из Keychain и recorded-моделью из вшитого реестра:
+Soniox file API (`stt-async-v5`), Deepgram pre-recorded, ElevenLabs
+speech-to-text (`scribe_v2`), self-hosted `/v1/audio/transcriptions` на хосте
+своего сервера. Без маршрута фичи, ключа или recorded-модели batch недоступен;
+другой провайдер не подставляется.
 
 **Screenshot gating (не всегда):**
 - Включаем если: deictic words ("вот это", "там", "этот тикет") / high-context app (Slack, Linear, Notion, GitHub, Cursor) / low confidence по терминам / "screen context always" в настройках

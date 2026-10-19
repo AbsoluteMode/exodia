@@ -12,7 +12,7 @@ sources:
     reference: Sources/Sidekey/NowPlaying/MediaRemoteNowPlayingSource.swift
     confirmed_at: 2026-10-19
   - type: user-confirmed
-    reference: 2026-10-19 chat; "делай сторож через закрытие stdin, run.pl не трогай"
+    reference: On 2026-10-19 the user approved a stdin-EOF guard and required the vendored run.pl to remain untouched.
     confirmed_at: 2026-10-19
   - type: repository
     reference: Sources/Sidekey/AppDelegate.swift

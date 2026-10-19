@@ -48,18 +48,21 @@ from its hover controls:
 1. In **Permissions**, allow Microphone and Accessibility. macOS may open
    **System Settings → Privacy & Security** to grant them. Reopen Exodia if
    macOS asks you to quit after changing a permission.
-2. In **Models**, select a speech provider and enter its API key. Save to
-   check the connection and store it in macOS Keychain.
-3. Optionally configure OpenRouter or your own endpoint for text cleanup and
-   meeting summaries.
+2. In **API & Models**, click **Add key**, choose a speech provider and enter its
+   API key. Exodia checks it and stores it in macOS Keychain; then pick a model
+   for Drop Fast and Drop Smart.
+3. Optionally add OpenRouter or your own endpoint and pick models for text
+   cleanup and meeting summaries.
 4. Focus a text field, hold **Space**, speak, then release Space.
 
 Exodia is free. Your selected provider handles API billing; there are no Exodia
 accounts, plans or credits. On-device speech and text models were removed; if
-you used **Local** before, choose a provider in **Models** to dictate again.
+you used **Local** before, choose a speech model in **API & Models** to dictate
+again.
 
-For the optional agent, open **Settings → Agents**, install OpenCode, choose an
-OpenRouter model and save your key with **Save & connect**. Meeting recording may
+For the optional agent, open **Settings → Agents**, install OpenCode, then add an
+OpenRouter or Anthropic key and choose the Agent model in **API & Models**, and
+press **Save & connect**. Meeting recording may
 also request **System Audio Recording** permission.
 
 ## Updates

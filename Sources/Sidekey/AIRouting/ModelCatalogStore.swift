@@ -1,0 +1,153 @@
+import Foundation
+
+/// What the app last learned about one account's model catalog. Model metadata
+/// only: no keys, no URLs, no response bodies.
+struct CatalogSnapshot: Codable, Equatable {
+    var models: [CatalogModel]
+    /// Last successful load.
+    var fetchedAt: Date?
+    /// The latest refresh failed (offline, 5xx, anything else): the models are
+    /// the previous ones and nothing may be called "removed" on their strength.
+    var lastRefreshFailed: Bool
+    /// The key may not list models: only the built-in registry applies.
+    var limited: Bool
+
+    init(models: [CatalogModel] = [], fetchedAt: Date? = nil, lastRefreshFailed: Bool = false, limited: Bool = false) {
+        self.models = models
+        self.fetchedAt = fetchedAt
+        self.lastRefreshFailed = lastRefreshFailed
+        self.limited = limited
+    }
+
+    /// The list can be trusted to say a model is gone.
+    var isAuthoritative: Bool { fetchedAt != nil && !lastRefreshFailed && !limited }
+}
+
+/// Per-account catalog cache with a time-to-live, kept in
+/// `~/Library/Caches/<bundle id>/model-catalog-v1.json`.
+@MainActor
+final class ModelCatalogStore: ObservableObject {
+    static let shared = ModelCatalogStore()
+
+    nonisolated static var defaultFileURL: URL {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Caches")
+        return caches
+            .appendingPathComponent(BuildConfig.bundleID, isDirectory: true)
+            .appendingPathComponent("model-catalog-v1.json")
+    }
+
+    /// Keyed by `ProviderAccount.storageID`.
+    @Published private(set) var snapshots: [String: CatalogSnapshot]
+
+    private let fileURL: URL
+    private let fetcher: any ModelCatalogFetching
+    private let now: () -> Date
+    private let ttl: TimeInterval
+    private var inFlight: Set<String> = []
+
+    init(
+        fileURL: URL = ModelCatalogStore.defaultFileURL,
+        fetcher: any ModelCatalogFetching = ModelCatalogFetcher(),
+        now: @escaping () -> Date = Date.init,
+        ttl: TimeInterval = 86_400
+    ) {
+        self.fileURL = fileURL
+        self.fetcher = fetcher
+        self.now = now
+        self.ttl = ttl
+        self.snapshots = Self.load(from: fileURL)
+    }
+
+    func snapshot(for account: ProviderAccount) -> CatalogSnapshot? {
+        snapshots[account.storageID]
+    }
+
+    /// Loads the catalog unless the cached one is younger than the TTL and its
+    /// last refresh worked.
+    func refreshIfStale(_ account: ProviderAccount, apiKey: String?, server: ServerEndpoint?) async {
+        if let snapshot = snapshots[account.storageID],
+           let fetchedAt = snapshot.fetchedAt,
+           !snapshot.lastRefreshFailed,
+           now().timeIntervalSince(fetchedAt) < ttl {
+            return
+        }
+        await refresh(account, apiKey: apiKey, server: server)
+    }
+
+    func refresh(_ account: ProviderAccount, apiKey: String?, server: ServerEndpoint?) async {
+        let id = account.storageID
+        guard inFlight.insert(id).inserted else { return }
+        defer { inFlight.remove(id) }
+
+        var snapshot = snapshots[id] ?? CatalogSnapshot()
+        do {
+            snapshot.models = try await fetcher.fetch(account: account, apiKey: apiKey, server: server)
+            snapshot.fetchedAt = now()
+            snapshot.lastRefreshFailed = false
+            snapshot.limited = false
+        } catch let error as CatalogFetchError {
+            switch Self.outcome(of: error, account: account) {
+            case .emptyCatalog:
+                // A valid server that has no /models: an empty, successful catalog.
+                snapshot.models = []
+                snapshot.fetchedAt = now()
+                snapshot.lastRefreshFailed = false
+                snapshot.limited = false
+            case .limited:
+                snapshot.limited = true
+                snapshot.lastRefreshFailed = false
+            case .failed:
+                snapshot.lastRefreshFailed = true
+            }
+        } catch {
+            snapshot.lastRefreshFailed = true
+        }
+        snapshots[id] = snapshot
+        persist()
+    }
+
+    func forget(_ account: ProviderAccount) {
+        guard snapshots.removeValue(forKey: account.storageID) != nil else { return }
+        persist()
+    }
+
+    // MARK: - Outcome
+
+    private enum Outcome { case emptyCatalog, limited, failed }
+
+    private static func outcome(of error: CatalogFetchError, account: ProviderAccount) -> Outcome {
+        guard case .http(let status, let code) = error else { return .failed }
+        switch account {
+        case .server where status == 404:
+            return .emptyCatalog
+        case .soniox where status == 403:
+            return .limited
+        case .deepgram where (status == 401 || status == 403) && code == "INSUFFICIENT_PERMISSIONS":
+            return .limited
+        default:
+            return .failed
+        }
+    }
+
+    // MARK: - File
+
+    private static func load(from url: URL) -> [String: CatalogSnapshot] {
+        guard let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([String: CatalogSnapshot].self, from: data)
+        else { return [:] }
+        return decoded
+    }
+
+    private func persist() {
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            try encoder.encode(snapshots).write(to: fileURL, options: .atomic)
+        } catch {
+            // A cache that cannot be written is only a cache that is not kept.
+        }
+    }
+}
