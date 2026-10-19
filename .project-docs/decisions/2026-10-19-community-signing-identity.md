@@ -32,6 +32,9 @@ sources:
   - type: url
     reference: https://github.com/sparkle-project/Sparkle/tree/2.9.1 (SUUpdateValidator.m, Autoupdate/SUCodeSigningVerifier.m)
     confirmed_at: 2026-10-19
+  - type: trace
+    reference: Two throwaway-certificate candidates (builds 90001 and 90002) with identical designated requirements and different cdhashes; full local swift test on df12312, 2,893 tests, 5 skipped, 0 failures in 55.562 seconds.
+    confirmed_at: 2026-10-19
 related: [../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md]
 ---
 
@@ -115,6 +118,9 @@ does not depend on Apple Developer membership.
 
 ## What we tested
 
+- The problem: tccd's log for the two days up to 2026-10-19 has 44 "Failed
+  to match existing code requirement" entries for `com.rootwise.sidekey`
+  (24 Microphone, 20 AudioCapture).
 - `PackagingRebrandTests`: 15 tests, 0 failures (12.796 s). Fixtures cover
   the key check before compiling (missing or mismatched key stops the build,
   a matching key reaches the compiler), the preflight report, the refusal of
@@ -122,9 +128,35 @@ does not depend on Apple Developer membership.
   code-signing value does not match the committed certificate.
 - Bootstrap in key-file mode: key file 0600, certificate 0644, printed
   requirements; it refuses to run when a certificate already exists.
-- Candidate build A: commit `8c0e6b6`, build 90001, universal, signed with a
-  throwaway certificate (SHA-1 `4ef2cb47…`): requirement verified on the app
-  and in the DMG, manifest sealed `certificate:4ef2cb47…`.
+- Two consecutive universal candidates, both signed with a throwaway
+  certificate (SHA-1 `4ef2cb47…`) through the real `build-dmg.sh`:
+  A from `8c0e6b6` as build 90001, B from `df12312` (A plus the next main
+  commit) as build 90002. Each build verified the requirement on the app and
+  in the DMG and sealed `certificate:4ef2cb47…` in its manifest.
+  - Same designated requirement, different cdhash (`074e64ca…` and
+    `6bf29a5e…`), `TeamIdentifier=not set`.
+  - `codesign --verify --strict --all-architectures -R` passes for B against
+    A's requirement and for A against B's.
+  - Controls fail: the installed ad-hoc 2.2.13 against A's requirement, and
+    B against the same requirement with another certificate hash.
+- `--installation-check` on A and B, arm64 and x86_64 (Rosetta): ok. dyld
+  loads the certificate-signed frameworks under the hardened runtime without
+  a team ID.
+- The Security calls Sparkle 2.9.1 makes, run read-only against the
+  installed ad-hoc 2.2.13, A and B: both candidates are valid with all
+  architectures and with nested code; A does not satisfy the installed app's
+  requirement (-67050), so that one update is accepted on EdDSA; B satisfies
+  A's requirement, so later updates also pass the requirement match.
+- `release-provenance.py verify` with this branch's state (no committed
+  certificate, so `adhoc` is expected) refuses B's archive: "archive code
+  signing does not match the release signing identity" (exit 1). With the
+  matching identity it passes.
+- Full suite on `df12312`: 2,893 tests, 5 skipped, 0 failures (55.562 s).
+- Not tested: a real Sparkle install from the installed app to a
+  certificate-signed build; the production certificate (the throwaway one
+  stands in for it); Keychain behavior. Keychain items of apps without an
+  Apple-issued certificate are partitioned by cdhash, so the Keychain prompt
+  after an update is expected to stay as it is with ad hoc.
 
 ## Rejected
 

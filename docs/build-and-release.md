@@ -115,8 +115,7 @@ Apple-notarized. First-download Gatekeeper warnings remain; see
 
 When `Resources/community-signing-certificate.pem` is committed, `build-dmg.sh`
 signs the app, its nested code and the DMG with Exodia's self-signed
-code-signing certificate. Without that file, as in a fork that has not created
-its own, it signs ad hoc.
+code-signing certificate. Without that file it signs ad hoc.
 
 The certificate gives every build the same designated requirement:
 `identifier "com.rootwise.sidekey" and certificate leaf = H"<certificate SHA-1>"`
@@ -153,8 +152,8 @@ The first certificate-signed release changes the requirement of installs that
 came from an ad-hoc build, so they grant Microphone and System Audio Recording
 one last time. Sparkle accepts the change: it checks the archive's EdDSA
 signature and the new app's code signature, not its identity. Keychain prompts
-after an update stay as before, because without an Apple team ID the keychain
-ties its access to the code hash.
+after an update are expected to stay as before, because without an Apple team
+ID the keychain ties its access to the code hash.
 
 For local experiments, `EXODIA_COMMUNITY_SIGNING=adhoc` forces ad-hoc signing
 and `EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE` signs with another certificate.
@@ -192,4 +191,8 @@ process kills or power loss. The updater behavior is defined in
 The package is named Exodia, while Swift targets, bundle IDs, Keychain services,
 UserDefaults keys and data directories retain compatibility names. Keep these
 stable to preserve user data. A separate fork must choose its own identities,
-Sparkle key pair and update feed; see [trademarks](../TRADEMARK.md).
+Sparkle key pair, code-signing certificate and update feed; see
+[trademarks](../TRADEMARK.md). Exodia's certificate cannot sign without
+Exodia's key: delete `Resources/community-signing-certificate.pem`, then run
+`community-signing-bootstrap.sh` with the fork's own Doppler project or
+`--key-file`, or publish ad hoc.
