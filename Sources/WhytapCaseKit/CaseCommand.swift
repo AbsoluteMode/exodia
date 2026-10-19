@@ -9,6 +9,7 @@ public struct CaseCommand {
     public static let exitUsage: Int32 = 64
 
     private let client: CaseBrokerCalling?
+    private let executablePath: String
     private let unavailableMessage: String
     private let cwd: URL
     private let stdout: FileHandle
@@ -17,12 +18,14 @@ public struct CaseCommand {
     /// `client == nil` means the app could not be located (exit 4 with `unavailableMessage`).
     public init(
         client: CaseBrokerCalling?,
+        executablePath: String = "whytap",
         unavailableMessage: String = "Whytap is not available. Open the Whytap app and try again.",
         cwd: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
         stdout: FileHandle = .standardOutput,
         stderr: FileHandle = .standardError
     ) {
         self.client = client
+        self.executablePath = executablePath
         self.unavailableMessage = unavailableMessage
         self.cwd = cwd
         self.stdout = stdout
@@ -34,6 +37,7 @@ public struct CaseCommand {
 
     commands:
       ls [-p <project>]                          list key names (no values)
+      mcp                                        serve names (never values) over MCP on stdio
       run [-p <project>] [--only A,B] '<cmd>'    run a command with Case keys in its environment
     """
 
@@ -44,8 +48,18 @@ public struct CaseCommand {
         switch args[1] {
         case "ls": return list(rest)
         case "run": return runCommand(rest)
+        case "mcp": return serveMCP()
         default: return usageError()
         }
+    }
+
+    // MARK: mcp
+
+    private func serveMCP() -> Int32 {
+        CaseMCPServer(client: client, executablePath: executablePath).run(
+            readLine: { Swift.readLine(strippingNewline: true) },
+            write: { write(stdout, $0 + "\n") })
+        return 0
     }
 
     // MARK: ls

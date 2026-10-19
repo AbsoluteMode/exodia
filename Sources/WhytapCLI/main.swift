@@ -21,5 +21,6 @@ if let bundleID = CaseHostBundle.bundleID(forExecutable: hostExecutable) {
             open.waitUntilExit()
         })
 }
-exit(CaseCommand(client: client, unavailableMessage: message)
+let resolvedPath = hostExecutable.resolvingSymlinksInPath().path
+exit(CaseCommand(client: client, executablePath: resolvedPath, unavailableMessage: message)
     .run(args: Array(CommandLine.arguments.dropFirst())))
