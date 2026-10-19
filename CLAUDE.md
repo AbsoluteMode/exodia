@@ -30,10 +30,18 @@ feature sessions with regular checked integration and one working application.
 - Run exactly one Whytap instance across all channels: beta shares meetings,
   staging and clipboard history with production and competes for hotkeys.
   Production app/DMG packaging is reserved for the integrator under the lock.
-- Any session may integrate ready work, but only one holds the shared
-  `exodia-integration.lock` in `git rev-parse --git-common-dir`. Follow the
-  runbook's owner/recovery protocol. Preserve all other sessions' WIP; use a
-  clean integration worktree when the primary checkout is occupied.
+- Finished feature agents automatically submit their reviewed PR/exact head,
+  checks, dependencies and acceptance steps to the persistent build queue
+  (`scripts/build-queue.py`; installed helper in the Git common directory).
+  The configured builder chat processes FIFO, sends queue/start/result messages
+  to the originating sessions and alone integrates/packages/promotes. These
+  queue messages are user-authorized. Workers follow the result and report
+  issues without starting competing builds. Follow the runbook for CLI inboxes,
+  pending installs, recovery and the five-minute builder automation.
+- The builder holds the shared `exodia-integration.lock` in
+  `git rev-parse --git-common-dir` for protected operations. Queue claims never
+  replace that lock or any validation gate. Preserve all other sessions' WIP;
+  use a clean integration worktree when the primary checkout is occupied.
 - Review overlaps, validate the final combined candidate and merge through a
   PR with exact head/base checks. Routine checked integration/local refresh
   needs no repeated approval. Public publishing remains a separate action.
