@@ -18,13 +18,15 @@ actor SonioxMeetingTranscriber {
     }
 
     private let apiKey: String
+    private let model: String
     private let session: URLSession
     private let pollInterval: Duration
     private let timeout: TimeInterval
 
-    init(apiKey: String, session: URLSession = .shared,
+    init(apiKey: String, model: String, session: URLSession = .shared,
          pollInterval: Duration = .seconds(3), timeout: TimeInterval = 1800) {
         self.apiKey = apiKey
+        self.model = model
         self.session = session
         self.pollInterval = pollInterval
         self.timeout = timeout
@@ -73,7 +75,7 @@ actor SonioxMeetingTranscriber {
         }
         if checkpoint.transcriptionID == nil {
             var body: [String: Any] = [
-                "model": SonioxFileAPI.asyncModel, "file_id": checkpoint.fileID!,
+                "model": model, "file_id": checkpoint.fileID!,
                 "enable_language_identification": true,
                 "enable_speaker_diarization": true,
                 "client_reference_id": directory.lastPathComponent,

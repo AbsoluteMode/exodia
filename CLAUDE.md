@@ -61,30 +61,42 @@ Voice flow (Drop / dictation):
         (StreamingFinishGate in StreamingAudioEngine) -> drain -> commit;
         Escape = cancel without tail)
        -> AutoPasteEngine.rememberTargetBeforeRecording (pid + name)
+       -> DropTake.begin latches the mode and the feature route (dropFast or
+            dropSmart) when the take starts; Retry and recovery read the
+            latch, never the current preference
        -> realtime STT via TranscriptionSessionFactory
-            (level = TranscriptionIsolationLevel, Settings -> Models):
-            Your key (BYOK) only: direct to the provider with the user's key
-            from the Keychain (Streaming/BYOK/): Soniox (default), Deepgram,
-            ElevenLabs or a self-hosted endpoint speaking the OpenAI Realtime
-            protocol. OpenAI itself is not offered; a legacy OpenAI choice
-            resolves to Soniox. The self-hosted route has no default host: a
-            missing or unparseable base URL fails (.missingBaseURL) before any
-            socket opens, never reaching api.openai.com. WHY:
+            (route of the take's feature, Settings -> API & Models):
+            FeatureRouteResolver turns the feature's route (provider account +
+            model, AIRoutingStore) into a ResolvedRoute with the account's
+            Keychain key; RealtimeAdapterFactory builds the adapter. Your key
+            (BYOK) only: direct to the provider (Streaming/BYOK/): Soniox
+            (default), Deepgram, ElevenLabs or a self-hosted endpoint speaking
+            the OpenAI Realtime protocol. OpenAI itself is not offered; a
+            legacy OpenAI choice resolves to Soniox. A server route has no
+            default host: a missing or unparseable base URL fails
+            (.invalidBaseURL / .missingBaseURL) before any socket opens, never
+            reaching api.openai.com. WHY:
             .project-docs/decisions/2026-10-18-no-default-realtime-host.md
-            No chosen level (never chosen on Apple Silicon, or the retired
-            Local route) throws .notConfigured and opens Settings -> Models;
-            a saved Local choice never switches to a provider on its own. WHY:
-            .project-docs/decisions/2026-10-18-remove-local-models.md
+            A feature without a route (Not set: never chosen on Apple Silicon,
+            the retired Local route, or its key removed), or whose key is
+            missing or unreadable, throws .notConfigured / .missingKey and
+            opens Settings -> API & Models on that feature's row; nothing
+            moves to another provider on its own. Deepgram's language policy
+            is checked before the key (invalidLanguageConfiguration). WHY:
+            .project-docs/decisions/2026-10-18-remove-local-models.md,
+            .project-docs/decisions/2026-10-19-api-and-models.md
        Soniox Stop: drain all captured audio -> 200ms PCM silence -> explicit
        finalize + text EOF. A final <fin> acknowledgement completes the take;
        finished=true also completes it. The 10s watchdog remains the backstop.
-       -> cleanup (PostProcessor, level = LLMIsolationLevel):
-            OpenRouter with the user's key / custom OpenAI-compatible endpoint
-            (Ollama, LM Studio, vLLM). The mode is captured at take start:
+       -> cleanup (PostProcessor, route of dropSmartCleanup):
+            OpenRouter with the user's key / a custom OpenAI-compatible
+            server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
+            The mode is captured at take start:
             Fast bypasses the LLM; Smart requires processed text and never
             silently pastes raw speech after a cleanup error or empty result.
             Smart failures retain the transcript in memory and show Retry with
-            the original mode and target; configuration errors open Models.
+            the original mode and target; configuration errors open API & Models on
+            the Drop Smart cleanup row.
             Full, batch-recovered and partial transcripts use the same rule.
             A new take discards the old retry. The island observes persisted
             mode changes from every control. The cleanup provider mark appears
@@ -107,13 +119,15 @@ Voice flow (Drop / dictation):
             discards it. Empty batch = silence, not offline. Production binds
             `ProviderBatchTranscriber` (Streaming/BYOK/) for the batch rung,
             Retry, the recorder fallback and agent batch voice: the whole
-            take goes to the provider selected in Settings -> Models with
-            that provider's own Keychain key (Soniox file API, Deepgram
+            take goes to the provider of the feature that led it (Drop Fast
+            or Drop Smart; agent batch voice: Agent voice) in Settings ->
+            API & Models, with that provider's own Keychain key and its
+            recorded model from the built-in registry (Soniox file API, Deepgram
             pre-recorded, ElevenLabs speech-to-text, self-hosted
             /v1/audio/transcriptions over https), with the realtime
-            request's language choices. No Your key level, no key for the
-            selected provider, or a self-hosted URL without a host =
-            unavailable, never another provider. Soniox polling stops after
+            request's language choices. No route for the feature, no key for its
+            provider, no recorded model for it, or a server URL without a
+            host = unavailable, never another provider. Soniox polling stops after
             30s; its file, then its job, are deleted after every outcome.
             WHY:
             docs/decisions/2026-07-26-empty-batch-is-silence-not-offline.md,
@@ -123,21 +137,32 @@ Voice flow (Drop / dictation):
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
 
-Agent flow (OpenCode + OpenRouter):
+Agent flow (OpenCode + OpenRouter or Anthropic):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
-       -> voice: the same STT factory as Drop
+       -> voice: the same STT factory as Drop, route of agentVoice
        -> OpenCodeProvider -> opencode run --format json --model
-          openrouter/<selected-model> --dir <local workspace>, prompt on stdin
+          <openrouter|anthropic>/<selected-model> --dir <local workspace>,
+          prompt on stdin; provider and model come from the agent feature's
+          route in AIRoutingStore
        -> complete text/tool events rendered progressively in the island
   Settings -> Agents installs an app-managed OpenCode binary from its official
   GitHub release after SHA-256 digest verification, or locates an existing CLI.
-  The user chooses an exact OpenRouter model ID or one from the live catalog,
-  enters their key, then Save & connect checks the local version and free
-  OpenRouter key endpoint. Connecting does not submit a model request.
-  The key shares the existing OpenRouter Keychain store and enters only the
-  child process environment, never a credential JSON file or argv. The runtime
-  enables only OpenRouter, disables sharing/default plugins/automatic updates
-  and excludes inherited provider credential/config environment variables.
+  The agent's key and model are chosen in Settings -> API & Models (the
+  Agent row: OpenRouter from the live catalog or an exact ID, or Anthropic
+  from its /v1/models list); the Agents tab shows "Model: <provider> · <id>"
+  with Change in API & Models, and Save & connect only checks the local
+  version and the free key endpoint of the route's provider (OpenRouter
+  /key, Anthropic /v1/models). Connecting does not submit a model request.
+  Keys are the Keychain items byok.openrouter.llm_api_key and
+  byok.anthropic.api_key and enter only the child process environment
+  (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never a credential JSON file or
+  argv. The runtime enables only the route's provider, declares the selected
+  model with its limits and tool support from the provider catalog (so
+  OpenCode keeps context compaction), disables sharing/default plugins/
+  automatic updates and excludes inherited provider credential/config
+  environment variables. Anthropic is offered for the Agent row only, not
+  for Drop Smart cleanup or Meeting notes. WHY:
+  .project-docs/decisions/2026-10-19-api-and-models.md
   Actions are allowed by default so the agent can edit and run tests; the user
   can turn them off in Settings. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
@@ -159,11 +184,12 @@ Meeting Notes:
        -> island nudge: Take notes / Skip (20s) -> MeetingRecorder (mic +
           system audio, 16 kHz PCM16; the system-audio tap exists only while
           recording, WHY: docs/decisions/2026-06-16-system-audio-tap-on-record-only.md)
-       -> processing: BYOK processor only (Soniox file API with
-          speaker-attributed turns and durable job/transcript checkpoint;
-          other providers use their adapters, then the LLM route the user
-          chose). Speaker labels come from the provider; there is no
-          on-device diarizer. Without a chosen speech level and LLM route
+       -> processing: BYOK processor only (routes of the meetings and
+          meetingNotes features: Soniox file API with speaker-attributed
+          turns and durable job/transcript checkpoint; other providers use
+          their adapters, then the LLM route the user chose for notes).
+          Speaker labels come from the provider; there is no on-device
+          diarizer. Without a route for Meetings and Meeting notes
           (including the retired Local route) the meeting is marked failed
           with `MeetingsCoordinator.processorNotConfiguredMessage` and its
           audio stays staged; a `MeetingFinalizeManifest` re-dispatches it
@@ -440,8 +466,17 @@ Update flow (download-on-action):
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
 
-Presentation: Settings -> Models offers only Your key (BYOK) for speech and
-OpenRouter or a custom endpoint for text; Local was removed. Preserve saved
+Presentation: Settings -> API & Models holds the provider keys (Soniox,
+Deepgram, ElevenLabs, OpenRouter, Anthropic for the Agent row, and the user's
+OpenAI-compatible servers) and one model per AI feature (Drop Fast, Drop
+Smart, Drop Smart cleanup, Meetings, Meeting notes, Agent, Agent voice, Voice
+search); Local was removed. Models come from provider catalogs plus the
+built-in registry; a model outside the registry is checked with a synthetic
+probe when picked or on Check now. The first launch migrates the old choices
+into per-feature routes (AIRoutingMigration) and leaves the old UserDefaults
+keys untouched so a rollback sees them; nothing is switched to another
+provider or model automatically. WHY:
+.project-docs/decisions/2026-10-19-api-and-models.md Preserve saved
 processing routes: never switch where existing users send audio or text. A
 retired Local choice shows "not set up" banners until the user saves a
 provider. WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md,
@@ -449,10 +484,12 @@ provider. WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md,
 
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
-Settings -> Models, the agent in Settings -> Agents, and permissions in
+Settings -> API & Models (the agent's model is chosen there too; Settings ->
+Agents keeps the OpenCode install and connect), and permissions in
 Settings -> Permissions. A feature can request the permission it needs when
 invoked. Drop without a chosen provider, key or endpoint opens
-Settings -> Models. Settings opens on Models; screenshot protection is in
+Settings -> API & Models on that feature's row. Settings opens on API &
+Models; screenshot protection is in
 Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
@@ -669,7 +706,10 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    and monitoring sources the user configured (including their credential store),
    notification sources accessed by user-configured local scripts, calendar providers
    explicitly connected by the user (Google, Microsoft and Zoom), OpenCode's own provider
-   traffic, its official GitHub release download, `google.com` opened in the
+   traffic, the model catalogs and free key checks of providers the user added
+   a key for, synthetic model probes (silence or a one-word prompt, never user
+   audio or text) sent only to that provider when a model is picked or on
+   Check now, its official GitHub release download, `google.com` opened in the
    browser, the Sparkle feed on GitHub Releases, and optional encrypted backups
    to the user's own GitHub repository or selected sync folder.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
@@ -686,7 +726,10 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    stored retired `local` level, or no stored level on Apple Silicon (where
    Local was the default), reads as not configured even when a key is stored;
    Intel keeps its Your key default (`SelfKeyPreferences`,
-   `RetiredLocalRouteTests`). FluidAudio stays only for the meeting detector's
+   `RetiredLocalRouteTests`). Each feature's data, including its fallback and
+   probe, goes only to the provider of its own route in Settings -> API &
+   Models; a removed key leaves the feature Not set and moves nothing. WHY:
+   .project-docs/decisions/2026-10-19-api-and-models.md FluidAudio stays only for the meeting detector's
    Silero VAD; launch removes the retired models' weights under
    Application Support/Sidekey once per flavor and never touches FluidAudio's
    cache (`LegacyLocalModelCleanup`, WHY:

@@ -1,97 +1,320 @@
 import XCTest
 @testable import Sidekey
 
-/// The batch route is the provider and key the user chose in Settings ->
-/// Models, exactly what the realtime path uses, or nothing.
+/// The batch route of a feature is that feature's own provider, model and key,
+/// or nothing. Routes live in an isolated `UserDefaults` suite, keys in an
+/// in-memory Keychain and the network is `StubURLProtocol`.
 /// WHY: .project-docs/decisions/2026-10-18-provider-batch-transcription.md
 @MainActor
 final class ProviderBatchRouteTests: XCTestCase {
-    private var defaults: UserDefaults!
-    private var keys: BYOKKeyStore!
 
-    override func setUp() {
-        super.setUp()
-        defaults = UserDefaults(suiteName: "provider.batch.\(UUID().uuidString)")!
-        keys = BYOKKeyStore.inMemory()
+    private func resolved(
+        _ account: ProviderAccount,
+        model: String = "some-model",
+        apiKey: String? = "key",
+        server: ServerEndpoint? = nil
+    ) -> ResolvedRoute {
+        ResolvedRoute(feature: .meetings, account: account, model: model, apiKey: apiKey, server: server)
     }
 
-    private func prefs(_ provider: BYOKProvider) -> SelfKeyPreferences {
-        let prefs = SelfKeyPreferences(defaults: defaults, isAppleSilicon: true)
-        prefs.transcriptionLevel = .yourKey
-        prefs.selectedProvider = provider
-        return prefs
+    func test_registry_models() {
+        XCTAssertEqual(ModelRegistry.sonioxRecordedModel, SonioxFileAPI.asyncModel)
+        XCTAssertEqual(ModelRegistry.sonioxRecordedModel, "stt-async-v5")
+        XCTAssertEqual(ModelRegistry.elevenLabsRecordedModel, "scribe_v2")
     }
 
-    // Breaks if a former on-device user (no level stored on Apple Silicon)
-    // starts sending audio to a provider just because a key is stored.
-    func test_noChosenProvider_isNotConfigured_evenWithAStoredKey() throws {
-        try keys.save(key: "sx-key", for: .soniox)
-        let prefs = SelfKeyPreferences(defaults: defaults, isAppleSilicon: true)
-        XCTAssertNil(ProviderBatchRoute.current(prefs: prefs, keyStore: keys))
-    }
-
-    // Breaks if batch borrows another provider's key when the selected one
-    // has none, moving the audio somewhere the user did not choose.
-    func test_selectedProviderWithoutKey_neverUsesAnotherProvidersKey() throws {
-        try keys.save(key: "sx-key", for: .soniox)
-        try keys.save(key: "el-key", for: .elevenLabs)
-        XCTAssertNil(ProviderBatchRoute.current(prefs: prefs(.deepgram), keyStore: keys))
-    }
-
-    func test_soniox_usesTheStoredKey() throws {
-        try keys.save(key: "sx-key", for: .soniox)
-        XCTAssertEqual(ProviderBatchRoute.current(prefs: prefs(.soniox), keyStore: keys), .soniox(apiKey: "sx-key"))
-    }
-
-    func test_deepgram_usesTheStoredKeyAndSelectedModel() throws {
-        try keys.save(key: "dg-key", for: .deepgram)
+    // Breaks if the recorded model of Soniox/ElevenLabs is taken from the
+    // real-time route (`stt-rt-v5` is not a file-API model).
+    func test_soniox_and_elevenLabs_use_the_registry_model_not_the_route_model() {
         XCTAssertEqual(
-            ProviderBatchRoute.current(prefs: prefs(.deepgram), keyStore: keys),
-            .deepgram(apiKey: "dg-key", model: "nova-3")
+            ProviderBatchRoute.make(for: resolved(.soniox, model: "stt-rt-v5", apiKey: "sx-key")),
+            .soniox(apiKey: "sx-key", model: "stt-async-v5")
+        )
+        XCTAssertEqual(
+            ProviderBatchRoute.make(for: resolved(.elevenLabs, model: "scribe_v2_realtime", apiKey: "el-key")),
+            .elevenLabs(apiKey: "el-key", model: "scribe_v2")
         )
     }
 
-    func test_elevenLabs_usesTheStoredKey() throws {
-        try keys.save(key: "el-key", for: .elevenLabs)
-        XCTAssertEqual(ProviderBatchRoute.current(prefs: prefs(.elevenLabs), keyStore: keys), .elevenLabs(apiKey: "el-key"))
+    func test_deepgram_keeps_the_route_model() {
+        XCTAssertEqual(
+            ProviderBatchRoute.make(for: resolved(.deepgram, model: "nova-2", apiKey: "dg-key")),
+            .deepgram(apiKey: "dg-key", model: "nova-2")
+        )
     }
 
     // Breaks if batch posts to another host than the realtime socket, keeps
-    // the realtime path, or drops the user's model.
-    func test_selfHosted_postsToTranscriptionsOnTheRealtimeHost() throws {
-        let prefs = prefs(.selfHosted)
-        prefs.selfHostedBaseURL = "wss://stt.example.com:8443/realtime"
-        prefs.selfHostedModel = "whisper-large-v3"
-        try keys.save(key: "sh-key", for: .selfHosted)
-        XCTAssertEqual(
-            ProviderBatchRoute.current(prefs: prefs, keyStore: keys),
-            .selfHosted(
-                apiKey: "sh-key",
-                endpoint: URL(string: "https://stt.example.com:8443/v1/audio/transcriptions")!,
-                model: "whisper-large-v3"
+    // the realtime path, or drops the user's model; plain http is upgraded.
+    func test_server_posts_to_transcriptions_on_the_route_host_over_tls() {
+        for (baseURL, expected) in [
+            ("wss://stt.example.com:8443/realtime", "https://stt.example.com:8443/v1/audio/transcriptions"),
+            ("http://localhost:9000", "https://localhost:9000/v1/audio/transcriptions"),
+        ] {
+            let server = ServerEndpoint(id: UUID(), name: "S", baseURL: baseURL, keyAccount: "byok.selfHosted.api_key")
+            XCTAssertEqual(
+                ProviderBatchRoute.make(for: resolved(.server(server.id), model: "whisper-large-v3", apiKey: "sh-key", server: server)),
+                .selfHosted(apiKey: "sh-key", endpoint: URL(string: expected)!, model: "whisper-large-v3"),
+                baseURL
             )
+        }
+    }
+
+    func test_server_without_a_key_keeps_a_nil_key() {
+        let server = ServerEndpoint(id: UUID(), name: "S", baseURL: "https://gpu.local", keyAccount: "k")
+        XCTAssertEqual(
+            ProviderBatchRoute.make(for: resolved(.server(server.id), model: "m", apiKey: nil, server: server)),
+            .selfHosted(apiKey: nil, endpoint: URL(string: "https://gpu.local/v1/audio/transcriptions")!, model: "m")
         )
     }
 
-    // Breaks if the key and the audio go out over plaintext HTTP. The
-    // realtime path always upgrades the same base URL to TLS (`wss`).
-    func test_selfHosted_plainHTTPBaseURL_isUpgradedToTLS() throws {
-        let prefs = prefs(.selfHosted)
-        prefs.selfHostedBaseURL = "http://localhost:9000"
-        try keys.save(key: "sh-key", for: .selfHosted)
-        XCTAssertEqual(
-            ProviderBatchRoute.current(prefs: prefs, keyStore: keys),
-            .selfHosted(
-                apiKey: "sh-key",
-                endpoint: URL(string: "https://localhost:9000/v1/audio/transcriptions")!,
-                model: "gpt-4o-transcribe"
-            )
-        )
+    func test_server_without_host_or_endpoint_is_nil() {
+        let hostless = ServerEndpoint(id: UUID(), name: "S", baseURL: "", keyAccount: "k")
+        XCTAssertNil(ProviderBatchRoute.make(for: resolved(.server(hostless.id), apiKey: nil, server: hostless)))
+        XCTAssertNil(ProviderBatchRoute.make(for: resolved(.server(UUID()), apiKey: "k", server: nil)))
     }
 
-    func test_selfHosted_withoutBaseURL_isNotConfigured() throws {
-        try keys.save(key: "sh-key", for: .selfHosted)
-        XCTAssertNil(ProviderBatchRoute.current(prefs: prefs(.selfHosted), keyStore: keys))
+    func test_openRouter_has_no_batch_transcription() {
+        XCTAssertNil(ProviderBatchRoute.make(for: resolved(.openRouter)))
+    }
+
+    // Breaks if a built-in provider could be reached without a key.
+    func test_hosted_provider_without_a_key_is_nil() {
+        for account in [ProviderAccount.soniox, .deepgram, .elevenLabs] {
+            for key in [nil, ""] as [String?] {
+                XCTAssertNil(ProviderBatchRoute.make(for: resolved(account, apiKey: key)), "\(account)")
+            }
+        }
+    }
+}
+
+/// `forDrop` and `forFeature` send each feature's batch take to the provider
+/// of that feature's route, with that provider's own key, or nowhere.
+@MainActor
+final class ProviderBatchFeatureRoutingTests: XCTestCase {
+    private var routing: AIRoutingStore!
+    private var keys: ProviderKeyStore!
+    private var resolver: FeatureRouteResolver!
+    private var session: URLSession!
+
+    private let pcm = Data([0x01, 0x00, 0xFF, 0x7F, 0x00, 0x80])
+
+    override func setUp() {
+        super.setUp()
+        StubURLProtocol.reset()
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        routing = AIRoutingStore(defaults: defaults)
+        let box = InMemoryTokenStore.Box()
+        keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        resolver = FeatureRouteResolver(routing: routing, keys: keys)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        session = URLSession(configuration: config)
+    }
+
+    override func tearDown() {
+        session.invalidateAndCancel()
+        StubURLProtocol.reset()
+        super.tearDown()
+    }
+
+    private func saveKey(_ key: String, for account: ProviderAccount) throws {
+        try keys.save(key, account: try XCTUnwrap(account.keychainAccount(in: routing)))
+    }
+
+    private func forFeature(_ feature: AIFeature) -> ProviderBatchTranscriber {
+        ProviderBatchTranscriber.forFeature(feature, resolver: resolver, session: session, pollInterval: .milliseconds(1))
+    }
+
+    private static func json(_ object: Any) -> Data {
+        try! JSONSerialization.data(withJSONObject: object)
+    }
+
+    // Review Focus 2: Drop started in Fast, the mode and the stored routes
+    // changed before Retry. The batch take still goes to the Fast route.
+    func test_drop_batch_uses_the_route_latched_at_take_start() async throws {
+        try saveKey("sx-key", for: .soniox)
+        try saveKey("el-key", for: .elevenLabs)
+        let take = DropTake()
+        take.begin(mode: .fast, route: FeatureRoute(account: .soniox, model: "stt-rt-v5"))
+        routing.setRoute(FeatureRoute(account: .elevenLabs, model: "scribe_v2_realtime"), for: .dropFast)
+        routing.setRoute(FeatureRoute(account: .elevenLabs, model: "scribe_v2_realtime"), for: .dropSmart)
+        let deleted = expectation(description: "remote audio deleted")
+        deleted.expectedFulfillmentCount = 2
+        let fileID = "4e1f2b8a-0c3d-4a5b-9e6f-7a8b9c0d1e2f"
+        let jobID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+        StubURLProtocol.handler = { request in
+            switch (request.httpMethod ?? "", request.url?.path ?? "") {
+            case ("POST", "/v1/files"): return (201, [:], Self.json(["id": fileID]))
+            case ("POST", "/v1/transcriptions"): return (201, [:], Self.json(["id": jobID, "status": "queued"]))
+            case ("GET", "/v1/transcriptions/\(jobID)"): return (200, [:], Self.json(["id": jobID, "status": "completed"]))
+            case ("GET", "/v1/transcriptions/\(jobID)/transcript"): return (200, [:], Self.json(["text": "Hello."]))
+            case ("DELETE", _): deleted.fulfill(); return (204, [:], Data())
+            default: return (404, [:], Data())
+            }
+        }
+
+        let text = try await ProviderBatchTranscriber
+            .forDrop(take: take, resolver: resolver, session: session, pollInterval: .milliseconds(1))
+            .transcribe(audio: pcm, language: nil)
+        await fulfillment(of: [deleted], timeout: 2)
+
+        XCTAssertEqual(text, "Hello.")
+        XCTAssertEqual(Set(StubURLProtocol.capturedRequests.compactMap { $0.url?.host }), ["api.soniox.com"])
+        XCTAssertEqual(Set(StubURLProtocol.capturedRequests.map { $0.value(forHTTPHeaderField: "Authorization") }), ["Bearer sx-key"])
+        let job = try XCTUnwrap(JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies[1]) as? NSDictionary)
+        XCTAssertEqual(job["model"] as? String, "stt-async-v5")
+    }
+
+    // The latched route is resolved when the call is made: a key saved after
+    // the take began is used, and one removed since means no batch at all.
+    func test_drop_batch_reads_the_key_at_call_time_and_never_borrows_another() async throws {
+        let take = DropTake()
+        take.begin(mode: .smart, route: FeatureRoute(account: .deepgram, model: "nova-3"))
+        try saveKey("el-key", for: .elevenLabs)
+        let transcriber = ProviderBatchTranscriber.forDrop(take: take, resolver: resolver, session: session)
+
+        let before = await transcriber.isAvailable()
+        try saveKey("dg-key", for: .deepgram)
+        let after = await transcriber.isAvailable()
+
+        XCTAssertFalse(before)
+        XCTAssertTrue(after)
+        XCTAssertTrue(StubURLProtocol.capturedRequests.isEmpty)
+    }
+
+    func test_drop_batch_without_a_latched_route_is_unavailable() async throws {
+        try saveKey("sx-key", for: .soniox)
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropFast)
+        let take = DropTake()
+        take.begin(mode: .fast, route: nil)
+
+        let transcriber = ProviderBatchTranscriber.forDrop(take: take, resolver: resolver, session: session)
+        let available = await transcriber.isAvailable()
+
+        XCTAssertFalse(available)
+        do {
+            _ = try await transcriber.transcribe(audio: pcm, language: nil)
+            XCTFail("a take without a route must not be sent anywhere")
+        } catch {
+            XCTAssertTrue(error is BatchTranscriptionUnavailable, "got \(error)")
+        }
+        XCTAssertTrue(StubURLProtocol.capturedRequests.isEmpty)
+    }
+
+    func test_agent_batch_voice_uses_the_agent_voice_provider() async throws {
+        try saveKey("sx-key", for: .soniox)
+        try saveKey("dg-key", for: .deepgram)
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropFast)
+        routing.setRoute(FeatureRoute(account: .deepgram, model: "nova-3"), for: .agentVoice)
+        StubURLProtocol.handler = { _ in
+            (200, [:], Self.json(["results": ["channels": [["alternatives": [["transcript": "Hi."]]]]]]))
+        }
+
+        let text = try await forFeature(.agentVoice).transcribe(audio: pcm, language: "en")
+
+        XCTAssertEqual(text, "Hi.")
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, 1)
+        XCTAssertEqual(request.url?.host, "api.deepgram.com")
+        XCTAssertEqual(request.url?.path, "/v1/listen")
+        let items = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(items.first { $0.name == "model" }?.value, "nova-3")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Token dg-key")
+    }
+
+    // Review Focus 3: the key of the feature's provider is gone. Another
+    // provider's key exists and must not be used.
+    func test_no_key_means_no_batch_and_no_other_provider() async throws {
+        try saveKey("sx-key", for: .soniox)
+        routing.setRoute(FeatureRoute(account: .elevenLabs, model: "scribe_v2_realtime"), for: .agentVoice)
+
+        let transcriber = forFeature(.agentVoice)
+        let available = await transcriber.isAvailable()
+
+        XCTAssertFalse(available)
+        do {
+            _ = try await transcriber.transcribe(audio: pcm, language: nil)
+            XCTFail("a feature without its key must not be transcribed")
+        } catch {
+            XCTAssertTrue(error is BatchTranscriptionUnavailable, "got \(error)")
+        }
+        XCTAssertTrue(StubURLProtocol.capturedRequests.isEmpty)
+    }
+
+    func test_feature_batch_reads_the_route_on_every_call() async throws {
+        try saveKey("dg-key", for: .deepgram)
+        let transcriber = forFeature(.agentVoice)
+
+        let notSet = await transcriber.isAvailable()
+        routing.setRoute(FeatureRoute(account: .deepgram, model: "nova-3"), for: .agentVoice)
+        let set = await transcriber.isAvailable()
+        routing.setRoute(nil, for: .agentVoice)
+        let cleared = await transcriber.isAvailable()
+
+        XCTAssertEqual([notSet, set, cleared], [false, true, false])
+    }
+
+    func test_elevenlabs_batch_sends_the_registry_model() async throws {
+        try saveKey("el-key", for: .elevenLabs)
+        routing.setRoute(FeatureRoute(account: .elevenLabs, model: "scribe_v2_realtime"), for: .agentVoice)
+        StubURLProtocol.handler = { _ in (200, [:], Self.json(["text": "Hello."])) }
+
+        _ = try await forFeature(.agentVoice).transcribe(audio: pcm, language: "en")
+
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "xi-api-key"), "el-key")
+        let form = try MultipartForm(request, body: StubURLProtocol.capturedBodies[0])
+        XCTAssertEqual(form.fields["model_id"], "scribe_v2")
+    }
+
+    // Review Focus 5: a server without a key gets no Authorization header.
+    func test_self_hosted_batch_without_key_sends_no_authorization() async throws {
+        let server = routing.addServer(name: "Home GPU", baseURL: "wss://stt.example.com:8443/realtime")
+        routing.setRoute(FeatureRoute(account: .server(server.id), model: "whisper-large-v3"), for: .agentVoice)
+        StubURLProtocol.handler = { _ in (200, [:], Self.json(["text": "Hello."])) }
+
+        let text = try await forFeature(.agentVoice).transcribe(audio: pcm, language: "en")
+
+        XCTAssertEqual(text, "Hello.")
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://stt.example.com:8443/v1/audio/transcriptions")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        let form = try MultipartForm(request, body: StubURLProtocol.capturedBodies[0])
+        XCTAssertEqual(form.fields["model"], "whisper-large-v3")
+    }
+
+    func test_self_hosted_batch_with_a_key_sends_a_bearer_header() async throws {
+        let server = routing.addServer(name: "Home GPU", baseURL: "https://stt.example.com")
+        routing.setRoute(FeatureRoute(account: .server(server.id), model: "whisper-large-v3"), for: .agentVoice)
+        try saveKey("sh-key", for: .server(server.id))
+        StubURLProtocol.handler = { _ in (200, [:], Self.json(["text": "Hello."])) }
+
+        _ = try await forFeature(.agentVoice).transcribe(audio: pcm, language: nil)
+
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sh-key")
+    }
+
+    // PR #35's language policy holds on the route's model: nova-3 takes "cy"
+    // as no language, a model not in the table cannot do Auto. No audio is
+    // sent in either case.
+    func test_deepgram_language_policy_uses_the_route_model_and_sends_no_audio() async throws {
+        try saveKey("dg-key", for: .deepgram)
+        for (model, language, expected) in [
+            ("nova-3", "cy" as String?, DeepgramLanguageConfigurationError.unsupportedLanguage),
+            ("custom-model", nil, DeepgramLanguageConfigurationError.automaticLanguageUnavailable),
+        ] {
+            routing.setRoute(FeatureRoute(account: .deepgram, model: model), for: .agentVoice)
+            do {
+                _ = try await forFeature(.agentVoice).transcribe(audio: pcm, language: language)
+                XCTFail("Invalid language setup must not upload audio")
+            } catch {
+                XCTAssertEqual(error as? DeepgramLanguageConfigurationError, expected)
+            }
+            XCTAssertTrue(StubURLProtocol.capturedRequests.isEmpty)
+        }
     }
 }
 
@@ -161,7 +384,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         let settings = await RouteBox()
         let live = ProviderBatchTranscriber(route: { settings.route }, session: session)
         let before = await live.isAvailable()
-        await MainActor.run { settings.route = .elevenLabs(apiKey: "el-key") }
+        await MainActor.run { settings.route = .elevenLabs(apiKey: "el-key", model: "scribe_v2") }
         let after = await live.isAvailable()
         XCTAssertFalse(before)
         XCTAssertTrue(after)
@@ -274,7 +497,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
             ]))
         }
 
-        let text = try await transcriber(.elevenLabs(apiKey: "el-key")).transcribe(audio: pcm, language: "ru")
+        let text = try await transcriber(.elevenLabs(apiKey: "el-key", model: "scribe_v2")).transcribe(audio: pcm, language: "ru")
 
         XCTAssertEqual(text, "Привет, мир.")
         XCTAssertEqual(StubURLProtocol.capturedRequests.count, 1)
@@ -296,7 +519,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
     func test_elevenLabs_autoLanguage_sendsNoLanguageCode() async throws {
         StubURLProtocol.handler = { _ in (200, [:], Self.json(["text": "Hello."])) }
 
-        _ = try await transcriber(.elevenLabs(apiKey: "el-key")).transcribe(audio: pcm, language: nil)
+        _ = try await transcriber(.elevenLabs(apiKey: "el-key", model: "scribe_v2")).transcribe(audio: pcm, language: nil)
 
         let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
         let form = try MultipartForm(request, body: StubURLProtocol.capturedBodies[0])
@@ -309,7 +532,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         StubURLProtocol.handler = { _ in (200, [:], Self.json(["detail": "unexpected"])) }
 
         do {
-            _ = try await transcriber(.elevenLabs(apiKey: "el-key")).transcribe(audio: pcm, language: nil)
+            _ = try await transcriber(.elevenLabs(apiKey: "el-key", model: "scribe_v2")).transcribe(audio: pcm, language: nil)
             XCTFail("a body without text must not read as silence")
         } catch {
             XCTAssertEqual(error as? ProviderBatchTranscriptionError, .malformedResponse)
@@ -356,7 +579,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         let deleted = deletions(2)
         serveSoniox(jobStatuses: ["queued", "processing", "completed"], deleted: deleted)
 
-        let text = try await transcriber(.soniox(apiKey: "sx-key")).transcribe(audio: pcm, language: "ru")
+        let text = try await transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5")).transcribe(audio: pcm, language: "ru")
         await fulfillment(of: [deleted], timeout: 2)
 
         XCTAssertEqual(text, "Привет, мир.")
@@ -385,7 +608,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         let deleted = deletions(2)
         serveSoniox(jobStatuses: ["completed"], deleted: deleted)
 
-        _ = try await transcriber(.soniox(apiKey: "sx-key")).transcribe(audio: pcm, language: nil)
+        _ = try await transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5")).transcribe(audio: pcm, language: nil)
         await fulfillment(of: [deleted], timeout: 2)
 
         let job = try XCTUnwrap(JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies[1]) as? NSDictionary)
@@ -398,7 +621,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         let deleted = deletions(2)
         serveSoniox(jobStatuses: ["completed"], transcript: ["text": "", "tokens": []], deleted: deleted)
 
-        let text = try await transcriber(.soniox(apiKey: "sx-key")).transcribe(audio: pcm, language: nil)
+        let text = try await transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5")).transcribe(audio: pcm, language: nil)
         await fulfillment(of: [deleted], timeout: 2)
 
         XCTAssertEqual(text, "")
@@ -411,7 +634,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         serveSoniox(jobStatuses: ["error"], deleted: deleted)
 
         do {
-            _ = try await transcriber(.soniox(apiKey: "sx-key")).transcribe(audio: pcm, language: nil)
+            _ = try await transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5")).transcribe(audio: pcm, language: nil)
             XCTFail("a failed job must not produce a transcript")
         } catch {
             XCTAssertEqual(error as? ProviderBatchTranscriptionError, .jobFailed)
@@ -429,7 +652,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         serveSoniox(jobStatuses: ["completed"], createJobStatus: 400, deleted: deleted)
 
         do {
-            _ = try await transcriber(.soniox(apiKey: "sx-key")).transcribe(audio: pcm, language: nil)
+            _ = try await transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5")).transcribe(audio: pcm, language: nil)
             XCTFail("a rejected job must not produce a transcript")
         } catch {
             XCTAssertEqual(error as? ProviderBatchTranscriptionError, .httpStatus(400))
@@ -449,7 +672,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
     func test_soniox_jobThatNeverFinishes_timesOut_andDeletesTheAudio() async {
         let deleted = deletions(2)
         let jobDeletes = serveSoniox(jobStatuses: ["processing"], busyDeletes: 2, deleted: deleted)
-        let soniox = transcriber(.soniox(apiKey: "sx-key"), pollInterval: .milliseconds(5), jobTimeout: .milliseconds(50))
+        let soniox = transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5"), pollInterval: .milliseconds(5), jobTimeout: .milliseconds(50))
         let pcm = pcm
 
         let outcome = await watchdog { try await soniox.transcribe(audio: pcm, language: nil) }
@@ -464,7 +687,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
     func test_soniox_deletionOfAJobThatNeverStops_isGivenUp() async throws {
         let deleted = deletions(1)
         let jobDeletes = serveSoniox(jobStatuses: ["processing"], busyDeletes: .max, deleted: deleted)
-        let soniox = transcriber(.soniox(apiKey: "sx-key"), pollInterval: .milliseconds(5), jobTimeout: .milliseconds(50))
+        let soniox = transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5"), pollInterval: .milliseconds(5), jobTimeout: .milliseconds(50))
         let pcm = pcm
 
         let outcome = await watchdog { try await soniox.transcribe(audio: pcm, language: nil) }
@@ -483,7 +706,7 @@ final class ProviderBatchTranscriberTests: XCTestCase {
     func test_soniox_recoveryDeadline_endsPolling_andStillDeletesTheAudio() async {
         let deleted = deletions(2)
         serveSoniox(jobStatuses: ["processing"], deleted: deleted)
-        let soniox = transcriber(.soniox(apiKey: "sx-key"), pollInterval: .milliseconds(5))
+        let soniox = transcriber(.soniox(apiKey: "sx-key", model: "stt-async-v5"), pollInterval: .milliseconds(5))
         let pcm = pcm
 
         let outcome = await watchdog {
@@ -610,18 +833,25 @@ final class ProviderBatchTranscriberTests: XCTestCase {
 /// the agent's batch voice path all get the provider batch transcriber.
 final class ProviderBatchWiringTests: XCTestCase {
     // Breaks if production keeps the no-op seam: the batch rung, Retry and the
-    // recorder fallback would still have no recognizer.
-    func test_appDelegateBindsTheProviderBatchTranscriber() throws {
-        XCTAssertTrue(try appDelegateSource().contains(
-            "private let batchTranscriber: any BatchTranscribing = ProviderBatchTranscriber()"
+    // recorder fallback would still have no recognizer, or they would read a
+    // provider other than the take's own.
+    func test_appDelegateBindsTheDropBatchTranscriber() throws {
+        let source = try appDelegateSource()
+        XCTAssertTrue(source.contains(
+            "private let dropBatchTranscriber: any BatchTranscribing = ProviderBatchTranscriber.forDrop()"
         ))
+        XCTAssertFalse(source.contains("batchTranscriber: any BatchTranscribing = ProviderBatchTranscriber()"))
     }
 
     // Breaks if the agent keeps the hermetic default, so its batch voice path
-    // can never transcribe.
-    func test_agentControllerGetsTheSameBatchTranscriber() throws {
-        XCTAssertTrue(try appDelegateSource().contains(
-            "audioTranscriber: BatchAgentAudioTranscriber(batch: batchTranscriber)"
+    // can never transcribe, or follows Drop's route instead of Agent voice.
+    func test_agentControllerGetsTheAgentVoiceBatchTranscriber() throws {
+        let source = try appDelegateSource()
+        XCTAssertTrue(source.contains(
+            "private let agentBatchTranscriber: any BatchTranscribing = ProviderBatchTranscriber.forFeature(.agentVoice)"
+        ))
+        XCTAssertTrue(source.contains(
+            "audioTranscriber: BatchAgentAudioTranscriber(batch: agentBatchTranscriber)"
         ))
     }
 
