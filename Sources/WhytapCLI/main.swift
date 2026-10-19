@@ -1,15 +1,25 @@
 import Foundation
 import WhytapCaseKit
 
-let usage = """
-usage: whytap <command>
+// `whytap case ls | run`. Locates the enclosing app (Ruling 3) at runtime.
+let executable = URL(fileURLWithPath: CommandLine.arguments[0].contains("/")
+    ? CommandLine.arguments[0]
+    : (Bundle.main.executablePath ?? CommandLine.arguments[0]))
+let hostExecutable = Bundle.main.executableURL ?? executable
 
-commands:
-  projects            list Case projects
-  keys [-p project]   list key names
-  run [-p project] [--only A,B] -- <command>
-                      run a command with Case keys as environment variables
-"""
-
-FileHandle.standardError.write(Data((usage + "\n").utf8))
-exit(64)
+var client: CaseBrokerCalling?
+let message = "Whytap is not available: this helper is not inside the Whytap app bundle."
+if let bundleID = CaseHostBundle.bundleID(forExecutable: hostExecutable) {
+    let socket = CaseBrokerPaths.socketURL(bundleID: bundleID)
+    client = LaunchingBrokerClient(
+        inner: UnixSocketBrokerClient(socketURL: socket),
+        launch: {
+            let open = Process()
+            open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            open.arguments = ["-g", "-b", bundleID]
+            try? open.run()
+            open.waitUntilExit()
+        })
+}
+exit(CaseCommand(client: client, unavailableMessage: message)
+    .run(args: Array(CommandLine.arguments.dropFirst())))

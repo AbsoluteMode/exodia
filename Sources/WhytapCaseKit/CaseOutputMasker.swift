@@ -16,7 +16,13 @@ public final class CaseOutputMasker {
     private let maxLength: Int
     private var buffer: [UInt8] = []
 
+    private let secrets: [String]
+
+    /// A masker with the same secrets and empty state, for a second stream.
+    public func makeFresh() -> CaseOutputMasker { CaseOutputMasker(secrets: secrets) }
+
     public init(secrets: [String]) {
+        self.secrets = secrets
         var set = Set<[UInt8]>()
         for secret in secrets {
             Self.collectVariants(of: secret, into: &set)
