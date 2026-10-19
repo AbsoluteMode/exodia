@@ -148,6 +148,25 @@ final class BrightnessHoverToolTests: XCTestCase {
         }
     }
 
+    /// The island never becomes the active app's key window, and there the native switch drew
+    /// Extra's on state gray (user screenshot, 2026-10-19). The unordered fixture window is not key.
+    func testExtraSwitchShowsTheAccentColorOnlyWhenOnInAnInactiveWindow() throws {
+        for state in [StripState.extraOn, .extraOff] {
+            let fixture = StripFixture(state: state, width: 310)
+            defer { fixture.close() }
+            fixture.settle()
+            XCTAssertFalse(fixture.window.isKeyWindow)
+            // The switch ends the control row: 10 pt padding, then the 24 pt row.
+            let accent = try fixture.pixelCount(in: CGRect(x: 310 - 10 - 44, y: 10, width: 44, height: 24),
+                                                near: MacSettingsTheme.NS.accent)
+            if state == .extraOn {
+                XCTAssertGreaterThan(accent, 40, "On draws the accent color without key status.")
+            } else {
+                XCTAssertEqual(accent, 0, "Off stays neutral.")
+            }
+        }
+    }
+
     func testOnlyAShownStripPollsTheDisplayAndBattery() {
         let fixture = StripFixture(state: .extraOff, width: 310)
         defer { fixture.close() }
@@ -283,6 +302,25 @@ private final class StripFixture {
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.06))
         host.layoutSubtreeIfNeeded()
+    }
+
+    /// Rendered pixels within `rect` (points, top-left origin) close to `color` in sRGB.
+    func pixelCount(in rect: CGRect, near color: NSColor) throws -> Int {
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let target = try XCTUnwrap(color.usingColorSpace(.sRGB))
+        let scale = CGFloat(bitmap.pixelsWide) / host.bounds.width
+        var count = 0
+        for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+            for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
+                guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                let distance = abs(pixel.redComponent - target.redComponent)
+                    + abs(pixel.greenComponent - target.greenComponent)
+                    + abs(pixel.blueComponent - target.blueComponent)
+                if distance < 0.15 { count += 1 }
+            }
+        }
+        return count
     }
 
     func removeStrip() {
