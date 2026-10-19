@@ -1188,7 +1188,13 @@ struct ArtifactRestoreTransaction {
             localKey = created
         }
         let merged = ArtifactCaseMerge.merge(source: sourcePayload, into: targetPayload)
-        do { try CaseVaultStore(fileURL: locations.caseVault).save(merged, using: localKey) }
+        do {
+            try CaseVaultStore(fileURL: locations.caseVault).save(merged, using: localKey)
+            let file = try FileHandle(forWritingTo: locations.caseVault)
+            do { try file.synchronize(); try file.close() }
+            catch { try? file.close(); throw error }
+            try ConfigBackupFiles.synchronizeDirectory(locations.caseVault.deletingLastPathComponent())
+        }
         catch { throw ArtifactBackupError.restoreFailed }
     }
 
