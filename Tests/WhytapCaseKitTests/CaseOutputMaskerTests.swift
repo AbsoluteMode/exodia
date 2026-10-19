@@ -125,10 +125,48 @@ final class CaseOutputMaskerTests: XCTestCase {
 
     func test_tail_is_held_until_finish_and_flushed() {
         let m = CaseOutputMasker(secrets: [secret])
-        let a = m.feed(Data("ab".utf8))
-        XCTAssertEqual(a, Data())
-        XCTAssertEqual(m.finish(), Data("ab".utf8))
+        // A tail that could be the start of the secret waits for more output.
+        let a = m.feed(Data("ok sk-te".utf8))
+        XCTAssertEqual(a, Data("ok ".utf8))
+        XCTAssertEqual(m.finish(), Data("sk-te".utf8))
         XCTAssertEqual(m.finish(), Data(), "second finish emits nothing")
+    }
+
+    func test_secret_free_output_is_emitted_at_once_with_a_long_secret_configured() {
+        let long = String(repeating: "fake-long-secret-", count: 40) // 680 bytes, hex variant 1360
+        let m = CaseOutputMasker(secrets: [long, secret])
+        // `npm run dev` waits for requests after this line; it must be visible now.
+        XCTAssertEqual(m.feed(Data("  ready - listening on http://localhost:3000\n".utf8)),
+                       Data("  ready - listening on http://localhost:3000\n".utf8))
+        // A prompt waits for an answer without a newline.
+        XCTAssertEqual(m.feed(Data("Overwrite file? [y/N] ".utf8)), Data("Overwrite file? [y/N] ".utf8))
+        XCTAssertEqual(m.feed(Data("x".utf8)), Data("x".utf8))
+        XCTAssertEqual(m.finish(), Data())
+    }
+
+    func test_only_a_possible_secret_start_is_held_back() {
+        let m = CaseOutputMasker(secrets: [secret])
+        // "sk-test-Zx9" is a prefix of the secret: held; everything before it is out.
+        XCTAssertEqual(m.feed(Data("key: sk-test-Zx9".utf8)), Data("key: ".utf8))
+        // The rest arrives: masked, never a fragment.
+        XCTAssertEqual(m.feed(Data("/Qw+7_notreal done\n".utf8)), Data("\(hidden) done\n".utf8))
+        // A prefix that turns out not to be the secret is released as soon as it diverges.
+        XCTAssertEqual(m.feed(Data("sk-test-Zx8\n".utf8)), Data("sk-test-Zx8\n".utf8))
+        XCTAssertEqual(m.finish(), Data())
+    }
+
+    func test_every_split_point_of_text_around_a_secret_matches_whole_masking() {
+        let text = "a=\(secret);b=\(Data(secret.utf8).base64EncodedString());c=sk-tes\n"
+        let whole = mask(text, secrets: [secret])
+        let bytes = Array(text.utf8)
+        for cut in 0...bytes.count {
+            let m = CaseOutputMasker(secrets: [secret])
+            var out = m.feed(Data(bytes[..<cut]))
+            out += m.feed(Data(bytes[cut...]))
+            out += m.finish()
+            XCTAssertEqual(String(decoding: out, as: UTF8.self), whole, "cut=\(cut)")
+            XCTAssertFalse(String(decoding: out, as: UTF8.self).contains("Zx9/Qw"))
+        }
     }
 
     func test_overlapping_secrets_leave_no_fragment() {

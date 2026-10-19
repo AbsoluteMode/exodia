@@ -2,8 +2,10 @@ import Foundation
 
 /// Streaming redactor for child-process output. Replaces every occurrence of
 /// a secret, or of a common encoding of it, with `placeholder`. A value that
-/// straddles two `feed` calls is still caught: the last `longest variant - 1`
-/// bytes are held back until more data (or `finish`) arrives.
+/// straddles two `feed` calls is still caught: only the end of the output that
+/// could still grow into a secret (it is the beginning of some variant) is held
+/// back until more data (or `finish`) arrives; everything else is emitted at
+/// once, so a server's "listening" line or a `[y/N]` prompt shows up immediately.
 ///
 /// Not thread safe; use one instance per output stream.
 public final class CaseOutputMasker {
@@ -59,8 +61,8 @@ public final class CaseOutputMasker {
         let n = buffer.count
         var i = 0
         scan: while i < n {
-            // A variant starting here is only decidable with maxLength bytes in view.
-            if !final && n - i < maxLength { break }
+            // A longer variant could still start here once more output arrives.
+            if !final && couldGrow(at: i) { break }
             guard let first = longestMatch(at: i) else {
                 out.append(buffer[i])
                 i += 1
@@ -71,7 +73,7 @@ public final class CaseOutputMasker {
             // so overlapping secrets leave no fragment behind.
             var j = i + 1
             while j < end {
-                if !final && n - j < maxLength { break scan }
+                if !final && couldGrow(at: j) { break scan }
                 if let m = longestMatch(at: j), j + m > end { end = j + m }
                 j += 1
             }
@@ -80,6 +82,19 @@ public final class CaseOutputMasker {
         }
         buffer = i < n ? Array(buffer[i...]) : []
         return out
+    }
+
+    /// The bytes from `i` to the end are the beginning of a variant longer than
+    /// them, so what starts at `i` is not decidable yet.
+    private func couldGrow(at i: Int) -> Bool {
+        let remaining = buffer.count - i
+        guard remaining < maxLength else { return false }
+        for variant in byFirstByte[Int(buffer[i])] where variant.count > remaining {
+            var k = 1
+            while k < remaining && buffer[i + k] == variant[k] { k += 1 }
+            if k == remaining { return true }
+        }
+        return false
     }
 
     private func longestMatch(at i: Int) -> Int? {
