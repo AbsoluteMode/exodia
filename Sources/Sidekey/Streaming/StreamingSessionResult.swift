@@ -1,8 +1,8 @@
 import Foundation
 
-/// Why a streaming transcription session failed. Shared by every session
-/// kind (direct-to-provider BYOK and on-device) so the Drop / agent / Google
-/// result handlers branch on one vocabulary.
+/// Why a streaming transcription session failed. Shared by every
+/// direct-to-provider BYOK session so the Drop / agent / Google result
+/// handlers branch on one vocabulary.
 enum StreamingSessionError: Error, Equatable {
     case transportFailed
     case transportCancelled

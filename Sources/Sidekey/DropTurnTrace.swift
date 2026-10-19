@@ -43,7 +43,7 @@ enum DropTurnPhase: Int, Comparable, CaseIterable {
 /// transcript text** — only a token *count* — so it can ship permanently
 /// without the dictation-leak that retired the temporary `drop_phase_debug`
 /// diagnostic (#350; `String(describing: wing)` serialised the live transcript
-/// — invariant #3).
+/// — invariant #2).
 ///
 /// `@MainActor` because every Drop call site (hotkey, session wiring,
 /// stop/result handlers, turn-watchdog) already runs on the main actor.
@@ -70,7 +70,7 @@ final class DropTurnTrace {
     }
 
     /// Count one inbound transcript token and stamp `.firstToken` on the first
-    /// one. Counts only — never the token *text* (privacy / invariant #3).
+    /// one. Counts only — never the token *text* (privacy / invariant #2).
     func recordToken(at: Date = Date()) {
         tokenCount += 1
         mark(.firstToken, at: at)

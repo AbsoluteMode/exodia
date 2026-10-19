@@ -109,22 +109,7 @@ final class MeetingRecorder: MeetingRecording {
         /// prepend an "interrupted by sleep" marker to the LLM prompt
         /// context.
         var interruptedBySleep: Bool = false
-        /// Present only when `retainSeparateTracks` was on (the fully-local
-        /// transcription path). Points at the raw mic-only and system-only
-        /// WAVs written alongside the mixed chunks. `nil` for the BYOK path,
-        /// which consumes the mixed chunks in `chunkURLs` and never needs
-        /// the un-mixed tracks.
-        var separateTrackURLs: SeparateTrackURLs? = nil
     }
-
-    /// Stage 5a: absolute URLs of the raw, un-mixed per-source tracks
-    /// retained for local transcription. Both are 16 kHz mono PCM16 WAVs
-    /// with the same canonical header as the mixed chunks.
-    struct SeparateTrackURLs: Sendable, Equatable {
-        let micURL: URL
-        let systemURL: URL
-    }
-
 
     // MARK: - Dependencies
 
@@ -136,11 +121,6 @@ final class MeetingRecorder: MeetingRecording {
     private let autoEndMicReleasedSeconds: TimeInterval
     private let autoEndStartupGraceSeconds: TimeInterval
     private let sampleRate: Int
-    /// Stage 5a: when `true`, the writer retains the raw mic-only and
-    /// system-only tracks (in addition to the mixed chunks) and flushes
-    /// them to `mic.wav` / `system.wav` on finalize. Default `false`
-    /// keeps the BYOK path byte-for-byte identical.
-    private let retainSeparateTracks: Bool
 
     // MARK: - State
 
@@ -193,8 +173,7 @@ final class MeetingRecorder: MeetingRecording {
         chunkRotationSeconds: TimeInterval = MeetingsConfig.chunkRotationSeconds,
         autoEndMicReleasedSeconds: TimeInterval = MeetingsConfig.autoEndMicReleasedSeconds,
         autoEndStartupGraceSeconds: TimeInterval = MeetingsConfig.autoEndStartupGraceSeconds,
-        sampleRate: Int = 16_000,
-        retainSeparateTracks: Bool = false
+        sampleRate: Int = 16_000
     ) {
         self.micSource = micSource
         self.systemSource = systemSource
@@ -204,7 +183,6 @@ final class MeetingRecorder: MeetingRecording {
         self.autoEndMicReleasedSeconds = autoEndMicReleasedSeconds
         self.autoEndStartupGraceSeconds = autoEndStartupGraceSeconds
         self.sampleRate = sampleRate
-        self.retainSeparateTracks = retainSeparateTracks
 
         let (finStream, finCont) = AsyncStream<FinalizedEvent>.makeStream()
         self.finalizedStream = finStream
@@ -245,8 +223,7 @@ final class MeetingRecorder: MeetingRecording {
         let writer = ChunkWriter(
             meetingDir: meetingDir,
             sampleRate: sampleRate,
-            chunkRotationSeconds: chunkRotationSeconds,
-            retainSeparateTracks: retainSeparateTracks
+            chunkRotationSeconds: chunkRotationSeconds
         )
         self.writer = writer
 
@@ -415,16 +392,13 @@ final class MeetingRecorder: MeetingRecording {
 
         let urls: [URL]
         let audioDurationSeconds: TimeInterval
-        let separateTracks: SeparateTrackURLs?
         if let writer {
             let finalized = await writer.finalize()
             urls = finalized.chunkURLs
             audioDurationSeconds = finalized.audioDurationSeconds
-            separateTracks = finalized.separateTrackURLs
         } else {
             urls = []
             audioDurationSeconds = 0
-            separateTracks = nil
         }
 
         let event = FinalizedEvent(
@@ -432,8 +406,7 @@ final class MeetingRecorder: MeetingRecording {
             chunkURLs: urls,
             totalDurationSeconds: audioDurationSeconds,
             reason: reason,
-            interruptedBySleep: interruptedBySleep,
-            separateTrackURLs: separateTracks
+            interruptedBySleep: interruptedBySleep
         )
 
         os_log(
@@ -620,9 +593,6 @@ final class MeetingRecorder: MeetingRecording {
 private struct ChunkWriterFinalizeResult: Sendable {
     let chunkURLs: [URL]
     let audioDurationSeconds: TimeInterval
-    /// Stage 5a: set only when `retainSeparateTracks` was on and at least
-    /// one of the raw tracks carried audio. `nil` for the mixed-only path.
-    let separateTrackURLs: MeetingRecorder.SeparateTrackURLs?
 }
 
 private actor ChunkWriter {
@@ -637,21 +607,6 @@ private actor ChunkWriter {
     /// pairs with system samples to produce mixed output.
     private var micQueue: [Float] = []
     private var systemQueue: [Float] = []
-
-    /// Stage 5a: when `true`, retain the raw mic-only and system-only
-    /// tracks (un-mixed) so the local transcription path can transcribe
-    /// each source separately. Independent of the mixing logic below —
-    /// the mixed chunk path is unchanged regardless of this flag.
-    private let retainSeparateTracks: Bool
-
-    /// Raw per-source Int16 samples accumulated in arrival order while
-    /// `retainSeparateTracks` is on. Captured BEFORE mixing and BEFORE
-    /// the solo-drain/pair logic touches the queues, so they hold the
-    /// true mic and system signals, independent of stream alignment.
-    /// Flushed to `mic.wav` / `system.wav` on `finalize()`. Empty (and
-    /// never written) when retention is off.
-    private var micTrackSamples: [Int16] = []
-    private var systemTrackSamples: [Int16] = []
 
     /// True between `beginPause()` and `endPause()`. While paused the
     /// writer discards EVERY incoming sample (mic and system) so nothing
@@ -702,14 +657,12 @@ private actor ChunkWriter {
     init(
         meetingDir: URL,
         sampleRate: Int,
-        chunkRotationSeconds: TimeInterval,
-        retainSeparateTracks: Bool = false
+        chunkRotationSeconds: TimeInterval
     ) {
         self.meetingDir = meetingDir
         self.sampleRate = sampleRate
         self.chunkSampleBudget = Int(chunkRotationSeconds * TimeInterval(sampleRate))
         self.soloDrainThresholdSamples = sampleRate * 5
-        self.retainSeparateTracks = retainSeparateTracks
 
         // Reconnect deliberately reuses the recorder id and staging
         // directory. Resume after the last live chunk instead of replacing
@@ -718,18 +671,6 @@ private actor ChunkWriter {
         self.writtenChunks = existing.urls
         self.currentChunkIndex = existing.nextLiveIndex
         self.writtenAudioDurationSeconds = existing.audioDurationSeconds
-
-        // The fully-local path consumes raw mic/system tracks. Seed those
-        // accumulators too, so reconnect produces one combined pair rather
-        // than overwriting the first segment's tracks.
-        if retainSeparateTracks {
-            self.micTrackSamples = Self.pcm16Samples(
-                at: meetingDir.appendingPathComponent("mic.wav")
-            )
-            self.systemTrackSamples = Self.pcm16Samples(
-                at: meetingDir.appendingPathComponent("system.wav")
-            )
-        }
     }
 
     private nonisolated static func existingChunks(
@@ -755,25 +696,6 @@ private actor ChunkWriter {
             return total + (wavDurationSeconds(data) ?? 0)
         }
         return (urls, (liveIndices.max() ?? -1) + 1, duration)
-    }
-
-    private nonisolated static func pcm16Samples(at url: URL) -> [Int16] {
-        guard let data = try? Data(contentsOf: url), data.count >= 44,
-              String(data: data[0..<4], encoding: .ascii) == "RIFF",
-              String(data: data[8..<12], encoding: .ascii) == "WAVE",
-              readUInt16LE(data, at: 34) == 16 else { return [] }
-        let declaredBytes = Int(readUInt32LE(data, at: 40))
-        let end = min(data.count, 44 + declaredBytes)
-        guard end > 44 else { return [] }
-        var samples: [Int16] = []
-        samples.reserveCapacity((end - 44) / 2)
-        var offset = 44
-        while offset + 1 < end {
-            let bits = UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
-            samples.append(Int16(bitPattern: bits))
-            offset += 2
-        }
-        return samples
     }
 
      // MARK: - Public surface
@@ -806,9 +728,6 @@ private actor ChunkWriter {
         guard !isPaused else { return }
         guard !samples.isEmpty else { return }
         appendMeteringSamples(samples, into: &micRMSWindow)
-        if retainSeparateTracks {
-            appendRawTrack(samples, into: &micTrackSamples)
-        }
         micQueue.append(contentsOf: samples)
         drainAlignedPairs()
     }
@@ -825,9 +744,6 @@ private actor ChunkWriter {
         guard !isPaused else { return }
         guard !samples.isEmpty else { return }
         appendMeteringSamples(samples, into: &systemRMSWindow)
-        if retainSeparateTracks {
-            appendRawTrack(samples, into: &systemTrackSamples)
-        }
         systemQueue.append(contentsOf: samples)
         drainAlignedPairs()
     }
@@ -898,49 +814,10 @@ private actor ChunkWriter {
         micQueue.removeAll(keepingCapacity: false)
         systemQueue.removeAll(keepingCapacity: false)
 
-        let separateTracks = writeSeparateTracksIfNeeded()
-
         return ChunkWriterFinalizeResult(
             chunkURLs: writtenChunks,
-            audioDurationSeconds: writtenAudioDurationSeconds,
-            separateTrackURLs: separateTracks
+            audioDurationSeconds: writtenAudioDurationSeconds
         )
-    }
-
-     /// Stage 5a: flush the retained raw mic / system tracks to
-    /// `mic.wav` / `system.wav`. Returns the URLs when at least one track
-    /// carried audio; `nil` when retention was off or both tracks are
-    /// empty (so a silent/aborted recording does not surface phantom
-    /// track files). Each WAV uses the same 16 kHz mono PCM16 header as
-    /// the mixed chunks.
-    private func writeSeparateTracksIfNeeded() -> MeetingRecorder.SeparateTrackURLs? {
-        guard retainSeparateTracks else { return nil }
-        guard !micTrackSamples.isEmpty || !systemTrackSamples.isEmpty else { return nil }
-
-        let micURL = meetingDir.appendingPathComponent("mic.wav")
-        let systemURL = meetingDir.appendingPathComponent("system.wav")
-        let micOK = writeTrackWAV(samples: micTrackSamples, to: micURL)
-        let systemOK = writeTrackWAV(samples: systemTrackSamples, to: systemURL)
-
-        micTrackSamples.removeAll(keepingCapacity: false)
-        systemTrackSamples.removeAll(keepingCapacity: false)
-
-        // Surface the URLs only if both files are on disk. The local
-        // transcriber reads both; a half-written pair is not actionable,
-        // so fall back to nil (the local path will report "no audio").
-        guard micOK, systemOK else { return nil }
-        return MeetingRecorder.SeparateTrackURLs(micURL: micURL, systemURL: systemURL)
-    }
-
-    @discardableResult
-    private func writeTrackWAV(samples: [Int16], to url: URL) -> Bool {
-        let wav = Self.wavData(samples: samples, sampleRate: sampleRate)
-        do {
-            try wav.write(to: url, options: [.atomic])
-            return true
-        } catch {
-            return false
-        }
     }
 
     // MARK: - Mixing
@@ -972,8 +849,7 @@ private actor ChunkWriter {
             let m = micQueue[i]
             let s = systemQueue[i]
             // Per-sample average so combined amplitude stays in [-1, 1].
-            let mixed = (m + s) * 0.5
-            appendFrame(mixed: mixed, mic: m, system: s)
+            appendFrame((m + s) * 0.5)
         }
         micQueue.removeFirst(count)
         systemQueue.removeFirst(count)
@@ -982,8 +858,7 @@ private actor ChunkWriter {
     private func drainSoloMic(count: Int) {
         currentChunkSamples.reserveCapacity(currentChunkSamples.count + count)
         for i in 0..<count {
-            let mic = micQueue[i]
-            appendFrame(mixed: mic, mic: mic, system: 0)
+            appendFrame(micQueue[i])
         }
         micQueue.removeFirst(count)
     }
@@ -991,16 +866,13 @@ private actor ChunkWriter {
     private func drainSoloSystem(count: Int) {
         currentChunkSamples.reserveCapacity(currentChunkSamples.count + count)
         for i in 0..<count {
-            let system = systemQueue[i]
-            appendFrame(mixed: system, mic: 0, system: system)
+            appendFrame(systemQueue[i])
         }
         systemQueue.removeFirst(count)
     }
 
-    private func appendFrame(mixed: Float, mic: Float, system: Float) {
-        _ = mic
-        _ = system
-        currentChunkSamples.append(Self.pcm16(mixed))
+    private func appendFrame(_ sample: Float) {
+        currentChunkSamples.append(Self.pcm16(sample))
         if currentChunkSamples.count >= chunkSampleBudget {
             flushCurrentChunk(includeAnyResiduals: false)
         }
@@ -1009,17 +881,6 @@ private actor ChunkWriter {
     private nonisolated static func pcm16(_ sample: Float) -> Int16 {
         let clamped = max(-1.0, min(1.0, sample))
         return Int16(clamped * Float(Int16.max))
-    }
-
-    /// Stage 5a: convert raw Float samples to clamped Int16 PCM and append
-    /// to a per-source track buffer. Same clamp/scale as `appendPCM` so the
-    /// separate tracks match the codec used for the mixed chunks. No
-    /// rotation — the whole track is written once at finalize.
-    private func appendRawTrack(_ samples: [Float], into track: inout [Int16]) {
-        track.reserveCapacity(track.count + samples.count)
-        for sample in samples {
-            track.append(Self.pcm16(sample))
-        }
     }
 
     private func appendMeteringSamples(_ samples: [Float], into window: inout [Float]) {

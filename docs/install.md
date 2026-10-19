@@ -21,8 +21,7 @@ Signing changes between ad-hoc builds may also require granting permissions
 again. Sparkle update signatures verify Exodia's archives separately from
 Apple's launch checks.
 
-Requirements: macOS 14.2 or newer. Local speech and text models require Apple
-Silicon; Intel Macs can use provider keys or compatible endpoints.
+Requirements: macOS 14.2 or newer, on Apple Silicon or Intel.
 
 ## Moving from Whytap
 
@@ -45,16 +44,15 @@ from its hover controls:
 1. In **Permissions**, allow Microphone and Accessibility. macOS may open
    **System Settings → Privacy & Security** to grant them. Reopen Exodia if
    macOS asks you to quit after changing a permission.
-2. In **Models**, choose **Your key**, select a speech provider and enter its
-   API key. Save to check the connection and store it in macOS Keychain.
+2. In **Models**, select a speech provider and enter its API key. Save to
+   check the connection and store it in macOS Keychain.
 3. Optionally configure OpenRouter or your own endpoint for text cleanup and
    meeting summaries.
 4. Focus a text field, hold **Space**, speak, then release Space.
 
 Exodia is free. Your selected provider handles API billing; there are no Exodia
-accounts, plans or credits. For on-device processing, choose **Local** and download
-the speech model. The initial download needs internet access; local text cleanup
-uses a separate model.
+accounts, plans or credits. On-device speech and text models were removed; if
+you used **Local** before, choose a provider in **Models** to dictate again.
 
 For the optional agent, open **Settings → Agents**, install OpenCode, choose an
 OpenRouter model and save your key with **Save & connect**. Meeting recording may

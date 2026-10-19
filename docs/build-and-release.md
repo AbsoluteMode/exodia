@@ -42,13 +42,10 @@ FLAVOR=prod ./scripts/build-dmg.sh --preflight-only
 
 The packaging preflight is offline: it checks resources, the selected toolchain
 and distribution mode without building, downloading or publishing. Community
-packaging requires the macOS 26 SDK, committed BlockNote assets, Sparkle public
-key and the MLX metallib matching `Package.resolved`.
-
-`Resources/mlx.metallib` and its `.revision` sidecar are version-locked to
-`mlx-swift`. Regenerate both with `scripts/build-metallib.sh` when updating MLX.
-The metallib remains a sealed resource with a relative symlink from
-`Contents/MacOS/`; see [the metallib decision](decisions/2026-06-30-metallib-sealed-resource-sequoia-gatekeeper.md).
+packaging requires the macOS 26 SDK, committed BlockNote assets and the Sparkle
+public key. The MLX metallib and `scripts/build-metallib.sh` were removed with
+the on-device models; see
+[the decision](../.project-docs/decisions/2026-10-18-remove-local-models.md).
 
 Build, test and package on the maintainer's Mac. Record local verification in the
 PR. GitHub hosts source and finished release assets; GitHub Actions stays disabled.

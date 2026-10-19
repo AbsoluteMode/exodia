@@ -83,9 +83,9 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
     }
 
     func shouldProcessDirectly() -> Bool {
-        // Only the cloud BYOK LLM routes drive this direct processor. `.local`
-        // (on-device MLX) is handled by the fully-local meetings pipeline, so
-        // it must not fall into the BYOK cloud path here.
+        // Both stages run on providers the user chose. Without a chosen level
+        // (never chosen, or the retired on-device route) the meeting stays
+        // staged until they choose one in Settings -> Models.
         let cloudBYOKLLM = prefs.llmLevel == .yourKey || prefs.llmLevel == .custom
         return prefs.transcriptionLevel == .yourKey && cloudBYOKLLM
     }
@@ -211,13 +211,12 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         }
         let model = prefs.transcriptionModel(for: provider)
         switch provider {
-        case .openAI:
-            return OpenAIRealtimeAdapter(apiKey: key, baseURL: nil, model: model)
-        case .selfHosted:
-            guard let baseURL = prefs.selfHostedBaseURL, !baseURL.isEmpty else {
+        case .openAI, .selfHosted:
+            let baseURL = provider == .selfHosted ? prefs.selfHostedBaseURL : nil
+            guard let url = BYOKRealtimeURL.openAIRealtime(baseURL: baseURL) else {
                 throw MeetingBYOKProcessingError.missingSelfHostedBaseURL
             }
-            return OpenAIRealtimeAdapter(apiKey: key, baseURL: baseURL, model: model)
+            return OpenAIRealtimeAdapter(apiKey: key, url: url, model: model)
         case .deepgram:
             return DeepgramBYOKAdapter(apiKey: key, model: model)
         case .soniox:

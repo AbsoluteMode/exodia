@@ -1,37 +1,21 @@
 // Sources/Sidekey/Settings/SelfKeyPreferences.swift
 import Foundation
 
-/// Where drop transcription runs (and, for BYOK, with which provider).
-enum TranscriptionIsolationLevel: String, CaseIterable, Codable {
+/// Where drop transcription runs (and, for BYOK, with which provider). A
+/// missing level means the user has not chosen a provider yet.
+enum TranscriptionIsolationLevel: String, Codable {
     /// User's key, direct to the provider's cloud (never through Whytap).
     case yourKey
-    /// On-device FluidAudio Parakeet model (Apple Silicon only).
-    case local
-
-    /// Level a fresh install (or a stored value this build no longer knows)
-    /// resolves to: on-device on Apple Silicon, BYOK everywhere else.
-    static func defaultLevel(isAppleSilicon: Bool = LocalModelSupport.isAppleSilicon) -> TranscriptionIsolationLevel {
-        isAppleSilicon ? .local : .yourKey
-    }
 }
 
 /// Where smart text processing runs (Drop cleanup, meeting notes, and related
-/// post-transcription workflows).
-enum LLMIsolationLevel: String, CaseIterable, Codable {
+/// post-transcription workflows). A missing level means none was chosen.
+enum LLMIsolationLevel: String, Codable {
     /// OpenRouter direct route using the user's OpenRouter key.
     case yourKey
     /// User-hosted OpenAI-compatible `/chat/completions` endpoint, for example
     /// vLLM, LiteLLM, Ollama's OpenAI shim, or an internal gateway.
     case custom
-    /// On-device MLX model (Apple Silicon only). Cleanup and meeting notes run
-    /// locally after a one-time download; nothing leaves the device.
-    case local
-
-    /// Level a fresh install (or a stored value this build no longer knows)
-    /// resolves to: on-device on Apple Silicon, OpenRouter BYOK everywhere else.
-    static func defaultLevel(isAppleSilicon: Bool = LocalModelSupport.isAppleSilicon) -> LLMIsolationLevel {
-        isAppleSilicon ? .local : .yourKey
-    }
 }
 
 /// BYOK transcription provider. `openAI` and `selfHosted` speak the OpenAI
@@ -82,7 +66,7 @@ struct SelfKeyPreferences {
     private let defaults: UserDefaults
     private let isAppleSilicon: Bool
 
-    init(defaults: UserDefaults = .standard, isAppleSilicon: Bool = LocalModelSupport.isAppleSilicon) {
+    init(defaults: UserDefaults = .standard, isAppleSilicon: Bool = HostArchitecture.isAppleSilicon) {
         self.defaults = defaults
         self.isAppleSilicon = isAppleSilicon
     }
@@ -103,14 +87,11 @@ struct SelfKeyPreferences {
     static let defaultOpenRouterModel = "openai/gpt-4o-mini"
     static let defaultCustomLLMModel = "local-model"
 
-    /// A stored value this build no longer offers (older installs persisted a
-    /// cloud level) decodes to `defaultLevel` instead of failing.
-    var transcriptionLevel: TranscriptionIsolationLevel {
-        get {
-            defaults.string(forKey: Key.level).flatMap(TranscriptionIsolationLevel.init)
-                ?? TranscriptionIsolationLevel.defaultLevel(isAppleSilicon: isAppleSilicon)
-        }
-        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.level) }
+    /// `nil` = not configured: Drop opens Settings -> Models instead of
+    /// recording. See `storedLevel(forKey:)` for the retired Local route.
+    var transcriptionLevel: TranscriptionIsolationLevel? {
+        get { storedLevel(forKey: Key.level) }
+        nonmutating set { setStoredLevel(newValue?.rawValue, forKey: Key.level) }
     }
 
     var selectedProvider: BYOKProvider {
@@ -149,14 +130,11 @@ struct SelfKeyPreferences {
         defaults.set(model, forKey: "\(Key.modelPerProvider).\(provider.rawValue)")
     }
 
-    /// A stored value this build no longer offers (older installs persisted a
-    /// cloud level) decodes to `defaultLevel` instead of failing.
-    var llmLevel: LLMIsolationLevel {
-        get {
-            defaults.string(forKey: Key.llmLevel).flatMap(LLMIsolationLevel.init)
-                ?? LLMIsolationLevel.defaultLevel(isAppleSilicon: isAppleSilicon)
-        }
-        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.llmLevel) }
+    /// `nil` = not configured: Drop cleanup returns the no-LLM output and
+    /// meeting notes wait for a provider. See `storedLevel(forKey:)`.
+    var llmLevel: LLMIsolationLevel? {
+        get { storedLevel(forKey: Key.llmLevel) }
+        nonmutating set { setStoredLevel(newValue?.rawValue, forKey: Key.llmLevel) }
     }
 
     var openRouterModel: String {
@@ -183,6 +161,31 @@ struct SelfKeyPreferences {
             defaults.set(trimmed.isEmpty ? Self.defaultCustomLLMModel : trimmed, forKey: Key.customLLMModel)
         }
     }
+
+    /// On-device models were removed. Their audio and text never left this
+    /// Mac, so a stored `local` level, and no level on Apple Silicon (where
+    /// Local was the default), stay unconfigured until the user chooses a
+    /// provider, even when a provider key is already stored. Intel always
+    /// defaulted to the user's key and keeps that default. A value this build
+    /// no longer knows (the retired cloud level) reads like no stored level.
+    /// WHY: .project-docs/decisions/2026-10-18-remove-local-models.md
+    private func storedLevel<Level: RawRepresentable>(forKey key: String) -> Level?
+    where Level.RawValue == String {
+        let stored = defaults.string(forKey: key)
+        if stored == Self.retiredLocalLevel { return nil }
+        if let level = stored.flatMap(Level.init(rawValue:)) { return level }
+        return isAppleSilicon ? nil : Level(rawValue: "yourKey")
+    }
+
+    /// Assigning `nil` removes the stored choice, which then reads as the
+    /// hardware default above (the user's key on Intel), not as "not
+    /// configured". Settings never assigns `nil`.
+    private func setStoredLevel(_ rawValue: String?, forKey key: String) {
+        if let rawValue { defaults.set(rawValue, forKey: key) }
+        else { defaults.removeObject(forKey: key) }
+    }
+
+    private static let retiredLocalLevel = "local"
 
     static let shared = SelfKeyPreferences()
 }

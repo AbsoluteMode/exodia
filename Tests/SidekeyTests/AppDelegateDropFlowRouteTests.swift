@@ -132,48 +132,12 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
         XCTAssertFalse(AppDelegate.streamingTranscriptIsEmpty("  hi  "))
     }
 
-    // MARK: - Local-STT cleanup routing (ROO-257)
-
-    /// Smart mode on the on-device LLM route must NOT bypass — the local Qwen
-    /// cleanup is its documented purpose and runs fully offline.
-    func test_local_smart_localRoute_runs_cleanup() {
-        XCTAssertFalse(AppDelegate.localTranscriptionBypassesPostProcessing(
-            mode: .smart, route: .local
-        ))
-    }
-
-    /// Smart mode on a BYOK direct route also runs cleanup (offline-capable —
-    /// the user's own provider, never our backend).
-    func test_local_smart_directRoute_runs_cleanup() {
-        let route = LLMCleanupRoute.direct(
-            DirectLLMRoute(endpoint: .openRouter(apiKey: "k"), model: "m")
-        )
-        XCTAssertFalse(AppDelegate.localTranscriptionBypassesPostProcessing(
-            mode: .smart, route: route
-        ))
-    }
-
-    /// Unresolved route (resolver threw: no key / base URL configured) →
-    /// bypass; there is nothing to clean with.
-    func test_local_smart_unresolvedRoute_bypasses() {
-        XCTAssertTrue(AppDelegate.localTranscriptionBypassesPostProcessing(
-            mode: .smart, route: nil
-        ))
-    }
-
-    /// Fast mode always bypasses — raw output is the design, no cleanup.
-    func test_local_fast_always_bypasses() {
-        XCTAssertTrue(AppDelegate.localTranscriptionBypassesPostProcessing(
-            mode: .fast, route: .local
-        ))
-    }
-
     // MARK: - Empty-cleanup-output guard (ROO-257)
     //
-    // A degenerate on-device Qwen reply can be whitespace-only; `LocalLLMSession`
-    // trims it to "" (and `DropFillerFilter` can also strip cleanup output to
-    // ""). Without a guard, `runPostProcessAndPaste` would feed "" into the paste
-    // tail, whose `deliverDropTranscript` early-returns on empty — silently
+    // A degenerate cleanup reply can be whitespace-only (and `DropFillerFilter`
+    // can also strip cleanup output to ""). Without a guard,
+    // `runPostProcessAndPaste` would feed "" into the paste tail, whose
+    // `deliverDropTranscript` early-returns on empty — silently
     // eating the paste with no error surfaced. The deliverable decision is
     // extracted here so the fallback is covered behaviorally.
 
@@ -520,8 +484,8 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
     // MARK: - Task 4: degraded → batch-recover decision (pure)
 
     func test_batch_recovery_runs_with_audio_and_transcriber() {
-        // Happy path: a degraded turn that retained audio and has the local
-        // batch transcriber available must attempt batch recovery.
+        // Happy path: a degraded turn that retained audio and has a batch
+        // transcriber available must attempt batch recovery.
         XCTAssertTrue(AppDelegate.shouldAttemptBatchRecovery(
             hasAudio: true,
             hasBatchTranscriber: true
@@ -539,7 +503,7 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
     }
 
     func test_batch_recovery_skipped_without_batch_transcriber() {
-        // Local model not downloaded → can't batch-transcribe. Fall to the
+        // No batch transcriber wired → can't batch-transcribe. Fall to the
         // salvage rungs without a batch attempt.
         XCTAssertFalse(AppDelegate.shouldAttemptBatchRecovery(
             hasAudio: true,
@@ -642,35 +606,6 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
         )
     }
 
-    func test_local_streaming_result_routes_post_processing_by_cleanup_route() throws {
-        let source = try appDelegateSource()
-
-        // ROO-257: local STT no longer bypasses cleanup unconditionally. It
-        // recognizes the local session, then resolves the cleanup route to
-        // decide (Smart + usable route → run on-device/BYOK cleanup; Fast or
-        // no usable LLM route → bypass to a raw, offline paste).
-        XCTAssertTrue(
-            source.contains("let isLocalTranscription = streamingSession is LocalTranscriptionSession"),
-            "handleStreamingResult must recognize the local STT route before clearing the session."
-        )
-        XCTAssertTrue(
-            source.contains("Self.localTranscriptionBypassesPostProcessing("),
-            "Local delivery must decide bypass-vs-cleanup via the route-aware helper."
-        )
-        XCTAssertTrue(
-            source.contains("postProcessor?.cleanupRouteForDrop()"),
-            "The local bypass decision must consult the resolved cleanup route."
-        )
-        XCTAssertTrue(
-            source.contains("bypassesPostProcessing: bypassesPostProcessing"),
-            "Local streaming delivery must thread the bypass flag into the delivery sink."
-        )
-        XCTAssertTrue(
-            source.contains("or when no LLM route is configured"),
-            "The raw-paste branch must keep Drop usable without any LLM route."
-        )
-    }
-
     // Task 7 refactor: the transcribe→decide→deliver tail moved into the
     // closure-driven `runBatchRecovery` state machine so its arms are covered
     // BEHAVIORALLY (success / batch-throws→.deliveryFailed+retain / empty / no
@@ -697,8 +632,8 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
             "recoverViaBatch must delegate to the testable runBatchRecovery seam."
         )
 
-        // It still binds the real on-device batch transcribe of the retained PCM …
-        XCTAssertTrue(body.contains("let transcriber = localBatchTranscriber"))
+        // It still binds the batch transcribe of the retained PCM …
+        XCTAssertTrue(body.contains("let transcriber = batchTranscriber"))
         XCTAssertTrue(body.contains("transcriber.transcribe("))
 
         // … and delivers through the SHARED `dropDeliverySink` (the same sink the

@@ -1,18 +1,19 @@
 import Foundation
 import os
 
-/// Adapter for the OpenAI Realtime transcription standard. Used for both the
-/// OpenAI preset and any self-hosted / OpenAI-compatible server.
+/// Adapter for the OpenAI Realtime transcription standard, used for a
+/// self-hosted / OpenAI-compatible server.
 struct OpenAIRealtimeAdapter: BYOKTranscriptionAdapter {
     typealias TransportFactory = () -> StreamingTransporting
     private let model: String
     private let makeTransport: TransportFactory
 
-    /// Production initializer: builds an authenticated `URLSessionWebSocketTask`.
-    init(apiKey: String, baseURL: String?, model: String) {
+    /// Production initializer: builds an authenticated `URLSessionWebSocketTask`
+    /// to `url`, resolved by `BYOKRealtimeURL.openAIRealtime(baseURL:)`.
+    init(apiKey: String, url: URL, model: String) {
         self.model = model
         self.makeTransport = {
-            var request = URLRequest(url: BYOKRealtimeURL.openAIRealtime(baseURL: baseURL))
+            var request = URLRequest(url: url)
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             // GA Realtime API: NO `OpenAI-Beta: realtime=v1` header — that header
             // selects the retired beta shape (server replies beta_api_shape_disabled).

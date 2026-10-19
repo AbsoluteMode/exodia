@@ -2,8 +2,8 @@ import Foundation
 import OSLog
 
 /// Drives the audio engine directly into a BYOK provider adapter and resolves
-/// to the same `StreamingSessionResult` the on-device session produces, so
-/// `AppDelegate.handleStreamingResult` handles both uniformly.
+/// to a `StreamingSessionResult`, so `AppDelegate.handleStreamingResult`
+/// handles every provider uniformly.
 @MainActor
 final class DirectProviderStreamingSession: StreamingSessionRunning {
     /// Live-transcript sink (`AgentRealtimeVoiceSessioning`). Fed the latest
@@ -88,7 +88,7 @@ final class DirectProviderStreamingSession: StreamingSessionRunning {
     /// MONOTONIC clock (`systemUptime`) so an NTP wall-clock jump can't make a
     /// healthy stream look stalled. Mutated only on the main actor (`noteAudioSent`
     /// via a single hop from the audio task, `notePartial` in the `.partial`
-    /// case, read in the stall-check tick). Mirrors the on-device session.
+    /// case, read in the stall-check tick).
     private var progress: StreamingProgressMonitor
 
     /// PCM16 retained locally for the current turn, delegated to the audio
@@ -157,7 +157,7 @@ final class DirectProviderStreamingSession: StreamingSessionRunning {
             guard let self else { return }
             // Marks the first send so the stall monitor knows audio started
             // flowing. Local flag + single main-actor hop (not per-chunk) avoids
-            // an actor crossing on every frame. Mirrors the on-device session.
+            // an actor crossing on every frame.
             var marked = false
             for await chunk in self.audioEngine.chunks {
                 guard !Task.isCancelled else { return }

@@ -1,9 +1,11 @@
 # Exodia — Спецификация продукта
 
-> **Статус 2026-10-17.** Exodia — бесплатный open-source инструмент (MIT):
-> в первую очередь BYOK, затем локальные модели. аккаунтов, тарифов и телеметрии нет: STT и LLM работают напрямую у провайдера ключом пользователя
-> либо на устройстве (Apple Silicon); агент — локальный OpenCode с моделью
-> пользователя через OpenRouter.
+> **Статус 2026-10-18.** Exodia — бесплатный open-source инструмент (MIT),
+> только BYOK. Аккаунтов, тарифов и телеметрии нет: STT и LLM работают напрямую
+> у провайдера ключом пользователя или на его OpenAI-compatible endpoint;
+> локальные модели убраны 2026-10-18
+> (`.project-docs/decisions/2026-10-18-remove-local-models.md`). Агент —
+> локальный OpenCode с моделью пользователя через OpenRouter.
 > Разделы ниже про roadmap и vocabulary написаны в облачную эпоху и
 > сохранены как продуктовый контекст; упоминания backend/подписки в них не
 > актуальны. См. `docs/plans/2026-09-02-fully-local-open-source.md`.
@@ -37,9 +39,9 @@ Knowledge workers — разработчики, продакт-менеджер�
 ## Что уже работает
 
 - macOS 14.2+, Swift + AppKit + SwiftUI; surface — Dynamic Island (status-bar item нет)
-- Voice flow: hold Space (удержание пробела в редактируемом поле; Escape — отмена) → запись → realtime STT: «Your key» (Soniox / Deepgram / ElevenLabs / self-hosted OpenAI-compatible, напрямую ключом пользователя из Keychain) или Local (FluidAudio Parakeet TDT v3, Apple Silicon) → cleanup (OpenRouter ключом пользователя / custom OpenAI-compatible endpoint / Local MLX Qwen3 / без LLM) → Cmd+V
+- Voice flow: hold Space (удержание пробела в редактируемом поле; Escape — отмена) → запись → realtime STT: «Your key» (Soniox / Deepgram / ElevenLabs / self-hosted OpenAI-compatible, напрямую ключом пользователя из Keychain) → cleanup (OpenRouter ключом пользователя / custom OpenAI-compatible endpoint / без LLM) → Cmd+V
 - Agent flow: Right Cmd tap/hold → локальный OpenCode → выбранная пользователем модель OpenRouter, рендер в окне
-- Meeting Notes: always-on детектор → запись (mic + system audio) → BYOK-процессор или fully-local pipeline (Parakeet + FluidAudio диаризация + MLX саммари) → notes window
+- Meeting Notes: always-on детектор → запись (mic + system audio) → BYOK-процессор (Soniox размечает спикеров, саммари — LLM пользователя) → notes window
 - App-aware форматирование (Notion/Linear/Slack/Telegram → markdown, остальное → plain)
 - Без аккаунта, без серверов Exodia, без телеметрии
 - Sparkle auto-update (download-on-action, pill в Dynamic Island), фид — GitHub Releases
@@ -222,7 +224,6 @@ audio
   ↓
 realtime transcribe (backend-хаб /api/transcribe/stream/v2, провайдер
   на сервере) ИЛИ BYOK direct (Your key → провайдер напрямую)
-  ИЛИ Local (FluidAudio Parakeet Core ML на устройстве)
   ↓
 intent / context router
   ↓                    ↓
@@ -241,18 +242,18 @@ paste / replace
 correction & learning loop
 ```
 
-**STT-провайдеры (whytap-уровень, выбор на сервере per-user + language-fallback):**
-Soniox (`stt-rt-v4`), Deepgram (`nova-3`), OpenAI (`gpt-4o-transcribe`),
-ElevenLabs (`scribe_v2_realtime`). BYOK добавляет OpenAI-Realtime-совместимый
-self-hosted endpoint. Это realtime streaming, не batch.
+**STT-провайдеры (Your key, выбор пользователя в Settings → Models):**
+Soniox (`stt-rt-v5`, по умолчанию), Deepgram (`nova-3`), ElevenLabs
+(`scribe_v2_realtime`) или self-hosted endpoint с протоколом OpenAI Realtime
+(модель вводит пользователь, по умолчанию `gpt-4o-transcribe`). Сам OpenAI не
+предлагается: сохранённый выбор OpenAI читается как Soniox. Drop — realtime
+streaming, не batch; заметки встреч с Soniox идут через file API
+(`stt-async-v5`).
 
-**Local STT (Pro):** FluidAudio Parakeet TDT v3 (`int8` encoder, Core ML).
-Модель скачивается из Settings → Models в app-owned
-`Application Support/Sidekey/LocalTranscriptionModels`, держится в памяти
-после load/download до удаления модели или выхода из приложения. Local Drop
-bypass'ит cleanup-LLM и `/api/process`, поэтому после скачивания модели
-может работать offline; результат проходит только локальный filler-filter и
-paste/history хвост.
+**Local STT** (FluidAudio Parakeet TDT v3) убран 2026-10-18 вместе с MLX
+Qwen и локальной диаризацией. Сохранённый выбор Local не переключается на
+провайдера сам: Drop открывает Settings → Models, пока пользователь не выберет
+провайдера.
 
 **Screenshot gating (не всегда):**
 - Включаем если: deictic words ("вот это", "там", "этот тикет") / high-context app (Slack, Linear, Notion, GitHub, Cursor) / low confidence по терминам / "screen context always" в настройках
@@ -282,7 +283,6 @@ paste/history хвост.
 - One-click delete history
 - Visible log: что отправлено, куда, зачем
 - BYOK («Your key») — STT и LLM напрямую у провайдера ключом пользователя, ключ в Keychain
-- Local («Local model») — STT, диаризация и LLM на устройстве, без сети после скачивания весов
 
 > Доступ к Slack/Notion/GitHub и т.п. живёт на стороне CLI пользователя
 > (его MCP-серверы), не у нас — мы scopes и индексацию не держим.

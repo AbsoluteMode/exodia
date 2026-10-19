@@ -89,6 +89,51 @@ final class MeetingBYOKProcessorTests: XCTestCase {
         await store.close()
     }
 
+    func testSelfHostedUnparseableBaseURLFailsBeforeAnyTranscription() async throws {
+        let defaults = UserDefaults(suiteName: "meeting.byok.\(UUID().uuidString)")!
+        let prefs = SelfKeyPreferences(defaults: defaults)
+        prefs.transcriptionLevel = .yourKey
+        prefs.selectedProvider = .selfHosted
+        prefs.selfHostedBaseURL = "http://my host:8000"
+        prefs.llmLevel = .yourKey
+        let keyStore = BYOKKeyStore.inMemory()
+        try keyStore.save(key: "self-hosted-key", for: .selfHosted)
+        let processor = MeetingBYOKProcessor(
+            prefs: prefs,
+            keyStore: keyStore,
+            vocab: VocabularyCache(defaults: defaults),
+            llmRouteResolver: DirectLLMRouteResolver(
+                prefs: prefs,
+                llmKeyStore: StaticLLMKeyStore(key: "or-key"),
+                customLLMKeyStore: StaticLLMKeyStore(key: nil)
+            ),
+            openRouterClient: SpyLLMClient(),
+            sonioxSession: session
+        )
+        let store = try MeetingsStore(rootDirectory: root.appendingPathComponent("store"))
+        // No chunks: the adapter is resolved before any audio is read, so the
+        // test never opens a socket.
+        let event = MeetingRecorder.FinalizedEvent(
+            meetingId: UUID(),
+            chunkURLs: [],
+            totalDurationSeconds: 0,
+            reason: .user
+        )
+
+        do {
+            _ = try await processor.process(
+                event: event,
+                startedAt: Date(timeIntervalSince1970: 1_000),
+                language: nil,
+                meetingsStore: store
+            )
+            XCTFail("expected missingSelfHostedBaseURL")
+        } catch {
+            XCTAssertEqual(error as? MeetingBYOKProcessingError, .missingSelfHostedBaseURL)
+        }
+        await store.close()
+    }
+
     private static func wav(samples: [UInt8]) -> Data {
         var data = Data("RIFF".utf8)
         func append(_ value: UInt32) {

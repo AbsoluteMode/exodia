@@ -52,7 +52,7 @@ final class NowPlayingController: ObservableObject {
 
     #if DEBUG
     /// DEBUG-only log surface. Track metadata is NEVER written to prod
-    /// `os_log` (invariant #3 extension) — this whole logging path is
+    /// `os_log` (invariant #2 extension) — this whole logging path is
     /// compiled out of release builds.
     private static let log = OSLog(subsystem: "com.sidekey.nowplaying", category: "controller")
     #endif

@@ -69,21 +69,12 @@ enum ProviderBrandIconAsset {
     ]
     static let prewarmedPointSizes: [CGFloat] = [15, 18]
 
-    /// Full-color marks prewarmed at startup so the island ticker pays no cold
-    /// PDF decode on the first local Drop. Loaded non-template (native colors),
-    /// separate from `transcriptionProviderAssetNames` (template/white).
-    static let fullColorProviderAssetNames = ["qwen"]
-
     @discardableResult
     static func prewarmTranscriptionProviderAssets() -> Int {
-        let template = prewarm(
+        prewarm(
             assetNames: transcriptionProviderAssetNames,
             pointSizes: prewarmedPointSizes
         )
-        let fullColor = fullColorProviderAssetNames.reduce(0) { count, name in
-            fullColorImage(named: name) == nil ? count : count + 1
-        }
-        return template + fullColor
     }
 
     @discardableResult
@@ -97,20 +88,6 @@ enum ProviderBrandIconAsset {
 
     static func image(named assetName: String) -> NSImage? {
         sourceImage(named: assetName)
-    }
-
-    /// Native-color source for marks that must keep their own colors in the
-    /// island (e.g. the Qwen blue glyph). Unlike `sourceImage(named:)`, this
-    /// does NOT set `isTemplate`, so the breathing mark can draw it without the
-    /// monochrome white tint applied to every other provider. Cached separately
-    /// from the template source so the two never clobber each other's flag.
-    static func fullColorImage(named assetName: String) -> NSImage? {
-        if let cached = fullColorSourceCache[assetName] { return cached }
-        guard let url = url(named: assetName) else { return nil }
-        guard let image = NSImage(contentsOf: url) else { return nil }
-        image.isTemplate = false
-        fullColorSourceCache[assetName] = image
-        return image
     }
 
     static func image(named assetName: String, pointSize: CGFloat) -> NSImage? {
@@ -181,14 +158,9 @@ enum ProviderBrandIconAsset {
         renderedCache[RenderedKey(assetName: assetName, pointSize: pointSize)] != nil
     }
 
-    static func isFullColorSourceCachedForTesting(_ assetName: String) -> Bool {
-        fullColorSourceCache[assetName] != nil
-    }
-
     static func clearCacheForTesting() {
         sourceCache.removeAll()
         renderedCache.removeAll()
-        fullColorSourceCache.removeAll()
     }
 
     static func setResourceDirectoryForTesting(_ url: URL?) {
@@ -211,6 +183,5 @@ enum ProviderBrandIconAsset {
 
     private static var sourceCache: [String: NSImage] = [:]
     private static var renderedCache: [RenderedKey: NSImage] = [:]
-    private static var fullColorSourceCache: [String: NSImage] = [:]
     private static var resourceDirectoryForTesting: URL?
 }

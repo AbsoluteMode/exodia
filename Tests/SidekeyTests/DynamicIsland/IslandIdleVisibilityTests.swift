@@ -137,7 +137,7 @@ final class IslandIdleVisibilityTests: XCTestCase {
     /// Each AppState-sourced blocker (B10 hover is fed separately via the
     /// panel) independently forces busy. Toggling exactly one field true must
     /// flip `isBusy`, so no blocker can be silently dropped — in particular
-    /// B7 (update pill, invariant #5) and B4/B5 (meeting pills).
+    /// B7 (update pill, invariant #4) and B4/B5 (meeting pills).
     func test_blockers_eachOneForcesBusy() {
         var b = allClear; b.dropFlowActive = true
         XCTAssertTrue(b.isBusy, "B1 drop flow")
@@ -155,10 +155,10 @@ final class IslandIdleVisibilityTests: XCTestCase {
         XCTAssertTrue(b.isBusy, "B5 meeting recording")
 
         b = allClear; b.updateAvailable = true
-        XCTAssertTrue(b.isBusy, "B7 update pill (invariant #5)")
+        XCTAssertTrue(b.isBusy, "B7 update pill (invariant #4)")
 
         b = allClear; b.justUpdatedVisible = true
-        XCTAssertTrue(b.isBusy, "B13 post-relaunch Updated indicator (invariant #5)")
+        XCTAssertTrue(b.isBusy, "B13 post-relaunch Updated indicator (invariant #4)")
 
         b = allClear; b.nowPlayingActive = true
         XCTAssertTrue(b.isBusy, "B9 now playing")

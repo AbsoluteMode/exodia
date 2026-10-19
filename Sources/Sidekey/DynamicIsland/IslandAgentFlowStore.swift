@@ -215,7 +215,7 @@ final class IslandAgentFlowStore: ObservableObject {
     /// recording→thinking arc as the agent: the listening frame while
     /// `.recording`/`.transcribing` (the latter brackets recording — session
     /// setup + the brief stop moment), then a "thinking…" slot through the
-    /// LLM post-process (on-device or BYOK) + paste (`.verifying`/
+    /// LLM post-process (BYOK) + paste (`.verifying`/
     /// `.inserting`). Cleared on `.idle`. Wired in production from
     /// `AppState.$phase`; exposed for direct driving in tests.
     func dropPhaseChanged(_ newPhase: AppPhase) {

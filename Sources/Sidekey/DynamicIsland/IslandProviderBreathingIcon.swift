@@ -150,17 +150,12 @@ final class ProviderBreathingMarkView: NSView {
         markLayer.add(pulse, forKey: Self.breathingAnimationKey)
     }
 
-    /// Mark bitmap for the breathing ticker. Most brands are flattened to the
-    /// monochrome white tint the way SwiftUI's
-    /// `.renderingMode(.template).foregroundStyle(...)` did. Full-color brands
-    /// (the Qwen on-device mark) instead keep their native colors: the asset is
-    /// loaded non-template and the `.sourceAtop` white wash is skipped, so the
-    /// genuine blue glyph survives rather than reading as a generic white blob.
+    /// Mark bitmap for the breathing ticker, flattened to the monochrome white
+    /// tint the way SwiftUI's `.renderingMode(.template).foregroundStyle(...)`
+    /// did.
     private static func markImage(for brand: TranscriptionProviderBrand) -> NSImage? {
         let base: NSImage?
-        if brand.isFullColor, let assetName = brand.assetName {
-            base = ProviderBrandIconAsset.fullColorImage(named: assetName)
-        } else if let assetName = brand.assetName {
+        if let assetName = brand.assetName {
             base = ProviderBrandIconAsset.image(named: assetName, pointSize: markSide)
         } else if let systemName = brand.systemName {
             base = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)?
@@ -189,19 +184,16 @@ final class ProviderBreathingMarkView: NSView {
             operation: .sourceOver,
             fraction: 1
         )
-        if !brand.isFullColor {
-            markColor.set()
-            NSRect(origin: .zero, size: canvas).fill(using: .sourceAtop)
-        }
+        markColor.set()
+        NSRect(origin: .zero, size: canvas).fill(using: .sourceAtop)
         rendered.unlockFocus()
         return rendered
     }
 
     var markLayerForTesting: CALayer { markLayer }
 
-    /// The composited mark bitmap (post tint / full-color decision) for the
-    /// given brand. Lets tests assert the Qwen mark keeps its blue glyph rather
-    /// than being flattened to the monochrome white tint.
+    /// The composited (white-tinted) mark bitmap for the given brand, so tests
+    /// can assert every island mark is flattened to the monochrome tint.
     static func markImageForTesting(brand: TranscriptionProviderBrand) -> NSImage? {
         markImage(for: brand)
     }

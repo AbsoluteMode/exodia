@@ -149,67 +149,42 @@ final class ProviderBreathingMarkViewTests: XCTestCase {
         XCTAssertFalse(before === after)
     }
 
-    // MARK: - Full-color marks (Qwen on-device) keep native colors
+    // MARK: - White tint
 
-    func testFullColorBrandRendersLayerContents() {
-        let view = makeView(brand: .localTranscription)
-        XCTAssertNotNil(view.markLayerForTesting.contents)
-    }
+    /// Every brand the island ticker can show is flattened to the white tint,
+    /// whatever colors its asset or symbol has: a skipped `.sourceAtop` wash
+    /// leaves the dark source glyph, which vanishes on the black island. The
+    /// wash composites white at 0.72 alpha, so a tinted opaque pixel has no
+    /// channel below 0.72 and stays neutral.
+    func testEveryIslandBrandRendersWhiteTintedMark() throws {
+        let brands: [TranscriptionProviderBrand] =
+            BYOKProvider.allCases.map(TranscriptionProviderBrand.byok)
+            + CLIProviderID.allCases.map(TranscriptionProviderBrand.agent)
+            + [.google, .openRouter, .customLLM]
 
-    /// The Qwen mark must survive in its real brand color, NOT be flattened to
-    /// the white tint every monochrome provider mark receives. Render the mark
-    /// bitmap and assert at least one saturated (non-white, non-gray) pixel —
-    /// color-agnostic so the brand color can change without breaking this guard.
-    func testFullColorBrandKeepsColorInsteadOfWhiteTint() throws {
-        let image = try XCTUnwrap(
-            ProviderBreathingMarkView.markImageForTesting(brand: .localTranscription)
-        )
-        let rep = try XCTUnwrap(bitmap(from: image))
-
-        var sawColor = false
-        for x in stride(from: 0, to: rep.pixelsWide, by: 1) {
-            for y in stride(from: 0, to: rep.pixelsHigh, by: 1) {
-                guard let raw = rep.colorAt(x: x, y: y),
-                      let color = raw.usingColorSpace(.deviceRGB),
-                      color.alphaComponent > 0.5 else { continue }
-                let maxC = max(color.redComponent, color.greenComponent, color.blueComponent)
-                let minC = min(color.redComponent, color.greenComponent, color.blueComponent)
-                if maxC - minC > 0.3 {
-                    sawColor = true
-                    break
-                }
-            }
-            if sawColor { break }
-        }
-        XCTAssertTrue(sawColor, "full-color Qwen mark must keep its brand color, not be white-tinted")
-    }
-
-    /// A monochrome provider mark is white-tinted: it must NOT contain a
-    /// saturated brand color (contrast partner to the test above).
-    func testMonochromeBrandIsWhiteTinted() throws {
-        let image = try XCTUnwrap(
-            ProviderBreathingMarkView.markImageForTesting(
-                brand: .init(assetName: "soniox", label: "Soniox")
+        for brand in brands {
+            let image = try XCTUnwrap(
+                ProviderBreathingMarkView.markImageForTesting(brand: brand),
+                "\(brand.label) has no mark"
             )
-        )
-        let rep = try XCTUnwrap(bitmap(from: image))
+            let rep = try XCTUnwrap(bitmap(from: image))
 
-        var sawColor = false
-        for x in stride(from: 0, to: rep.pixelsWide, by: 1) {
-            for y in stride(from: 0, to: rep.pixelsHigh, by: 1) {
-                guard let raw = rep.colorAt(x: x, y: y),
-                      let color = raw.usingColorSpace(.deviceRGB),
-                      color.alphaComponent > 0.5 else { continue }
-                let maxC = max(color.redComponent, color.greenComponent, color.blueComponent)
-                let minC = min(color.redComponent, color.greenComponent, color.blueComponent)
-                if maxC - minC > 0.3 {
-                    sawColor = true
-                    break
+            var opaque = 0
+            var untinted = 0
+            for x in 0..<rep.pixelsWide {
+                for y in 0..<rep.pixelsHigh {
+                    guard let raw = rep.colorAt(x: x, y: y),
+                          let color = raw.usingColorSpace(.deviceRGB),
+                          color.alphaComponent > 0.95 else { continue }
+                    opaque += 1
+                    let maxC = max(color.redComponent, color.greenComponent, color.blueComponent)
+                    let minC = min(color.redComponent, color.greenComponent, color.blueComponent)
+                    if minC < 0.6 || maxC - minC > 0.3 { untinted += 1 }
                 }
             }
-            if sawColor { break }
+            XCTAssertGreaterThan(opaque, 0, "\(brand.label) mark is empty")
+            XCTAssertEqual(untinted, 0, "\(brand.label) mark has dark or colored pixels instead of the white tint")
         }
-        XCTAssertFalse(sawColor, "monochrome marks are white-tinted, never a saturated brand color")
     }
 
     private func bitmap(from image: NSImage) -> NSBitmapImageRep? {
