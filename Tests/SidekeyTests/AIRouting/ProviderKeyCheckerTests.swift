@@ -222,4 +222,31 @@ final class ProviderKeyCheckerTests: XCTestCase {
         _ = await check(checker, .elevenLabs, paidProbe: true)
         XCTAssertEqual(StubURLProtocol.capturedRequests.count, 1)
     }
+
+    /// ElevenLabs answers a scoped key that may not read `/v1/user` with 401
+    /// `detail.status = missing_permissions`: a working key, not an invalid one
+    /// (final review I4, ruling R18). Any other 401 stays invalid.
+    func test_elevenlabs_401_missing_permissions_is_limited() async {
+        let missing = #"{"detail":{"status":"missing_permissions","message":"The API key you used is missing the permission user_read"}}"#
+        for paid in [false, true] {
+            let status = await check(checker(status: 401, body: missing), .elevenLabs, paidProbe: paid)
+            XCTAssertEqual(status, .limited, "paid probe allowed: \(paid)")
+        }
+        let invalid = #"{"detail":{"status":"invalid_api_key","message":"Invalid API key"}}"#
+        let rejected = await check(checker(status: 401, body: invalid), .elevenLabs, paidProbe: true)
+        XCTAssertEqual(rejected, .rejected(.invalidKey))
+        let unparsable = await check(checker(status: 401, body: "missing_permissions"), .elevenLabs)
+        XCTAssertEqual(unparsable, .rejected(.invalidKey), "only the parsed detail.status counts")
+    }
+
+    /// No connection during the paid probe says nothing about the key
+    /// (final review M4).
+    func test_elevenlabs_paid_probe_offline_is_unreachable() async {
+        let checker = makeChecker { request in
+            if request.url?.path == "/v1/speech-to-text" { throw URLError(.notConnectedToInternet) }
+            return (403, [:], Data("{}".utf8))
+        }
+        let status = await check(checker, .elevenLabs, paidProbe: true)
+        XCTAssertEqual(status, .unreachable)
+    }
 }

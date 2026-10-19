@@ -76,6 +76,9 @@ struct ProviderKeyChecker: ProviderKeyChecking {
             if case .status(403, _) = answer, allowPaidProbe {
                 return await paidProbe(apiKey: key)
             }
+            if case .status(401, let body) = answer, Self.elevenLabsMissingPermissions(body) {
+                return .limited
+            }
             return Self.interpret(answer, forbidden: .limited, paymentRequired: .rejected(.outOfCredit))
         case .openRouter:
             guard let key else { return .rejected(.invalidKey) }
@@ -122,6 +125,16 @@ struct ProviderKeyChecker: ProviderKeyChecking {
         return interpret(answer, forbidden: .limited, paymentRequired: .rejected(.outOfCredit))
     }
 
+    /// ElevenLabs answers a key scoped away from `/v1/user` with 401 and
+    /// `detail.status = "missing_permissions"`: the key works, it just may not
+    /// read the account. Only the parsed field counts; the body is never logged.
+    private static func elevenLabsMissingPermissions(_ body: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let detail = object["detail"] as? [String: Any]
+        else { return false }
+        return detail["status"] as? String == "missing_permissions"
+    }
+
     /// A server that has no `/models` route still accepted the connection.
     private static func interpretServer(_ answer: Answer) -> KeyStatus {
         guard case .status(let code, _) = answer else { return .unreachable }
@@ -160,7 +173,8 @@ struct ProviderKeyChecker: ProviderKeyChecking {
     // MARK: - ElevenLabs paid probe
 
     /// One second of silence through the recorded-speech endpoint. Only a 401
-    /// condemns the key; any other answer leaves it a working scoped key.
+    /// condemns the key and no connection says nothing; any other answer
+    /// leaves it a working scoped key.
     private func paidProbe(apiKey: String) async -> KeyStatus {
         let transcriber = ProviderBatchTranscriber(
             route: { .elevenLabs(apiKey: apiKey, model: "scribe_v2") },
@@ -172,6 +186,8 @@ struct ProviderKeyChecker: ProviderKeyChecking {
             return .limited
         } catch ProviderBatchTranscriptionError.httpStatus(401) {
             return .rejected(.invalidKey)
+        } catch is URLError {
+            return .unreachable
         } catch {
             return .limited
         }
