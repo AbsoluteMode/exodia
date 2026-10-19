@@ -288,7 +288,9 @@ struct APIAndModelsView: View {
         case .expiring(let date):
             return StatusLine(text: "Expires \(date.formatted(date: .abbreviated, time: .omitted))")
         case .notSupported(let reason):
-            return StatusLine(text: "Not supported yet: \(reason)")
+            return StatusLine(text: "Not supported yet: \(reason) ·", action: .init(title: "Check now") {
+                Task { await viewModel.checkNow(row.feature) }
+            })
         }
     }
 

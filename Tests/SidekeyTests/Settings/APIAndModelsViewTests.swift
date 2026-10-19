@@ -45,6 +45,16 @@ final class APIAndModelsViewTests: XCTestCase {
         XCTAssertTrue(s.contains("ProviderKindIcon"))
     }
 
+    /// A failed check or a runtime refusal can be checked again from the row
+    /// (final review I1, I2).
+    func test_not_supported_row_offers_check_now() throws {
+        let view = try source("APIAndModelsView.swift")
+        let start = try XCTUnwrap(view.range(of: "case .notSupported(let reason):"))
+        let tail = view[start.upperBound...].prefix(260)
+        XCTAssertTrue(tail.contains("title: \"Check now\""), String(tail))
+        XCTAssertTrue(tail.contains("viewModel.checkNow(row.feature)"), String(tail))
+    }
+
     private func source(_ file: String) throws -> String {
         let url = try projectRoot().appendingPathComponent("Sources/Sidekey/Settings/APIAndModels/\(file)")
         return try String(contentsOf: url, encoding: .utf8)

@@ -86,6 +86,16 @@ final class ModelCheckStore: ObservableObject {
         save()
     }
 
+    /// The refused model worked again (a call, a passed check) or was picked
+    /// again: the badge goes. A refusal of another model stays.
+    func clearRefusal(feature: AIFeature, model: String) {
+        guard state.refusals[feature.rawValue]?.model == model else { return }
+        var next = state
+        next.refusals[feature.rawValue] = nil
+        state = next
+        save()
+    }
+
     func refusedModel(for feature: AIFeature) -> String? {
         state.refusals[feature.rawValue]?.model
     }

@@ -53,9 +53,14 @@ struct PostProcessor {
             transcriptionMode: transcriptionMode
         )
         do {
-            return try await openRouterClient.complete(endpoint: route.endpoint, model: route.model, messages: messages)
+            let cleaned = try await openRouterClient.complete(endpoint: route.endpoint, model: route.model, messages: messages)
+            // The model works: an earlier refusal badge for it goes.
+            await MainActor.run {
+                (checks ?? .shared).clearRefusal(feature: .dropSmartCleanup, model: route.model)
+            }
+            return cleaned
         } catch let error as OpenRouterLLMError where error.isModelRefusal {
-            // The row says so until the model changes; Drop still inserts the
+            // The row says so until this model works or is picked again; Drop still inserts the
             // raw text (the caller's concern, as for any cleanup failure).
             await MainActor.run {
                 (checks ?? .shared).recordRefusal(feature: .dropSmartCleanup, model: route.model, at: Date())

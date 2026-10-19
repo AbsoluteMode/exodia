@@ -126,16 +126,28 @@ final class ModelProbeTests: XCTestCase {
         XCTAssertEqual(outcome, .failed(reason: "Provider refused: model_not_available"))
     }
 
-    func test_server_probe_timeout_reports_the_dialect() async {
+    /// A timeout can be a slow network as well as an unknown dialect: it is
+    /// never kept as a failure (final review I1).
+    func test_realtime_probe_timeout_is_inconclusive() async {
         let adapter = FakeAdapter(upstream: FakeUpstream(onEnd: nil))
         let probe = realtimeProbe(adapter, timeout: .milliseconds(50))
         let outcome = await probe.probe(route(.server(UUID()), key: nil, server: server()), use: .realtimeSTT, catalog: nil)
-        XCTAssertEqual(outcome, .failed(reason: "this server's realtime dialect"))
+        XCTAssertEqual(outcome, .inconclusive(reason: "No answer from the server (its realtime dialect may differ)"))
 
         let hostedAdapter = FakeAdapter(upstream: FakeUpstream(onEnd: nil))
         let hosted = await realtimeProbe(hostedAdapter, timeout: .milliseconds(50))
             .probe(route(.elevenLabs), use: .realtimeSTT, catalog: nil)
-        XCTAssertEqual(hosted, .failed(reason: "No answer from the provider"))
+        XCTAssertEqual(hosted, .inconclusive(reason: "No answer from the provider"))
+    }
+
+    /// A dropped socket, a handshake refusal or a broken end-of-stream send
+    /// says nothing certain about the model (final review I1).
+    func test_realtime_transport_errors_are_inconclusive() async {
+        for code in ["transport", BYOKStreamErrorCode.endOfStreamSendFailed] {
+            let adapter = FakeAdapter(upstream: FakeUpstream(onEnd: .error(code)))
+            let outcome = await realtimeProbe(adapter).probe(route(.soniox), use: .realtimeSTT, catalog: nil)
+            XCTAssertEqual(outcome, .inconclusive(reason: "No connection"), code)
+        }
     }
 
     func test_realtime_probe_offline_at_open_is_inconclusive() async {

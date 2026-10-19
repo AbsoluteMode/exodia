@@ -318,6 +318,58 @@ final class APIAndModelsViewModelTests: XCTestCase {
         XCTAssertNil(env.checks.record(for: ModelCheckKey(account: "soniox", model: "stt-rt-v6", use: .realtimeSTT)))
     }
 
+    /// A stored probe failure is not a ban: picking the model again probes it
+    /// again, and a pass assigns it (final review I1).
+    func test_picking_a_model_with_a_stored_failure_probes_it_again() async throws {
+        let env = try sonioxWithNewModel()
+        let key = ModelCheckKey(account: "soniox", model: "stt-rt-v6", use: .realtimeSTT)
+        env.checks.store(.failed(reason: "Provider refused: provider"), for: key, adapterVersion: 1, at: env.now)
+        let vm = env.makeViewModel()
+
+        await vm.select(model: "stt-rt-v6", account: .soniox, for: .dropFast)
+
+        XCTAssertEqual(env.probe.probedModels, ["stt-rt-v6"])
+        XCTAssertEqual(env.routing.route(for: .dropFast), FeatureRoute(account: .soniox, model: "stt-rt-v6"))
+        XCTAssertEqual(env.checks.record(for: key)?.outcome, .passed)
+        XCTAssertEqual(row(.dropFast, in: vm)?.status, .ok)
+    }
+
+    /// A registry model that once failed is probed on the next pick too, so the
+    /// stored failure does not keep showing after it is assigned.
+    func test_picking_a_registry_model_with_a_stored_failure_probes_it_again() async throws {
+        let env = try sonioxWithNewModel()
+        env.routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v6"), for: .dropFast)
+        let key = ModelCheckKey(account: "soniox", model: "stt-rt-v5", use: .realtimeSTT)
+        env.checks.store(.failed(reason: "Provider refused: provider"), for: key, adapterVersion: 1, at: env.now)
+        let vm = env.makeViewModel()
+
+        await vm.select(model: "stt-rt-v5", account: .soniox, for: .dropFast)
+
+        XCTAssertEqual(env.probe.probedModels, ["stt-rt-v5"])
+        XCTAssertEqual(env.routing.route(for: .dropFast), FeatureRoute(account: .soniox, model: "stt-rt-v5"))
+        XCTAssertEqual(row(.dropFast, in: vm)?.status, .ok)
+    }
+
+    /// A runtime refusal clears on a passed Check now and on picking the model
+    /// again (final review I2).
+    func test_refusal_clears_on_a_passed_check_and_on_a_new_pick() async throws {
+        let env = try makeEnv(keyed: [.openRouter])
+        let model = "google/gemini-3.8-flash"
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: model), for: .dropSmartCleanup)
+        env.checks.recordRefusal(feature: .dropSmartCleanup, model: model, at: env.now)
+        let vm = env.makeViewModel()
+        XCTAssertEqual(row(.dropSmartCleanup, in: vm)?.status, .notSupported(reason: ModelStatusResolver.refusedReason))
+
+        await vm.checkNow(.dropSmartCleanup)
+        XCTAssertNil(env.checks.refusedModel(for: .dropSmartCleanup))
+        XCTAssertEqual(row(.dropSmartCleanup, in: vm)?.status, .ok)
+
+        env.checks.recordRefusal(feature: .dropSmartCleanup, model: model, at: env.now)
+        await vm.select(model: model, account: .openRouter, for: .dropSmartCleanup)
+        XCTAssertNil(env.checks.refusedModel(for: .dropSmartCleanup))
+        XCTAssertEqual(row(.dropSmartCleanup, in: vm)?.status, .ok)
+    }
+
     func test_switch_group_moves_all_four_features_to_stt_rt_v5() async throws {
         let env = try makeEnv(
             snapshots: [.soniox: fresh([

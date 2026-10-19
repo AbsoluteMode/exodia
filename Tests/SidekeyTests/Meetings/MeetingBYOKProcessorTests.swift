@@ -208,6 +208,37 @@ final class MeetingBYOKProcessorTests: XCTestCase {
         await store.close()
     }
 
+    func test_notes_success_clears_the_refusal_of_that_model() async throws {
+        let setup = Setup(
+            meetings: FeatureRoute(account: .deepgram, model: "nova-3"),
+            notes: FeatureRoute(account: .openRouter, model: "vendor/back")
+        )
+        let defaults = UserDefaults(suiteName: "meeting.checks.\(UUID().uuidString)")!
+        let checks = ModelCheckStore(defaults: defaults)
+        checks.recordRefusal(feature: .meetingNotes, model: "vendor/back", at: Date())
+        let processor = MeetingBYOKProcessor(
+            routing: setup.routing,
+            keys: setup.keys,
+            vocab: setup.vocab,
+            notesRoute: DirectLLMRouteResolver(feature: .meetingNotes, routing: setup.routing, keys: setup.keys),
+            openRouterClient: SpyLLMClient(),
+            checks: checks,
+            sonioxSession: session,
+            makeAdapter: { _ in FixedTranscriptAdapter(text: "Hello team") }
+        )
+        let staging = root.appendingPathComponent("staging").appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let chunk = staging.appendingPathComponent("chunk-000.wav")
+        try Self.wav(samples: [1, 2, 3, 4]).write(to: chunk)
+        let store = try MeetingsStore(rootDirectory: root.appendingPathComponent("store"))
+        let event = MeetingRecorder.FinalizedEvent(
+            meetingId: UUID(), chunkURLs: [chunk], totalDurationSeconds: 4, reason: .user
+        )
+        _ = try await processor.process(event: event, startedAt: Date(), language: nil, meetingsStore: store)
+        XCTAssertNil(checks.refusedModel(for: .meetingNotes))
+        await store.close()
+    }
+
     func test_meeting_waits_without_a_notes_model() {
         let both = Setup(meetings: FeatureRoute(account: .soniox, model: "stt-async-v5"))
         XCTAssertTrue(both.processor(openRouterClient: SpyLLMClient(), sonioxSession: session).shouldProcessDirectly())

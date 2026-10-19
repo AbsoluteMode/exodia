@@ -226,16 +226,19 @@ final class APIAndModelsViewModel: ObservableObject {
     }
 
     /// A verified model is assigned at once; a new one only after its probe
-    /// passes. Otherwise the previous route stays and the row says why.
+    /// passes. Otherwise the previous route stays and the row says why. A model
+    /// whose earlier probe failed is probed again: picking it is the user
+    /// asking to check it again, so a stored failure never bans it for good.
     func select(model: String, account: ProviderAccount, for feature: AIFeature) async {
         let route = FeatureRoute(account: account, model: model)
-        switch resolver.verdict(model: model, account: account, for: feature) {
-        case .verified:
+        let failedBefore = resolver.hasStoredProbeFailure(model: model, account: account, for: feature)
+        switch resolver.verdict(model: model, account: account, for: feature, ignoringStoredFailure: true) {
+        case .verified where !failedBefore:
             assign(route, to: [feature])
         case .notSupported(let reason):
             messages[feature] = reason
             recompute()
-        case .new:
+        case .verified, .new:
             if await probePassed(route, for: [feature]) { assign(route, to: [feature]) }
         }
     }
@@ -303,6 +306,7 @@ final class APIAndModelsViewModel: ObservableObject {
     func applyProposal(selected: Set<AIFeature>) {
         for item in proposal?.items ?? [] where selected.contains(item.feature) {
             routing.setRoute(FeatureRoute(account: item.account, model: item.model), for: item.feature)
+            checks.clearRefusal(feature: item.feature, model: item.model)
             messages[item.feature] = nil
         }
         proposal = nil
@@ -381,7 +385,10 @@ final class APIAndModelsViewModel: ObservableObject {
         )
         switch outcome {
         case .passed:
-            for feature in shown { messages[feature] = nil }
+            for feature in shown {
+                messages[feature] = nil
+                checks.clearRefusal(feature: feature, model: route.model)
+            }
             recompute()
             return true
         case .failed(let reason):
@@ -395,6 +402,8 @@ final class APIAndModelsViewModel: ObservableObject {
     private func assign(_ route: FeatureRoute, to features: [AIFeature]) {
         for feature in features {
             routing.setRoute(route, for: feature)
+            // Picking a model again is the user's call to try it again.
+            checks.clearRefusal(feature: feature, model: route.model)
             messages[feature] = nil
         }
         recompute()

@@ -70,9 +70,17 @@ struct ModelProbe: ModelProbing {
         let maker = makeRealtimeAdapter
         let outcome = await withTimeout { await Self.runRealtime(route, makeAdapter: maker) }
         if let outcome { return outcome }
-        if case .server = route.account { return .failed(reason: "this server's realtime dialect") }
-        return .failed(reason: "No answer from the provider")
+        // A timeout may be a slow network as much as an unknown dialect, so it
+        // is never kept as a failure.
+        if case .server = route.account {
+            return .inconclusive(reason: "No answer from the server (its realtime dialect may differ)")
+        }
+        return .inconclusive(reason: "No answer from the provider")
     }
+
+    /// Adapter codes for a broken connection (a dropped socket, a refused
+    /// upgrade, a failed end-of-stream send): no verdict on the model.
+    private static let transportErrorCodes: Set<String> = ["transport", BYOKStreamErrorCode.endOfStreamSendFailed]
 
     private static func runRealtime(
         _ route: ResolvedRoute,
@@ -104,6 +112,8 @@ struct ModelProbe: ModelProbing {
         var outcome = ProbeOutcome.passed
         for await event in upstream.events {
             switch event {
+            case .error(let message) where transportErrorCodes.contains(message):
+                outcome = .inconclusive(reason: "No connection")
             case .error(let message):
                 outcome = .failed(reason: "Provider refused: " + shortened(message))
             case .done:

@@ -139,6 +139,26 @@ final class PostProcessorOpenRouterTests: XCTestCase {
         XCTAssertEqual(checks.refusedModel(for: .dropSmartCleanup), "reset")
     }
 
+    func test_successful_cleanup_clears_the_refusal_of_that_model() async throws {
+        let env = makeEnv()
+        try env.keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "vendor/back"), for: .dropSmartCleanup)
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let checks = ModelCheckStore(defaults: defaults)
+        checks.recordRefusal(feature: .dropSmartCleanup, model: "vendor/back", at: Date())
+
+        let processor = PostProcessor(
+            llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: env.routing, keys: env.keys),
+            openRouterClient: FakeOpenRouterClient(completion: "clean"),
+            checks: checks
+        )
+        _ = try await processor.process("raw", targetApp: nil)
+
+        XCTAssertNil(checks.refusedModel(for: .dropSmartCleanup))
+    }
+
     func test_cleanup_without_route_throws_not_configured() async throws {
         let env = makeEnv()
         // Another feature's route and a stored OpenRouter key do not choose

@@ -55,4 +55,37 @@ final class ModelCheckStoreTests: XCTestCase {
         XCTAssertEqual(reopened.refusedModel(for: .dropFast), "model-a")
         XCTAssertEqual(reopened.refusedModel(for: .agent), "model-b")
     }
+
+    /// A refusal goes once that model works again (final review I2); a
+    /// different model's success leaves it.
+    func test_clear_refusal_only_for_the_refused_model() {
+        let defaults = makeDefaults()
+        let store = ModelCheckStore(defaults: defaults)
+        store.recordRefusal(feature: .dropSmartCleanup, model: "model-a", at: Date())
+        store.recordRefusal(feature: .meetingNotes, model: "model-a", at: Date())
+
+        store.clearRefusal(feature: .dropSmartCleanup, model: "model-b")
+        XCTAssertEqual(store.refusedModel(for: .dropSmartCleanup), "model-a")
+
+        store.clearRefusal(feature: .dropSmartCleanup, model: "model-a")
+        XCTAssertNil(store.refusedModel(for: .dropSmartCleanup))
+        XCTAssertEqual(store.refusedModel(for: .meetingNotes), "model-a")
+        XCTAssertNil(ModelCheckStore(defaults: defaults).refusedModel(for: .dropSmartCleanup))
+    }
+
+    /// A long input or the account's data policy is not the model being
+    /// refused (final review I2).
+    func test_context_overflow_and_data_policy_are_not_model_refusals() {
+        XCTAssertTrue(OpenRouterLLMError.unexpectedStatus(400, nil).isModelRefusal)
+        XCTAssertTrue(OpenRouterLLMError.unexpectedStatus(404, "vendor/gone is not a valid model ID").isModelRefusal)
+        XCTAssertTrue(OpenRouterLLMError.unexpectedStatus(422, "Unprocessable").isModelRefusal)
+        XCTAssertFalse(OpenRouterLLMError.unexpectedStatus(401, nil).isModelRefusal)
+        XCTAssertFalse(OpenRouterLLMError.unexpectedStatus(
+            400, "This endpoint's maximum context length is 8192 tokens. However, you requested about 9000 tokens."
+        ).isModelRefusal)
+        XCTAssertFalse(OpenRouterLLMError.unexpectedStatus(400, "context_length_exceeded").isModelRefusal)
+        XCTAssertFalse(OpenRouterLLMError.unexpectedStatus(
+            404, "No endpoints found matching your data policy (Free model publication)."
+        ).isModelRefusal)
+    }
 }

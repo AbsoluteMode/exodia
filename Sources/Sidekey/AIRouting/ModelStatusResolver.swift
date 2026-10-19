@@ -48,10 +48,17 @@ struct AliasGroupAction: Equatable {
 
 extension OpenRouterLLMError {
     /// The provider turned the model itself down (bad request, not found,
-    /// unprocessable), as opposed to a key, quota or outage problem.
+    /// unprocessable), as opposed to a key, quota or outage problem. An input
+    /// over the context window and OpenRouter's "no endpoints matching your
+    /// data policy" (an account privacy setting) are not about the model.
     var isModelRefusal: Bool {
-        guard case .unexpectedStatus(let status, _) = self else { return false }
-        return [400, 404, 422].contains(status)
+        guard case .unexpectedStatus(let status, let message) = self,
+              [400, 404, 422].contains(status)
+        else { return false }
+        let text = (message ?? "").lowercased()
+        let contextOverflow = text.contains("context_length")
+            || (text.contains("context") && (text.contains("length") || text.contains("token")))
+        return !contextOverflow && !text.contains("data policy")
     }
 }
 
@@ -181,7 +188,11 @@ struct ModelStatusResolver {
         return "Add a key for \(names.dropLast().joined(separator: ", ")) or \(last)"
     }
 
-    func verdict(model: String, account: ProviderAccount, for feature: AIFeature) -> PickerOptionState {
+    /// `ignoringStoredFailure` — what the model would be without a failed
+    /// probe on record: a pick re-probes such a model instead of refusing it.
+    func verdict(
+        model: String, account: ProviderAccount, for feature: AIFeature, ignoringStoredFailure: Bool = false
+    ) -> PickerOptionState {
         let kind = account.kind
         guard let use = feature.modelUse(on: kind) else {
             return .notSupported(reason: "\(kind.displayName) can't serve \(feature.title)")
@@ -193,10 +204,16 @@ struct ModelStatusResolver {
            let reason = contradiction(entry, feature: feature, use: use) {
             return .notSupported(reason: reason)
         }
-        if let reason = failedProbeReason(model: model, account: account, use: use) {
+        if !ignoringStoredFailure, let reason = failedProbeReason(model: model, account: account, use: use) {
             return .notSupported(reason: reason)
         }
         return isVerified(model: model, account: account, feature: feature, use: use) ? .verified : .new
+    }
+
+    /// The current adapter's probe of this model failed on this Mac.
+    func hasStoredProbeFailure(model: String, account: ProviderAccount, for feature: AIFeature) -> Bool {
+        guard let use = feature.modelUse(on: account.kind) else { return false }
+        return failedProbeReason(model: model, account: account, use: use) != nil
     }
 
     // MARK: - Switch actions

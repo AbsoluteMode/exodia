@@ -262,7 +262,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         context.append("<transcript>\n\(transcript)\n</transcript>")
 
         do {
-            return try await openRouterClient.complete(
+            let markdown = try await openRouterClient.complete(
                 endpoint: route.endpoint,
                 model: route.model,
                 messages: [
@@ -270,8 +270,11 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
                     OpenRouterChatMessage(role: "user", content: context.joined(separator: "\n\n")),
                 ]
             )
+            // The model works: an earlier refusal badge for it goes.
+            checks.clearRefusal(feature: .meetingNotes, model: route.model)
+            return markdown
         } catch let error as OpenRouterLLMError where error.isModelRefusal {
-            // The Meeting notes row shows the refusal until the model changes.
+            // The Meeting notes row shows the refusal until this model works or is picked again.
             checks.recordRefusal(feature: .meetingNotes, model: route.model, at: Date())
             throw error
         }
