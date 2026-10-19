@@ -320,6 +320,21 @@ final class ArtifactBackupDurabilityTests: XCTestCase {
         XCTAssertNotNil(engine.recoveryCheckpoint())
     }
 
+    func testUnreadableOrUnmappedOldRecoveryKeyMaterialIsPreservedWithoutBlockingCommit() async throws {
+        let (archive, key) = try await workspaceArchive()
+        for stored in ["synthetic unreadable recovery state", ArtifactBackupTestKeys.make().base64EncodedString()] {
+            let target = try profile()
+            try target.recoveryKeyStore.save(stored)
+            try target.write("original", to: target.locations.agentMemory)
+            try await ArtifactBackupEngine(environment: target.environment()).stageRestore(from: archive, key: key, sections: [.workspace])
+            XCTAssertEqual(try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())?.state, .applied)
+            let ring = try JSONDecoder().decode([String: String].self, from: Data(try XCTUnwrap(target.recoveryKeyStore.value).utf8))
+            XCTAssertTrue(ring.values.contains(stored), "never throw away old recovery material")
+            XCTAssertTrue(ring.values.contains(key.base64EncodedString()))
+            XCTAssertNotNil(ArtifactBackupEngine(environment: target.environment()).recoveryCheckpoint())
+        }
+    }
+
     func testTwoRestoresRetainBothPreviousGenerationsAndTheirKeys() async throws {
         let (archive, key) = try await workspaceArchive()
         let target = try profile()

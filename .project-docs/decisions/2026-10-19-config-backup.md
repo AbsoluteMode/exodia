@@ -215,6 +215,9 @@ It does not implement passkey-based key derivation or continuous synchronization
   replaced-file generations and generation-specific before-state keys. The UI
   exposes their location, planned-restore cancellation and parked-item activation.
   A saved recovery code can unlock the pending transaction before runtime opens.
+  An early modal return cannot start another apply while its worker runs;
+  repeated retries do not cancel a planned restore. Unreadable old recovery-key
+  metadata is preserved inside Keychain while a new generation is retained.
 - Local settings history retains 300 read-verified versions, full local backups
   retain the latest 30 copied versions plus every unsent or pre-restore copy.
   Corrupt/unreadable local versions are not silently pruned. GitHub copies are

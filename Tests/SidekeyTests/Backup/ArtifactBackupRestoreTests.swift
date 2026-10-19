@@ -162,7 +162,7 @@ final class ArtifactBackupRestoreTests: XCTestCase {
         }
     }
 
-    func testUnreachableRestoreKeyKeepsTheTransactionThenGivesUp() async throws {
+    func testRepeatedRetriesKeepAPlannedRestoreUntilExplicitCancellation() async throws {
         let (archive, key) = try await makeArchive()
         let target = try makePopulatedTarget()
         let environment = target.environment()
@@ -170,17 +170,17 @@ final class ArtifactBackupRestoreTests: XCTestCase {
             from: archive, key: key, sections: [.workspace])
 
         target.pendingKeyStore.failOnRead = true
-        for attempt in 1...2 {
+        for attempt in 1...5 {
             XCTAssertThrowsError(try ArtifactBackupEngine.applyPendingRestore(environment: environment)) { error in
                 XCTAssertEqual(error as? ArtifactBackupError, .keyUnavailable, "attempt \(attempt)")
             }
             XCTAssertTrue(target.exists(pendingRoot(target).appendingPathComponent("plan.json")),
                           "attempt \(attempt) must keep the transaction")
         }
-        XCTAssertThrowsError(try ArtifactBackupEngine.applyPendingRestore(environment: environment))
-        XCTAssertFalse(target.exists(pendingRoot(target).appendingPathComponent("plan.json")))
-        XCTAssertEqual(ArtifactBackupEngine.lastRestoreOutcome(locations: target.locations)?.state, .failed)
+        XCTAssertTrue(target.exists(pendingRoot(target).appendingPathComponent("pending.exodiabackup")))
         XCTAssertEqual(target.contents(of: target.locations.agentMemory), "# My own memory")
+        XCTAssertTrue(try ArtifactBackupEngine(environment: environment).cancelPlannedRestore())
+        XCTAssertFalse(target.exists(pendingRoot(target).appendingPathComponent("plan.json")))
     }
 
     func testStaleHistoryWalFilesAreReplacedTogetherWithTheDatabase() async throws {

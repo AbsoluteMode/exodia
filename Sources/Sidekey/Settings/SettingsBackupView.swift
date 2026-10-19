@@ -191,8 +191,8 @@ struct SettingsBackupView: View {
             MacGroupTitle(title: "Recovered data")
             MacCard {
                 if let checkpoint = model.recoveryCheckpoint {
-                    MacRow(title: "Previous data on this Mac", subtitle: "Kept before restore on \(Self.formatDate(checkpoint.createdAt, emptyText: "saved date")).") {
-                        MacButton(title: "Show files…", style: .default) { model.showRecoveryFiles() }
+                    MacRow(title: "Previous data on this Mac", subtitle: "All restore checkpoints are kept in this folder. Latest: \(Self.formatDate(checkpoint.createdAt, emptyText: "saved date")).") {
+                        MacButton(title: "Show all copies…", style: .default) { model.showRecoveryFiles() }
                     }
                 }
                 ForEach(model.parkedItems) { item in

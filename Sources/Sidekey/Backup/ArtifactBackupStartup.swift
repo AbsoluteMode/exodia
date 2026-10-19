@@ -70,18 +70,33 @@ enum ArtifactBackupStartup {
         var value: Result<Void, Error>?
     }
 
+    private static var attemptRunning = false
+
     private static func performAttempt(showing panel: NSPanel) throws {
+        try runAttempt(operation: {
+            _ = try ArtifactBackupEnvironment().transaction().applyIfPending()
+        }, pump: { _ = NSApplication.shared.runModal(for: panel) },
+           completed: { NSApplication.shared.stopModal() })
+    }
+
+    /// A modal panel can return early (for example on Escape). That is not a
+    /// completed disk transaction. Keep pumping the same attempt until its
+    /// worker actually finishes; never let Retry race a still-running apply.
+    static func runAttempt(operation: @escaping @Sendable () throws -> Void,
+                           pump: () -> Void,
+                           completed: @escaping @MainActor @Sendable () -> Void = {}) throws {
+        guard !attemptRunning else { throw ArtifactBackupError.applyInProgress }
+        attemptRunning = true
+        defer { attemptRunning = false }
         let result = AttemptResult()
         DispatchQueue.global(qos: .userInitiated).async {
-            let attempt = Result<Void, Error> {
-                _ = try ArtifactBackupEnvironment().transaction().applyIfPending()
-            }
+            let attempt = Result<Void, Error>(catching: operation)
             DispatchQueue.main.async {
                 result.value = attempt
-                NSApplication.shared.stopModal()
+                completed()
             }
         }
-        NSApplication.shared.runModal(for: panel)
+        while result.value == nil { pump() }
         guard let value = result.value else { throw ArtifactBackupError.restoreFailed }
         try value.get()
     }

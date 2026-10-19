@@ -221,6 +221,15 @@ final class BackupRenderTests: XCTestCase {
         try render(hosted(SettingsBackupView(model: readyModel)), size: NSSize(width: 760, height: 780),
                    to: directory.appendingPathComponent("backup-restore-ready.png"))
 
+        let recoveredModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("recovered"))
+        recoveredModel.recoveryCheckpoint = ArtifactRecoveryCheckpoint(id: UUID(), createdAt: fixedDate,
+            sections: [.settings, .credentials], fileCount: 4, bytes: 1_024,
+            includesProviderKeys: true, directoryPath: tempRoot.appendingPathComponent("synthetic-recovery/latest").path)
+        recoveredModel.restoreNotice = ArtifactRestoreOutcome(id: UUID(), finishedAt: fixedDate, state: .applied,
+            sections: [.settings, .credentials], message: "Your backup was restored. The data it replaced is kept on this Mac.", warnings: [])
+        try render(hosted(SettingsBackupView(model: recoveredModel)), size: NSSize(width: 740, height: 760),
+                   to: directory.appendingPathComponent("backup-recovered.png"))
+
     }
 
     private func hosted<V: View>(_ view: V) -> some View {

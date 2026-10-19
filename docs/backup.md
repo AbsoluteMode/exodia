@@ -53,8 +53,9 @@ any workspace stores. If it cannot finish safely, it keeps the recovery files
 and offers retry, your saved recovery code, and their Finder location.
 
 Before applying a restore, Exodia keeps the data it will replace. Completed
-restores retain each previous generation on this Mac; **Show recovery files**
-opens its location. A failed rollback preserves its transaction for retry and
+restores retain each previous generation on this Mac; **Show all copies**
+opens their common folder in Finder. Older recovery copies stay there until
+you remove them. A failed rollback preserves its transaction for retry and
 keeps the workspace closed until its state can be proven safe.
 
 Case items are merged with the target Mac's vault and encrypted using that

@@ -373,6 +373,7 @@ struct ArtifactRestoreTransaction {
         return checkpoints.sorted { $0.createdAt > $1.createdAt }.first
     }
 
+
     // MARK: Arming
 
     /// Where the armed copy lives. The copy is what gets applied, so a
@@ -523,25 +524,20 @@ struct ArtifactRestoreTransaction {
     func applyIfPending() throws -> ArtifactRestoreOutcome? {
         if hasApplyJournal { return try recoverInterruptedApply() }
         guard isArmed else { return nil }
-        var plan = try readPlan()
+        let plan = try readPlan()
         let key: Data
         do {
             guard let encoded = try pendingKeyStore.read(), let data = Data(base64Encoded: encoded),
                   data.count == 32 else { throw ArtifactBackupError.keyUnavailable }
             key = data
         } catch {
-            // A locked Keychain (for example a dark wake) is temporary: keep
-            // the transaction and try again next launch, but not forever.
-            plan.attempts += 1
-            if plan.attempts >= Self.maxAttempts {
-                disarm()
-                write(ArtifactRestoreOutcome(
-                    id: plan.id, finishedAt: Date(), state: .failed, sections: plan.sections,
-                    message: "Exodia could not reach its restore key, so nothing was restored. Your previous data is unchanged.",
-                    warnings: []))
-            } else {
-                try? writePrivate(try JSONEncoder.artifactBackup.encode(plan), to: planURL)
-            }
+            // A retry is not consent to discard a planned restore. Keep the
+            // verified copy until the user explicitly cancels or supplies the
+            // saved recovery code, regardless of how often Keychain is locked.
+            write(ArtifactRestoreOutcome(
+                id: plan.id, finishedAt: Date(), state: .failed, sections: plan.sections,
+                message: "The restore key is unavailable. Your planned restore is kept; unlock this Mac or use your saved recovery code, then retry.",
+                warnings: []))
             throw ArtifactBackupError.keyUnavailable
         }
         do {
@@ -974,9 +970,15 @@ struct ArtifactRestoreTransaction {
         var keys: [String: String] = [:]
         if let stored = try recoveryKeyStore.read() {
             if let decoded = try? JSONDecoder().decode([String: String].self, from: Data(stored.utf8)) { keys = decoded }
-            else if let data = Data(base64Encoded: stored), data.count == 32, let previous = recoveryCheckpoint() {
-                keys[previous.id.uuidString] = stored
-            } else { throw ArtifactBackupError.restoreFailed }
+            else if let data = Data(base64Encoded: stored), data.count == 32 {
+                // Keep an unmapped legacy key even if its old info.json cannot
+                // be read. It may still unlock an older retained before-state.
+                keys[recoveryCheckpoint()?.id.uuidString ?? "preserved-legacy-key"] = stored
+            } else {
+                // Preserve the exact unreadable bytes inside Keychain instead
+                // of deleting old recovery material or blocking this commit.
+                keys["preserved-unreadable-state"] = stored
+            }
         }
         keys[plan.id.uuidString] = key.base64EncodedString()
         let ring = try JSONEncoder().encode(keys)
