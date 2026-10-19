@@ -985,6 +985,28 @@ Agents: убрать поле ключа, Model ID, Find a model, Choose model, 
 - [ ] **Step 4: Commit** `docs: document API & Models and record the decision`.
 - [ ] **Step 5: Отчёт Максиму:** «готово, ещё не в рабочем приложении»; цифры тестов; что чем проверено; «Решения исполнителя». Push, PR (с `[docs: …]` и шагами приёмки ниже) и интеграция — после «пушим».
 
+### Task 20: Anthropic для строки Agent (выполняется после Задачи 18, до Задачи 19)
+
+Решение Максима 19.10: тратить API-кредиты Anthropic через агента. Только фича `.agent`; Drop Smart cleanup и Meeting notes Anthropic не предлагают.
+
+**Files:**
+- Modify: `AIRouting/AIFeature.swift` (`AIProviderKind.anthropic`, displayName `"Anthropic"`; таблица `modelUse`: anthropic → `.chatWithTools` только у `.agent`, иначе nil), `ProviderAccount.swift` (`.anthropic`, storageID `"anthropic"`), `ProviderKeyStore.swift` (account `byok.anthropic.api_key`), `ModelCatalog.swift`, `ProviderKeyChecker.swift`, `ModelProbe.swift`, `ModelRegistry.swift` (рекомендуемая для `.agent` на Anthropic — `claude-sonnet-5-5`), `ModelStatusResolver.swift`, `APIAndModelsViewModel.swift` (порядок `proposeSetup`: … OpenRouter, Anthropic), вид вкладки (иконка — `ProviderBrandIcon`, при отсутствии ассета — SF Symbol), `AgentSettingsStore.swift`, `OpenCodeEnvironment.swift`, `OpenCodeProvider.swift` (тексты ошибок), `TranscriptionProviderBrand.swift`, тесты соответствующих классов.
+
+Правила:
+- Ключ: `x-api-key: <key>`, `anthropic-version: 2023-06-01`. Проверка ключа и каталог — бесплатный `GET https://api.anthropic.com/v1/models?limit=1000` (пагинация: `has_more` + `after_id=<last_id>`). 2xx → valid; 401 → `rejected(.invalidKey)`; 403 → `rejected` (permission/лимиты); 429/5xx/сеть → unreachable.
+- Каталог: `CatalogModel` из `id`, `display_name`; `max_input_tokens` → `contextLength`, `max_tokens` → `maxOutputTokens`; инструменты поддерживаются у всех моделей Claude (`supportsTools = true`); каталог авторитетен (как OpenRouter).
+- Проба `chatWithTools`: `POST https://api.anthropic.com/v1/messages` с `{"model", "max_tokens":16, "messages":[{"role":"user","content":"Reply with OK."}], "tools":[{"name":"exodia_probe","description":"Probe tool. Do not call.","input_schema":{"type":"object","properties":{}}}]}`; `tool_choice` не передаётся (forced у новых моделей — 400). 2xx (любой `stop_reason`, включая `max_tokens`) → passed; 400/404 → `failed("Provider refused: <error.message до 120 символов>")`; 401/402/403 → `inconclusive("Key problem")`; 429, 5xx, 529, сеть → inconclusive.
+- OpenCode при маршруте `.agent` на Anthropic: `enabled_providers: ["anthropic"]`, `model: "anthropic/<id>"`, `provider.anthropic.options.apiKey: "{env:ANTHROPIC_API_KEY}"`, `provider.anthropic.models[<id>]` — тот же объект `tool_call`/`reasoning`/`limit` из каталога (Задача 14); CLI `--model anthropic/<id>`. `ANTHROPIC_API_KEY` ставится в окружение явно из Keychain ПОСЛЕ фильтра `OpenCodeEnvironment.make` (фильтр `ANTHROPIC_*` и т.д. остаётся, наследуемые ключи не проходят); `OPENROUTER_API_KEY` в этом случае не ставится. На OpenRouter — без изменений. Автоматического перехода между провайдерами нет.
+- `AgentSettingsStore`: модель агента — маршрут `.agent` на OpenRouter или Anthropic (провайдер + id). Тексты `OpenCodeProvider` (missing_key, missing_model, opencode_exit, auth в `OpenCodeEventMapper`) называют провайдера маршрута: `Add your Anthropic key in Settings → API & Models.` / OpenRouter — как в Задаче 18.
+- Вкладка Agents (Задача 18): subtitle `"Anthropic · <id>"` при маршруте на Anthropic.
+
+- [ ] **Step 1: Failing tests** — `test_anthropic_is_offered_only_for_the_agent` (таблица `modelUse`), `test_anthropic_account_uses_its_own_keychain_item`, `test_anthropic_key_check_uses_x_api_key_and_version` (+ 401 → invalidKey), `test_anthropic_catalog_pages_and_maps_limits` (две страницы через `after_id`), `test_anthropic_agent_probe_offers_one_fake_tool_without_tool_choice`, `test_opencode_config_for_anthropic_route` (enabled_providers, model, apiKey из env, limit; в окружении `ANTHROPIC_API_KEY` = ключ Keychain, нет `OPENROUTER_API_KEY`), `test_inherited_anthropic_env_never_reaches_opencode` (родительский `ANTHROPIC_API_KEY` не проходит при маршруте на OpenRouter), `test_missing_anthropic_key_message_names_anthropic`.
+- [ ] **Step 2:** фильтр по затронутым классам → FAIL.
+- [ ] **Step 3: Реализовать.**
+- [ ] **Step 4:** → PASS; `swift build`.
+- [ ] **Step 5: Проверка на настоящем OpenCode** (без запроса к модели, ключ фиктивный, XDG во временной папке): `ANTHROPIC_API_KEY=dummy … OPENCODE_CONFIG_CONTENT='<json из теста>' opencode models anthropic --verbose` → у модели `limit` из конфига. Версию OpenCode — в отчёт.
+- [ ] **Step 6: Commit** `feat(agent): let the agent run on an Anthropic key`.
+
 ## Приёмка на рабочем приложении (в PR; выполняет интеграция)
 
 1. Settings открывается на **API & Models**; в API keys — чипы провайдеров, чьи ключи уже были.
