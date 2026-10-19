@@ -355,6 +355,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // first credential read (CAN-001). Idempotent, cheap.
         CredentialMigration().run()
 
+        // Carry the old Models-tab provider and model choices into per-feature
+        // routes, once. After the key migration so the keys are in the
+        // keychain; synchronous, reads only, no network.
+        AIRoutingMigration.live().run()
+
         // Free the retired on-device models' disk space once
         // (Application Support/Sidekey/Local*Models, up to a few GB); off the
         // main thread so launch never waits on the removal.
