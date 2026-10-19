@@ -39,16 +39,19 @@ struct IslandBrightnessStrip: View {
                                         onChange: controller.setLevel)
 
                 if controller.supportsExtra {
-                    Toggle(isOn: Binding(get: { controller.isExtraOn }, set: { controller.setExtra($0) })) {
+                    // The island is never the active app's key window, where the native switch
+                    // draws its on state gray; MacSwitch keeps its blue.
+                    HStack(spacing: 8) {
                         Text("Extra")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.85))
+                            .accessibilityHidden(true)
+                        MacSwitch(isOn: Binding(get: { controller.isExtraOn }, set: { controller.setExtra($0) }),
+                                  size: .compact)
+                            .accessibilityLabel("Extra brightness")
                     }
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
                     .fixedSize()
                     .help("Adds brightness on top of the current level. Uses more battery.")
-                    .accessibilityLabel("Extra brightness")
                 }
             }
             .frame(height: BrightnessCapsuleSlider.height)
@@ -82,6 +85,9 @@ struct IslandBrightnessStrip: View {
             controller.endInteraction()
             battery.stop()
         }
+        // The time left follows the display at once, between battery readings.
+        .onChange(of: controller.level) { _, _ in battery.displayDidChange() }
+        .onChange(of: controller.isExtraOn) { _, _ in battery.displayDidChange() }
     }
 
     private var statusLine: (text: String, systemImage: String?, isNotice: Bool)? {

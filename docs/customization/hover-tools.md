@@ -28,7 +28,7 @@ All paths below start at `Sources/Sidekey/`.
 | Inline views, shared three-column geometry and bounded scrolling | `DynamicIsland/IslandView.swift`, `DynamicIsland/IslandDropModeControl.swift` |
 | Floating text translation and system-audio subtitles | `Translation/TranslationWindowController.swift`, `Translation/LiveSubtitleModel.swift` |
 | Inline monitoring, picker and refresh lifecycle | `Monitor/MonitorHoverPanel.swift`, `Monitor/MonitorStore.swift` |
-| Inline brightness strip, backlight, Extra overlay and battery time | `Brightness/IslandBrightnessStrip.swift`, `Brightness/ScreenBrightnessController.swift`, `Brightness/BrightnessBoostOverlay.swift`, `Brightness/BatteryRuntime.swift` |
+| Inline brightness strip, backlight, Extra boost (display table + EDR trigger) and battery time | `Brightness/IslandBrightnessStrip.swift`, `Brightness/ScreenBrightnessController.swift`, `Brightness/GammaBrightnessBoost.swift`, `Brightness/BrightnessHeadroomTrigger.swift`, `Brightness/BatteryRuntime.swift` |
 | Brightness keys (event tap, steps, Extra gesture) and the Settings -> Toolbox -> Display pane | `Brightness/BrightnessKeys.swift`, `Brightness/BrightnessKeyEventTap.swift`, `Brightness/ToolboxDisplayPane.swift` |
 | Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `DynamicIsland/IslandPanel.swift` |
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
@@ -65,7 +65,8 @@ All paths below start at `Sources/Sidekey/`.
    `.inlinePanel` / `.openPanel(.brightness)`, offered from the catalog and
    search only, with the capsule title Display. Its strip is shorter than the
    tools, so the band keeps the
-   previous height until the pointer reaches the strip. Settings -> Toolbox ->
+   previous height until the pointer is over the drawer's final frame, also on
+   a quick move. Settings -> Toolbox ->
    Display offers the Extra and Brightness keys switches without the island; a
    brightness key opens the strip as a glance without keyboard focus.
 
@@ -76,7 +77,7 @@ change and rebuild it with the canonical development script.
 ## Checks
 
 ```bash
-python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests|MonitorDashboardTests|BrightnessHoverToolTests|ScreenBrightnessControllerTests|BrightnessBoostFrameTimerTests|BrightnessKeysTests|BatteryRuntimeTests|BatteryRuntimeMonitorTests'
+python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests|MonitorDashboardTests|BrightnessHoverToolTests|ScreenBrightnessControllerTests|GammaBrightnessBoostTests|BrightnessBoostFrameTimerTests|BrightnessKeysTests|BatteryRuntimeTests|BatteryRuntimeMonitorTests'
 python3 scripts/customize.py build
 ```
 
@@ -88,8 +89,9 @@ Cover 310-point and 312-point examples, including fractional capsule widths;
 History's 300-point reservation must fit its 280-point preview plus eight-point
 gap with zero drawer overhang. Check pure status updates and Monitor picker -> dashboard -> Back in the same drawer.
 Open Display (Brightness) from a lower row and check that the drawer stays open while the
-pointer moves up to the strip. Fake devices cover the backlight and Extra in
-tests, and a fake tap covers Brightness keys; tests never install a real event tap.
+pointer moves up to the strip, also quickly from the third row. Fake devices and
+a fake display table cover the backlight and Extra in tests, and a fake tap covers
+Brightness keys; tests never write a real display table or install a real event tap.
 A live Extra check needs the user's consent, because it brightens their screen.
 Use offscreen checks; do not open GUI test windows over the user's work.
 Search for an unpinned Output Lang, verify keyboard and pointer activation,

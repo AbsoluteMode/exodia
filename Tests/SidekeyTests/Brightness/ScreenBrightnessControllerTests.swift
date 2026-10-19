@@ -96,7 +96,7 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
     // MARK: Extra
 
-    func testExtraAddsTheMultiplierWithoutTouchingTheBacklight() {
+    func testExtraStartsTheBoostWithoutTouchingTheBacklight() {
         let f = Fixture(), device = f.device, controller = f.controller
         controller.beginInteraction()
 
@@ -105,8 +105,7 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertTrue(controller.isExtraOn)
         XCTAssertEqual(controller.level, 0.4, "Extra adds to the current level; it does not raise it.")
         XCTAssertNil(controller.notice)
-        XCTAssertEqual(device.events, ["overlay 1"])
-        XCTAssertEqual(device.overlays.first?.multipliers, [2])
+        XCTAssertEqual(device.events, ["boost 1"])
     }
 
     func testSwitchingExtraOffLeavesTheBacklightAsItIs() {
@@ -117,8 +116,8 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
         XCTAssertFalse(controller.isExtraOn)
         XCTAssertEqual(controller.level, 0.7)
-        XCTAssertEqual(device.overlays.first?.isClosed, true)
-        XCTAssertEqual(device.events, ["overlay 1", "write 1 0.7"])
+        XCTAssertEqual(device.boosts.first?.isClosed, true)
+        XCTAssertEqual(device.events, ["boost 1", "write 1 0.7"])
     }
 
     func testTheSliderKeepsExtraAtAnyLevel() {
@@ -129,8 +128,8 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
         XCTAssertTrue(controller.isExtraOn, "Only the switch ends Extra, as with the Mac's own brightness keys.")
         XCTAssertEqual(controller.level, 1)
-        XCTAssertEqual(device.overlays.first?.isClosed, false)
-        XCTAssertEqual(device.events, ["overlay 1", "write 1 0.2", "write 1 1.0"])
+        XCTAssertEqual(device.boosts.first?.isClosed, false)
+        XCTAssertEqual(device.events, ["boost 1", "write 1 0.2", "write 1 1.0"])
     }
 
     func testOutsideBacklightChangesKeepExtra() {
@@ -142,9 +141,9 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
         XCTAssertTrue(controller.isExtraOn)
         XCTAssertEqual(controller.level, 0.5)
-        XCTAssertEqual(device.overlays.first?.isClosed, false)
-        XCTAssertEqual(device.overlays.first?.multipliers, [2, 2])
-        XCTAssertEqual(device.events, ["overlay 1"])
+        XCTAssertEqual(device.boosts.first?.isClosed, false)
+        XCTAssertEqual(device.boosts.first?.refreshes, 1, "The boost follows the display on every refresh.")
+        XCTAssertEqual(device.events, ["boost 1"])
     }
 
     func testSleepAndASessionSwitchKeepExtra() {
@@ -160,8 +159,8 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
         XCTAssertEqual(controller.level, 0.6, "The wake notification reached the controller.")
         XCTAssertTrue(controller.isExtraOn, "Extra never resumes by itself, so sleep must not end it.")
-        XCTAssertEqual(device.overlays.first?.isClosed, false)
-        XCTAssertEqual(device.events, ["overlay 1"])
+        XCTAssertEqual(device.boosts.first?.isClosed, false)
+        XCTAssertEqual(device.events, ["boost 1"])
         controller.shutdown()
     }
 
@@ -170,12 +169,12 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
         controller.endInteraction()
         XCTAssertTrue(controller.isExtraOn)
-        XCTAssertEqual(device.overlays.first?.isClosed, false)
+        XCTAssertEqual(device.boosts.first?.isClosed, false)
 
         controller.shutdown()
         XCTAssertFalse(controller.isExtraOn)
-        XCTAssertEqual(device.overlays.first?.isClosed, true)
-        XCTAssertEqual(device.events, ["overlay 1"])
+        XCTAssertEqual(device.boosts.first?.isClosed, true)
+        XCTAssertEqual(device.events, ["boost 1"])
     }
 
     func testDisplayChangeEndsExtraAndReadsTheNewDisplayImmediately() {
@@ -191,11 +190,11 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         controller.refresh()
 
         XCTAssertFalse(controller.isExtraOn)
-        XCTAssertEqual(device.overlays.first?.isClosed, true)
+        XCTAssertEqual(device.boosts.first?.isClosed, true)
         XCTAssertEqual(controller.display?.id, 2)
         XCTAssertFalse(controller.supportsExtra)
         XCTAssertEqual(controller.level, 0.7, "A write to the old display must not hold the new display's reading.")
-        XCTAssertEqual(device.events, ["write 1 0.8", "overlay 1"], "Ending Extra writes no backlight.")
+        XCTAssertEqual(device.events, ["write 1 0.8", "boost 1"], "Ending Extra writes no backlight.")
     }
 
     func testDisplayWithoutHeadroomHasNoExtra() {
@@ -229,7 +228,7 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
         XCTAssertFalse(controller.isExtraOn)
         XCTAssertEqual(controller.notice, ScreenBrightnessController.coolingNotice)
-        XCTAssertEqual(device.events, ["overlay 1"])
+        XCTAssertEqual(device.events, ["boost 1"])
     }
 
     func testCoolingPausesOnlyAnActiveExtra() {
@@ -247,7 +246,7 @@ final class ScreenBrightnessControllerTests: XCTestCase {
 
         XCTAssertFalse(controller.isExtraOn)
         XCTAssertEqual(controller.notice, ScreenBrightnessController.coolingNotice)
-        XCTAssertEqual(device.events, ["overlay 1"])
+        XCTAssertEqual(device.events, ["boost 1"])
         XCTAssertEqual(controller.level, 0.4)
     }
 
@@ -293,9 +292,9 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertEqual(controller.level, 0.6)
     }
 
-    func testOverlayFailureLeavesExtraOffWithANotice() {
+    func testBoostFailureLeavesExtraOffWithANotice() {
         let f = Fixture(), device = f.device, controller = f.controller
-        device.canCreateOverlay = false
+        device.canCreateBoost = false
         controller.beginInteraction()
 
         controller.setExtra(true)
@@ -303,45 +302,133 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertFalse(controller.isExtraOn)
         XCTAssertEqual(controller.level, 0.4)
         XCTAssertEqual(controller.notice, ScreenBrightnessController.extraUnavailableNotice)
-        XCTAssertEqual(device.events, ["overlay-failed 1"])
+        XCTAssertEqual(device.events, ["boost-failed 1"])
     }
 
-    func testRenderFailureEndsExtraWithANotice() {
+    func testAnUnavailableBoostEndsExtraWithANotice() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
 
-        device.failures[0]()
+        device.ends[0](.unavailable)
 
         XCTAssertFalse(controller.isExtraOn)
         XCTAssertEqual(controller.notice, ScreenBrightnessController.extraUnavailableNotice)
-        XCTAssertEqual(device.overlays.first?.isClosed, true)
-        XCTAssertEqual(device.events, ["overlay 1"])
+        XCTAssertEqual(device.boosts.first?.isClosed, true)
+        XCTAssertEqual(device.events, ["boost 1"])
     }
 
-    func testLateFailureFromAClosedOverlayKeepsTheNewerExtra() {
+    func testAnotherAppAdjustingTheDisplayEndsExtraWithItsNotice() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+
+        device.ends[0](.otherApp)
+
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.notice, ScreenBrightnessController.otherAppNotice)
+        XCTAssertEqual(device.boosts.first?.isClosed, true)
+    }
+
+    func testALateEndFromAClosedBoostKeepsTheNewerExtra() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
         controller.setExtra(false)
         controller.setExtra(true)
 
-        device.failures[0]()
+        device.ends[0](.unavailable)
 
         XCTAssertTrue(controller.isExtraOn)
         XCTAssertNil(controller.notice)
-        XCTAssertEqual(device.overlays.count, 2)
-        XCTAssertEqual(device.overlays.last?.isClosed, false)
+        XCTAssertEqual(device.boosts.count, 2)
+        XCTAssertEqual(device.boosts.last?.isClosed, false)
+    }
+
+    // MARK: The battery estimate's display load
+
+    func testTheBuiltInDisplayLoadIsItsLevelSquaredWithoutWrites() {
+        let f = Fixture(), device = f.device
+        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
+
+        XCTAssertEqual(f.controller.builtInDisplayLoad() ?? -1, 0.16, accuracy: 0.0001)
+        XCTAssertEqual(device.events, [])
+    }
+
+    func testExtraOnTheBuiltInDisplayRaisesItsLoad() {
+        let f = Fixture(), device = f.device
+        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
+        let controller = f.controllerWithExtra()
+
+        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.16 * ScreenBrightnessScale.extraLight,
+                       accuracy: 0.0001)
+    }
+
+    func testExtraWithoutHeadroomCountsTheDisplaysOwnLight() {
+        // Without headroom the display has its own table back while Extra stays on.
+        let f = Fixture(), device = f.device
+        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
+        let controller = f.controllerWithExtra()
+
+        device.boosts.last?.gammaFactor = 1
+        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.16, accuracy: 0.0001)
+        device.boosts.last?.gammaFactor = 1.228
+        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1,
+                       0.16 * ScreenBrightnessScale.light(gammaFactor: 1.228), accuracy: 0.0001)
+    }
+
+    func testExtraOnAnExternalDisplayLeavesTheBuiltInLoad() {
+        let f = Fixture(), device = f.device
+        device.connected.append(ScreenBrightnessDisplay(id: 2, potentialHeadroom: 16, isBuiltIn: true))
+        device.hardware[2] = 0.5
+        let controller = f.controllerWithExtra()
+
+        XCTAssertEqual(controller.display?.id, 1)
+        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.25, accuracy: 0.0001)
+    }
+
+    func testWithoutABuiltInDisplayItsLoadIsZero() {
+        // A closed lid leaves only external displays.
+        XCTAssertEqual(Fixture().controller.builtInDisplayLoad(), 0)
+    }
+
+    func testAnUnreadableBuiltInDisplayHasNoLoad() {
+        let f = Fixture(), device = f.device
+        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
+        device.hardware = [:]
+
+        XCTAssertNil(f.controller.builtInDisplayLoad())
+    }
+
+    func testTheLoadFollowsTheSliderWhileTheReadingSettles() {
+        let f = Fixture(), device = f.device
+        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
+        device.applyWrites = false
+        let controller = f.controller
+        controller.beginInteraction()
+        defer { controller.endInteraction() }
+
+        controller.setLevel(0.8)
+        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.64, accuracy: 0.0001)
+
+        f.clock.advance(ScreenBrightnessController.writeSettleInterval)
+        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.16, accuracy: 0.0001,
+                       "Then the hardware reading wins.")
     }
 
     // MARK: Scale
 
-    func testScaleClampsLevelsAndMultipliers() {
+    func testDisplayLoadIsTheLevelsLight() {
+        XCTAssertEqual(ScreenBrightnessScale.displayLoad(level: 0.5, gammaFactor: 1), 0.25)
+        XCTAssertEqual(ScreenBrightnessScale.displayLoad(level: 2, gammaFactor: 1), 1)
+        // Extra's 1.45 table factor raises white by sRGB's curve.
+        XCTAssertEqual(ScreenBrightnessScale.extraLight, 2.3457, accuracy: 0.0001)
+        XCTAssertEqual(ScreenBrightnessScale.displayLoad(level: 1, gammaFactor: ScreenBrightnessScale.maximumExtraGamma),
+                       ScreenBrightnessScale.extraLight)
+        XCTAssertEqual(ScreenBrightnessScale.light(gammaFactor: 1.228), 1.6, accuracy: 0.01)
+        XCTAssertEqual(ScreenBrightnessScale.light(gammaFactor: 0.5), 1)
+        XCTAssertEqual(ScreenBrightnessScale.light(gammaFactor: .nan), 1)
+    }
+
+    func testScaleClampsLevels() {
         XCTAssertEqual(ScreenBrightnessScale.clampedLevel(0.3), 0.3)
         XCTAssertEqual(ScreenBrightnessScale.clampedLevel(-1), 0)
         XCTAssertEqual(ScreenBrightnessScale.clampedLevel(2), 1)
         XCTAssertEqual(ScreenBrightnessScale.clampedLevel(.nan), 0)
-
-        XCTAssertEqual(ScreenBrightnessScale.extraMultiplier(potentialHeadroom: 16), 2)
-        XCTAssertEqual(ScreenBrightnessScale.extraMultiplier(potentialHeadroom: 1.6), 1.6)
-        XCTAssertEqual(ScreenBrightnessScale.extraMultiplier(potentialHeadroom: 0.5), 1)
-        XCTAssertEqual(ScreenBrightnessScale.extraMultiplier(potentialHeadroom: .nan), 1)
 
         XCTAssertFalse(ScreenBrightnessDisplay(id: 1, potentialHeadroom: 1).supportsExtra)
         XCTAssertFalse(ScreenBrightnessDisplay(id: 1, potentialHeadroom: 1.005).supportsExtra)
@@ -381,12 +468,12 @@ private final class FakeBrightnessDevice: ScreenBrightnessDevice {
     var connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16)]
     var hardware: [CGDirectDisplayID: Double] = [1: 0.4]
     var canWrite = true
-    var canCreateOverlay = true
+    var canCreateBoost = true
     /// A real panel can report the previous level for a moment after a write.
     var applyWrites = true
     private(set) var events: [String] = []
-    private(set) var overlays: [FakeBrightnessOverlay] = []
-    private(set) var failures: [() -> Void] = []
+    private(set) var boosts: [FakeBrightnessBoost] = []
+    private(set) var ends: [(BrightnessBoostEnd) -> Void] = []
 
     func displays() -> [ScreenBrightnessDisplay] { connected }
 
@@ -402,26 +489,26 @@ private final class FakeBrightnessDevice: ScreenBrightnessDevice {
         return true
     }
 
-    func makeOverlay(for id: CGDirectDisplayID, multiplier: Double,
-                     onFailure: @escaping () -> Void) -> BrightnessOverlay? {
-        guard canCreateOverlay else {
-            events.append("overlay-failed \(id)")
+    func makeBoost(for id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void) -> BrightnessBoost? {
+        guard canCreateBoost else {
+            events.append("boost-failed \(id)")
             return nil
         }
-        events.append("overlay \(id)")
-        let overlay = FakeBrightnessOverlay()
-        overlays.append(overlay)
-        failures.append(onFailure)
-        return overlay
+        events.append("boost \(id)")
+        let boost = FakeBrightnessBoost()
+        boosts.append(boost)
+        ends.append(onEnd)
+        return boost
     }
 }
 
 @MainActor
-private final class FakeBrightnessOverlay: BrightnessOverlay {
-    private(set) var multipliers: [Double] = []
+private final class FakeBrightnessBoost: BrightnessBoost {
+    private(set) var refreshes = 0
     private(set) var isClosed = false
+    var gammaFactor = ScreenBrightnessScale.maximumExtraGamma
 
-    func update(multiplier: Double) { multipliers.append(multiplier) }
+    func refresh() { refreshes += 1 }
     func close() { isClosed = true }
 }
 
