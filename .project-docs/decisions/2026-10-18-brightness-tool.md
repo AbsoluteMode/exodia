@@ -75,7 +75,7 @@ sources:
     reference: https://github.com/niklasr22/BrightIntosh (GPL, read for ideas only, no code copied) — a 1x1 trigger window one level above its full-screen overlay at the shielding level, presented five times a second, a brightness factor of 1 + 0.5 x min(headroom / 2.66, 1) on its list of 600-nit built-in panels (1 + 0.59 x min(headroom / 3.2, 1) on other built-in panels), suspension on screensaver, session and protected-data changes, and CGDisplayRestoreColorSyncSettings resetting every display's table.
     confirmed_at: 2026-10-19
   - type: trace
-    reference: Local runs on 2026-10-19/20. Each fix was written test-first. GammaBrightnessBoostTests 25, ScreenBrightnessControllerTests 32, BrightnessBoostFrameTimerTests 9, BrightnessHoverToolTests 19, BrightnessKeysTests 44, BatteryRuntimeTests 27 and BatteryRuntimeMonitorTests 5; the Brightness, battery and Toolbox filter 177 tests, 0 failures. Four mutations of the table boost and eight of the battery estimate were each caught. After merging main d03bf65, full swift test 3,515 tests, 8 skipped, 0 failures (96.234 s).
+    reference: Local runs on 2026-10-19/20. Each fix was written test-first. GammaBrightnessBoostTests 25, ScreenBrightnessControllerTests 32, BrightnessBoostFrameTimerTests 9, BrightnessHoverToolTests 19, BrightnessKeysTests 44, BatteryRuntimeTests 27 and BatteryRuntimeMonitorTests 5; the Brightness, battery and Toolbox filter 177 tests, 0 failures. Four mutations of the table boost and eight of the battery estimate were each caught. After merging main 9b03696, full swift test 3,515 tests, 8 skipped, 0 failures (96.234 s).
     confirmed_at: 2026-10-20
   - type: url
     reference: https://developer.apple.com/videos/play/wwdc2022/10114/ (Display EDR content with Core Image, Metal, and SwiftUI)
@@ -513,10 +513,9 @@ Brightness keys need the Accessibility permission the hotkeys use.
   battery model, the full `swift test` executed 3,446 tests, 7 skipped, with 3
   failures, all in `PackagingRebrandTests`, whose child-process pipe main
   fixed in #57; that suite then passed 17 tests with 0 failures on its own. After merging
-  main d03bf65 (hover hotkeys bound to named tools, stacked Notify cards and
-  Backup management), the full `swift test` executed 3,515 tests, 8 skipped,
-  0 failures (96.234 s), with no build warnings in the Brightness files,
-  `IslandView` or `MacSwitch`.
+  main 9b03696, the full `swift test` on the merge executed 3,515 tests,
+  8 skipped, 0 failures (96.234 s), with no build warnings in the Brightness
+  files, `IslandView` or `MacSwitch`.
 
 ## Rejected alternatives
 
