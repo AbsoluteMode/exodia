@@ -771,7 +771,8 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    and monitoring sources the user configured (including their credential store),
    notification sources accessed by user-configured local scripts, OpenCode's own provider
    traffic, the model catalogs and free key checks of providers the user added
-   a key for, synthetic model probes (silence or a one-word prompt, never user
+   a key for, OpenRouter's provider list (latency, throughput) for a model
+   selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
    Check now, its official GitHub release download, `google.com` opened in the
    browser, the Sparkle feed on GitHub Releases, and optional encrypted backups

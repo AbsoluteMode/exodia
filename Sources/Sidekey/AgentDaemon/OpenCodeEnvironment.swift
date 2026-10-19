@@ -10,6 +10,7 @@ enum OpenCodeEnvironment {
     static func make(workingDirectory: URL, model: String, provider: OpenCodeModelProvider = .openRouter,
                      key: String?, allowActions: Bool,
                      modelSpec: OpenCodeModelSpec? = nil,
+                     openRouterProvider: String? = nil,
                      inherited: [String: String] = ProcessInfo.processInfo.environment) throws -> [String: String] {
         var env = inherited.filter { name, _ in
             !name.hasPrefix("OPENCODE_") && !name.hasPrefix("OPENROUTER_")
@@ -39,10 +40,14 @@ enum OpenCodeEnvironment {
         let permissions: [String: String] = allowActions
             ? ["*": "allow", "question": "deny"]
             : ["*": "deny", "read": "allow", "glob": "allow", "grep": "allow", "webfetch": "allow"]
-        let declaration: [String: Any] = modelSpec.map {
+        var declaration: [String: Any] = modelSpec.map {
             ["tool_call": $0.toolCall, "reasoning": $0.reasoning,
              "limit": ["context": $0.contextLimit, "output": $0.outputLimit]]
         } ?? [:]
+        // A pinned provider is used alone, as for the app's own OpenRouter calls.
+        if provider == .openRouter, let pinned = openRouterProvider {
+            declaration["options"] = ["provider": ["order": [pinned], "allow_fallbacks": false]]
+        }
         let id = provider.openCodeID
         let config: [String: Any] = [
             "$schema": "https://opencode.ai/config.json", "model": "\(id)/\(normalized)",
