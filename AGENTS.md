@@ -402,7 +402,9 @@ Brightness inside hover:
   updates 30-180 s apart (a longer gap such as sleep adds none), with the
   built-in display's light averaged over the same span: level squared, times
   the light of the table factor Extra currently applies to it (x2.35 at 1.45,
-  x1 without headroom), 0 with the lid closed. A factor change on its own is
+  x1 without headroom), 0 with the lid closed or while the displays sleep
+  (screensDidSleep until screensDidWake; the monitor notes the sleep itself
+  and rereads after the wake observers). A factor change on its own is
   counted at the next reading (5 s with the strip, 60 s without). Over the last 30 minutes the load's
   slope over that light (ridge toward a 5 W prior, 1-15 W, at most 80% of the
   mean load) moves the display's share to the current light, so a slider or

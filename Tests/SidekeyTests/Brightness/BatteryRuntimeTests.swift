@@ -384,6 +384,59 @@ final class BatteryRuntimeMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.status, .remaining(percent: 84, minutes: 438))
     }
 
+    /// A reading whose accumulators grew by 10 W a second for each minute since `minute` 0.
+    private func reading(minute: Double) -> BatterySnapshot {
+        BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, remainingWattHours: 40,
+                        loadSum: 1_000_000 + minute * 600_000, loadCount: 100 + minute * 60)
+    }
+
+    func testDisplaySleepCountsNoLightUntilTheDisplayWakes() {
+        // The display load still reports the backlight: whoever reads it may not have seen the
+        // notification yet, so the monitor notes the sleep itself.
+        var date = Date(timeIntervalSince1970: 10_000), minute = 0.0
+        let workspace = NotificationCenter()
+        let monitor = BatteryRuntimeMonitor(read: { self.reading(minute: minute) }, displayLoad: { 1 },
+                                            now: { date }, workspaceCenter: workspace)
+        monitor.sample()
+
+        date += 30
+        workspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        date += 30
+        minute = 1
+        monitor.sample()
+        XCTAssertEqual(monitor.samples.last?.displayLoad ?? -1, 0.5, accuracy: 0.0001,
+                       "30 s of full light, then 30 s asleep.")
+
+        date += 30
+        workspace.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        let woke = expectation(description: "The wake is noted after the other wake observers.")
+        DispatchQueue.main.async { woke.fulfill() }
+        wait(for: [woke], timeout: 1)
+        date += 30
+        minute = 2
+        monitor.sample()
+        XCTAssertEqual(monitor.samples.last?.displayLoad ?? -1, 0.5, accuracy: 0.0001,
+                       "30 s asleep, then 30 s of full light again.")
+    }
+
+    func testSamplesWhileTheDisplaySleepsCountNoLight() {
+        var date = Date(timeIntervalSince1970: 10_000), minute = 0.0
+        let monitor = BatteryRuntimeMonitor(read: { self.reading(minute: minute) }, displayLoad: { 1 },
+                                            now: { date })
+        monitor.screensDidSleep()
+        monitor.sample()
+        date += 60
+        minute = 1
+        monitor.sample()
+        XCTAssertEqual(monitor.samples.map(\.displayLoad), [0])
+
+        monitor.screensDidWake()
+        date += 60
+        minute = 2
+        monitor.sample()
+        XCTAssertEqual(monitor.samples.map(\.displayLoad), [0, 1])
+    }
+
     func testHistoryRecordsFromLaunchWithoutAStrip() {
         let monitor = BatteryRuntimeMonitor(read: {
             BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, systemMinutesToEmpty: 260)

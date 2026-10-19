@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import IOKit
 import IOKit.ps
 
@@ -358,7 +358,8 @@ final class IOKitBatteryReader {
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
 final class BatteryRuntimeMonitor: ObservableObject {
-    static let shared = BatteryRuntimeMonitor(displayLoad: { ScreenBrightnessController.shared.builtInDisplayLoad() })
+    static let shared = BatteryRuntimeMonitor(displayLoad: { ScreenBrightnessController.shared.builtInDisplayLoad() },
+                                              workspaceCenter: NSWorkspace.shared.notificationCenter)
     static let pollInterval: TimeInterval = 5
     /// AppleSmartBattery refreshes its telemetry about once a minute.
     static let historyInterval: TimeInterval = 60
@@ -374,13 +375,17 @@ final class BatteryRuntimeMonitor: ObservableObject {
     private var timer: Timer?
     private var historyTimer: Timer?
     private var viewers = 0
+    /// Between screensDidSleep and screensDidWake the display counts no light.
+    private var areScreensAsleep = false
     /// True while a visible strip samples the battery.
     var isSampling: Bool { timer != nil }
     var isRecordingHistory: Bool { historyTimer != nil }
+    var samples: [BatteryRuntimeEstimator.Sample] { estimator.samples }
 
-    /// Without `displayLoad` the estimate sees no display, so tests never read a real one.
+    /// Without `displayLoad` the estimate sees no display, and without `workspaceCenter` no
+    /// display sleep, so tests never read a real display or receive the system's notifications.
     init(read: (() -> BatterySnapshot?)? = nil, displayLoad: @escaping @MainActor () -> Double? = { nil },
-         now: @escaping () -> Date = Date.init) {
+         now: @escaping () -> Date = Date.init, workspaceCenter: NotificationCenter? = nil) {
         if let read {
             self.read = read
         } else {
@@ -389,6 +394,17 @@ final class BatteryRuntimeMonitor: ObservableObject {
         }
         self.displayLoad = displayLoad
         self.now = now
+        // The shared monitor lives as long as the app, so its observers are never removed.
+        guard let workspaceCenter else { return }
+        _ = workspaceCenter.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.screensDidSleep() }
+        }
+        _ = workspaceCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            // The display load reads the controller, which learns of the wake from its own observer.
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.screensDidWake() } }
+        }
     }
 
     /// A Mac without a battery records nothing.
@@ -434,7 +450,7 @@ final class BatteryRuntimeMonitor: ObservableObject {
             publish(.hidden)
             return
         }
-        estimator.noteDisplayLoad(displayLoad(), at: date)
+        estimator.noteDisplayLoad(currentDisplayLoad(), at: date)
         estimator.record(next, at: date)
         snapshot = next
         publish(estimator.status(for: next, at: date))
@@ -443,9 +459,25 @@ final class BatteryRuntimeMonitor: ObservableObject {
     /// The display's brightness or Extra changed: recompute without reading the battery.
     func displayDidChange() {
         let date = now()
-        estimator.noteDisplayLoad(displayLoad(), at: date)
+        estimator.noteDisplayLoad(currentDisplayLoad(), at: date)
         guard let snapshot else { return }
         publish(estimator.status(for: snapshot, at: date))
+    }
+
+    /// The displays slept: no light from now on, whatever the display load still reports.
+    // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
+    func screensDidSleep() {
+        areScreensAsleep = true
+        displayDidChange()
+    }
+
+    func screensDidWake() {
+        areScreensAsleep = false
+        displayDidChange()
+    }
+
+    private func currentDisplayLoad() -> Double? {
+        areScreensAsleep ? 0 : displayLoad()
     }
 
     /// Assigns only a changed status: `@Published` announces every assignment.
