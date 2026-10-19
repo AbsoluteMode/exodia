@@ -484,6 +484,12 @@ retired Local choice shows "not set up" banners until the user saves a
 provider. WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md,
 .project-docs/decisions/2026-10-18-remove-local-models.md
 
+API hints: a collapsed card below API keys explains provider free tiers and
+included credits, with official links, a verification date and Add API key.
+It distinguishes starter credit, monthly allowance and paid-plan benefits;
+it never checks balances or changes routes. WHY:
+.project-docs/decisions/2026-10-19-api-hints.md
+
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
 Settings -> API & Models (the agent's model is chosen there too; Settings ->
