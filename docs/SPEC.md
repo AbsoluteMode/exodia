@@ -279,10 +279,11 @@ recovery, и для восстановления по частичному тр�
 окне чипа) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
 Anthropic (только для строки Agent) и свои OpenAI-compatible серверы. Ключи
 лежат в Keychain, на экран не возвращаются; проверка ключа — бесплатный запрос
-к провайдеру. *Models* — по строке на каждую AI-фичу и одна выпадашка
-«Provider · model-id»: Drop Fast и Drop Smart (real-time), Drop Smart cleanup
-(LLM), Meetings (recorded), Meeting notes (LLM), Agent (LLM with tools), Agent
-voice и Voice search (real-time). В меню модели — только ID модели (короткая
+к провайдеру. *Models* — по строке на функцию, в строке выпадашка «Provider · model-id» на
+каждый её маршрут: Drop Fast (real-time), Drop Smart (real-time + LLM очистки),
+Meetings (recorded + LLM заметок), Agent (LLM with tools), Agent voice и Voice
+search (real-time). Над карточкой — тихая пометка «N features have no model ·
+Show»: Show прокручивает к ним и на пару секунд подсвечивает их строки. В меню модели — только ID модели (короткая
 пометка вроде «with speakers» в той же строке); неподходящие модели не
 показываются. У строки на OpenRouter есть второе меню — провайдер: Auto
 (выбирает OpenRouter, для диктовки — по скорости) или один провайдер модели,

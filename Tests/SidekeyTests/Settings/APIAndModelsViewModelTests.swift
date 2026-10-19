@@ -497,6 +497,15 @@ final class APIAndModelsProviderTests: XCTestCase {
         return (vm, routing, fake, keys)
     }
 
+    func test_groups_pair_speech_with_its_llm_and_cover_every_feature_once() throws {
+        let (vm, _, _, _) = try make()
+        let features = vm.groups.flatMap { $0.rows.map(\.feature) }
+        XCTAssertEqual(features.sorted { $0.rawValue < $1.rawValue }, AIFeature.allCases.sorted { $0.rawValue < $1.rawValue })
+        XCTAssertEqual(vm.groups.map(\.title), ["Drop Fast", "Drop Smart", "Meetings", "Agent", "Agent voice", "Voice search"])
+        XCTAssertEqual(vm.groups.first { $0.title == "Drop Smart" }?.rows.map(\.feature), [.dropSmart, .dropSmartCleanup])
+        XCTAssertEqual(vm.groups.first { $0.title == "Meetings" }?.rows.map(\.feature), [.meetings, .meetingNotes])
+    }
+
     func test_only_openrouter_rows_offer_a_provider_and_auto_is_the_default() throws {
         let (vm, routing, _, _) = try make()
         routing.setRoute(FeatureRoute(account: .openRouter, model: "x/m"), for: .meetingNotes)

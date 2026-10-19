@@ -45,6 +45,8 @@ final class APIAndModelsRenderTests: XCTestCase {
             try keys.save("key", account: XCTUnwrap(account.keychainAccount(in: routing)))
         }
         routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropFast)
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropSmart)
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-async-v5"), for: .meetings)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .dropSmartCleanup)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .meetingNotes)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "anthropic/claude-sonnet-5.5", provider: "anthropic"), for: .agent)

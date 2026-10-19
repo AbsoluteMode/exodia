@@ -26,6 +26,25 @@ struct FeatureRow: Equatable, Identifiable {
     var id: AIFeature { feature }
 }
 
+/// One line of the Models card: what the user turns on (Drop Smart, Meetings)
+/// with every route it runs on, speech first, then its LLM.
+struct FeatureGroup: Equatable, Identifiable {
+    let title: String
+    let rows: [FeatureRow]
+    var id: String { title }
+
+    /// Every feature exactly once. Drop Smart and Meetings each pair their
+    /// speech route with the LLM route that processes its text.
+    static let layout: [(title: String, features: [AIFeature])] = [
+        ("Drop Fast", [.dropFast]),
+        ("Drop Smart", [.dropSmart, .dropSmartCleanup]),
+        ("Meetings", [.meetings, .meetingNotes]),
+        ("Agent", [.agent]),
+        ("Agent voice", [.agentVoice]),
+        ("Voice search", [.voiceSearch]),
+    ]
+}
+
 /// Which OpenRouter provider an OpenRouter route runs on.
 struct ProviderChoice: Equatable {
     let model: String
@@ -64,6 +83,15 @@ struct AssignProposal: Equatable {
 final class APIAndModelsViewModel: ObservableObject {
     @Published private(set) var chips: [KeyChip] = []
     @Published private(set) var rows: [FeatureRow] = []
+
+    /// `rows` as the Models card shows them.
+    var groups: [FeatureGroup] {
+        FeatureGroup.layout.map { entry in
+            FeatureGroup(title: entry.title, rows: entry.features.compactMap { feature in
+                rows.first { $0.feature == feature }
+            })
+        }
+    }
     @Published private(set) var aliasGroups: [AliasGroupAction] = []
     @Published private(set) var unsetBanner: String?
     @Published var proposal: AssignProposal?
@@ -334,29 +362,13 @@ final class APIAndModelsViewModel: ObservableObject {
     /// Not set feature it serves. `nil` — Set up: for every Not set feature, the
     /// first keyed built-in provider with a recommended model. An empty
     /// proposal is not shown.
-    func proposeSetup(for account: ProviderAccount?) {
+    func proposeSetup(for account: ProviderAccount) {
         let unset = AIFeature.allCases.filter { resolver.status(for: $0) == .notSet }
-        let items: [AssignItem]
-        let title: String
-        if let account {
-            title = "Use \(self.title(of: account)) for"
-            items = unset.compactMap { feature in
-                ModelRegistry.recommended(for: feature, kind: account.kind)
-                    .map { AssignItem(feature: feature, account: account, model: $0) }
-            }
-        } else {
-            title = "Set up models"
-            let keyed = Self.builtInAccounts.filter { if case .key = lookup($0) { return true }; return false }
-            items = unset.compactMap { feature in
-                for candidate in keyed {
-                    if let model = ModelRegistry.recommended(for: feature, kind: candidate.kind) {
-                        return AssignItem(feature: feature, account: candidate, model: model)
-                    }
-                }
-                return nil
-            }
+        let items = unset.compactMap { feature in
+            ModelRegistry.recommended(for: feature, kind: account.kind)
+                .map { AssignItem(feature: feature, account: account, model: $0) }
         }
-        proposal = items.isEmpty ? nil : AssignProposal(title: title, items: items)
+        proposal = items.isEmpty ? nil : AssignProposal(title: "Use \(title(of: account)) for", items: items)
     }
 
     /// Use: assigns the checked registry models as they are, without a probe.

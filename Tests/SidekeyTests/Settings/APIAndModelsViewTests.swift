@@ -16,7 +16,7 @@ final class APIAndModelsViewTests: XCTestCase {
         for text in [
             "\"API keys\"", "\"Models\"", "\"Add key\"", "\"Replace key\"", "\"Remove\"", "\"Check now\"",
             "\"Refresh models\"", "\"Other model ID…\"", "checked when picked", "\"Use\"", "\"Not now\"",
-            "· Set up\"", "Not verified", "Removed by provider", "Key problem", "Not set", "Not supported yet",
+            "\"Show\"", "Not verified", "Removed by provider", "Key problem", "Not set", "Not supported yet",
             "No features use this key.", "will have no model.", "http://localhost:8000/v1",
         ] {
             XCTAssertTrue(s.contains(text), text)

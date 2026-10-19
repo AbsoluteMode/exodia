@@ -10,7 +10,9 @@ struct APIAndModelsView: View {
 
     @State private var activeSheet: ActiveSheet?
     @State private var popoverAccount: ProviderAccount?
-    @State private var highlighted: AIFeature?
+    @State private var highlighted: Set<AIFeature> = []
+    /// Bumped by "Show": the scroll reader then finds the features with no model.
+    @State private var showUnsetTick = 0
 
     init(viewModel: APIAndModelsViewModel, focusedFeature: Binding<AIFeature?>) {
         self.viewModel = viewModel
@@ -50,6 +52,10 @@ struct APIAndModelsView: View {
             }
             .onChange(of: focusedFeature) { _, feature in
                 if let feature { focus(feature, scroller: scroller) }
+            }
+            .onChange(of: showUnsetTick) { _, _ in
+                let unset = viewModel.rows.filter { $0.status == .notSet }.map(\.feature)
+                if let first = unset.first { highlight(Set(unset), scrollTo: first, scroller: scroller) }
             }
             .task {
                 if let feature = focusedFeature { focus(feature, scroller: scroller) }
@@ -146,25 +152,39 @@ struct APIAndModelsView: View {
 
     private var modelsBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacGroupTitle(title: "Models")
+            HStack(alignment: .firstTextBaseline) {
+                MacGroupTitle(title: "Models")
+                if let banner = viewModel.unsetBanner {
+                    unsetNote(banner)
+                }
+            }
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(viewModel.aliasGroups.enumerated()), id: \.offset) { _, group in
                     aliasBanner(group)
                 }
-                if let banner = viewModel.unsetBanner {
-                    bannerButton(text: "\(banner) · Set up", systemImage: "sparkles") {
-                        viewModel.proposeSetup(for: nil)
-                    }
-                }
             }
-            .padding(.bottom, viewModel.aliasGroups.isEmpty && viewModel.unsetBanner == nil ? 0 : 10)
+            .padding(.bottom, viewModel.aliasGroups.isEmpty ? 0 : 10)
             MacCard {
-                ForEach(Array(viewModel.rows.enumerated()), id: \.element.id) { index, row in
+                ForEach(Array(viewModel.groups.enumerated()), id: \.element.id) { index, group in
                     if index > 0 { MacRowSeparator() }
-                    featureRow(row)
+                    groupRow(group)
                 }
             }
         }
+    }
+
+    /// A quiet count beside the title; Show lights up the rows it counts.
+    private func unsetNote(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Text("\(text) ·").foregroundStyle(MacSettingsTheme.text3)
+            Button("Show") { showUnsetTick += 1 }
+                .buttonStyle(.plain)
+                .foregroundStyle(MacSettingsTheme.accent)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .padding(.horizontal, 6)
+        .padding(.bottom, 7)
+        .fixedSize()
     }
 
     private func aliasBanner(_ group: AliasGroupAction) -> some View {
@@ -184,36 +204,50 @@ struct APIAndModelsView: View {
         .buttonStyle(.plain)
     }
 
-    private func featureRow(_ row: FeatureRow) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            MacRow(title: row.feature.title) {
-                HStack(spacing: 10) {
-                    if row.isChecking { ProgressView().controlSize(.small) }
-                    Text(row.feature.mode.label)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(MacSettingsTheme.text2)
-                        .frame(minWidth: 70, alignment: .trailing)
-                    ModelMenu(
-                        viewModel: viewModel,
-                        feature: row.feature,
-                        label: row.selectionLabel,
-                        onAddKey: { activeSheet = .addKey },
-                        onOtherModel: { activeSheet = .otherModel(row.feature) }
-                    )
-                    if let choice = row.provider {
-                        ProviderMenu(viewModel: viewModel, feature: row.feature, choice: choice)
+    /// One function per line; Drop Smart and Meetings stack their speech and
+    /// LLM pickers, each labelled with its mode.
+    private func groupRow(_ group: FeatureGroup) -> some View {
+        let paired = group.rows.count > 1
+        return VStack(alignment: .leading, spacing: 0) {
+            MacRow(title: group.title) {
+                VStack(alignment: .trailing, spacing: 6) {
+                    ForEach(group.rows) { row in
+                        pickers(for: row).id(row.feature)
                     }
                 }
             }
-            statusLines(for: row)
+            ForEach(group.rows) { row in
+                statusLines(for: row, prefix: paired ? row.feature.mode.label : nil)
+            }
         }
-        .background(highlighted == row.feature ? MacSettingsTheme.accent.opacity(0.16) : Color.clear)
+        .background(group.rows.contains { highlighted.contains($0.feature) }
+                    ? MacSettingsTheme.accent.opacity(0.16) : Color.clear)
         .animation(.easeInOut(duration: 0.25), value: highlighted)
-        .id(row.feature)
     }
 
+    private func pickers(for row: FeatureRow) -> some View {
+        HStack(spacing: 10) {
+            if row.isChecking { ProgressView().controlSize(.small) }
+            Text(row.feature.mode.label)
+                .font(.system(size: 11.5))
+                .foregroundStyle(MacSettingsTheme.text2)
+                .frame(minWidth: 70, alignment: .trailing)
+            ModelMenu(
+                viewModel: viewModel,
+                feature: row.feature,
+                label: row.selectionLabel,
+                onAddKey: { activeSheet = .addKey },
+                onOtherModel: { activeSheet = .otherModel(row.feature) }
+            )
+            if let choice = row.provider {
+                ProviderMenu(viewModel: viewModel, feature: row.feature, choice: choice)
+            }
+        }
+    }
+
+    /// `prefix` names the part (`"LLM"`) when a line holds more than one route.
     @ViewBuilder
-    private func statusLines(for row: FeatureRow) -> some View {
+    private func statusLines(for row: FeatureRow, prefix: String? = nil) -> some View {
         let status = statusLine(for: row)
         if status != nil || row.message != nil {
             VStack(alignment: .leading, spacing: 3) {
@@ -221,7 +255,7 @@ struct APIAndModelsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 10.5))
-                        Text(status.text)
+                        Text(prefix.map { "\($0): \(status.text)" } ?? status.text)
                         if let action = status.action {
                             Button(action.title, action: action.run)
                                 .buttonStyle(.plain)
@@ -233,7 +267,7 @@ struct APIAndModelsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 10.5))
-                        Text(message).fixedSize(horizontal: false, vertical: true)
+                        Text(prefix.map { "\($0): \(message)" } ?? message).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -298,12 +332,18 @@ struct APIAndModelsView: View {
 
     /// Scrolls to the row, lights it for a second and gives the binding back.
     private func focus(_ feature: AIFeature, scroller: ScrollViewProxy) {
-        withAnimation { scroller.scrollTo(feature, anchor: .center) }
-        highlighted = feature
         focusedFeature = nil
+        highlight([feature], scrollTo: feature, scroller: scroller, seconds: 1)
+    }
+
+    /// Scrolls to `target` and tints the rows of `features` for a moment.
+    private func highlight(_ features: Set<AIFeature>, scrollTo target: AIFeature,
+                           scroller: ScrollViewProxy, seconds: Double = 2.5) {
+        withAnimation { scroller.scrollTo(target, anchor: .center) }
+        highlighted = features
         Task {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            if highlighted == feature { highlighted = nil }
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            if highlighted == features { highlighted = [] }
         }
     }
 }
