@@ -6,6 +6,12 @@ countdown; clicking opens the supplied link, or dismisses an event without a lin
 Notify has persistent history and source controls. It is available from hover
 search and Settings → Toolbox; saved tool layouts are preserved.
 
+**Settings → Notifications** lists every connected source, its logo and current
+status. Each source has its own on/off switch. Turning it off stops its script
+and notifications immediately, while keeping its configuration and event history;
+the switch remains off after restarting Exodia. Agent-added sources appear
+automatically without reopening Settings.
+
 A coding agent can connect a source without rebuilding Exodia. Ask the agent for
 the exact events you want; it requests the access and filters needed for that
 source, then installs a private local script and manifest. This does not authorize

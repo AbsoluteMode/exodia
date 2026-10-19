@@ -401,7 +401,10 @@ selected screen and screenshot-protection preference. Hover pauses dismissal.
 LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
 presentation in history; unreadable history is never silently overwritten. Notify
 opens through hover search, Toolbox and existing positional hotkeys without
-changing saved layouts. Agents get a resolved setup-guide path on every turn.
+changing saved layouts. Settings -> Notifications lists connected sources with
+their name, logo, runtime status and individual persistent enable switches.
+Disabling stops the source and keeps its setup/history for re-enabling.
+Agents get a resolved setup-guide path on every turn.
 Guide: docs/customization/notifications.md. WHY:
 .project-docs/decisions/2026-10-19-script-notifications.md
 
