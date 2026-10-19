@@ -32,6 +32,8 @@ final class AppState: ObservableObject {
     static let shared = AppState()
 
     @Published var phase: AppPhase = .idle
+    /// Fixed, privacy-safe copy for a retained Smart-processing failure.
+    @Published var dropDeliveryFailureMessage: String?
     @Published var agentPhase: AgentPhase = .idle
 
     /// Dynamic Island idle-hide visibility, mirrored from `IslandIdleController`

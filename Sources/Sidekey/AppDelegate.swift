@@ -147,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// re-armed `.deliveryFailed`) — so a no-audio/empty/unauthorized retry never
     /// leaves captured audio stranded in memory.
     private var pendingRetryPCM: Data?
+    private var pendingProcessingRetry: DropProcessingRetry?
     private var pendingRetryTarget: (app: String?, pid: pid_t?)?
     /// True while a manual Retry's batch recovery is in flight. Gates
     /// `retryPendingDelivery` (via `shouldBeginRetry`) so a second press can't
@@ -1033,8 +1034,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The output-language code handed to the cleanup LLM, or nil. Translation
     /// is Smart-only and only when a target language is set and differs from
     /// the input language.
-    private func outputLanguageCodeForDrop() -> String? {
-        guard UserPreferencesCache.shared.currentMode == .smart else { return nil }
+    private func outputLanguageCodeForDrop(mode: TranscriptionMode) -> String? {
+        guard mode == .smart else { return nil }
         let prefs = PrivacyPreferences.shared
         guard let target = prefs.targetLanguage?.code else { return nil }
         return target == prefs.selectedLanguage?.code ? nil : target
@@ -1132,15 +1133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rawTranscript: String,
         targetApp: String?
     ) async {
-        let filtered = DropFillerFilter.apply(text, removing: FillerTermsStore().terms())
-        // Defense-in-depth (ROO-257): the filler filter itself can strip the
-        // text to "" (its normalize() trims). An empty `filtered` would make
-        // deliverDropTranscript's `guard !text.isEmpty` swallow the paste, so
-        // fall back to the raw transcript when the filter emptied a non-empty
-        // input. WHY: docs/decisions/2026-06-26-local-llm.md.
-        let cleaned = Self.dropDeliverableAfterCleanup(
-            cleaned: filtered, rawTranscript: rawTranscript
-        )
+        let cleaned = text
         AppState.shared.phase = .inserting
         let pasted = await deliverDropTranscript(cleaned)
         if !pasted {
@@ -1156,6 +1149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // The user-visible deliverable landed (either direct paste or
         // clipboard fallback). Either way the turn closes as completed.
+        discardPendingRetry()
         completeDropTurnTelemetry()
         dropHistoryRecorder?.record(
             rawTranscript: rawTranscript,
@@ -2264,6 +2258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// hardcoded `"pending"`) so a turn's started/completed/failed events
     /// correlate, plus a phase timeline to localise where a turn stalls.
     private var dropTurnTrace: DropTurnTrace?
+    private var dropTurnMode: TranscriptionMode = .fast
     /// Fires if a turn never reaches a terminal event — the infinite-hang case
     /// that otherwise emits NOTHING (only an orphaned `voice_turn_started`,
     /// because `run()` never returns so `handleStreamingResult` never runs).
@@ -2289,13 +2284,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let dropTurnWatchdogTimeout: Duration = .seconds(640)
 
     private func startDropTurnTelemetry() {
+        dropTurnMode = UserPreferencesCache.shared.currentMode
+        AppState.shared.dropDeliveryFailureMessage = nil
         lastDropPartial = ""
         let trace = DropTurnTrace()
         dropTurnTrace = trace
         dropActivity.begin(reason: "drop voice turn")
         armDropTurnWatchdog(for: trace)
         armDropMaxHoldTimer(for: trace)
-        os_log("drop turn %{public}@ started", log: Self.log, type: .info, trace.turnId)
+        os_log("drop turn %{public}@ started mode=%{public}@", log: Self.log, type: .info, trace.turnId, dropTurnMode.rawValue)
     }
 
     private func completeDropTurnTelemetry() {
@@ -2833,104 +2830,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Picks the deliverable for a Drop turn after cleanup ran. Pure so the
-    /// empty-output fallback is unit-tested without the AppKit delegate.
-    ///
-    /// WHY: a degenerate cleanup reply can be whitespace-only, and
-    /// `DropFillerFilter` can also strip cleanup output to "". Feeding "" into
-    /// the paste tail makes `deliverDropTranscript`'s `guard !text.isEmpty`
-    /// early-return, silently eating the paste with no error surfaced
-    /// (ROO-257). So when cleanup is empty/whitespace but the raw transcript
-    /// is not, fall back to the raw transcript — guaranteeing a non-empty
-    /// deliverable whenever the dictation was non-empty. Both-empty stays "" (the downstream guard still idles
-    /// without pasting). Mirrors the thrown-error fallback that already pastes
-    /// the raw transcript. See docs/decisions/2026-06-26-local-llm.md.
-    static func dropDeliverableAfterCleanup(cleaned: String, rawTranscript: String) -> String {
-        if cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return rawTranscript
-        }
-        return cleaned
-    }
-
-    /// Reuses the post-processing + paste tail of the async pipeline so
-    /// the streaming flow's user-visible UX (formatting, paste, telemetry)
-    /// matches the recorder fallback path.
-    private func runPostProcessAndPaste(rawText: String, targetApp: String?, targetPID: pid_t?) async {
-        guard let postProcessor else {
-            FileHandle.standardError.write(Data("✗ post processor not initialised\n".utf8))
-            failDropTurnTelemetry(reason: "clients_unavailable")
-            AppState.shared.phase = .idle
-            return
-        }
-
-        AppState.shared.phase = .verifying
+    /// Fast bypasses the LLM; Smart either delivers processed text or retains
+    /// its transcript for Retry. The mode belongs to the take, not the current
+    /// preference when an asynchronous provider happens to finish.
+    /// WHY: .project-docs/decisions/2026-10-19-strict-drop-modes.md
+    @discardableResult
+    private func runPostProcessAndPaste(
+        rawText: String, targetApp: String?, targetPID: pid_t?,
+        mode retryMode: TranscriptionMode? = nil
+    ) async -> Bool {
+        let mode = retryMode ?? dropTurnMode
+        let generation = streamingSetupGeneration
+        let policy = DropOutputPolicy(mode: mode)
         let processStartedAt = ProcessInfo.processInfo.systemUptime
         let turnID = dropTurnTrace?.turnId ?? "unavailable"
-        let prefs = PrivacyPreferences.shared
+        var contextMs = 0
+        var cleanupStartedAt = processStartedAt
+        if mode == .smart { AppState.shared.phase = .verifying }
         do {
-            let appContext = await AXContextReader.snapshot(forPID: targetPID)
-            guard !Task.isCancelled else { return }
-            let contextReadyAt = ProcessInfo.processInfo.systemUptime
-            let final = try await postProcessor.process(
-                rawText,
-                targetApp: targetApp,
-                appContext: appContext,
-                screenshot: nil,
-                language: prefs.selectedLanguage?.code,
-                outputLanguage: outputLanguageCodeForDrop(),
-                transcriptionMode: UserPreferencesCache.shared.currentMode.rawValue
-            )
-            guard !Task.isCancelled else { return }
-            let cleanupReadyAt = ProcessInfo.processInfo.systemUptime
-            let processMs = Int((cleanupReadyAt - processStartedAt) * 1000)
-            os_log(
-                "process ok turn_id=%{public}@ chars=%{public}d latency_ms=%{public}d ax_ms=%{public}d cleanup_ms=%{public}d",
-                log: Self.log, type: .info, turnID,
-                final.count, processMs, Int((contextReadyAt - processStartedAt) * 1000),
-                Int((cleanupReadyAt - contextReadyAt) * 1000)
-            )
-
-            // WHY: docs/decisions/2026-06-26-local-llm.md — a degenerate
-            // cleanup reply can be empty/whitespace; without this guard the
-            // empty string flows into the paste tail and is silently swallowed
-            // (deliverDropTranscript's `guard !text.isEmpty`). Fall back to
-            // the raw transcript so a non-empty dictation is never silently
-            // dropped (ROO-257).
-            let deliverable = Self.dropDeliverableAfterCleanup(
-                cleaned: final, rawTranscript: rawText
-            )
-            if deliverable != final {
-                // ROO-257: the raw-fallback is a band-aid, not a happy path. It
-                // should fire rarely; a FREQUENT fire means cleanup is still
-                // returning empty (e.g. a model or prompt regression), so this
-                // is a bug signal worth surfacing.
-                // Flag only — never the transcript text (invariant #2).
-                os_log(
-                    "cleanup_raw_fallback: empty cleanup, pasting raw transcript",
-                    log: Self.log, type: .error
+            let final = try await policy.prepare(
+                rawText: rawText, fillerTerms: FillerTermsStore().terms()
+            ) { [self] in
+                guard let postProcessor else { throw OpenRouterLLMError.notConfigured }
+                let appContext = await AXContextReader.snapshot(forPID: targetPID)
+                try Task.checkCancellation()
+                cleanupStartedAt = ProcessInfo.processInfo.systemUptime
+                contextMs = Int((cleanupStartedAt - processStartedAt) * 1000)
+                let prefs = PrivacyPreferences.shared
+                return try await postProcessor.process(
+                    rawText, targetApp: targetApp, appContext: appContext,
+                    screenshot: nil, language: prefs.selectedLanguage?.code,
+                    outputLanguage: outputLanguageCodeForDrop(mode: mode),
+                    transcriptionMode: mode.rawValue
                 )
             }
-            await finishDropDelivery(
-                text: deliverable,
-                rawTranscript: rawText,
-                targetApp: targetApp
-            )
-        } catch {
-            guard !Task.isCancelled else { return }
-            // No usable LLM route (none chosen / missing key / endpoint
-            // down): degrade to the fast output — the raw transcript
-            // (filler stripping still applies in `finishDropDelivery`). The
-            // paste never fails because cleanup is unavailable.
+            guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }
             os_log(
-                "post-process unavailable; pasting raw transcript: %{public}@",
-                log: Self.log, type: .error,
-                Self.pipelineErrorDescription(error)
+                "drop processing ok turn_id=%{public}@ mode=%{public}@ chars=%{public}d latency_ms=%{public}d ax_ms=%{public}d cleanup_ms=%{public}d",
+                log: Self.log, type: .info, turnID, mode.rawValue, final.count,
+                Int((ProcessInfo.processInfo.systemUptime - processStartedAt) * 1000), contextMs,
+                mode == .smart ? Int((ProcessInfo.processInfo.systemUptime - cleanupStartedAt) * 1000) : 0
             )
-            await finishDropDelivery(
-                text: rawText,
-                rawTranscript: rawText,
-                targetApp: targetApp
+            await finishDropDelivery(text: final, rawTranscript: rawText, targetApp: targetApp)
+            return true
+        } catch {
+            guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }
+            pendingProcessingRetry = DropProcessingRetry(
+                rawText: rawText, targetApp: targetApp, targetPID: targetPID, mode: mode
             )
+            let message = DropOutputPolicy.failureMessage(for: error)
+            AppState.shared.dropDeliveryFailureMessage = message
+            failDropTurnTelemetry(reason: "smart_cleanup_failed")
+            AppState.shared.phase = .deliveryFailed
+            os_log("drop cleanup failed: %{public}@", log: Self.log, type: .error, message)
+            if DropOutputPolicy.requiresConfiguration(for: error) {
+                openSettingsWindow(tab: .models)
+            }
+            return false
         }
     }
 
@@ -2974,12 +2930,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// side-effect wiring — phase, paste tail, retry-state, telemetry, and
     /// raw-partial salvage — is defined in exactly one place.
     private func dropDeliverySink(targetApp: String?, targetPID: pid_t?) -> DropBatchRecoverySink {
-        DropBatchRecoverySink(
+        let mode = dropTurnMode
+        let generation = streamingSetupGeneration
+        return DropBatchRecoverySink(
             setPhase: { AppState.shared.phase = $0 },
             deliver: { [weak self] raw in
-                guard let self else { return }
-                await self.runPostProcessAndPaste(
-                    rawText: raw, targetApp: targetApp, targetPID: targetPID
+                guard let self, generation == self.streamingSetupGeneration else { return false }
+                return await self.runPostProcessAndPaste(
+                    rawText: raw, targetApp: targetApp, targetPID: targetPID, mode: mode
                 )
             },
             retainForRetry: { [weak self] pcm in
@@ -2991,8 +2949,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             },
             clearPendingRetry: { [weak self] in
-                self?.pendingRetryPCM = nil
-                self?.pendingRetryTarget = nil
+                guard let self, generation == self.streamingSetupGeneration else { return }
+                self.pendingRetryPCM = nil
+                self.pendingRetryTarget = nil
             },
             failTelemetry: { [weak self] reason in
                 self?.failDropTurnTelemetry(reason: reason)
@@ -3008,7 +2967,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let pasted = await self.autoPasteEngine.paste(raw)
                 if pasted { AppState.shared.phase = .idle }
                 return pasted
-            }
+            },
+            requiresProcessingForPartial: mode == .smart
         )
     }
 
@@ -3077,6 +3037,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func discardPendingRetry() {
         pendingRetryPCM = nil
         pendingRetryTarget = nil
+        pendingProcessingRetry = nil
+        AppState.shared.dropDeliveryFailureMessage = nil
     }
 
     /// Manual retry for a total-offline degraded Drop (Task 7). Re-runs
@@ -3094,6 +3056,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// in-flight phase (routed to `.noop`), never the escapable terminal: that
     /// closes the window where a stale retry could paste over a new turn.
     func retryPendingDelivery() {
+        if let pending = pendingProcessingRetry {
+            guard !retryInFlight else { return }
+            retryInFlight = true
+            AppState.shared.phase = .verifying
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.runPostProcessAndPaste(
+                    rawText: pending.rawText, targetApp: pending.targetApp,
+                    targetPID: pending.targetPID, mode: pending.mode
+                )
+                self.retryInFlight = false
+            }
+            return
+        }
         guard Self.shouldBeginRetry(inFlight: retryInFlight, hasPendingAudio: pendingRetryPCM != nil),
               let pcm = pendingRetryPCM else { return }
         let target = pendingRetryTarget
@@ -3128,10 +3104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     struct DropBatchRecoverySink {
         /// Move the on-screen Drop phase (`.finishing`, `.idle`, `.deliveryFailed`).
         var setPhase: (AppPhase) -> Void
-        /// Deliver a non-empty recovered transcript through the normal
-        /// post-process + paste tail. Async because the production tail awaits
-        /// the cleanup LLM + paste.
-        var deliver: (String) async -> Void
+        /// Deliver through the mode's processing + paste tail. False means the
+        /// processing owner retained the transcript and displayed a retryable
+        /// failure; recovery must not clear it or substitute a raw partial.
+        var deliver: (String) async -> Bool
         /// Retain the captured PCM for a manual Retry (total-offline only).
         var retainForRetry: (Data) -> Void
         /// Clear any armed retry (on a successful delivery).
@@ -3145,6 +3121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// through to `.deliveryFailed` (retain for retry) instead of silently
         /// losing the dictation.
         var pasteRaw: (String) async -> Bool = { _ in true }
+        /// A Smart take must process recovered partials before delivering them.
+        var requiresProcessingForPartial: Bool = false
     }
 
     /// Pure-ish state machine for degraded-Drop batch recovery (Task 7). Given
@@ -3191,7 +3169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 sink.setPhase(.idle)
                 return
             }
-            await sink.deliver(raw)
+            guard await sink.deliver(raw) else { return }
             // Delivery owns the phase tail (it ends at .idle); a successful
             // (re)delivery clears any armed retry from a prior failed attempt.
             sink.clearPendingRetry()
@@ -3299,7 +3277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log: log, type: .info,
                 text.count, latencyMs
             )
-            await sink.deliver(text)                                   // rung 1
+            guard await sink.deliver(text) else { return }             // rung 1
             // A successful realtime delivery clears any retry armed by a PRIOR
             // failed take (parity with the batch rung), so stale PCM never
             // lingers across turns.
@@ -3335,6 +3313,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The manual Retry armed by `retainForRetry` (.deliveryFailed →
             // `recoverViaBatch`) re-transcribes the retained PCM in batch.
             if !streamingTranscriptIsEmpty(lastPartial) {
+                if sink.requiresProcessingForPartial {
+                    if await sink.deliver(lastPartial) { sink.clearPendingRetry() }
+                    return
+                }
                 let pasted = await sink.pasteRaw(lastPartial)          // rung 3
                 if pasted {
                     sink.failTelemetry("salvaged_partial")
@@ -3382,7 +3364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await salvageOrFail(batchFailureReason: "degraded_empty", armRetry: false)
                 return
             }
-            await sink.deliver(raw)
+            guard await sink.deliver(raw) else { return }
             sink.clearPendingRetry()
         } catch is BatchRecoveryTimeout {
             // Stuck decode cut by the deadline: same salvage ladder, but the

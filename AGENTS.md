@@ -41,9 +41,16 @@ Voice flow (Drop / dictation):
        finished=true also completes it. The 10s watchdog remains the backstop.
        -> cleanup (PostProcessor, level = LLMIsolationLevel):
             OpenRouter with the user's key / custom OpenAI-compatible endpoint
-            (Ollama, LM Studio, vLLM) / none (raw transcript + Filler
-            stripping). An unconfigured route, including the retired Local
-            one, degrades to the no-LLM output; the paste never fails on it.
+            (Ollama, LM Studio, vLLM). The mode is captured at take start:
+            Fast bypasses the LLM; Smart requires processed text and never
+            silently pastes raw speech after a cleanup error or empty result.
+            Smart failures retain the transcript in memory and show Retry with
+            the original mode and target; configuration errors open Models.
+            Full, batch-recovered and partial transcripts use the same rule.
+            A new take discards the old retry. The island observes persisted
+            mode changes from every control. The cleanup provider mark appears
+            only while processing; paste shows “pasting…” without a provider. WHY:
+            .project-docs/decisions/2026-10-19-strict-drop-modes.md
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting

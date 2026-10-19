@@ -23,6 +23,7 @@ final class DropBatchRecoveryTests: XCTestCase {
         var failureReasons: [String] = []
         var retainedAudio: Data?
         var clearedPending = false
+        var processingSucceeds = true
 
         func sink() -> AppDelegate.DropBatchRecoverySink {
             AppDelegate.DropBatchRecoverySink(
@@ -31,8 +32,14 @@ final class DropBatchRecoveryTests: XCTestCase {
                 // `finishDropDelivery`) ends the turn at `.idle`; mirror that
                 // here so a successful recovery's phase sequence is realistic.
                 deliver: { [weak self] text in
-                    self?.delivered.append(text)
-                    self?.phases.append(.idle)
+                    guard let self else { return false }
+                    guard self.processingSucceeds else {
+                        self.phases.append(.deliveryFailed)
+                        return false
+                    }
+                    self.delivered.append(text)
+                    self.phases.append(.idle)
+                    return true
                 },
                 retainForRetry: { [weak self] pcm in self?.retainedAudio = pcm },
                 clearPendingRetry: { [weak self] in self?.clearedPending = true },
@@ -42,6 +49,18 @@ final class DropBatchRecoveryTests: XCTestCase {
     }
 
     private let samplePCM = Data([0x01, 0x02, 0x03, 0x04])
+
+    func testProcessingFailureDoesNotClearRetryOrReportDelivery() async {
+        let rec = Recorder()
+        rec.processingSucceeds = false
+        await AppDelegate.runBatchRecovery(
+            pcm: samplePCM, hasBatchTranscriber: true,
+            transcribe: { _ in "Recovered speech" }, sink: rec.sink()
+        )
+        XCTAssertTrue(rec.delivered.isEmpty)
+        XCTAssertFalse(rec.clearedPending)
+        XCTAssertEqual(rec.phases, [.finishing, .deliveryFailed])
+    }
 
     // MARK: - success
 
