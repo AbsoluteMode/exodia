@@ -137,13 +137,14 @@ does not depend on Apple Developer membership.
     `6bf29a5e…`), `TeamIdentifier=not set`.
   - `codesign --verify --strict --all-architectures -R` passes for B against
     A's requirement and for A against B's.
-  - Controls fail: the installed ad-hoc 2.2.13 against A's requirement, and
-    B against the same requirement with another certificate hash.
+  - Controls fail: the installed ad-hoc app (a local 2.2.13 candidate)
+    against A's requirement, and B against the same requirement with another
+    certificate hash.
 - `--installation-check` on A and B, arm64 and x86_64 (Rosetta): ok. dyld
   loads the certificate-signed frameworks under the hardened runtime without
   a team ID.
-- The Security calls Sparkle 2.9.1 makes, run read-only against the
-  installed ad-hoc 2.2.13, A and B: both candidates are valid with all
+- The Security calls Sparkle 2.9.1 makes, run read-only against that
+  installed ad-hoc app, A and B: both candidates are valid with all
   architectures and with nested code; A does not satisfy the installed app's
   requirement (-67050), so that one update is accepted on EdDSA; B satisfies
   A's requirement, so later updates also pass the requirement match.
