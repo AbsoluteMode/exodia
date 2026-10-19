@@ -52,6 +52,20 @@ struct SettingsNotificationsView: View {
                                     )
                                     .accessibilityHidden(true)
                                 } trailing: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("Notification type")
+                                            .font(.system(size: 9.5))
+                                            .foregroundStyle(MacSettingsTheme.text2)
+                                        Picker("Notification type", selection: Binding(
+                                            get: { supervisor.sources.first(where: { $0.id == source.id })?.script.presentation ?? .card },
+                                            set: { supervisor.setPresentation($0, id: source.id) }
+                                        )) {
+                                            Text("Large").tag(NotifyPresentation.card)
+                                            Text("Small").tag(NotifyPresentation.icon)
+                                        }
+                                        .labelsHidden().pickerStyle(.menu).frame(width: 95)
+                                        .accessibilityLabel("Notification type for \(source.script.name)")
+                                    }
                                     MacSwitch(isOn: Binding(
                                         get: { supervisor.sources.first(where: { $0.id == source.id })?.script.enabled ?? false },
                                         set: { supervisor.setEnabled($0, id: source.id) }
@@ -63,7 +77,7 @@ struct SettingsNotificationsView: View {
                     }
                 }
 
-                Text("Sources run while Whytap is open. Turning one off keeps its setup and notification history, so you can enable it again anytime.")
+                Text("Large notifications show a card to the left of the island. Small notifications show only an icon in its right wing. Sources run while Whytap is open; turning one off keeps its setup and history.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(MacSettingsTheme.text2)
             }

@@ -537,7 +537,29 @@ quit. A perl stdin-EOF guard (NotifyProcess.parentWatchGuardScript) leads each
 group and ends it when the app is killed or crashes. WHY:
 .project-docs/decisions/2026-10-19-notify-parent-death-guard.md. No backend or built-in provider connectors are restored. The original
 IslandNotificationPill / nonactivating panel sits left of the island, using the
-selected screen and screenshot-protection preference. Hover pauses dismissal.
+selected screen and screenshot-protection preference. `presentation: "icon"`
+adds a text-free Small notification over the compact right wing, above hints,
+meetings and music. It shakes for up to 5 seconds, expires after 5 by default,
+grows slightly and reveals a close button on hover. Hover pauses dismissal and
+shake; Reduce Motion disables shake/scale. Consecutive Small events form a counted stack, newest first,
+with up to three visible icons that fan apart on hover for individual links.
+New arrivals restart the stack lifetime; expiry dismisses the entire stack.
+Large cards separate bursts and retain queue order; presentation is bounded to
+33 events. Notify retains 500 history events. Unseen events show a red dot only
+on Notify in hover/search until history is opened, including after a restart.
+Clear All confirms clearing history and current events, preserving sources.
+Card remains the backwards-compatible
+default (8 seconds). Settings -> Notifications offers Notification type (Large /
+Small) per source; events can override it. Icon titles may be omitted and use
+the source name for history/VoiceOver. Existing Codex chats support click-through
+via codex://threads/<thread-id>; no query/fragment or new-chat/action links.
+Claude Desktop local Code sessions accept
+claude://code/continue?session=local_<uuid>, restricted to that one parameter.
+Native sessionId is resolved from Desktop metadata by the hook's cliSessionId;
+it is not the hook ID with a prefix. Other Claude routes are rejected.
+Bundled logos include codex and claude-code. Actual agent event sources are
+configured separately. WHY:
+.project-docs/decisions/2026-10-19-icon-notifications.md. Hover pauses dismissal.
 LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
 presentation in history; unreadable history is never silently overwritten. Notify
 opens through hover search, Toolbox and existing positional hotkeys without

@@ -26,7 +26,7 @@ struct IslandHoverPanelControl: View {
     /// Light the Record icon while a meeting recording is active.
     var isRecording: Bool = false
     /// When `true`, a small red unread dot sits on the tile's top-trailing
-    /// edge. Used by the "Notifs" tile to flag unread notifications.
+    /// edge. Used only by the Notify tile to flag unread notifications.
     var showsDot: Bool = false
     /// Hide the title while preserving the capsule footprint.
     var showsLabel: Bool = true
@@ -115,6 +115,7 @@ struct IslandHoverPanelControl: View {
             .animation(.easeOut(duration: 0.22), value: hovering)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenAccessibilityLabel)
+            .accessibilityValue(showsDot ? "New notifications" : "")
             .accessibilityAddTraits(.isButton)
     }
 

@@ -2441,6 +2441,7 @@ private struct IslandDropModeHoverPanel: View {
     @ObservedObject var caseViewModel: CaseViewModel
     /// The Brightness capsule shows the current level or Extra.
     @ObservedObject var brightness: ScreenBrightnessController = .shared
+    @ObservedObject var notificationHub: LocalNotificationHub = .shared
     let onToggle: () -> Void
     let onOpenSettings: () -> Void
     let onOpenHotkeys: () -> Void
@@ -2834,6 +2835,10 @@ private struct IslandDropModeHoverPanel: View {
                                             .lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
+                                    if tool == .notifs && notificationHub.unreadCount > 0 {
+                                        Circle().fill(.red).frame(width: 6, height: 6)
+                                            .accessibilityHidden(true)
+                                    }
                                 }
                                 .foregroundStyle(.white.opacity(0.9))
                                 .padding(.horizontal, 10)
@@ -2856,6 +2861,8 @@ private struct IslandDropModeHoverPanel: View {
                             )
                             .accessibilityLabel(info.title)
                             .accessibilityHint(info.description)
+                            .accessibilityValue(tool == .notifs && notificationHub.unreadCount > 0
+                                ? "\(notificationHub.unreadCount) new notifications" : "")
                             .id(index)
                             .onHover { inside in
                                 if inside {
@@ -2920,6 +2927,7 @@ private struct IslandDropModeHoverPanel: View {
             accessibilityLabel: presentation.title,
             isDimmed: tool == .outputLang && mode == .fast,
             isRecording: tool == .meetingRecord && meetingRecordingActive,
+            showsDot: tool == .notifs && notificationHub.unreadCount > 0,
             width: IslandHoverControlsLayout.tileWidth(panelWidth: panelWidth),
             action: { activateTool(tool) }
         )
