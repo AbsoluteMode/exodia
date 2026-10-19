@@ -198,4 +198,4 @@ Supersedes the "Keep the batch seam" bullet of
 [remove on-device models](2026-10-18-remove-local-models.md): production no
 longer binds `UnavailableBatchTranscriber`. No superseding decision is known.
 
-2026-10-18, branch `claude/happy-bun-dc6186`.
+2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/29.
