@@ -430,7 +430,6 @@ final class CaseViewModel: ObservableObject {
         payload.secrets[secretIndex].projectID = CaseProject.generalID
         payload.secrets[secretIndex].updatedAt = timestamp
         payload.projects[projectIndex].updatedAt = timestamp
-        Self.dissolveSmallGroups(in: &payload, at: timestamp)
 
         try save(payload)
         refreshRows()
@@ -518,7 +517,6 @@ final class CaseViewModel: ObservableObject {
         var payload = try unlockedPayload()
         payload.secrets.removeAll { $0.id == secretID }
         payload.values.removeAll { $0.secretID == secretID }
-        Self.dissolveSmallGroups(in: &payload, at: now())
         try save(payload)
         refreshRows()
         scheduleIdleLock()
@@ -552,22 +550,11 @@ final class CaseViewModel: ObservableObject {
         }
     }
 
-    /// Interim group model: a non-General project is shown as a group, and a
-    /// group with fewer than two keys falls back into General.
+    /// Interim group model: a non-General project is shown as a group. A
+    /// project is never removed implicitly; it keeps its name and description
+    /// even with 0 or 1 keys.
     private static func isGroupProject(_ id: UUID, in payload: CaseVaultPayload) -> Bool {
         id != CaseProject.generalID && payload.projects.contains { $0.id == id }
-    }
-
-    private static func dissolveSmallGroups(in payload: inout CaseVaultPayload, at timestamp: Date) {
-        let small = Set(payload.projects.map(\.id).filter { id in
-            id != CaseProject.generalID && payload.secrets.filter { $0.projectID == id }.count < 2
-        })
-        guard !small.isEmpty else { return }
-        for index in payload.secrets.indices where small.contains(payload.secrets[index].projectID) {
-            payload.secrets[index].projectID = CaseProject.generalID
-            payload.secrets[index].updatedAt = timestamp
-        }
-        payload.projects.removeAll { small.contains($0.id) }
     }
 
     private func validatedGroupName(_ name: String) throws -> String {

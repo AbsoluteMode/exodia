@@ -386,7 +386,7 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertEqual(scheduler.scheduled[1].delaySeconds, 15 * 60)
     }
 
-    func test_delete_secret_clears_orphaned_group_id_when_group_dissolves() async throws {
+    func test_delete_secret_keeps_the_project_with_its_remaining_key() async throws {
         let groupID = UUID()
         let deletedID = UUID()
         let survivingID = UUID()
@@ -407,9 +407,29 @@ final class CaseViewModelTests: XCTestCase {
 
         try vm.deleteSecret(deletedID)
 
-        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID])
-        XCTAssertEqual(env.savedPayload?.secrets.first(where: { $0.id == survivingID })?.projectID, CaseProject.generalID)
-        XCTAssertEqual(vm.rows, [CaseDisplayRow(id: survivingID, kind: .secret, displayName: "AWS_SECRET_KEY")])
+        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID, groupID])
+        XCTAssertEqual(env.savedPayload?.secrets.first(where: { $0.id == survivingID })?.projectID, groupID)
+        XCTAssertEqual(vm.rows, [CaseDisplayRow(id: groupID, kind: .group, displayName: "AWS")])
+    }
+
+    func test_migrated_one_key_project_survives_unrelated_delete() async throws {
+        let gid = UUID(), keptID = UUID(), looseID = UUID()
+        let plaintext = try CaseVaultMigrationTests.v1Plaintext(
+            secrets: [(keptID, "SOLO_KEY", gid), (looseID, "LOOSE_KEY", nil)],
+            groups: [(gid, "solo project", [keptID])], at: Date(timeIntervalSince1970: 1_500_000_000))
+        let migrated = try CaseVaultMigration.decodePayload(plaintext)
+        XCTAssertEqual(migrated.projects.map(\.id), [CaseProject.generalID, gid])
+
+        let env = TestCaseEnvironment(payload: migrated)
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        try vm.deleteSecret(looseID)
+
+        let saved = try XCTUnwrap(env.savedPayload)
+        XCTAssertEqual(saved.project(gid)?.name, "solo project")
+        XCTAssertEqual(saved.secrets.first { $0.id == keptID }?.projectID, gid)
+        XCTAssertEqual(env.store.payload.project(gid)?.name, "solo project")
+        XCTAssertEqual(env.store.payload.secrets.map(\.id), [keptID])
     }
 
     func test_create_group_from_dragged_keys() async throws {
@@ -465,7 +485,7 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertEqual(env.savedPayload?.secrets.filter { $0.projectID == groupID }.count, 3)
     }
 
-    func test_drag_out_of_two_key_group_collapses_group() async throws {
+    func test_drag_out_of_two_key_group_keeps_the_project() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
@@ -480,9 +500,9 @@ final class CaseViewModelTests: XCTestCase {
 
         try vm.removeSecretFromGroup(firstID)
 
-        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID])
+        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID, groupID])
         XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == firstID }?.projectID, CaseProject.generalID)
-        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == secondID }?.projectID, CaseProject.generalID)
+        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == secondID }?.projectID, groupID)
     }
 
     func test_copy_all_group_emits_env_payload_and_updates_usage() async throws {
