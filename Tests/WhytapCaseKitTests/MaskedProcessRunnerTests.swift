@@ -99,6 +99,25 @@ final class MaskedProcessRunnerTests: XCTestCase {
                                                      command: "echo $TOK; exit 5", cwd: dir.path)])
     }
 
+    func test_options_after_the_command_belong_to_the_command() {
+        let broker = FakeBroker(.denied(reason: .userDeclined))
+        _ = capture { o, e in
+            CaseCommand(client: broker, cwd: dir, stdout: o, stderr: e)
+                .run(args: ["case", "run", "grep", "--only", "x", "f", "-p", "y"])
+        }
+        // The broker is asked for every key of no project, not for key "x" of project "y".
+        XCTAssertEqual(broker.requests, [.resolveRun(project: nil, only: nil,
+                                                     command: "grep --only x f -p y", cwd: dir.path)])
+
+        let scoped = FakeBroker(.denied(reason: .userDeclined))
+        _ = capture { o, e in
+            CaseCommand(client: scoped, cwd: dir, stdout: o, stderr: e)
+                .run(args: ["case", "run", "-p", "alpha", "--only", "TOK", "make", "-p", "--", "x"])
+        }
+        XCTAssertEqual(scoped.requests, [.resolveRun(project: "alpha", only: ["TOK"],
+                                                     command: "make -p -- x", cwd: dir.path)])
+    }
+
     func test_ls_prints_table_without_values() {
         let broker = FakeBroker(.keys([CaseKeyInfo(name: "API_KEY", description: "main", project: "alpha")]))
         let (code, out, _) = capture { o, e in

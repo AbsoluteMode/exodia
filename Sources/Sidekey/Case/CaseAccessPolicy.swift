@@ -16,7 +16,9 @@ enum CaseAccessDecision: Equatable {
 }
 
 /// In-memory "allow for N minutes" grants, keyed by (app, project).
-/// Never persisted: a relaunch or lock forgets them.
+/// Never persisted: quitting or relaunching Whytap forgets them. The panel's
+/// idle lock does not, because the broker keeps serving while the panel is
+/// locked; a grant simply runs out at its time.
 struct CaseTimedGrants: Equatable {
     private var expiry: [Key: Date] = [:]
 

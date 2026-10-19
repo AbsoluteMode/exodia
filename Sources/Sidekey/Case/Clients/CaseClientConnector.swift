@@ -7,9 +7,11 @@ protocol CaseClientConnector {
     /// The client is present on this Mac (used to offer it for registration).
     func isInstalled() -> Bool
     /// Points the client's `case` MCP entry at `helperPath case mcp`;
-    /// replaces an existing entry so a moved app is picked up.
+    /// replaces an existing entry of ours so a moved app is picked up. Another
+    /// server named `case` is never replaced: `.foreignEntry` is thrown.
     func install(helperPath: String) throws
-    /// Removes the entry; nothing to remove is not an error.
+    /// Removes our entry; nothing to remove (or only another server named
+    /// `case`) is not an error and changes nothing.
     func uninstall() throws
 }
 
@@ -20,6 +22,8 @@ enum CaseClientConnectorError: Error, Equatable {
     /// Path relative to HOME; the file is left as it was.
     case unreadableConfig(String)
     case writeFailed(String)
+    /// The client already has an MCP server named `case` that is not Whytap's.
+    case foreignEntry
 
     var userMessage: String {
         switch self {
@@ -28,6 +32,8 @@ enum CaseClientConnectorError: Error, Equatable {
         case .timedOut: return "команда не ответила вовремя"
         case .unreadableConfig(let path): return "не удалось прочитать ~/\(path)"
         case .writeFailed(let path): return "не удалось записать ~/\(path)"
+        case .foreignEntry:
+            return "уже есть другой MCP-сервер с именем «case»; переименуйте или удалите его и подключите снова"
         }
     }
 }
@@ -83,11 +89,30 @@ enum CaseClientEnvironment {
     }
 }
 
+/// Whether an existing `case` MCP entry is Whytap's: the `whytap` helper of
+/// any install or flavor (`whytap`, `whytap-beta`, `whytap-dev`) serving
+/// `case mcp`. Anything else belongs to someone else and is left alone.
+enum CaseMCPEntryOwnership {
+    static func isOurs(command: String?, args: [String]?) -> Bool {
+        guard let command, !command.isEmpty else { return false }
+        let name = URL(fileURLWithPath: command).lastPathComponent
+        guard name == "whytap" || name.hasPrefix("whytap-") else { return false }
+        return args == nil || args == ["case", "mcp"]
+    }
+
+    static func isOurs(_ entry: Any?) -> Bool {
+        guard let entry = entry as? [String: Any] else { return false }
+        return isOurs(command: entry["command"] as? String, args: entry["args"] as? [String])
+    }
+}
+
 // MARK: JSON config files
 
 /// Reads and rewrites a user's JSON config, keeping every other key. A file
 /// that is not a JSON object is never overwritten. The previous file is kept
-/// as `<name>.bak`; the new one replaces it atomically.
+/// as `<name>.bak`; the new one replaces it atomically. A symlinked config (a
+/// dotfiles repo) is written through the link: the real file is replaced and
+/// backed up next to itself, the link stays, permission bits are kept.
 struct CaseJSONConfigFile {
     let home: URL
     /// Relative to HOME, e.g. `.cursor/mcp.json`.
@@ -110,16 +135,18 @@ struct CaseJSONConfigFile {
             let data = try JSONSerialization.data(withJSONObject: object,
                                                   options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let existing = fm.fileExists(atPath: url.path)
-            let mode = (try? fm.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue
+            // WHY: docs/decisions/2026-10-19-case-secrets-broker.md (symlink-safe config writes)
+            let target = url.resolvingSymlinksInPath()
+            let existing = fm.fileExists(atPath: target.path)
+            let mode = (try? fm.attributesOfItem(atPath: target.path)[.posixPermissions] as? NSNumber)?.intValue
             if existing {
-                let backup = url.appendingPathExtension("bak")
+                let backup = target.appendingPathExtension("bak")
                 try? fm.removeItem(at: backup)
-                try fm.copyItem(at: url, to: backup)
+                try fm.copyItem(at: target, to: backup)
             }
-            try (data + Data("\n".utf8)).write(to: url, options: .atomic)
+            try (data + Data("\n".utf8)).write(to: target, options: .atomic)
             if let mode {
-                try? fm.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+                try? fm.setAttributes([.posixPermissions: mode], ofItemAtPath: target.path)
             }
         } catch let error as CaseClientConnectorError {
             throw error
@@ -152,18 +179,21 @@ struct ClaudeCodeCaseConnector: CaseClientConnector {
 
     func isInstalled() -> Bool { locate() != nil }
 
-    /// A user-scope `case` entry exists in `~/.claude.json` (read only).
-    func isConfigured() -> Bool {
+    private var userEntry: Any? {
         let file = CaseJSONConfigFile(home: home, relativePath: ".claude.json")
-        let servers = (try? file.read())??["mcpServers"] as? [String: Any]
-        return servers?["case"] != nil
+        return ((try? file.read())??["mcpServers"] as? [String: Any])?["case"]
     }
+
+    /// A user-scope `case` entry exists in `~/.claude.json` (read only).
+    func isConfigured() -> Bool { userEntry != nil }
 
     func install(helperPath: String) throws {
         // Read settings first: a broken file stops before anything changes.
         let current = try settings.read()
+        let entry = userEntry
+        if entry != nil, !CaseMCPEntryOwnership.isOurs(entry) { throw CaseClientConnectorError.foreignEntry }
         let claude = try binary()
-        if isConfigured() {
+        if entry != nil {
             try check(run(claude, ["mcp", "remove", "-s", "user", "case"]))
         }
         try check(run(claude, ["mcp", "add", "-s", "user", "case", "--", helperPath, "case", "mcp"]))
@@ -171,7 +201,7 @@ struct ClaudeCodeCaseConnector: CaseClientConnector {
     }
 
     func uninstall() throws {
-        if isConfigured() {
+        if CaseMCPEntryOwnership.isOurs(userEntry) {
             try check(run(try binary(), ["mcp", "remove", "-s", "user", "case"]))
         }
         try updateSandbox(try settings.read(), adding: false)
@@ -232,25 +262,64 @@ struct CodexCaseConnector: CaseClientConnector {
 
     func isInstalled() -> Bool { locate() != nil }
 
-    func isConfigured() -> Bool {
+    func isConfigured() -> Bool { caseSection() != nil }
+
+    /// The `[mcp_servers.case]` table's `command` (nil inside when absent), or
+    /// nil when there is no such table. A minimal line reader: codex writes
+    /// `command = "…"` as a basic or literal string.
+    private func caseSection() -> (command: String?, args: [String]?)? {
         let url = home.appendingPathComponent(".codex/config.toml")
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return false }
-        return text.split(separator: "\n").contains { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return trimmed == "[mcp_servers.case]" || trimmed == "[mcp_servers.\"case\"]"
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        var inside = false
+        var found = false
+        var command: String?
+        var args: [String]?
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") {
+                inside = line == "[mcp_servers.case]" || line == "[mcp_servers.\"case\"]"
+                found = found || inside
+                continue
+            }
+            guard inside, let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
+            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            if key == "command" { command = Self.unquote(value) }
+            if key == "args" { args = Self.stringArray(value) }
         }
+        return found ? (command, args) : nil
+    }
+
+    private static func unquote(_ value: String) -> String? {
+        guard value.count >= 2, let first = value.first, first == "\"" || first == "'",
+              value.last == first else { return nil }
+        return String(value.dropFirst().dropLast())
+    }
+
+    private static func stringArray(_ value: String) -> [String]? {
+        guard value.hasPrefix("["), value.hasSuffix("]") else { return nil }
+        let inner = value.dropFirst().dropLast()
+        let items = inner.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let strings = items.compactMap(unquote)
+        return strings.count == items.count ? strings : nil
     }
 
     func install(helperPath: String) throws {
+        let section = caseSection()
+        if let section, !CaseMCPEntryOwnership.isOurs(command: section.command, args: section.args) {
+            throw CaseClientConnectorError.foreignEntry
+        }
         guard let codex = locate() else { throw CaseClientConnectorError.clientNotFound }
-        if isConfigured() {
+        if section != nil {
             try check(run(codex, ["mcp", "remove", "case"]))
         }
         try check(run(codex, ["mcp", "add", "case", "--", helperPath, "case", "mcp"]))
     }
 
     func uninstall() throws {
-        guard isConfigured() else { return }
+        guard let section = caseSection(),
+              CaseMCPEntryOwnership.isOurs(command: section.command, args: section.args)
+        else { return }
         guard let codex = locate() else { throw CaseClientConnectorError.clientNotFound }
         try check(run(codex, ["mcp", "remove", "case"]))
     }
@@ -293,6 +362,9 @@ struct CursorCaseConnector: CaseClientConnector {
     func install(helperPath: String) throws {
         var root = try file.read() ?? [:]
         var servers = root["mcpServers"] as? [String: Any] ?? [:]
+        if let existing = servers["case"], !CaseMCPEntryOwnership.isOurs(existing) {
+            throw CaseClientConnectorError.foreignEntry
+        }
         servers["case"] = ["command": helperPath, "args": ["case", "mcp"]]
         root["mcpServers"] = servers
         try file.write(root)
@@ -301,7 +373,7 @@ struct CursorCaseConnector: CaseClientConnector {
     func uninstall() throws {
         guard var root = try file.read(),
               var servers = root["mcpServers"] as? [String: Any],
-              servers["case"] != nil
+              CaseMCPEntryOwnership.isOurs(servers["case"])
         else { return }
         servers["case"] = nil
         root["mcpServers"] = servers

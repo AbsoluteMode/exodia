@@ -89,6 +89,31 @@ final class CaseCallerResolverTests: XCTestCase {
         XCTAssertEqual(resolver.resolve(peerPID: 900), .human)
     }
 
+    func test_terminal_app_name_for_the_touch_id_reason() {
+        let fake = FakeProcessInspector()
+        fake.add(900, parent: 800, helper)
+        fake.add(800, parent: 700, "/bin/zsh")
+        fake.add(700, parent: 600, "/usr/bin/login", id: "com.apple.login")
+        fake.add(600, parent: 1, "/Applications/iTerm.app/Contents/MacOS/iTerm2",
+                 team: "H7V7XYVQ7D", id: "com.googlecode.iterm2")
+        let resolver = CaseCallerResolver(inspector: fake, registrations: [], builtInOpenCodePIDs: [])
+        XCTAssertEqual(resolver.terminalAppName(peerPID: 900), "iTerm2", "nearest app ancestor, not the shell")
+
+        // sshd / launchd job / cron: the walk reaches pid 1 without a terminal app.
+        let headless = FakeProcessInspector()
+        headless.add(900, parent: 800, helper)
+        headless.add(800, parent: 700, "/bin/zsh")
+        headless.add(700, parent: 1, "/usr/sbin/sshd")
+        XCTAssertNil(CaseCallerResolver(inspector: headless, registrations: [], builtInOpenCodePIDs: [])
+            .terminalAppName(peerPID: 900))
+
+        // A broken chain is unknown too.
+        let broken = FakeProcessInspector()
+        broken.add(900, parent: 800, helper)
+        XCTAssertNil(CaseCallerResolver(inspector: broken, registrations: [], builtInOpenCodePIDs: [])
+            .terminalAppName(peerPID: 900))
+    }
+
     func test_path_registration_matches_ancestor() {
         // npm OpenCode is ad-hoc signed (identifier a.out, no team): path only.
         let opencode = "/Users/maxim/.npm-global/lib/node_modules/opencode-ai/node_modules/opencode-darwin-arm64/bin/opencode"

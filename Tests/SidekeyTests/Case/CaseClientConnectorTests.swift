@@ -140,7 +140,8 @@ final class CaseClientConnectorTests: XCTestCase {
         try connector.uninstall()
         XCTAssertTrue(runner.calls.isEmpty, "nothing to remove")
 
-        try write(#"{"mcpServers":{"case":{},"other":{}}}"#, to: home.appendingPathComponent(".claude.json"))
+        try write(#"{"mcpServers":{"case":{"command":"/old/whytap","args":["case","mcp"]},"other":{}}}"#,
+                  to: home.appendingPathComponent(".claude.json"))
         try connector.uninstall()
         XCTAssertEqual(runner.calls.map(\.arguments), [["mcp", "remove", "-s", "user", "case"]])
     }
@@ -222,6 +223,89 @@ final class CaseClientConnectorTests: XCTestCase {
             XCTAssertEqual(error as? CaseClientConnectorError, .unreadableConfig(".cursor/mcp.json"))
         }
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "[1, 2")
+    }
+
+    // MARK: Foreign `case` entries
+
+    func test_foreign_case_entry_is_reported_not_replaced() throws {
+        let home = try temporaryHome()
+        let runner = FakeCommandRunner()
+        let foreign = #"{"mcpServers":{"case":{"command":"npx","args":["-y","case-mcp-server"]}}}"#
+
+        // Claude Code
+        try write(foreign, to: home.appendingPathComponent(".claude.json"))
+        let claude = ClaudeCodeCaseConnector(home: home, socketPath: socket, runner: runner,
+                                             locate: { URL(fileURLWithPath: "/usr/local/bin/claude") })
+        XCTAssertThrowsError(try claude.install(helperPath: helper)) { error in
+            XCTAssertEqual(error as? CaseClientConnectorError, .foreignEntry)
+            XCTAssertTrue((error as? CaseClientConnectorError)?.userMessage.contains("case") ?? false)
+        }
+        try claude.uninstall()
+        XCTAssertTrue(runner.calls.isEmpty, "another server named case is never removed or replaced")
+
+        // Codex
+        let codexConfig = home.appendingPathComponent(".codex/config.toml")
+        try write("[mcp_servers.case]\ncommand = \"uvx\"\nargs = [\"case-server\"]\n", to: codexConfig)
+        let codex = CodexCaseConnector(home: home, runner: runner, locate: { URL(fileURLWithPath: "/usr/local/bin/codex") })
+        XCTAssertThrowsError(try codex.install(helperPath: helper)) { error in
+            XCTAssertEqual(error as? CaseClientConnectorError, .foreignEntry)
+        }
+        try codex.uninstall()
+        XCTAssertTrue(runner.calls.isEmpty)
+
+        // Cursor
+        let cursorURL = home.appendingPathComponent(".cursor/mcp.json")
+        try write(foreign, to: cursorURL)
+        let cursor = CursorCaseConnector(home: home, appInstalled: { true })
+        XCTAssertThrowsError(try cursor.install(helperPath: helper)) { error in
+            XCTAssertEqual(error as? CaseClientConnectorError, .foreignEntry)
+        }
+        try cursor.uninstall()
+        XCTAssertEqual(try String(contentsOf: cursorURL, encoding: .utf8), foreign, "left exactly as it was")
+    }
+
+    func test_our_entry_from_a_moved_or_other_flavor_app_is_replaced() throws {
+        let home = try temporaryHome()
+        let cursorURL = home.appendingPathComponent(".cursor/mcp.json")
+        try write(#"{"mcpServers":{"case":{"command":"/Users/x/Downloads/Whytap.app/Contents/Helpers/whytap","args":["case","mcp"]}}}"#,
+                  to: cursorURL)
+        try CursorCaseConnector(home: home, appInstalled: { true }).install(helperPath: helper)
+        let entry = try XCTUnwrap((try readJSON(cursorURL)["mcpServers"] as? [String: Any])?["case"] as? [String: Any])
+        XCTAssertEqual(entry["command"] as? String, helper)
+
+        let codexConfig = home.appendingPathComponent(".codex/config.toml")
+        try write("[mcp_servers.case]\ncommand = \"/Applications/Whytap Beta.app/Contents/Helpers/whytap\"\nargs = [\"case\", \"mcp\"]\n",
+                  to: codexConfig)
+        let runner = FakeCommandRunner()
+        try CodexCaseConnector(home: home, runner: runner, locate: { URL(fileURLWithPath: "/usr/local/bin/codex") })
+            .install(helperPath: helper)
+        XCTAssertEqual(runner.calls.map(\.arguments).first, ["mcp", "remove", "case"])
+    }
+
+    // MARK: Symlinked configs
+
+    func test_symlinked_config_is_written_through_the_link() throws {
+        let home = try temporaryHome()
+        // ~/.cursor/mcp.json -> ~/dotfiles/cursor-mcp.json (a dotfiles repo)
+        let real = home.appendingPathComponent("dotfiles/cursor-mcp.json")
+        let original = #"{"mcpServers":{"github":{"command":"gh-mcp"}}}"#
+        try write(original, to: real)
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: real.path)
+        let link = home.appendingPathComponent(".cursor/mcp.json")
+        try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+        try CursorCaseConnector(home: home, appInstalled: { true }).install(helperPath: helper)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: link.path)
+        XCTAssertEqual(attributes[.type] as? FileAttributeType, .typeSymbolicLink, "the link stays a link")
+        let servers = try XCTUnwrap(try readJSON(real)["mcpServers"] as? [String: Any])
+        XCTAssertNotNil(servers["case"], "the real file got the entry")
+        XCTAssertNotNil(servers["github"])
+        let mode = try FileManager.default.attributesOfItem(atPath: real.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o640, "permission bits kept")
+        // The backup holds the real file's content, next to the real file.
+        XCTAssertEqual(try String(contentsOf: real.appendingPathExtension("bak"), encoding: .utf8), original)
     }
 
     // MARK: CLI installer

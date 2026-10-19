@@ -40,6 +40,12 @@ protocol CaseApprovalPresenting: AnyObject {
 
 protocol CaseCallerResolving {
     func resolve(peerPID: pid_t, registrations: [CaseAppRegistration]) -> CaseCaller
+    /// The terminal app a person runs the helper from, for the Touch ID text.
+    func terminalAppName(peerPID: pid_t) -> String?
+}
+
+extension CaseCallerResolving {
+    func terminalAppName(peerPID: pid_t) -> String? { nil }
 }
 
 /// Builds a `CaseCallerResolver` per request so registration changes apply
@@ -54,6 +60,11 @@ struct CaseSystemCallerResolver: CaseCallerResolving {
             builtInOpenCodePIDs: builtInOpenCodePIDs()
         ).resolve(peerPID: peerPID)
     }
+
+    func terminalAppName(peerPID: pid_t) -> String? {
+        CaseCallerResolver(inspector: inspector, registrations: [], builtInOpenCodePIDs: [])
+            .terminalAppName(peerPID: peerPID)
+    }
 }
 
 // MARK: Broker
@@ -64,8 +75,24 @@ struct CaseSystemCallerResolver: CaseCallerResolving {
 /// exactly the requested project's keys. Never logs requests, names or values.
 @MainActor
 final class CaseBroker {
-    static func touchIDRunReason(projectName: String) -> String {
-        "Терминал хочет использовать ключи проекта \(projectName)"
+    static let commandSummaryLimit = 80
+    static let unknownOrigin = "неизвестный процесс"
+
+    /// The Touch ID text for a person's `whytap case run`: which terminal app
+    /// asks, for which command and project. Never contains a value.
+    static func touchIDRunReason(projectName: String, command: String, origin: String?) -> String {
+        let who = origin ?? unknownOrigin.prefix(1).uppercased() + unknownOrigin.dropFirst()
+        return "\(who) хочет запустить «\(commandSummary(command))» с ключами проекта \(projectName)"
+    }
+
+    /// The command on one line with whitespace collapsed, at most 80
+    /// characters, shortened in the middle so its start and end stay visible.
+    static func commandSummary(_ command: String) -> String {
+        let line = command.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard line.count > commandSummaryLimit else { return line }
+        let tail = (commandSummaryLimit - 1) / 2
+        let head = commandSummaryLimit - 1 - tail
+        return String(line.prefix(head)) + "…" + String(line.suffix(tail))
     }
 
     static let touchIDListReason = "Терминал хочет посмотреть ключи Case"
@@ -121,7 +148,8 @@ final class CaseBroker {
 
         case let .resolveRun(projectName, only, command, _):
             return await resolveRun(
-                caller: caller, payload: payload, projectName: projectName, only: only, command: command)
+                caller: caller, peerPID: peerPID, payload: payload, projectName: projectName, only: only,
+                command: command)
         }
     }
 
@@ -134,6 +162,7 @@ final class CaseBroker {
 
     private func resolveRun(
         caller: CaseCaller,
+        peerPID: pid_t,
         payload: CaseVaultPayload,
         projectName: String?,
         only: [String]?,
@@ -163,7 +192,10 @@ final class CaseBroker {
         case .deny(let reason):
             return .denied(reason: reason)
         case .askTouchID:
-            guard await authenticate(reason: Self.touchIDRunReason(projectName: target.project.name)) else {
+            let reason = Self.touchIDRunReason(
+                projectName: target.project.name, command: command,
+                origin: resolver.terminalAppName(peerPID: peerPID))
+            guard await authenticate(reason: reason) else {
                 return .denied(reason: .touchIDFailed)
             }
         case .askApproval:

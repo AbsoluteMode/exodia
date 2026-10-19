@@ -47,6 +47,25 @@ struct CaseCallerResolver {
         return .human
     }
 
+    /// For the Touch ID text: the executable name of the nearest ancestor that
+    /// is an app (Terminal, iTerm2, Ghostty…), or nil when the walk reaches
+    /// pid 1, breaks or loops without one (ssh, a launchd job, cron).
+    func terminalAppName(peerPID: pid_t) -> String? {
+        guard peerPID > 1, let peer = inspector.info(pid: peerPID) else { return nil }
+        var visited: Set<pid_t> = [peerPID]
+        var next = peer.parentPID
+        for _ in 0..<Self.maxHops {
+            guard next > 1, !visited.contains(next), let process = inspector.info(pid: next) else { return nil }
+            visited.insert(next)
+            if process.executablePath.contains(".app/Contents/") {
+                let name = URL(fileURLWithPath: process.executablePath).lastPathComponent
+                return name.isEmpty ? nil : name
+            }
+            next = process.parentPID
+        }
+        return nil
+    }
+
     // MARK: Matching
 
     private func match(pid: pid_t) -> CaseCaller? {

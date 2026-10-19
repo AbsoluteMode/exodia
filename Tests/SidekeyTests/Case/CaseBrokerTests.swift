@@ -76,7 +76,9 @@ private struct BrokerKeys: CaseVaultKeyProviding {
 
 private final class ScriptedResolver: CaseCallerResolving {
     var caller: CaseCaller
+    var origin: String?
     private(set) var calls = 0
+    func terminalAppName(peerPID: pid_t) -> String? { origin }
     init(_ caller: CaseCaller) { self.caller = caller }
     func resolve(peerPID: pid_t, registrations: [CaseAppRegistration]) -> CaseCaller {
         calls += 1
@@ -288,12 +290,31 @@ final class CaseBrokerTests: XCTestCase {
 
         let allowed = await run(project: "alpha", only: ["DB_URL"])
         XCTAssertEqual(allowed, .runEnvironment(["DB_URL": "fake-alpha-db-0002"]))
-        XCTAssertEqual(auth.reasons, ["Терминал хочет использовать ключи проекта alpha"])
+        XCTAssertEqual(auth.reasons, ["Неизвестный процесс хочет запустить «npm test» с ключами проекта alpha"])
 
         auth.fails = true
         let refused = await run(project: "alpha")
         XCTAssertEqual(refused, .denied(reason: .touchIDFailed))
         XCTAssertTrue(approvals.requests.isEmpty)
+    }
+
+    func test_touch_id_reason_names_the_terminal_and_a_one_line_command() async {
+        makeBroker(caller: .human)
+        resolver.origin = "iTerm2"
+        let long = "docker compose -f deploy/compose.prod.yml run --rm migrate\n  && ./scripts/seed.sh --env production --force"
+        _ = await run(project: "alpha", only: ["DB_URL"], command: long)
+        let reason = try? XCTUnwrap(auth.reasons.first)
+        XCTAssertEqual(reason?.hasPrefix("iTerm2 хочет запустить «"), true)
+        XCTAssertEqual(reason?.hasSuffix("» с ключами проекта alpha"), true)
+        let shown = CaseBroker.commandSummary(long)
+        XCTAssertEqual(shown.count, 80)
+        XCTAssertFalse(shown.contains("\n"))
+        XCTAssertTrue(shown.hasPrefix("docker compose"))
+        XCTAssertTrue(shown.hasSuffix("--force"))
+        XCTAssertTrue(shown.contains("…"))
+        XCTAssertEqual(CaseBroker.commandSummary("  npm   test "), "npm test")
+        // Values never get into the reason: only the command text the caller typed.
+        XCTAssertFalse(auth.reasons.joined().contains("fake-alpha-db-0002"))
     }
 
     func test_human_listing_requires_touch_id() async {
