@@ -288,6 +288,8 @@ final class IslandDropModeControlTests: XCTestCase {
             (.meetingRecord, "Record", .toggleMeetingRecord),
             (.monitor, "Monitor", .openPanel(.monitor)),
             (.brightness, "Display", .openPanel(.brightness)),
+            (.translate, "Translate", .openTranslate),
+            (.subtitles, "Subtitles", .openSubtitles),
             (.quit, "Quit", .quit),
             (.settings, "Settings", .openSettings)
         ]

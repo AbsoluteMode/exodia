@@ -184,6 +184,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
             AssignItem(feature: .meetings, account: .soniox, model: "stt-async-v5"),
             AssignItem(feature: .agentVoice, account: .soniox, model: "stt-rt-v5"),
             AssignItem(feature: .voiceSearch, account: .soniox, model: "stt-rt-v5"),
+            AssignItem(feature: .subtitlesAudio, account: .soniox, model: "stt-rt-v5"),
         ])
     }
 
@@ -418,7 +419,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
         XCTAssertNil(env.makeViewModel().unsetBanner)
 
         env.addKey(.soniox)
-        XCTAssertEqual(env.makeViewModel().unsetBanner, "8 features have no model")
+        XCTAssertEqual(env.makeViewModel().unsetBanner, "10 features have no model")
 
         for feature in AIFeature.allCases where feature != .dropFast {
             env.routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: feature)
@@ -501,9 +502,11 @@ final class APIAndModelsProviderTests: XCTestCase {
         let (vm, _, _, _) = try make()
         let features = vm.groups.flatMap { $0.rows.map(\.feature) }
         XCTAssertEqual(features.sorted { $0.rawValue < $1.rawValue }, AIFeature.allCases.sorted { $0.rawValue < $1.rawValue })
-        XCTAssertEqual(vm.groups.map(\.title), ["Drop Fast", "Drop Smart", "Meetings", "Agent", "Agent voice", "Voice search"])
+        XCTAssertEqual(vm.groups.map(\.title), ["Drop Fast", "Drop Smart", "Meetings", "Agent", "Agent voice", "Voice search", "Translation", "Subtitles audio"])
         XCTAssertEqual(vm.groups.first { $0.title == "Drop Smart" }?.rows.map(\.feature), [.dropSmart, .dropSmartCleanup])
         XCTAssertEqual(vm.groups.first { $0.title == "Meetings" }?.rows.map(\.feature), [.meetings, .meetingNotes])
+        XCTAssertEqual(vm.groups.first { $0.title == "Translation" }?.rows.map(\.feature), [.translation])
+        XCTAssertEqual(vm.groups.first { $0.title == "Subtitles audio" }?.rows.map(\.feature), [.subtitlesAudio])
     }
 
     func test_only_openrouter_rows_offer_a_provider_and_auto_is_the_default() throws {

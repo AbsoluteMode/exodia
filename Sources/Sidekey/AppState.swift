@@ -35,6 +35,8 @@ final class AppState: ObservableObject {
     /// Fixed, privacy-safe copy for a retained Smart-processing failure.
     @Published var dropDeliveryFailureMessage: String?
     @Published var agentPhase: AgentPhase = .idle
+    /// Visible translation work (including unsent input) or an active session.
+    @Published var translationActive = false
 
     /// Dynamic Island idle-hide visibility, mirrored from `IslandIdleController`
     /// by `AppDelegate` (controller-owns-logic / AppState-mirrors-for-view).

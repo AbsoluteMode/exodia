@@ -186,6 +186,24 @@ Agent flow (OpenCode + OpenRouter or Anthropic):
   paths, dashboard/collector contracts and source-kit discovery to the runtime
   agent, so creating a dashboard does not require finding the source checkout.
 
+Translation tools:
+  Translate and Subtitles are optional catalog action tools opening one native
+  floating window (TranslationWindowController). TextTranslationModel cancels
+  edited/replaced requests and rejects late results; automatic text direction
+  is RU to EN for Cyrillic input and EN to RU otherwise. Explicit targets use
+  AppLanguage. LiveSubtitleModel captures only CoreAudio system audio, never
+  the microphone, on the subtitlesAudio real-time route; final-only phrases
+  go to the translation LLM route shared with typed text. Both routes start
+  unset; never borrow Drop/Agent routes or migrate standalone credentials.
+  Eight queued phrases, forty retained lines and a bounded audio relay stop
+  visibly on backlog. Stop uses opt-in CoreAudio terminal EOF after capture
+  quiescence and an IO queue barrier, then naturally drains the relay before
+  provider endInput. Ordinary meeting/VAD stop keeps streams reusable; hardware
+  start/stop/route restart are serialized. Cancel, window close and sleep
+  tear down capture and requests. No audio/history is saved. Visible translation work
+  (including unsent input) or an active session blocks app-initiated update restart. Guide: docs/translation.md. WHY:
+  .project-docs/decisions/2026-10-20-translation-tools.md
+
 Meeting Notes:
   Always-on detector (mic activity + CoreAudio system audio + FluidAudio
   Silero VAD, the only remaining Core ML model, downloaded from Hugging Face
@@ -803,7 +821,7 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 4. **Sparkle never shows a window.** Scheduled checks only show the island
    pill; nothing downloads before the user clicks. Requested downloads may
    install and relaunch while idle. Active meeting recording, dictation or
-   agent work defers app-initiated relaunch; becoming idle alone does not restart
+   agent work or translation defers app-initiated relaunch; becoming idle alone does not restart
    it. Ready-stage "Later" cancels the current installation via .skip. A prepared
    download may apply on ordinary user-initiated app quit unless cancelled.
    Do not promise installation after arbitrary process termination. No manual

@@ -42,6 +42,8 @@ struct FeatureGroup: Equatable, Identifiable {
         ("Agent", [.agent]),
         ("Agent voice", [.agentVoice]),
         ("Voice search", [.voiceSearch]),
+        ("Translation", [.translation]),
+        ("Subtitles audio", [.subtitlesAudio]),
     ]
 }
 

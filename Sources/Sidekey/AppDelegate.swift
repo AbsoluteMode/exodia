@@ -55,6 +55,7 @@ enum DropCancelRoute: Equatable {
 // Sources/SidekeyApp via `SidekeyAppMain.run()` → `AppDelegate.main()`.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var translationWindowController: TranslationWindowController?
     private let recorder = AudioRecorder()
     /// Batch transcriber for the Drop recorder fallback, the resilient-delivery
     /// batch rung and Retry: the provider, model and key of the route the take
@@ -474,6 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        translationWindowController?.cancel()
         BackupViewModel.shared.stop()
         // Remove the Extra overlay; Extra never changes the backlight.
         ScreenBrightnessController.shared.shutdown()
@@ -829,6 +831,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func pauseRuntimeForSleep() {
         os_log("power_will_sleep pausing runtime", log: Self.log, type: .info)
         stopPermissionRecoveryPolling()
+        translationWindowController?.cancel()
 
         recorder.cancel()
         // Same reasoning as `applicationWillTerminate` — sleep should not
@@ -1115,6 +1118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     panel: .monitor, token: self.hoverPanelRequestToken
                 )
             },
+            openTranslate: { [weak self] in self?.openTranslation(.text) },
+            openSubtitles: { [weak self] in self?.openTranslation(.subtitles) },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .apiAndModels)
             },
@@ -1649,13 +1654,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // invisible and reads as "the hotkey does nothing".
             let newMode = IslandPanel.shared.actions.toggleDropMode()
             AppState.shared.publishDropModeHotkeyToggle(newMode)
-        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .quit:
+        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .openTranslate, .openSubtitles, .quit:
             // Action/navigate tools open their own surfaces (window / toggle)
             // instantly — forcing the drawer open here would flash an empty
             // Hover for ~4s (Stage 3 review fix). Run the effect directly
             // without requesting expansion.
             effect.invoke(on: IslandPanel.shared.actions)
         }
+    }
+
+    private func openTranslation(_ mode: TranslationWindowController.Mode) {
+        registerIslandHotkeyActivity()
+        if translationWindowController == nil {
+            translationWindowController = TranslationWindowController(
+                openSettings: { [weak self] feature in self?.openSettingsWindow(tab: .apiAndModels, feature: feature) },
+                activityChanged: { AppState.shared.translationActive = $0 }
+            )
+        }
+        translationWindowController?.show(mode)
     }
 
     private func openHelpWindow() {

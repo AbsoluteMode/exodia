@@ -31,6 +31,8 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
     case agent
     case agentVoice
     case voiceSearch
+    case translation
+    case subtitlesAudio
 
     var title: String {
         switch self {
@@ -42,14 +44,16 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
         case .agent: return "Agent"
         case .agentVoice: return "Agent voice"
         case .voiceSearch: return "Voice search"
+        case .translation: return "Translation"
+        case .subtitlesAudio: return "Subtitles audio"
         }
     }
 
     var mode: AIFeatureMode {
         switch self {
-        case .dropFast, .dropSmart, .agentVoice, .voiceSearch: return .realtime
+        case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio: return .realtime
         case .meetings: return .recorded
-        case .dropSmartCleanup, .meetingNotes: return .llm
+        case .dropSmartCleanup, .meetingNotes, .translation: return .llm
         case .agent: return .llmWithTools
         }
     }

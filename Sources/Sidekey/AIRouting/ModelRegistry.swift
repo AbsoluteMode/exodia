@@ -54,30 +54,30 @@ extension ModelRegistry {
         switch kind {
         case .soniox:
             switch feature {
-            case .dropFast, .dropSmart, .agentVoice, .voiceSearch: return "stt-rt-v5"
+            case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio: return "stt-rt-v5"
             case .meetings: return sonioxRecordedModel
-            case .dropSmartCleanup, .meetingNotes, .agent: return nil
+            case .dropSmartCleanup, .meetingNotes, .translation, .agent: return nil
             }
         case .deepgram:
             switch feature {
-            case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .meetings: return "nova-3"
-            case .dropSmartCleanup, .meetingNotes, .agent: return nil
+            case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio, .meetings: return "nova-3"
+            case .dropSmartCleanup, .meetingNotes, .translation, .agent: return nil
             }
         case .elevenLabs:
             switch feature {
-            case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .meetings: return "scribe_v2_realtime"
-            case .dropSmartCleanup, .meetingNotes, .agent: return nil
+            case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio, .meetings: return "scribe_v2_realtime"
+            case .dropSmartCleanup, .meetingNotes, .translation, .agent: return nil
             }
         case .openRouter:
             switch feature {
-            case .dropSmartCleanup, .meetingNotes: return "google/gemini-3.8-flash"
+            case .dropSmartCleanup, .meetingNotes, .translation: return "google/gemini-3.8-flash"
             case .agent: return "anthropic/claude-sonnet-5.5"
-            case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch: return nil
+            case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
             }
         case .anthropic:
             switch feature {
             case .agent: return anthropicAgentModel
-            case .dropFast, .dropSmart, .dropSmartCleanup, .meetings, .meetingNotes, .agentVoice, .voiceSearch: return nil
+            case .dropFast, .dropSmart, .dropSmartCleanup, .translation, .meetings, .meetingNotes, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
             }
         case .openAICompatible:
             return nil

@@ -26,6 +26,7 @@ All paths below start at `Sources/Sidekey/`.
 | Action closures and preview defaults | `DynamicIsland/IslandActions.swift` |
 | Capsule icon/title/status and explicit feedback | `DynamicIsland/IslandHoverPanelControl.swift`, `DynamicIsland/HoverToolPresentation.swift` |
 | Inline views, shared three-column geometry and bounded scrolling | `DynamicIsland/IslandView.swift`, `DynamicIsland/IslandDropModeControl.swift` |
+| Floating text translation and system-audio subtitles | `Translation/TranslationWindowController.swift`, `Translation/LiveSubtitleModel.swift` |
 | Inline monitoring, picker and refresh lifecycle | `Monitor/MonitorHoverPanel.swift`, `Monitor/MonitorStore.swift` |
 | Inline brightness strip, backlight, Extra overlay and battery time | `Brightness/IslandBrightnessStrip.swift`, `Brightness/ScreenBrightnessController.swift`, `Brightness/BrightnessBoostOverlay.swift`, `Brightness/BatteryRuntime.swift` |
 | Brightness keys (event tap, steps, Extra gesture) and the Settings -> Toolbox -> Display pane | `Brightness/BrightnessKeys.swift`, `Brightness/BrightnessKeyEventTap.swift`, `Brightness/ToolboxDisplayPane.swift` |

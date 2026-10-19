@@ -113,3 +113,12 @@ Restore verifies a whole archive before applying selected groups on the next
 normal launch. Imported jobs and executable configurations do not run on their
 own. External clipboard file originals, SSH keys and credentials managed by
 other applications are not silently copied. [Coverage and recovery](backup.md).
+
+## Translation and subtitles
+
+Translate sends submitted text to the chosen Translation LLM route. Subtitles
+sends system audio to the chosen Subtitles audio speech provider and committed
+phrases to the Translation route. It never opens the microphone or creates a
+recording/meeting note. Forty recent lines stay in memory, with no automatic
+history saved. Copy writes translations only after a click. Window close,
+Cancel and sleep stop capture and cancel requests. See [translation](translation.md).

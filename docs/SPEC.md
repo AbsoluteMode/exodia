@@ -305,7 +305,7 @@ Anthropic (только для строки Agent) и свои OpenAI-compatible
 к провайдеру. *Models* — по строке на функцию, в строке выпадашка «Provider · model-id» на
 каждый её маршрут: Drop Fast (real-time), Drop Smart (real-time + LLM очистки),
 Meetings (recorded + LLM заметок), Agent (LLM with tools), Agent voice и Voice
-search (real-time). Над карточкой — тихая пометка «N features have no model ·
+search (real-time), Translation (LLM) и Subtitles audio (real-time). Над карточкой — тихая пометка «N features have no model ·
 Show»: Show прокручивает к ним и на пару секунд подсвечивает их строки. В меню модели — только ID модели (короткая
 пометка вроде «with speakers» в той же строке); неподходящие модели не
 показываются. У Deepgram в меню только модели, обновлённые за последние 12
@@ -479,3 +479,14 @@ Auto-detect когда пользователь на голосовой встр
 После approval спецификации — план разработки M1 ([writing-plans](docs/plans/) с stages и validation gates).
 
 Самый правильный первый stage M1: **Voice Actions on Selection** + **Edit last insert** + **Voice Clipboard**. Это даст вау быстрее чем любая другая фича.
+
+## Переводчик и субтитры
+
+Translate и Subtitles доступны через поиск инструментов и каталог Toolbox;
+у каждого настраивается именованная горячая клавиша. Открывают общее плавающее
+окно: текстовый перевод с автонаправлением RU↔EN или явным языком и перевод
+системного звука в субтитры с оригиналом. Translation — общая выбранная LLM;
+Subtitles audio — отдельная выбранная STT. Оба новых маршрута изначально Not set.
+Очереди ограничены; отставание останавливает захват с ошибкой. Закрытие окна,
+Cancel и сон завершают захват и запросы; Stop ждёт финальные фразы. Записи и
+автоматической истории нет. Подробности и ограничения: [translation.md](translation.md).
