@@ -21,17 +21,20 @@ struct APIAndModelsView: View {
     /// add-key window gives way to it without a second presentation.
     private enum ActiveSheet: Equatable {
         case addKey
+        case hints
         case otherModel(AIFeature)
     }
 
     private enum PresentedSheet: Identifiable {
         case addKey
+        case hints
         case otherModel(AIFeature)
         case assign(AssignProposal)
 
         var id: String {
             switch self {
             case .addKey: return "addKey"
+            case .hints: return "hints"
             case .otherModel(let feature): return "otherModel.\(feature.rawValue)"
             case .assign: return "assign"
             }
@@ -43,8 +46,14 @@ struct APIAndModelsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     keysBlock
-                    APIHintsView { activeSheet = .addKey }
                     modelsBlock
+                    Button("API hints") { activeSheet = .hints }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .help("Free provider credits and included usage")
+                        .accessibilityLabel("API hints: free credits and included usage")
+                        .fixedSize()
+                        .padding(.leading, 6)
                 }
                 .padding(.horizontal, 24).padding(.vertical, 22)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -61,6 +70,12 @@ struct APIAndModelsView: View {
             switch sheet {
             case .addKey:
                 AddKeySheet(viewModel: viewModel) { activeSheet = nil }
+            case .hints:
+                APIHintsView(
+                    onAddKey: { activeSheet = .addKey },
+                    onClose: { activeSheet = nil }
+                )
+                .frame(width: 700, height: 700)
             case .otherModel(let feature):
                 OtherModelSheet(
                     feature: feature,
@@ -85,6 +100,7 @@ struct APIAndModelsView: View {
                 if let proposal = viewModel.proposal { return .assign(proposal) }
                 switch activeSheet {
                 case .addKey: return .addKey
+                case .hints: return .hints
                 case .otherModel(let feature): return .otherModel(feature)
                 case nil: return nil
                 }
