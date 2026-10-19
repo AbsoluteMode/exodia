@@ -11,11 +11,11 @@ enum ConfigBackupError: Error, LocalizedError, Equatable {
         switch self {
         case .invalidCode: return "Check your recovery code. Enter every group, including the last one."
         case .cannotUnlock: return "This code could not open the backup. Check the code or choose another backup."
-        case .unsupportedVersion: return "This backup needs a newer version of Exodia. Your settings have not changed."
+        case .unsupportedVersion: return "This backup needs a newer version of Whytap. Your settings have not changed."
         case .invalidArchive: return "This backup is incomplete or damaged. Choose another version."
         case .tooLarge: return "This backup exceeds a supported size limit. Choose a smaller version or another destination."
         case .unsafePath: return "This location cannot be used safely. Choose another folder."
-        case .keyUnavailable: return "Exodia could not access its backup key. Unlock your Mac, or restore with your saved recovery code."
+        case .keyUnavailable: return "Whytap could not access its backup key. Unlock your Mac, or restore with your saved recovery code."
         case .saveFailed: return "The backup could not be saved. Check the folder and available space, then try again."
         case .restoreFailed: return "Settings could not be restored. The previous version has been kept for recovery."
         case .busy: return "Finish recording, dictation and agent work before restoring settings."
@@ -24,19 +24,24 @@ enum ConfigBackupError: Error, LocalizedError, Equatable {
 }
 
 enum ConfigBackupValue: Codable, Equatable {
-    case string(String), bool(Bool), strings([String])
+    case string(String), bool(Bool), strings([String]), data(Data), propertyList(Data)
 
-    var propertyListValue: Any {
+    func propertyListValue() throws -> Any {
         switch self {
         case .string(let value): return value
         case .bool(let value): return value
         case .strings(let value): return value
+        case .data(let value): return value
+        case .propertyList(let data):
+            guard let wrapper = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  wrapper.count == 1, let value = wrapper["value"] else { throw ConfigBackupError.invalidArchive }
+            return value
         }
     }
 }
 
 struct ConfigBackupSnapshot: Codable, Equatable, Identifiable {
-    static let version = 1
+    static let version = 2
     var schemaVersion = Self.version
     var id = UUID()
     var createdAt = Date()
@@ -120,7 +125,7 @@ enum ConfigBackupArchive {
         let snapshot: ConfigBackupSnapshot
         do { snapshot = try JSONDecoder().decode(ConfigBackupSnapshot.self, from: plaintext) }
         catch { throw ConfigBackupError.invalidArchive }
-        guard snapshot.schemaVersion == ConfigBackupSnapshot.version else { throw ConfigBackupError.unsupportedVersion }
+        guard (1...ConfigBackupSnapshot.version).contains(snapshot.schemaVersion) else { throw ConfigBackupError.unsupportedVersion }
         return snapshot
     }
 

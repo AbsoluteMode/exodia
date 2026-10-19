@@ -57,12 +57,15 @@ final class MediaRemoteStreamParsingTests: XCTestCase {
 
     // MARK: - Artwork preservation
 
-    private func info(title: String, artist: String, artwork: NSImage?) -> MediaRemoteTrackInfo {
+    private func info(
+        title: String, artist: String, artwork: NSImage?,
+        bundle: String = "com.apple.Music", album: String? = nil, item: String? = nil
+    ) -> MediaRemoteTrackInfo {
         MediaRemoteTrackInfo(
-            title: title, artist: artist, album: nil, isPlaying: true,
+            title: title, artist: artist, album: album, isPlaying: true,
             durationMicros: nil, elapsedTimeMicros: nil, timestampEpochMicros: nil,
-            playbackRate: 1.0, bundleIdentifier: "com.apple.Music",
-            processIdentifier: 1, artwork: artwork)
+            playbackRate: 1.0, bundleIdentifier: bundle,
+            processIdentifier: 1, contentItemIdentifier: item, artwork: artwork)
     }
 
     func test_artwork_preservedOnSameTrackDowngrade() {
@@ -94,5 +97,17 @@ final class MediaRemoteStreamParsingTests: XCTestCase {
         let incoming = info(title: "T", artist: "A", artwork: nil)
         let merged = MediaRemoteArtworkPreserver.merge(previous: nil, incoming: incoming)
         XCTAssertNil(merged.artwork)
+    }
+
+    func test_artwork_doesNotCrossPlayerAlbumOrItemIdentity() {
+        let image = NSImage(size: NSSize(width: 4, height: 4))
+        let previous = info(title: "T", artist: "A", artwork: image)
+        for incoming in [
+            info(title: "T", artist: "A", artwork: nil, bundle: "com.spotify.client"),
+            info(title: "T", artist: "A", artwork: nil, album: "Other release"),
+            info(title: "T", artist: "A", artwork: nil, item: "spotify:track:other")
+        ] {
+            XCTAssertNil(MediaRemoteArtworkPreserver.merge(previous: previous, incoming: incoming).artwork)
+        }
     }
 }

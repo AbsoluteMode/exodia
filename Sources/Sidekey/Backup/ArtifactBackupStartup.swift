@@ -104,12 +104,12 @@ enum ArtifactBackupStartup {
     private static func progressPanel() -> NSPanel {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 138),
                             styleMask: [.titled], backing: .buffered, defer: false)
-        panel.title = "Exodia · Restore"
+        panel.title = "Whytap · Restore"
         panel.isReleasedWhenClosed = false
         let title = NSTextField(labelWithString: "Restoring your workspace…")
         title.font = .systemFont(ofSize: 15, weight: .semibold)
         title.frame = NSRect(x: 64, y: 82, width: 350, height: 22)
-        let detail = NSTextField(wrappingLabelWithString: "Your previous data is kept for recovery.\nKeep Exodia open until this finishes.")
+        let detail = NSTextField(wrappingLabelWithString: "Your previous data is kept for recovery.\nKeep Whytap open until this finishes.")
         detail.textColor = .secondaryLabelColor
         detail.font = .systemFont(ofSize: 12)
         detail.frame = NSRect(x: 64, y: 32, width: 350, height: 42)

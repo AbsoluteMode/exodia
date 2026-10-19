@@ -64,7 +64,7 @@ def metadata(args: argparse.Namespace) -> dict:
         raise InvalidProvenance("release build must be a positive integer")
     if not CODE_SIGNING.fullmatch(args.code_signing):
         raise InvalidProvenance("code signing must be adhoc, developer-id or certificate:<sha1>")
-    bundle = "Exodia" if args.flavor == "prod" else "Exodia-Beta"
+    bundle = "Whytap" if args.flavor == "prod" else "Whytap-Beta"
     expected_name = f"{bundle}-{args.version}-build{args.build}.dmg"
     if args.archive.name != expected_name:
         raise InvalidProvenance("archive name does not match release version, build and flavor")

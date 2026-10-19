@@ -26,7 +26,7 @@ final class PermissionRepairWindowController: NSWindowController, NSWindowDelega
             backing: .buffered,
             defer: false
         )
-        window.title = "Exodia"
+        window.title = "Whytap"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false

@@ -1754,7 +1754,7 @@ final class MeetingsCoordinator {
             let remainder = seconds % 60
             let gap = minutes > 0 ? "\(minutes)m \(remainder)s" : "\(remainder)s"
             return TranscriptSegment(
-                speaker: "Exodia",
+                speaker: "Whytap",
                 start: marker.afterAudioSeconds,
                 end: marker.afterAudioSeconds,
                 text: "Reconnected after \(gap)"

@@ -137,6 +137,7 @@ struct SettingsOtherView: View {
                         ) {
                             MacSwitch(isOn: googleToggleBinding)
                         }
+
                     }
                 }
 

@@ -2,29 +2,29 @@ import CryptoKit
 import XCTest
 
 final class PackagingRebrandTests: XCTestCase {
-    func test_buildDmgUsesExodiaBundleNamesButKeepsStableIdentity() throws {
+    func test_buildDmgUsesWhytapBundleNamesButKeepsStableIdentity() throws {
         let source = try readProjectFile("scripts/build-dmg.sh")
 
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"BUNDLE_ID="com.rootwise.sidekey.beta""#))
         XCTAssertTrue(source.contains(#"BUNDLE_ID="com.rootwise.sidekey""#))
 
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey-Beta""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey""#))
     }
 
-    func test_userReleaseScriptUsesExodiaArtifactNames() throws {
+    func test_userReleaseScriptUsesWhytapArtifactNames() throws {
         // The release artifact names used to be passed by the GitHub Actions
         // workflow (.github/workflows/release.yml). That CI build is gone —
         // releases are cut locally via scripts/user-release.sh, which now owns
         // the flavor → APP_BUNDLE_NAME mapping. The rebrand invariant
-        // (artifacts are "Exodia", never "Sidekey") lives there now.
+        // (artifacts are "Whytap", never "Sidekey") lives there now.
         let source = try readProjectFile("scripts/user-release.sh")
 
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey""#))
         XCTAssertFalse(source.contains(#"APP_BUNDLE_NAME="Sidekey-Beta""#))
     }
@@ -44,12 +44,12 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("updates.whytap.ai"))
     }
 
-    func test_devRunUsesExodiaDevBundleWithoutDeletingLegacyCopies() throws {
+    func test_devRunUsesWhytapDevBundleWithoutDeletingLegacyCopies() throws {
         let source = try readProjectFile("scripts/dev-run.sh")
 
         XCTAssertTrue(source.contains(#"APP_NAME="Sidekey""#))
         XCTAssertTrue(source.contains(#"EXECUTABLE_NAME="Sidekey""#))
-        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Exodia-Beta-dev.app""#))
+        XCTAssertTrue(source.contains(#"APP_BUNDLE_NAME="Whytap-Beta-dev.app""#))
         XCTAssertFalse(source.contains("stop_conflicting_sidekey_processes"))
     }
 
@@ -215,7 +215,7 @@ final class PackagingRebrandTests: XCTestCase {
             to: temporary.appendingPathComponent("scripts/upload-release.sh"))
         try FileManager.default.copyItem(at: root.appendingPathComponent("Resources/Info.plist.template"),
             to: temporary.appendingPathComponent("Resources/Info.plist.template"))
-        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Exodia-9.9.9-build42.dmg"))
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Whytap-9.9.9-build42.dmg"))
         let marker = temporary.appendingPathComponent("publication-attempt.txt")
         try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
         #!/bin/bash
@@ -231,7 +231,7 @@ final class PackagingRebrandTests: XCTestCase {
         cat > "$staging/appcast.xml" <<'XML'
         <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>
         <sparkle:version>42</sparkle:version><sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
-        <enclosure length="4" url="https://github.com/AbsoluteMode/exodia/releases/download/v9.9.9/Exodia-9.9.9-build42.dmg" />
+        <enclosure length="4" url="https://github.com/AbsoluteMode/whytap/releases/download/v9.9.9/Whytap-9.9.9-build42.dmg" />
         </item></channel></rss>
         XML
         """#)
@@ -240,10 +240,10 @@ final class PackagingRebrandTests: XCTestCase {
         echo unexpected-verification > "$PROBE_MARKER"
         exit 75
         """#)
-        try prepareProvenanceFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg")
+        try prepareProvenanceFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg")
         let result = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
             environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
-                "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
+                "FLAVOR": "prod", "APP_BUNDLE_NAME": "Whytap", "SHORT_VERSION": "9.9.9",
                 "BUILD_VERSION": "42", "PROBE_MARKER": marker.path,
                 "SPARKLE_ED_PRIVATE_KEY": Data(repeating: 0, count: 32).base64EncodedString()])
         XCTAssertNotEqual(result.status, 0, result.output)
@@ -268,7 +268,7 @@ final class PackagingRebrandTests: XCTestCase {
         }
         try FileManager.default.copyItem(at: identity.certificate,
             to: temporary.appendingPathComponent("Resources/community-signing-certificate.pem"))
-        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Exodia-9.9.9-build42.dmg"))
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Whytap-9.9.9-build42.dmg"))
         let marker = temporary.appendingPathComponent("publication-attempt.txt")
         try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
         #!/bin/bash
@@ -278,12 +278,12 @@ final class PackagingRebrandTests: XCTestCase {
         """#)
         try prepareProvenanceFixture(temporary)
         let environment = ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
-                           "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
+                           "FLAVOR": "prod", "APP_BUNDLE_NAME": "Whytap", "SHORT_VERSION": "9.9.9",
                            "BUILD_VERSION": "42", "PROBE_MARKER": marker.path]
 
-        XCTAssertNotEqual(try sealFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg",
+        XCTAssertNotEqual(try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg",
                                           codeSigning: "certificate:ABC", expectSuccess: false), 0)
-        try sealFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg", codeSigning: "adhoc")
+        try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg", codeSigning: "adhoc")
         let adhoc = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
                                   environment: environment)
         XCTAssertNotEqual(adhoc.status, 0)
@@ -291,7 +291,7 @@ final class PackagingRebrandTests: XCTestCase {
 
         // The upload derives the same identity from the committed certificate,
         // passes provenance and stops only at the existing-release guard.
-        try sealFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg",
+        try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg",
                         codeSigning: "certificate:" + identity.sha1)
         let signed = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
                                    environment: environment)
@@ -312,7 +312,7 @@ final class PackagingRebrandTests: XCTestCase {
             try FileManager.default.copyItem(at: root.appendingPathComponent(relative),
                 to: temporary.appendingPathComponent(relative))
         }
-        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Exodia-9.9.9-build42.dmg"))
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Whytap-9.9.9-build42.dmg"))
         let marker = temporary.appendingPathComponent("publication-attempt.txt")
         try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
         #!/bin/bash
@@ -320,14 +320,22 @@ final class PackagingRebrandTests: XCTestCase {
         echo unexpected-upload > "$PROBE_MARKER"
         exit 74
         """#)
-        try prepareProvenanceFixture(temporary, archiveName: "Exodia-9.9.9-build42.dmg")
+        try prepareProvenanceFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg")
         let result = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
             environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
-                "FLAVOR": "prod", "APP_BUNDLE_NAME": "Exodia", "SHORT_VERSION": "9.9.9",
+                "FLAVOR": "prod", "APP_BUNDLE_NAME": "Whytap", "SHORT_VERSION": "9.9.9",
                 "BUILD_VERSION": "42", "PROBE_MARKER": marker.path])
         XCTAssertNotEqual(result.status, 0)
         XCTAssertTrue(result.output.contains("already exists; refusing to overwrite"), result.output)
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), result.output)
+    }
+
+    func test_scriptRunnerDrainsOutputLargerThanPipeCapacity() throws {
+        let result = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+            arguments: ["-c", "import sys; sys.stdout.write('x' * 262144)"],
+            environment: ["PATH": "/usr/bin:/bin"])
+        XCTAssertEqual(result.status, 0)
+        XCTAssertEqual(result.output.utf8.count, 262144)
     }
 
     private func runScript(_ script: URL, arguments: [String] = [],
@@ -346,9 +354,12 @@ final class PackagingRebrandTests: XCTestCase {
         process.standardOutput = output
         process.standardError = output
         try process.run()
+        // Drain while the child runs: waiting first can fill the pipe and
+        // deadlock even an otherwise successful packaging command.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return (process.terminationStatus,
-                String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+                String(decoding: data, as: UTF8.self))
     }
 
     /// Runs build-dmg.sh in a minimal committed checkout whose compiler stub exits 64.
@@ -409,7 +420,7 @@ final class PackagingRebrandTests: XCTestCase {
         let certificate = directory.appendingPathComponent(name + "-certificate.pem")
         let created = try runTool(openssl, arguments: ["req", "-x509", "-newkey", "rsa:2048", "-sha256",
             "-days", "2", "-nodes", "-keyout", key.path, "-out", certificate.path,
-            "-subj", "/CN=Exodia Test Signing " + name,
+            "-subj", "/CN=Whytap Test Signing " + name,
             "-addext", "basicConstraints=critical,CA:false",
             "-addext", "keyUsage=critical,digitalSignature",
             "-addext", "extendedKeyUsage=critical,codeSigning"], environment: ["PATH": "/usr/bin:/bin"])

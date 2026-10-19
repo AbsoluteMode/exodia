@@ -3,9 +3,9 @@ id: exodia-name-2026-10-17
 type: decision
 title: Exodia product and repository name
 summary: Rename the public repository and user-facing product while retaining existing local identity and data locations.
-status: confirmed
+status: stale
 tags: [branding, repository, compatibility, macos]
-canonical_for: [product-name]
+canonical_for: [historical-exodia-name]
 verified_at: 2026-10-17
 sources:
   - type: user-confirmed
@@ -17,10 +17,13 @@ sources:
   - type: repository
     reference: Sources/Sidekey/BuildConfig.swift
     confirmed_at: 2026-10-17
-related: [../project.md]
+related: [../project.md, 2026-10-19-whytap-name.md]
 ---
 
 # Exodia name
+
+Superseded on 2026-10-19 by the [restored Whytap name](2026-10-19-whytap-name.md).
+The text below records the earlier rename and is not current naming guidance.
 
 The product name is Exodia and its public source repository is
 `AbsoluteMode/exodia`. The former public `AbsoluteMode/whytap` repository was

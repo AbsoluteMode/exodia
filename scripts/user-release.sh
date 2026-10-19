@@ -2,7 +2,7 @@
 #
 # user-release.sh - community binary build and Sparkle release pipeline.
 # Default community signing needs no Apple Developer account or notarization:
-# Exodia's self-signed certificate when Resources/community-signing-certificate.pem
+# Whytap's self-signed certificate when Resources/community-signing-certificate.pem
 # is committed, otherwise ad-hoc. Optional Developer-ID mode:
 # EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
@@ -26,7 +26,7 @@
 #   EXODIA_COMMUNITY_SIGNING_KEY PEM key of the community certificate (build step;
 #                                see community-signing-bootstrap.sh)
 #   SPARKLE_ED_PRIVATE_KEY       base64 Ed25519 seed (see sparkle-keys-bootstrap.sh)
-#   GITHUB_REPO                  owner/name (default: AbsoluteMode/exodia)
+#   GITHUB_REPO                  owner/name (default: AbsoluteMode/whytap)
 #   plus an authenticated `gh` CLI.
 #
 # Optional:
@@ -40,7 +40,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
     cat <<'EOF2'
-Exodia community binary pipeline (community-signed DMG -> GitHub -> Sparkle-verified updates).
+Whytap community binary pipeline (community-signed DMG -> GitHub -> Sparkle-verified updates).
 No Apple Developer account or notarization is required by the default mode.
 
 Usage:
@@ -60,7 +60,7 @@ Optional legacy mode EXODIA_LEGACY_SIGNED_RELEASE=1 additionally requires:
   TEAM_ID, ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID, ASC_API_KEY_P8
 
 Optional:
-  GITHUB_REPO         default: AbsoluteMode/exodia
+  GITHUB_REPO         default: AbsoluteMode/whytap
   SHORT_VERSION       default: max(VERSION, live appcast shortVersionString)
   BUILD_VERSION       default: max(live appcast build, installed build) + 1
   RELEASE_NOTES_FILE  markdown body for the GitHub Release
@@ -117,20 +117,20 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 
-GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/exodia}"
+GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/whytap}"
 FLAVOR="${FLAVOR:-prod}"
 case "$FLAVOR" in
     prod)
-        APP_BUNDLE_NAME="Exodia"
+        APP_BUNDLE_NAME="Whytap"
         APPCAST_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/appcast.xml"
-        INSTALLED_APP="/Applications/Exodia.app"
-        LEGACY_INSTALLED_APP="/Applications/Whytap.app"
+        INSTALLED_APP="/Applications/Whytap.app"
+        LEGACY_INSTALLED_APP="/Applications/Exodia.app"
         ;;
     beta)
-        APP_BUNDLE_NAME="Exodia-Beta"
+        APP_BUNDLE_NAME="Whytap-Beta"
         APPCAST_URL="https://github.com/${GITHUB_REPO}/releases/download/beta/appcast.xml"
-        INSTALLED_APP="/Applications/Exodia-Beta.app"
-        LEGACY_INSTALLED_APP="/Applications/Whytap-Beta.app"
+        INSTALLED_APP="/Applications/Whytap-Beta.app"
+        LEGACY_INSTALLED_APP="/Applications/Exodia-Beta.app"
         ;;
     *)
         die "invalid FLAVOR='${FLAVOR}' (expected prod or beta)"
@@ -175,7 +175,7 @@ sparkle_ns = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 
 request = urllib.request.Request(
     url,
-    headers={"User-Agent": "exodia-local-release/2.0"},
+    headers={"User-Agent": "whytap-local-release/2.0"},
 )
 with urllib.request.urlopen(request, timeout=15) as response:
     root = ET.fromstring(response.read())
@@ -291,7 +291,7 @@ echo "Flavor: ${FLAVOR}"
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "Distribution: Developer ID + notarization (explicit legacy mode)"
 elif [ "${CERTIFICATE_SIGNING}" -eq 1 ]; then
-    echo "Distribution: community (Exodia certificate, no Apple notarization)"
+    echo "Distribution: community (Whytap certificate, no Apple notarization)"
 else
     echo "Distribution: community (ad-hoc, no Apple notarization)"
 fi

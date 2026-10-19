@@ -153,7 +153,7 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         let warnings = try await ArtifactBackupEngine(environment: source.environment())
             .inspectArchive(at: url, key: key).warnings
         let joined = warnings.joined(separator: " | ")
-        XCTAssertTrue(warnings.contains { $0.contains("outside Exodia") }, joined)
+        XCTAssertTrue(warnings.contains { $0.contains("outside Whytap") }, joined)
         XCTAssertTrue(warnings.contains { $0.contains("SSH keys") }, joined)
         XCTAssertTrue(warnings.contains { $0.contains("switched off") }, joined)
         XCTAssertTrue(warnings.contains { $0.contains("read-only") }, joined)

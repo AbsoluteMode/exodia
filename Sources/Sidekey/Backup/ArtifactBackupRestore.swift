@@ -78,7 +78,7 @@ struct ArtifactRestoreOutcome: Codable, Equatable {
     /// Where the data this restore replaced (or could not put back) is kept.
     var recoveryDirectory: String?
     var recoveredFileCount: Int?
-    /// True when Exodia could not prove it put everything back and preserved
+    /// True when Whytap could not prove it put everything back and preserved
     /// the evidence instead.
     var needsRecovery: Bool?
 }
@@ -593,6 +593,7 @@ struct ArtifactRestoreTransaction {
         //    exists before any of it happens.
         let beforeState = try captureBeforeState(
             plan: plan, sections: sections,
+            incomingCredentials: head.verification.inline[.credentials],
             mintsVaultKey: sections.contains(.caseVault) && targetCaseKey == nil)
         try writePrivate(try ArtifactBeforeStateBox.seal(beforeState, key: key), to: beforeStateURL)
         if faults.interruptAfter?(.beforeState) == true {
@@ -765,7 +766,7 @@ struct ArtifactRestoreTransaction {
             write(ArtifactRestoreOutcome(
                 id: plan?.id ?? UUID(), finishedAt: Date(), state: .failed,
                 sections: plan?.sections ?? [],
-                message: "Exodia could not read its restore record, so it changed nothing and kept every file. Your previous data and the backup copy are preserved at \(root.path).",
+                message: "Whytap could not read its restore record, so it changed nothing and kept every file. Your previous data and the backup copy are preserved at \(root.path).",
                 warnings: [], recoveryDirectory: root.path, recoveredFileCount: nil, needsRecovery: true))
             throw ArtifactBackupError.restoreNeedsRecovery(root.path)
         }
@@ -795,7 +796,7 @@ struct ArtifactRestoreTransaction {
                     try? writePrivate(try JSONEncoder.artifactBackup.encode(retried), to: planURL)
                     write(ArtifactRestoreOutcome(
                         id: plan.id, finishedAt: Date(), state: .failed, sections: plan.sections,
-                        message: "Exodia could not reach the key for its restore record. Nothing was deleted; unlock this Mac and open Exodia again. Your files are preserved at \(root.path).",
+                        message: "Whytap could not reach the key for its restore record. Nothing was deleted; unlock this Mac and open Whytap again. Your files are preserved at \(root.path).",
                         warnings: [], recoveryDirectory: root.path, recoveredFileCount: nil,
                         needsRecovery: true))
                     throw ArtifactBackupError.keyUnavailable
@@ -833,7 +834,7 @@ struct ArtifactRestoreTransaction {
                                   failures: [String]) -> ArtifactRestoreOutcome {
         ArtifactRestoreOutcome(
             id: plan.id, finishedAt: Date(), state: .failed, sections: plan.sections,
-            message: "Exodia could not put everything back after a failed restore, so it preserved every original file, the backup copy and the restore record at \(root.path). Nothing was deleted.",
+            message: "Whytap could not put everything back after a failed restore, so it preserved every original file, the backup copy and the restore record at \(root.path). Nothing was deleted.",
             warnings: Array(failures.prefix(16)), recoveryDirectory: root.path,
             recoveredFileCount: nil, needsRecovery: true)
     }
@@ -1100,6 +1101,7 @@ struct ArtifactRestoreTransaction {
     /// anything is written, because a key read as "absent" would be rolled
     /// back into deletion.
     private func captureBeforeState(plan: ArtifactRestorePlan, sections: Set<ArtifactBackupSection>,
+                                    incomingCredentials: Data?,
                                     mintsVaultKey: Bool) throws -> ArtifactRestoreBeforeState {
         var preferences = Data()
         var keys: [String] = []
@@ -1117,7 +1119,12 @@ struct ArtifactRestoreTransaction {
         var credentials: [String: String] = [:]
         var absent: [String] = []
         if sections.contains(.credentials) {
-            for account in ConfigBackupRegistry.credentialAccounts.sorted() {
+            guard let incomingCredentials else { throw ArtifactBackupError.damaged }
+            let payload = try JSONDecoder.artifactBackup.decode(ArtifactCredentialsPayload.self, from: incomingCredentials)
+            // Capture every account about to be written, including server IDs
+            // absent from this Mac. A crash must remove newly imported keys
+            // and restore existing ones without reading unrelated credentials.
+            for account in payload.accounts.keys.sorted() {
                 let value: String?
                 do { value = try credentialStore(account).read() }
                 catch { throw ArtifactBackupError.keyUnavailable }
@@ -1139,7 +1146,9 @@ struct ArtifactRestoreTransaction {
         try payload.validate()
         // Only the blocks this payload restores are rewritten; everything else
         // the user changed meanwhile stays as it is.
-        try ConfigBackupRegistry.apply(payload.values, sections: payload.appliedSections, to: defaults)
+        let preserve: Set<String> = payload.schema < 3 ? [ConfigBackupRegistry.aiRoutingKey, ConfigBackupRegistry.aiRoutingPreservedKey] : []
+        try ConfigBackupRegistry.apply(payload.values, sections: payload.appliedSections,
+                                       preservingMissingKeys: preserve, to: defaults)
     }
 
     private func applyCredentials(_ data: Data?) throws {
@@ -1335,8 +1344,10 @@ struct ArtifactRestoreTransaction {
 /// `selectedSections`, which the local block/key history uses to put one
 /// Settings block back (or reset it to source defaults) without touching the
 /// blocks the user edited meanwhile. A missing list still means "all blocks".
+/// Schema 3 includes API & Models' binary routing document. Older snapshots
+/// cannot clear current routes simply because their format predated that key.
 struct ArtifactSettingsPayload: Codable, Equatable {
-    static let currentSchema = 2
+    static let currentSchema = 3
     var schema: Int = ArtifactSettingsPayload.currentSchema
     var values: [String: ConfigBackupValue]
     var selectedSections: [ConfigBackupSection]?

@@ -114,7 +114,7 @@ final class BrightnessKeysTests: XCTestCase {
         XCTAssertTrue(gesture.register(.up, isRepeat: false, levelBefore: 1, at: start + 3))
     }
 
-    // MARK: Which presses Exodia keeps from macOS
+    // MARK: Which presses Whytap keeps from macOS
 
     func testAKeptPressKeepsItsRepeatsAndRelease() {
         var filter = BrightnessKeyFilter()

@@ -140,7 +140,7 @@ actor BackupLocalStore {
 /// other preferences are read at apply time, so later edits are preserved.
 enum BackupSettingsBlockRestore {
     private struct BlockPayload: Encodable {
-        let schema = 2
+        var schema: Int
         var values: [String: ConfigBackupValue]
         var selectedSections: [ConfigBackupSection]
     }
@@ -158,6 +158,7 @@ enum BackupSettingsBlockRestore {
         } else {
             path = "settings/preferences.json"
             payload = try JSONEncoder.artifactBackup.encode(BlockPayload(
+                schema: snapshot.schemaVersion >= 2 ? ArtifactSettingsPayload.currentSchema : 2,
                 values: snapshot.preferences.filter { ConfigBackupRegistry.entries[$0.key]?.section == section },
                 selectedSections: [section]))
         }

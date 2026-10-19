@@ -1,6 +1,6 @@
 # Third-party software and assets
 
-Exodia is distributed under the MIT License (`LICENSE`). The application
+Whytap is distributed under the MIT License (`LICENSE`). The application
 bundle also contains, or is built with, the following third-party work.
 Each component keeps its own license; the full texts ship inside the
 resolved packages (`.build/checkouts/<package>/LICENSE`) and, for vendored
@@ -27,7 +27,7 @@ files, next to the files themselves.
 
 ## Models downloaded at runtime
 
-Exodia does not bundle model weights. The meeting detector downloads, on its
+Whytap does not bundle model weights. The meeting detector downloads, on its
 first speech check, the Silero VAD Core ML conversion published by
 FluidInference on Hugging Face (`FluidInference/silero-vad-coreml`; the
 upstream Silero VAD is MIT). On-device speech recognition, diarization and
@@ -54,7 +54,7 @@ owners and are not licensed under the MIT License. See `TRADEMARK.md`.
   [anomalyco/opencode releases](https://github.com/anomalyco/opencode/releases)
   only after an explicit installation action, or discovered from the user's
   existing installation. Its source is MIT-licensed; it is not bundled in the
-  Exodia source or application. See the
+  Whytap source or application. See the
   [OpenCode license](https://github.com/anomalyco/opencode/blob/dev/LICENSE).
 - Monitor's passive dashboard format is compatible with
   [AbsoluteMode/easy-monitoring](https://github.com/AbsoluteMode/easy-monitoring).

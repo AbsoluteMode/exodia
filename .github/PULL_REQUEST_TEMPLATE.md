@@ -17,6 +17,7 @@ own apps; follow `.project-docs/processes/shared-app-development.md`.
 - Reviewed head/base SHA and dependencies or overlapping work:
 - What to check in the shared app (1–3 steps with expected results):
 - Current delivery state (ready / merged / candidate or pending / verified running):
+- Build queue ticket (submit reviewed head automatically; the designated builder integrates):
 - If running, source SHA and build; otherwise state that the working app has not changed:
 
 ## Docs

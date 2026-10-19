@@ -21,17 +21,17 @@ sources:
     reference: docs/plans/api-and-models.md
     confirmed_at: 2026-10-19
   - type: repository
-    reference: Sources/Sidekey/AIRouting/
+    reference: Sources/Sidekey/AIRouting/AIRoutingStore.swift
     confirmed_at: 2026-10-19
   - type: repository
-    reference: Sources/Sidekey/Settings/APIAndModels/
+    reference: Sources/Sidekey/Settings/APIAndModels/APIAndModelsView.swift
     confirmed_at: 2026-10-19
 related: [2026-10-18-remove-local-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-19-deepgram-language-policy.md, 2026-10-19-api-hints.md]
 ---
 
 # API & Models
 
-## Контекст
+## Context
 
 Before this change the speech provider and the text model were global.
 `SelfKeyPreferences.selectedProvider` fed Drop, agent voice, voice search,
@@ -44,7 +44,7 @@ production this showed `stt-rt-v5` on screen and sent `stt-rt-v4` (a Soniox
 alias that the provider will drop). Nothing checked whether a model could do
 tool calls, which the agent needs.
 
-## Решение
+## Decision
 
 - One tab, **Settings -> API & Models**. **API keys** is a row of provider
   chips with a status dot (Soniox, Deepgram, ElevenLabs, OpenRouter, Anthropic
@@ -85,7 +85,7 @@ tool calls, which the agent needs.
   Meetings settings); a Deepgram row shows a warning when its model does not fit
   the current language.
 
-## Почему
+## Rationale
 
 - The user spends different money on different things: speech, cleanup, notes,
   agent. A single global provider cannot express "Soniox for dictation,
@@ -112,7 +112,7 @@ tool calls, which the agent needs.
   treats it as "key exists" and assigns the route: the migration runs once,
   and a transient denial must not silently drop the user's choice forever.
 
-## Что протестировали
+## Validation
 
 - Full Swift suite: Part A 3062 tests, Part B 3139, final run (with Anthropic
   and these docs) 3154 tests in 58.6 s. All with 0 failures and 5 skipped.
@@ -139,7 +139,7 @@ tool calls, which the agent needs.
   because a SwiftUI `Menu` cannot be opened from code), and live responses of
   providers that need a key. Both are in the PR's acceptance steps.
 
-## Отвергли
+## Rejected alternatives
 
 - Two pickers per row (provider, then model): heavier than the approved layout;
   the provider is part of the model's name.
@@ -174,7 +174,7 @@ behavior rules still apply. This record also supersedes the "Models" tab
 wording in [2026-10-18-remove-local-models](2026-10-18-remove-local-models.md)
 without changing its rule that no route is turned on only because a key exists.
 
-## Сноски
+## References
 
 Date: 2026-10-19. PR: https://github.com/AbsoluteMode/exodia/pull/43. Spec: `docs/specs/api-and-models.md`. Plan:
 `docs/plans/api-and-models.md`.

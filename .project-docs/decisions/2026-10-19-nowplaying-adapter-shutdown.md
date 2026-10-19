@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/AppDelegate.swift
     confirmed_at: 2026-10-19
-related: [2026-10-19-one-running-copy.md]
+related: [2026-10-19-notify-parent-death-guard.md, 2026-10-19-one-running-copy.md, 2026-10-19-nowplaying-artwork-recovery.md]
 ---
 
 # MediaRemote adapter shutdown

@@ -1,15 +1,17 @@
-# Exodia
+# Whytap
 
 Native macOS client (Swift + SwiftUI + AppKit, SwiftPM). BYOK only: the
 user's provider keys or their own OpenAI-compatible endpoints, no on-device
 models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
-OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Exodia servers,
-no telemetry. The user-facing name is Exodia (formerly Whytap); the module and most internal
+OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
+no telemetry. The user-facing name is Whytap (briefly named Exodia); the module and most internal
 identifiers are still `Sidekey`. The public source repository is
-`https://github.com/AbsoluteMode/exodia`. Preserve legacy bundle IDs, Keychain
+`https://github.com/AbsoluteMode/whytap`. Preserve legacy bundle IDs, Keychain
 services and Application Support paths so existing settings and permissions
-survive the rename. WHY: .project-docs/decisions/2026-10-17-exodia-name.md
+survive the rename. Keep the existing community certificate, EXODIA_* release
+variables, build metadata keys and backup formats/destinations as compatibility
+contracts. WHY: .project-docs/decisions/2026-10-19-whytap-name.md
 
 ## Parallel development and the shared application
 
@@ -21,17 +23,25 @@ feature sessions with regular checked integration and one working application.
   launching, registering or installing their bundles. Do not run `dev-run.sh`
   or `customize.py build/run` from feature sessions; even build-only dev
   packaging on some branches stops other dev processes.
-- Keep `/Applications/Exodia.app` (`com.rootwise.sidekey`) as the user's one
+- Keep `/Applications/Whytap.app` (`com.rootwise.sidekey`) as the user's one
   working app, preserving signing identity, permissions and data. Source for
   shared updates is checked `origin/main`; first reconcile any fixes already
   installed from a feature branch. Do not replace them with older main code.
-- Run exactly one Exodia instance across all channels: beta shares meetings,
+- Run exactly one Whytap instance across all channels: beta shares meetings,
   staging and clipboard history with production and competes for hotkeys.
   Production app/DMG packaging is reserved for the integrator under the lock.
-- Any session may integrate ready work, but only one holds the shared
-  `exodia-integration.lock` in `git rev-parse --git-common-dir`. Follow the
-  runbook's owner/recovery protocol. Preserve all other sessions' WIP; use a
-  clean integration worktree when the primary checkout is occupied.
+- Finished feature agents automatically submit their reviewed PR/exact head,
+  checks, dependencies and acceptance steps to the persistent build queue
+  (`scripts/build-queue.py`; installed helper in the Git common directory).
+  The configured builder chat processes FIFO, sends queue/start/result messages
+  to the originating sessions and alone integrates/packages/promotes. These
+  queue messages are user-authorized. Workers follow the result and report
+  issues without starting competing builds. Follow the runbook for CLI inboxes,
+  pending installs, recovery and the five-minute builder automation.
+- The builder holds the shared `exodia-integration.lock` in
+  `git rev-parse --git-common-dir` for protected operations. Queue claims never
+  replace that lock or any validation gate. Preserve all other sessions' WIP;
+  use a clean integration worktree when the primary checkout is occupied.
 - Review overlaps, validate the final combined candidate and merge through a
   PR with exact head/base checks. Routine checked integration/local refresh
   needs no repeated approval. Public publishing remains a separate action.
@@ -227,6 +237,16 @@ Meeting Notes:
   the next launch). WHY:
   .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
 
+  Internal opt-in research (no Settings controls): the local
+  sidekey.meetings.liveTestCapture flag adds a separate Soniox stt-rt-v5 stream
+  only when Meetings uses Soniox. Preserve its explicitly chosen value. It saves
+  private aligned source PCM, signal activity, final diarized tokens and receipt
+  times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
+  no automatic suggestions are enabled. The independent 100ms test mixer uses
+  a 150ms jitter allowance and approximate callback timing; source-role labels
+  are experimental. Guide: docs/meeting-assistant-testing.md. WHY:
+  .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
+
 Hover capsules and materials:
   The 2026-10-17 user correction requires hover and the compact island to have
   exactly the same width, with three smaller capsules per row. Follow the actual
@@ -352,7 +372,7 @@ Brightness inside hover:
   event, also across the hotkeys' rebuild; after a gap over 0.1 s or a tap
   macOS disabled, the presses in progress finish with macOS. The tap needs
   Accessibility, is reinstalled with the hotkeys and retried when the Settings
-  pane appears. They are the Mac's keys, not an Exodia hotkey: no Help row.
+  pane appears. They are the Mac's keys, not a Whytap hotkey: no Help row.
   BatteryRuntimeMonitor reads IOKit
   power sources and AppleSmartBattery every 5 s while the strip is visible: on
   battery macOS's estimate wins, otherwise remaining Wh over the smoothed
@@ -428,6 +448,12 @@ Now Playing:
   (parentWatchGuardScript) that ends it when the app's end of the guard's
   stdin closes; vendored run.pl stays untouched. WHY:
   .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+  Missing artwork triggers a background get --micros with a 2s deadline,
+  one request at a time and a 5s retry cooldown. Recovery copies only the image
+  into current metadata, matching player/process/content item/title/artist/album
+  and the request generation; track changes, clears and lifecycle resets reject
+  stale results. No Automation prompt is added. WHY:
+  .project-docs/decisions/2026-10-19-nowplaying-artwork-recovery.md
 
 Island idle-hide:
   ~20s without activity -> the compact pill fades to the bare notch (opacity
@@ -457,7 +483,7 @@ Update flow (download-on-action):
   activity before an app-initiated relaunch. Feed = GitHub Releases
   (`BuildConfig.appcastURL`).
   Community archives use our independent Sparkle Ed25519 signature, without
-  Apple Developer/notarization. The app is signed with Exodia's self-signed
+  Apple Developer/notarization. The app is signed with Whytap's self-signed
   community certificate when Resources/community-signing-certificate.pem is
   committed (stable designated requirement, so TCC grants survive updates),
   otherwise ad hoc. Source dev builds (9999 / -dev) do not start the binary
@@ -484,10 +510,11 @@ retired Local choice shows "not set up" banners until the user saves a
 provider. WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md,
 .project-docs/decisions/2026-10-18-remove-local-models.md
 
-API hints: a collapsed card below API keys explains provider free tiers and
-included credits, with official links, a verification date and Add API key.
+API hints: a small link after Models at the bottom of API & Models opens four provider offer cards in a
+native sheet, with brand marks, allowances, official links and a fixed footer.
 It distinguishes starter credit, monthly allowance and paid-plan benefits;
-it never checks balances or changes routes. WHY:
+Done/Return/Escape close it, and Add API key opens the existing sheet. It never
+checks balances or changes routes. WHY:
 .project-docs/decisions/2026-10-19-api-hints.md
 
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
@@ -545,7 +572,9 @@ instructions and quits before permissions, provider discovery or updates.
 ApplicationInstanceCoordinator then acquires one common prod/beta/worktree lease
 before constructing AppDelegate. A second copy offers to activate the owner and
 quits without starting permissions, providers or hotkeys. Legacy binaries launched
-later cannot honor the lease. Settings shows actual channel/version/build/path/revision.
+later cannot honor the lease. The Settings footer shows only the actual app name
+and display version, with website and GitHub links. Detailed build identity stays
+in bundle metadata, outside this compact footer.
 WHY: .project-docs/decisions/2026-10-19-one-running-copy.md
 `--installation-check` loads the packaged executable and verifies resources
 without starting the app runtime. User guide: `docs/install.md`. Policy:
@@ -560,9 +589,11 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 Settings → Backup keeps encrypted local settings/key history independently of
 cloud setup. Block restore or source-default reset applies before AppDelegate
 on the next normal launch. Optional complete `.exodiabackup` archives use a
-streaming authenticated format and one recovery code saved outside Exodia.
+streaming authenticated format and one recovery code saved outside Whytap.
 GitHub release assets receive ciphertext; a checked completion index is published
 last. Folder copies report verified local writes, not verified cloud upload.
+API & Models routes, server registrations and their provider keys are included.
+Reset leaves routes Not set; archives predating routing preserve current routes.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore
@@ -572,7 +603,7 @@ transactions resume finalization after a crash; replaced generations and their
 encrypted before-state keys are retained. Never discard an unfinished rollback
 because Keychain retries are exhausted. The startup recovery UI accepts the
 saved code without opening stores. Case merges into the target's own vault/key. Imported
-jobs and Notify/Monitor configurations stay inert pending review. No Exodia
+jobs and Notify/Monitor configurations stay inert pending review. No Whytap
 backend, automatic GitHub Actions, silent source changes or forced restart.
 
 Guide: `docs/backup.md`. WHY:
@@ -635,7 +666,7 @@ doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-rel
 FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
 
-Exodia stays open source and uses ready-made community builds for normal installs
+Whytap stays open source and uses ready-made community builds for normal installs
 and updates. The default DMG/Sparkle pipeline builds/signs locally without Apple
 Developer membership, Developer ID or notarization; publishing requires our
 independent Sparkle Ed25519 signing key and GitHub access. Keep archive signature
@@ -661,8 +692,9 @@ HEAD; do not relabel an old archive. Candidate validation remains a release gate
 
 Source users still pull and rebuild locally for their own customizations. Dev
 9999/-dev bundles opt out of packaged updates so a binary cannot overwrite their
-modified app. Earlier Whytap installs can use a different feed and need a manual
-first Exodia installation; changing the new GitHub feed cannot migrate that copy.
+modified app. Older Whytap installs using the retired update host need a manual installation.
+Exodia GitHub URLs redirect to the renamed repository; preserve releases and
+archive names already published.
 
 GitHub Actions is disabled to avoid hosted-runner costs; do not enable or dispatch
 it. Run appropriate local build/tests and record the results in the PR. BYOK
@@ -696,7 +728,7 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 
 ## Invariants
 
-1. **No Exodia-owned services.** The app never contacts an Exodia backend,
+1. **No Whytap-owned services.** The app never contacts a Whytap backend,
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
    and monitoring sources the user configured (including their credential store),
