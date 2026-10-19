@@ -20,7 +20,7 @@ final class IslandCaseVaultPanelTests: XCTestCase {
 
         XCTAssertTrue(source.contains("moveSecret"))
         XCTAssertTrue(source.contains("projectSections"))
-        XCTAssertTrue(source.contains("CaseDragAutoScrollPolicy.velocity"))
+        XCTAssertTrue(source.contains("dragState.scrollVelocity"))
         XCTAssertTrue(source.contains("UTType.text"))
     }
 

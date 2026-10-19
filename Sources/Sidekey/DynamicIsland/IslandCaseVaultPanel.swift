@@ -44,8 +44,7 @@ struct IslandCaseVaultPanel: View {
     @State private var projectNameDraft = ""
     @State private var projectDescriptionDraft = ""
     @State private var pendingDeleteProjectID: UUID?
-    @State private var dropTargetProjectID: UUID?
-    @State private var dragContext: DragContext?
+    @State private var dragState = CaseDragState()
     @State private var lastError: String?
     @FocusState private var inputFocused: Bool
 
@@ -295,15 +294,24 @@ struct IslandCaseVaultPanel: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onContinuousHover { phase in
-                    guard dragContext != nil else { return }
-                    if case let .active(location) = phase {
+                    switch phase {
+                    case let .active(location):
                         scrollIfNeeded(
                             pointerY: location.y,
                             viewportHeight: geometry.size.height,
                             proxy: proxy
                         )
+                    case .ended:
+                        dragState.reset()
                     }
                 }
+                // A drag released on empty list space (or cancelled) never reaches a
+                // project row's drop handler; clear it here so auto-scroll stops.
+                .onDrop(of: [UTType.text], isTargeted: nil) { _ in
+                    dragState.reset()
+                    return false
+                }
+                .onDisappear { dragState.reset() }
             }
         }
     }
@@ -313,7 +321,7 @@ struct IslandCaseVaultPanel: View {
         IslandCaseProjectRow(
             section: section,
             isExpanded: isExpanded,
-            isDropTargeted: dropTargetProjectID == section.id,
+            isDropTargeted: dragState.dropTargetProjectID == section.id,
             onToggle: { toggleProject(section.id) },
             onEdit: { startEditingProject(section) },
             onDelete: {
@@ -348,7 +356,7 @@ struct IslandCaseVaultPanel: View {
                         onDelete: { runCaseAction { try viewModel.deleteSecret(secret.id) } }
                     )
                     .onDrag {
-                        dragContext = DragContext(secretID: secret.id, sourceProjectID: secret.projectID)
+                        dragState.begin(secretID: secret.id, sourceProjectID: secret.projectID)
                         return NSItemProvider(object: secret.id.uuidString as NSString)
                     }
                     .onDrop(of: [UTType.text], isTargeted: nil) { _ in
@@ -635,12 +643,12 @@ struct IslandCaseVaultPanel: View {
 
     private func dropTargetBinding(_ projectID: UUID) -> Binding<Bool> {
         Binding(
-            get: { dropTargetProjectID == projectID },
+            get: { dragState.dropTargetProjectID == projectID },
             set: { targeted in
                 if targeted {
-                    dropTargetProjectID = projectID
-                } else if dropTargetProjectID == projectID {
-                    dropTargetProjectID = nil
+                    dragState.dropTargetProjectID = projectID
+                } else if dragState.dropTargetProjectID == projectID {
+                    dragState.dropTargetProjectID = nil
                 }
             }
         )
@@ -649,11 +657,9 @@ struct IslandCaseVaultPanel: View {
     /// Dropping a dragged key on a project header (or on one of its keys)
     /// moves the key into that project. A name clash there is refused.
     private func handleDrop(onProject projectID: UUID) -> Bool {
-        defer {
-            dragContext = nil
-            dropTargetProjectID = nil
-        }
-        guard let dragContext, dragContext.sourceProjectID != projectID else {
+        let context = dragState.context
+        defer { dragState.reset() }
+        guard let dragContext = context, dragContext.sourceProjectID != projectID else {
             return false
         }
         runCaseAction {
@@ -668,7 +674,7 @@ struct IslandCaseVaultPanel: View {
         viewportHeight: CGFloat,
         proxy: ScrollViewProxy
     ) {
-        let velocity = CaseDragAutoScrollPolicy.velocity(
+        let velocity = dragState.scrollVelocity(
             pointerY: pointerY,
             viewportHeight: viewportHeight
         )
@@ -737,7 +743,3 @@ private enum ProjectEditor: Equatable {
     case edit(UUID)
 }
 
-private struct DragContext: Equatable {
-    let secretID: UUID
-    let sourceProjectID: UUID
-}
