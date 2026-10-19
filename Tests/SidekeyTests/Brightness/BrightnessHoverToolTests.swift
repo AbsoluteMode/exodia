@@ -71,9 +71,22 @@ final class BrightnessHoverToolTests: XCTestCase {
         XCTAssertTrue(source.contains(".frame(width: compactWidth, height: activeHoverPanelHeight, alignment: .top)"),
                       "The drawer stays top-aligned; the held height extends below it.")
         let release = try XCTUnwrap(source.range(of: ".onContinuousHover { phase in"))
-        let releaseBody = source[release.upperBound...].prefix(300)
+        let releaseBody = source[release.upperBound...].prefix(500)
         XCTAssertTrue(releaseBody.contains("hoverPanelHeightHold = nil"),
                       "Reaching the visible strip releases the held zone.")
+        XCTAssertTrue(releaseBody.contains("releasesHeldHoverZone(pointerY: location.y"),
+                      "Only a pointer over the drawer's final frame releases it.")
+    }
+
+    func testHeldZoneIsReleasedOnlyOverTheDrawersFinalFrame() {
+        // While the drawer shrinks to the strip, its animated frame still covers the held
+        // zone; releasing there closed the drawer under a pointer moving up from the third row.
+        let strip = IslandBrightnessStrip.contentHeight
+        XCTAssertTrue(IslandView.releasesHeldHoverZone(pointerY: 0, drawerHeight: strip))
+        XCTAssertTrue(IslandView.releasesHeldHoverZone(pointerY: strip, drawerHeight: strip))
+        XCTAssertFalse(IslandView.releasesHeldHoverZone(pointerY: strip + 1, drawerHeight: strip))
+        XCTAssertFalse(IslandView.releasesHeldHoverZone(pointerY: 194, drawerHeight: strip),
+                       "The third row's pointer is still in the held zone.")
     }
 
     func testStripTakesKeyStatusForItsControls() {
