@@ -77,7 +77,7 @@ struct SettingsNotificationsView: View {
                     }
                 }
 
-                Text("Large notifications show a card to the left of the island. Small notifications show only an icon in its right wing. Sources run while Exodia is open; turning one off keeps its setup and history.")
+                Text("Large notifications show a card to the left of the island. Small notifications show only an icon in its right wing. Sources run while Whytap is open; turning one off keeps its setup and history.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(MacSettingsTheme.text2)
             }

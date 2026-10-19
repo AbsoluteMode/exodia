@@ -3,7 +3,7 @@ import Foundation
 enum NotifySetupGuide {
     static func contents(directory: URL) -> String {
         """
-        # Exodia Notify: local script sources
+        # Whytap Notify: local script sources
 
         Notifications appear as the existing compact pill LEFT of the island.
         Two types are available: presentation="card" (Large, default) or
@@ -16,7 +16,7 @@ enum NotifySetupGuide {
         Notify. Find Notify with Search all tools or add it through Settings > Toolbox.
         Settings > Notifications lists all sources with Notification type (Large /
         Small) and individual on/off switches.
-        No Exodia server or model request is needed to deliver a notification.
+        No Whytap server or model request is needed to deliver a notification.
 
         ## Configure a source
 
@@ -44,21 +44,21 @@ enum NotifySetupGuide {
         Example source (use actual paths on this Mac):
         {"id":"example","name":"Example","command":["/bin/zsh","/absolute/path/example.zsh"],"tint":"#299FD6","logo":"paperplane.fill","intervalSeconds":30}
 
-        Exodia supervises the command while the app runs, including with the drawer
+        Whytap supervises the command while the app runs, including with the drawer
         closed. No shell interpolation is performed: arguments are literal argv.
         Without intervalSeconds, keep the worker alive for streaming/long polling;
         clean exits restart after 5 seconds. With intervalSeconds, run one polling
         pass and exit; a successful pass repeats after that delay. Failures retry
         with bounded backoff up to 60 seconds. Sources pause on system sleep and
-        restart after wake. Exodia stops the process group, including helpers,
+        restart after wake. Whytap stops the process group, including helpers,
         when the source is disabled/removed or the app quits, is killed or crashes.
         Stdin is /dev/null. Do not daemonize,
-        detach, install LaunchAgents or arrange workers to survive Exodia.
+        detach, install LaunchAgents or arrange workers to survive Whytap.
 
         ## Emit events
 
         Write one UTF-8 JSON object per stdout line, and FLUSH it. Python receives
-        PYTHONUNBUFFERED=1. Use stderr only for non-sensitive diagnostics; Exodia
+        PYTHONUNBUFFERED=1. Use stderr only for non-sensitive diagnostics; Whytap
         discards stderr and does not log script output. Maximum line 64 KiB and
         10 notifications/second/source; malformed lines do not become notifications.
 

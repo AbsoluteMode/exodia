@@ -207,7 +207,7 @@ final class ApplicationInstanceCoordinator {
         let alert = NSAlert()
         alert.alertStyle = .informational
         if let existing = conflict.existing {
-            alert.messageText = "Exodia is already running"
+            alert.messageText = "Whytap is already running"
             alert.informativeText = "Running: \(existing.identity.summary)\n\(existing.identity.bundlePath)\n\nRequested: \(conflict.requested.summary)\n\(conflict.requested.bundlePath)\n\nThis copy will quit so your shortcuts and current work stay with the running app. To switch copies, quit the running app first, then open the copy you want."
             alert.addButton(withTitle: "Activate Running App")
             alert.addButton(withTitle: "Quit This Copy")
@@ -220,10 +220,10 @@ final class ApplicationInstanceCoordinator {
             }
         } else {
             alert.messageText = conflict.reason == .alreadyRunning
-                ? "Exodia is already starting" : "Exodia could not start safely"
+                ? "Whytap is already starting" : "Whytap could not start safely"
             alert.informativeText = conflict.reason == .alreadyRunning
-                ? "Another Exodia copy owns the shortcuts. This copy will quit without interrupting it."
-                : "Exodia could not reserve its shortcuts. Quit any other Exodia copies, then open Exodia again."
+                ? "Another Whytap copy owns the shortcuts. This copy will quit without interrupting it."
+                : "Whytap could not reserve its shortcuts. Quit any other Whytap copies, then open Whytap again."
             alert.addButton(withTitle: "Quit This Copy")
             alert.runModal()
         }

@@ -17,13 +17,13 @@ Dismissal reveals the wing's current contents and retains the event in history.
 **Settings → Notifications** lists every connected source, its logo and current
 status, a **Notification type** selector (Large / Small), and an on/off switch. Turning it off stops its script
 and notifications immediately, while keeping its configuration and event history;
-the switch remains off after restarting Exodia. Agent-added sources appear
+the switch remains off after restarting Whytap. Agent-added sources appear
 automatically without reopening Settings.
 
-A coding agent can connect a source without rebuilding Exodia. Ask the agent for
+A coding agent can connect a source without rebuilding Whytap. Ask the agent for
 the exact events you want; it requests the access and filters needed for that
 source, then installs a private local script and manifest. This does not authorize
-sending messages to other people. Exodia itself has no notification server or
+sending messages to other people. Whytap itself has no notification server or
 provider-specific account setup.
 
 ## Local contract
@@ -92,14 +92,14 @@ activation. Never send a prompt or approve an operation in order to test deliver
 
 ## Lifetime, failures and privacy
 
-Scripts run while Exodia is open, even when the drawer is closed. They pause on
-system sleep and restart on wake. Disabling/removing a source or quitting Exodia
+Scripts run while Whytap is open, even when the drawer is closed. They pause on
+system sleep and restart on wake. Disabling/removing a source or quitting Whytap
 stops its process group, including helpers. The same happens within about a
-second when Exodia is killed or crashes: a small guard process leads the group
+second when Whytap is killed or crashes: a small guard process leads the group
 and ends it when the app's end of its stdin closes. Scripts get /dev/null as
 stdin. Do not daemonize or install a separate
 LaunchAgent. Scripts that intentionally detach from their process group are
-outside this cooperative contract. No shell interpolation is performed by Exodia.
+outside this cooperative contract. No shell interpolation is performed by Whytap.
 
 A continuous script should stay alive. Clean exit restarts after 5 seconds unless
 `intervalSeconds` is supplied; in that case a polling pass repeats after that
@@ -108,7 +108,7 @@ delay. Errors retry with backoff up to 60 seconds. Each source can deliver up to
 The visible queue holds 32 events; excess accepted events remain in history.
 
 Store credentials in Keychain or the user's chosen credential manager. The
-manifest, arguments and events must never contain credentials. Exodia does not
+manifest, arguments and events must never contain credentials. Whytap does not
 log script output and discards stderr, showing only generic failures/exit status
 in Notify → Sources. Scripts are local programs running with the user's ordinary
 permissions; this is not a filesystem sandbox.
@@ -118,3 +118,7 @@ its exact `<source-id>:<event-id>` in `history.json`. A running process does not
 prove upstream connectivity. Never claim a Telegram connection based only on a
 synthetic fixture. Removing a source preserves its script files, credentials and
 notification history. Unreadable existing history is preserved rather than reset.
+
+Notify workers receive `WHYTAP_NOTIFY_SOURCE` and `WHYTAP_NOTIFY_DIRECTORY`.
+The original `EXODIA_NOTIFY_SOURCE` and `EXODIA_NOTIFY_DIRECTORY` aliases remain
+available to existing local scripts.

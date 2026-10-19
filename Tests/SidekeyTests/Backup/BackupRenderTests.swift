@@ -190,7 +190,7 @@ final class BackupRenderTests: XCTestCase {
         let previewModel = makeIsolatedModel(temporaryRoot: tempRoot.appendingPathComponent("preview"))
         previewModel.isEnabled = true
         previewModel.recoverySaved = true
-        previewModel.destinationName = "Folder · Exodia Backups"
+        previewModel.destinationName = "Folder · Whytap Backups"
         previewModel.lastBackupAt = fixedDate
         previewModel.lastRemoteBackupAt = fixedDate
         previewModel.needsRestart = false
@@ -217,7 +217,7 @@ final class BackupRenderTests: XCTestCase {
         readyModel.recoverySaved = true
         readyModel.needsRestart = true
         readyModel.destinationName = "GitHub · octocat/Exodia-Backup"
-        readyModel.statusText = "Restore is ready. Quit Exodia normally and open it again when your work is finished."
+        readyModel.statusText = "Restore is ready. Quit Whytap normally and open it again when your work is finished."
         try render(hosted(SettingsBackupView(model: readyModel)), size: NSSize(width: 760, height: 780),
                    to: directory.appendingPathComponent("backup-restore-ready.png"))
 

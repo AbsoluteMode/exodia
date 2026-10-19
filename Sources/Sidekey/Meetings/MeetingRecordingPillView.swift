@@ -34,11 +34,11 @@ struct MeetingRecordingPillView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Attached "Exodia meeting notes" tab. Sits flush with the
+            // Attached "Whytap meeting notes" tab. Sits flush with the
             // top of the card, slightly offset right so it reads as a
             // tab attached to the recording surface.
             HStack {
-                Text("Exodia meeting notes")
+                Text("Whytap meeting notes")
                     .font(.system(size: 13))
             }
             .foregroundStyle(.white)

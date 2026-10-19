@@ -62,7 +62,7 @@ enum BackupDeltaFormat {
     }
 
     /// Only the versions are read before anything else, so a future delta is
-    /// rejected with "update Exodia" instead of a decoding error.
+    /// rejected with "update Whytap" instead of a decoding error.
     private struct Probe: Decodable {
         struct ManifestProbe: Decodable { let schema: Int }
         let version: Int

@@ -79,7 +79,7 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
 
         let excludedProcessIDs = Self.currentProcessObjectID().map { [$0] } ?? []
         let tapDescription = CATapDescription(monoGlobalTapButExcludeProcesses: excludedProcessIDs)
-        tapDescription.name = "Exodia System Audio"
+        tapDescription.name = "Whytap System Audio"
         tapDescription.isPrivate = true
         tapDescription.muteBehavior = .unmuted
 
@@ -96,7 +96,7 @@ final class CoreAudioSystemAudioSource: SystemAudioSourceStreaming, @unchecked S
             )
         }
         let aggregateDescription = Self.makeAggregateDescription(
-            name: "Exodia System Audio",
+            name: "Whytap System Audio",
             aggregateUID: aggregateUID,
             outputDeviceUID: outputDeviceUID,
             tapUID: tapDescription.uuid.uuidString

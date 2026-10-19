@@ -38,10 +38,10 @@ class ReleaseProvenanceTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "fixture source")
         self.sha = provenance.clean_revision(self.root)
-        self.archive = self.root / "build/Exodia-2.2.0-build1452.dmg"
+        self.archive = self.root / "build/Whytap-2.2.0-build1452.dmg"
         self.archive.write_bytes(b"test archive")
         self.args = argparse.Namespace(project_root=self.root, archive=self.archive, manifest=None,
-            source_sha=self.sha, version="2.2.0", build=1452, flavor="prod", distribution="community")
+            source_sha=self.sha, version="2.2.0", build=1452, flavor="prod", distribution="community", code_signing="adhoc")
         self.manifest = Path(str(self.archive) + ".manifest.json")
 
     def git(self, *arguments):
@@ -115,7 +115,7 @@ class ReleaseProvenanceTests(unittest.TestCase):
     def test_missing_receipt_fails_without_creating_one(self):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             status = provenance.main(["verify", "--project-root", str(self.root), "--archive", str(self.archive),
-                "--version", "2.2.0", "--build", "1452", "--flavor", "prod", "--distribution", "community"])
+                "--version", "2.2.0", "--build", "1452", "--flavor", "prod", "--distribution", "community", "--code-signing", "adhoc"])
         self.assertEqual(status, 1)
         self.assertFalse(self.manifest.exists())
 

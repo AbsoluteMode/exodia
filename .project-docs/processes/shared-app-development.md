@@ -2,7 +2,7 @@
 id: exodia-shared-app-development
 type: process
 title: Parallel feature sessions and one shared working application
-summary: Isolate feature work, serialize checked main integration and update one identifiable installed Exodia without interrupting the user.
+summary: Isolate feature work, serialize checked main integration and update one identifiable installed Whytap without interrupting the user.
 status: confirmed
 tags: [development, agents, worktrees, integration, main, build, rollback]
 canonical_for: [parallel-development, shared-working-application]
@@ -29,21 +29,29 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsStore.swift
     confirmed_at: 2026-10-19
-related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md]
+related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md, ../decisions/2026-10-19-whytap-name.md]
 ---
 
-# Parallel development, one working Exodia
+# Parallel development, one working Whytap
 
 This is the required workflow for the maintainer's parallel coding sessions.
 It is an agent procedure; it does not install a background integration service.
 
 ## Shared application and source
 
-The user's working application is `/Applications/Exodia.app`, production bundle
+The user's working application is `/Applications/Whytap.app`, production bundle
 identity `com.rootwise.sidekey`. Keep its existing signing identity, Keychain
 services and data locations. A switch to Beta changes some credentials, local
 stores and permissions; do not use it as a shortcut for sharing development.
 Only this installed application is used for ordinary user acceptance.
+
+The [Whytap rename](../decisions/2026-10-19-whytap-name.md) changes the canonical
+bundle to `/Applications/Whytap.app` at the next checked safe promotion. Before
+that handoff, the existing `/Applications/Exodia.app` remains the working copy.
+Preserve its certificate, stores and permissions and keep one installed copy.
+The primary checkout and receipt remain the existing primary checkout and
+the existing primary checkout’s build receipt; do not move other sessions' WIP.
+Keep the existing `exodia-integration.lock` name across this transition.
 
 `origin/main` is the shared source of ready features. Each feature has its own
 branch and worktree, normally based on current `origin/main`. Keep the primary
@@ -55,7 +63,7 @@ worktree builds the candidate. `build/` is Git-ignored.
 
 ## Feature session
 
-**Exactly one live Exodia instance, across all channels.** Beta is not a
+**Exactly one live Whytap instance, across all channels.** Beta is not a
 data sandbox: meetings, staged audio and clipboard history share stores with
 production, and two processes also compete for the same global hotkeys/event
 taps. Keep the user's working instance; do not launch a second app for testing.
@@ -79,7 +87,7 @@ taps. Keep the user's working instance; do not launch a second app for testing.
    `open` on a feature bundle, or LaunchServices registration. On branches
    older than the one-running-copy change (2026-10-19), even `dev-run.sh`
    without `--run` stops other beta processes. Do not
-   install a feature branch over `/Applications/Exodia.app` or stop its process.
+   install a feature branch over `/Applications/Whytap.app` or stop its process.
    Production app/DMG packaging (`FLAVOR=prod` builds) is also reserved for
    the integrator under the shared lock; a worker's ordinary `swift build`
    does not package or register an app.

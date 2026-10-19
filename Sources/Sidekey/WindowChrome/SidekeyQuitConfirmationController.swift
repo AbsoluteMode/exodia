@@ -16,7 +16,7 @@ final class SidekeyQuitConfirmationController: NSWindowController, NSWindowDeleg
             backing: .buffered,
             defer: false
         )
-        window.title = "Quit Exodia"
+        window.title = "Quit Whytap"
         window.isReleasedWhenClosed = false
         SidekeyWindowChrome.configureHoverOverlayPolicy(window)
         SidekeyWindowChrome.configure(window)
@@ -67,14 +67,14 @@ private struct SidekeyQuitConfirmationView: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        SidekeyAuroraWindow(title: "Quit Exodia") {
+        SidekeyAuroraWindow(title: "Quit Whytap") {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Are you sure you want to quit Exodia?")
+                    Text("Are you sure you want to quit Whytap?")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.92))
 
-                    Text("Voice shortcuts, meeting notes, and the Exodia menu will stop until you open the app again.")
+                    Text("Voice shortcuts, meeting notes, and the Whytap menu will stop until you open the app again.")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.58))
                         .fixedSize(horizontal: false, vertical: true)

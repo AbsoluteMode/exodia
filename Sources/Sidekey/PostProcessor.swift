@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Smart-mode Drop cleanup runs against an OpenAI-compatible
 /// `/chat/completions` endpoint the user owns (OpenRouter or a custom base
-/// URL). Nothing here talks to an Exodia server.
+/// URL). Nothing here talks to a Whytap server.
 struct PostProcessor {
     let llmRoute: DirectLLMRouteResolver
     let openRouterClient: any OpenRouterLLMClienting
@@ -184,7 +184,7 @@ struct PostProcessor {
 
     Brand-имена и продукты проекта (точное написание):
 
-    Exodia, Whytap, Sidekey, Claude Code, Claude, Anthropic, OpenAI, ChatGPT, Codex, Cursor, Gemini, OpenRouter, Whisper, Deepgram, Linear, Notion, GitHub, GitLab, Doppler, TerraFlow, Sferyx, Lokate, MCP.
+    Whytap, Sidekey, Claude Code, Claude, Anthropic, OpenAI, ChatGPT, Codex, Cursor, Gemini, OpenRouter, Whisper, Deepgram, Linear, Notion, GitHub, GitLab, Doppler, TerraFlow, Sferyx, Lokate, MCP.
 
     Языки, фреймворки, инструменты:
 

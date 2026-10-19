@@ -18,7 +18,7 @@ final class HistoryWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Exodia History"
+        window.title = "Whytap History"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
 

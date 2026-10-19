@@ -23,8 +23,8 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Streaming/BYOK/TranscriptionSessionFactory.swift
     confirmed_at: 2026-10-19
-  - type: repository
-    reference: Sources/Sidekey/Settings/SettingsModelsView.swift
+  - type: commit
+    reference: a3165080780d57635e8c4da48e9a91719fa082ee:Sources/Sidekey/Settings/SettingsModelsView.swift
     confirmed_at: 2026-10-19
   - type: repository
     reference: Tests/SidekeyTests/Streaming/BYOK/DeepgramLanguagePolicyTests.swift
@@ -41,7 +41,7 @@ sources:
   - type: url
     reference: https://developers.deepgram.com/docs/language-detection
     confirmed_at: 2026-10-19
-related: [../bugs/2026-10-19-input-language-audit.md]
+related: [2026-10-19-api-and-models.md, ../bugs/2026-10-19-input-language-audit.md]
 ---
 
 # Deepgram input language policy

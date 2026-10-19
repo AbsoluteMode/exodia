@@ -144,6 +144,9 @@ final class NotifyScriptSupervisor: ObservableObject {
     static func environment(inherited: [String: String], source: String, directory: URL) -> [String: String] {
         let allowed = Set(["PATH", "HOME", "TMPDIR", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "SSH_AUTH_SOCK"])
         var values = inherited.filter { allowed.contains($0.key) }
+        values["WHYTAP_NOTIFY_SOURCE"] = source
+        values["WHYTAP_NOTIFY_DIRECTORY"] = directory.path
+        // Existing local sources may still read the original environment names.
         values["EXODIA_NOTIFY_SOURCE"] = source
         values["EXODIA_NOTIFY_DIRECTORY"] = directory.path
         values["PYTHONUNBUFFERED"] = "1"
