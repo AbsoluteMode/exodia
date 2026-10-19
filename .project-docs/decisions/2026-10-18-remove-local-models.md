@@ -61,7 +61,8 @@ from an on-device diarizer.
 - Keep the batch seam. Production binds `UnavailableBatchTranscriber` to
   `BatchTranscribing`, so the resilient-delivery batch rung is skipped, and
   Retry, the recorder fallback and agent batch voice have no recognizer until
-  provider batch APIs are wired.
+  provider batch APIs are wired. Superseded: production now binds
+  `ProviderBatchTranscriber` (see below).
 - `LocalPathLoggingInvariantTests` now guards the provider paths that carry the
   same content: `OpenRouterLLMClient`, `MeetingBYOKProcessor` and
   `DirectProviderStreamingSession`. The class name stays because docs and the
@@ -116,5 +117,11 @@ from an on-device diarizer.
   `LocalDiarizationModels` under Application Support/Sidekey; cleaning them
   up is a separate decision. Decided later: a one-time launch cleanup,
   `2026-10-18-legacy-model-cleanup.md`.
+
+## Supersedes / superseded by
+
+The "Keep the batch seam" bullet is superseded by
+[provider batch transcription](2026-10-18-provider-batch-transcription.md).
+The rest of this decision stands.
 
 2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/22.

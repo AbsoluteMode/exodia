@@ -1,0 +1,364 @@
+import Foundation
+import OSLog
+
+/// Where a batch take goes: the provider and key the user chose in
+/// Settings -> Models for realtime dictation, or nowhere.
+/// WHY: .project-docs/decisions/2026-10-18-provider-batch-transcription.md
+enum ProviderBatchRoute: Equatable, Sendable {
+    case soniox(apiKey: String)
+    case deepgram(apiKey: String, model: String)
+    case elevenLabs(apiKey: String)
+    case selfHosted(apiKey: String, endpoint: URL, model: String)
+
+    /// The selected provider with its own stored key; nil when nothing is
+    /// chosen or that key is missing. Never another provider's key: the take
+    /// goes where the realtime stream would have gone, or nowhere.
+    @MainActor
+    static func current(prefs: SelfKeyPreferences, keyStore: BYOKKeyStore) -> ProviderBatchRoute? {
+        guard prefs.transcriptionLevel == .yourKey else { return nil }
+        let provider = prefs.selectedProvider
+        guard let key = try? keyStore.read(for: provider), !key.isEmpty else { return nil }
+        switch provider {
+        case .soniox:
+            return .soniox(apiKey: key)
+        case .deepgram:
+            return .deepgram(apiKey: key, model: prefs.transcriptionModel(for: .deepgram))
+        case .elevenLabs:
+            return .elevenLabs(apiKey: key)
+        case .selfHosted:
+            guard let endpoint = selfHostedEndpoint(baseURL: prefs.selfHostedBaseURL) else { return nil }
+            return .selfHosted(apiKey: key, endpoint: endpoint, model: prefs.selfHostedModel)
+        case .openAI:
+            // Not selectable: `selectedProvider` reads a stored OpenAI as Soniox.
+            return nil
+        }
+    }
+
+    /// `/v1/audio/transcriptions` on the realtime base URL's host, over TLS
+    /// whatever the scheme (the realtime socket is always `wss`). A base URL
+    /// without a host is nil, never a fallback host.
+    static func selfHostedEndpoint(baseURL: String?) -> URL? {
+        guard let baseURL, var components = URLComponents(string: baseURL),
+              let host = components.host, !host.isEmpty else { return nil }
+        components.scheme = "https"
+        components.path = "/v1/audio/transcriptions"
+        components.query = nil
+        components.fragment = nil
+        return components.url
+    }
+
+    fileprivate var provider: BYOKProvider {
+        switch self {
+        case .soniox: return .soniox
+        case .deepgram: return .deepgram
+        case .elevenLabs: return .elevenLabs
+        case .selfHosted: return .selfHosted
+        }
+    }
+}
+
+enum ProviderBatchTranscriptionError: Error, Equatable {
+    /// The provider answered with a non-2xx status.
+    case httpStatus(Int)
+    /// A 2xx answer without the expected fields.
+    case malformedResponse
+    /// Soniox reported the job as failed.
+    case jobFailed
+    /// The Soniox job did not finish within `jobTimeout`.
+    case timedOut
+}
+
+/// Whole-take transcription with the user's own provider key, for the
+/// resilient-delivery batch rung, Retry on "Couldn't deliver", the Drop
+/// recorder fallback and agent batch voice. Each request makes the same
+/// choices as that provider's realtime request (language, Soniox's `en`
+/// hint, ElevenLabs' no_verbatim). An empty transcript is silence, not a
+/// failure. Every wait is cancellable, so the recovery deadline ends any
+/// request or poll. The route is read on every call: a provider chosen
+/// later applies without a relaunch.
+/// WHY: .project-docs/decisions/2026-10-18-provider-batch-transcription.md
+struct ProviderBatchTranscriber: BatchTranscribing {
+    private static let log = OSLog(subsystem: "com.rootwise.sidekey", category: "byok-batch")
+
+    private let route: @MainActor @Sendable () -> ProviderBatchRoute?
+    private let session: URLSession
+    private let pollInterval: Duration
+    private let jobTimeout: Duration
+
+    /// `jobTimeout` bounds Soniox polling on the paths without the recovery
+    /// deadline (recorder fallback, agent voice) and the retried deletion of
+    /// a job that is still processing.
+    init(
+        route: @escaping @MainActor @Sendable () -> ProviderBatchRoute? = {
+            ProviderBatchRoute.current(prefs: .shared, keyStore: BYOKKeyStore())
+        },
+        session: URLSession = .shared,
+        pollInterval: Duration = .milliseconds(500),
+        jobTimeout: Duration = .seconds(30)
+    ) {
+        self.route = route
+        self.session = session
+        self.pollInterval = pollInterval
+        self.jobTimeout = jobTimeout
+    }
+
+    func isAvailable() async -> Bool {
+        await route() != nil
+    }
+
+    func transcribe(audio: Data, language: String?) async throws -> String {
+        guard let route = await route() else { throw BatchTranscriptionUnavailable() }
+        let wav = Self.wavFile(audio)
+        let language = language.flatMap { $0.isEmpty ? nil : $0 }
+        let started = ContinuousClock.now
+        do {
+            let result: String
+            switch route {
+            case .soniox(let apiKey):
+                result = try await soniox(wav, apiKey: apiKey, language: language)
+            case .deepgram(let apiKey, let model):
+                result = try await deepgram(wav, apiKey: apiKey, model: model, language: language)
+            case .elevenLabs(let apiKey):
+                result = try await elevenLabs(wav, apiKey: apiKey, language: language)
+            case .selfHosted(let apiKey, let endpoint, let model):
+                result = try await selfHosted(wav, apiKey: apiKey, endpoint: endpoint, model: model, language: language)
+            }
+            let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            os_log("batch transcription provider=%{public}@ audio_bytes=%{public}d ms=%{public}d chars=%{public}d",
+                   log: Self.log, type: .info,
+                   route.provider.rawValue, wav.count, Self.milliseconds(since: started), text.count)
+            return text
+        } catch {
+            os_log("batch transcription failed provider=%{public}@ ms=%{public}d reason=%{public}@",
+                   log: Self.log, type: .error,
+                   route.provider.rawValue, Self.milliseconds(since: started), Self.reason(error))
+            throw error
+        }
+    }
+
+    // MARK: Providers
+
+    /// Deepgram pre-recorded: the realtime query on `/v1/listen`.
+    private func deepgram(_ wav: Data, apiKey: String, model: String, language: String?) async throws -> String {
+        var components = URLComponents(string: "https://api.deepgram.com/v1/listen")!
+        var items = [
+            URLQueryItem(name: "model", value: model),
+            URLQueryItem(name: "smart_format", value: "true"),
+            URLQueryItem(name: "punctuate", value: "true"),
+        ]
+        if let language { items.append(URLQueryItem(name: "language", value: language)) }
+        components.queryItems = items
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "POST"
+        request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+        let data = try await send(request, body: wav)
+        struct Response: Decodable {
+            struct Results: Decodable { let channels: [Channel] }
+            struct Channel: Decodable { let alternatives: [Alternative] }
+            struct Alternative: Decodable { let transcript: String }
+            let results: Results
+        }
+        guard let response = try? JSONDecoder().decode(Response.self, from: data),
+              let best = response.results.channels.first?.alternatives.first else {
+            throw ProviderBatchTranscriptionError.malformedResponse
+        }
+        return best.transcript
+    }
+
+    /// ElevenLabs speech-to-text with Scribe v2 (`scribe_v2_realtime` is the
+    /// realtime model), without audio-event tags or filler words.
+    private func elevenLabs(_ wav: Data, apiKey: String, language: String?) async throws -> String {
+        var form = MultipartFormBody()
+        form.field("model_id", "scribe_v2")
+        if let language { form.field("language_code", language) }
+        form.field("tag_audio_events", "false")
+        form.field("no_verbatim", "true")
+        form.wav(wav)
+        var request = URLRequest(url: URL(string: "https://api.elevenlabs.io/v1/speech-to-text")!)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        let data = try await send(request, body: form.finished())
+        return try Self.text(in: data)
+    }
+
+    /// OpenAI-compatible `/v1/audio/transcriptions` with the user's model.
+    private func selfHosted(
+        _ wav: Data, apiKey: String, endpoint: URL, model: String, language: String?
+    ) async throws -> String {
+        var form = MultipartFormBody()
+        form.field("model", model)
+        if let language { form.field("language", language) }
+        form.field("response_format", "json")
+        form.wav(wav)
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        let data = try await send(request, body: form.finished())
+        return try Self.text(in: data)
+    }
+
+    /// Soniox file API: upload, job, poll, transcript. The file and the job
+    /// are deleted afterwards, whatever the outcome.
+    private func soniox(_ wav: Data, apiKey: String, language: String?) async throws -> String {
+        var form = MultipartFormBody()
+        form.wav(wav)
+        var upload = SonioxFileAPI.request(path: "files", method: "POST", apiKey: apiKey)
+        upload.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        let uploaded = try await send(upload, body: form.finished())
+        guard let fileID = try? SonioxFileAPI.resourceID(in: uploaded) else {
+            throw ProviderBatchTranscriptionError.malformedResponse
+        }
+        var jobID: String?
+        defer { deleteFromSoniox(fileID: fileID, jobID: jobID, apiKey: apiKey) }
+
+        // The realtime request's hints: the chosen language, then English.
+        var hints = language.map { [$0] } ?? []
+        if !hints.contains("en") { hints.append("en") }
+        let job: [String: Any] = ["model": SonioxFileAPI.asyncModel, "file_id": fileID, "language_hints": hints]
+        var create = SonioxFileAPI.request(path: "transcriptions", method: "POST", apiKey: apiKey)
+        create.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let created = try await send(create, body: JSONSerialization.data(withJSONObject: job))
+        guard let id = try? SonioxFileAPI.resourceID(in: created) else {
+            throw ProviderBatchTranscriptionError.malformedResponse
+        }
+        jobID = id
+
+        let giveUp = ContinuousClock.now + jobTimeout
+        while true {
+            try Task.checkCancellation()
+            let data = try await send(SonioxFileAPI.request(path: "transcriptions/\(id)", method: "GET", apiKey: apiKey))
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            switch object?["status"] as? String {
+            case "completed":
+                let data = try await send(
+                    SonioxFileAPI.request(path: "transcriptions/\(id)/transcript", method: "GET", apiKey: apiKey)
+                )
+                return try Self.text(in: data)
+            case "error":
+                throw ProviderBatchTranscriptionError.jobFailed
+            case "queued", "processing":
+                guard ContinuousClock.now < giveUp else { throw ProviderBatchTranscriptionError.timedOut }
+                try await Task.sleep(for: pollInterval)
+            default:
+                throw ProviderBatchTranscriptionError.malformedResponse
+            }
+        }
+    }
+
+    /// Soniox keeps uploads and transcripts until they are deleted. Detached
+    /// from the take, so a take the recovery deadline cancelled still deletes
+    /// them and a result is not held back. The file goes first: a queued job
+    /// then fails instead of starting. Soniox refuses (409) to delete a job
+    /// that is still processing; that deletion is retried every
+    /// `pollInterval` until `jobTimeout` passes.
+    private func deleteFromSoniox(fileID: String, jobID: String?, apiKey: String) {
+        let session = session
+        let retryInterval = pollInterval
+        let limit = jobTimeout
+        Task {
+            let fileStatus = await Self.status(
+                of: SonioxFileAPI.request(path: "files/\(fileID)", method: "DELETE", apiKey: apiKey), in: session
+            )
+            var jobStatus: Int?
+            if let jobID {
+                let giveUp = ContinuousClock.now + limit
+                while true {
+                    jobStatus = await Self.status(
+                        of: SonioxFileAPI.request(path: "transcriptions/\(jobID)", method: "DELETE", apiKey: apiKey),
+                        in: session
+                    )
+                    guard jobStatus == 409, ContinuousClock.now < giveUp else { break }
+                    try? await Task.sleep(for: retryInterval)
+                }
+            }
+            os_log("soniox batch cleanup file_status=%{public}d job_status=%{public}d",
+                   log: Self.log, type: .info, fileStatus ?? -1, jobStatus ?? -1)
+        }
+    }
+
+    // MARK: HTTP
+
+    /// The body of a 2xx answer; any other status is thrown.
+    private func send(_ request: URLRequest, body: Data? = nil) async throws -> Data {
+        var request = request
+        request.httpBody = body
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else { throw ProviderBatchTranscriptionError.httpStatus(status) }
+        return data
+    }
+
+    /// The HTTP status of a request; nil when no answer arrived.
+    private static func status(of request: URLRequest, in session: URLSession) async -> Int? {
+        guard let response = try? await session.data(for: request).1 else { return nil }
+        return (response as? HTTPURLResponse)?.statusCode
+    }
+
+    /// `text` of a JSON answer (ElevenLabs, OpenAI-compatible, Soniox
+    /// transcript). A missing field is an error, not silence.
+    private static func text(in data: Data) throws -> String {
+        struct Response: Decodable { let text: String }
+        guard let response = try? JSONDecoder().decode(Response.self, from: data) else {
+            throw ProviderBatchTranscriptionError.malformedResponse
+        }
+        return response.text
+    }
+
+    /// `AudioRecorder` hands over a canonical WAV, the delivery ladder raw
+    /// PCM16. Providers get a WAV either way.
+    private static func wavFile(_ audio: Data) -> Data {
+        let isWAV = audio.prefix(4).elementsEqual("RIFF".utf8)
+            && audio.dropFirst(8).prefix(4).elementsEqual("WAVE".utf8)
+        return isWAV ? audio : TurnAudioBuffer.wav(fromPCM16: audio)
+    }
+
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Int {
+        let elapsed = start.duration(to: .now).components
+        return Int(elapsed.seconds) * 1000 + Int(elapsed.attoseconds / 1_000_000_000_000_000)
+    }
+
+    /// A failure label without content, for the log.
+    private static func reason(_ error: Error) -> String {
+        if let failure = error as? ProviderBatchTranscriptionError {
+            switch failure {
+            case .httpStatus(let status): return "http_\(status)"
+            case .malformedResponse: return "malformed_response"
+            case .jobFailed: return "job_failed"
+            case .timedOut: return "timed_out"
+            }
+        }
+        if error is CancellationError { return "cancelled" }
+        if let urlError = error as? URLError { return "url_error_\(urlError.code.rawValue)" }
+        return "other"
+    }
+}
+
+/// multipart/form-data with a random boundary.
+private struct MultipartFormBody {
+    private let boundary = "exodia-\(UUID().uuidString)"
+    private var body = Data()
+
+    var contentType: String { "multipart/form-data; boundary=\(boundary)" }
+
+    mutating func field(_ name: String, _ value: String) {
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n")
+    }
+
+    /// The take as the `file` part, the name all three APIs expect.
+    mutating func wav(_ content: Data) {
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n")
+        body.append(content)
+        append("\r\n")
+    }
+
+    func finished() -> Data {
+        body + Data("--\(boundary)--\r\n".utf8)
+    }
+
+    private mutating func append(_ string: String) {
+        body.append(Data(string.utf8))
+    }
+}
