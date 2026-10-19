@@ -940,6 +940,7 @@ final class AgentController: ObservableObject {
         // resumed. Repeat this one small language rule every turn so tool
         // output or older conversation context cannot make the answer drift.
         parts.append(Self.perTurnLanguageInstruction)
+        parts.append(WhytapCustomizationContext.notificationInstructions)
         parts.append(query)
         return parts.joined(separator: "\n\n")
     }

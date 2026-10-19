@@ -56,6 +56,7 @@ enum IslandHoverToolSearch {
         case .hotkeys: return "keyboard shortcuts горячие клавиши"
         case .notes: return "meetings meeting notes встречи заметки"
         case .meetingRecord: return "meeting recording record запись встречи"
+        case .notifs: return "notify notification notifications alerts уведомления оповещения"
         case .monitor: return "dashboard server status монитор серверы"
         case .brightness: return "screen brightness sun hdr xdr vivid extra boost battery яркость экран солнце батарея"
         case .quit: return "exit выход"

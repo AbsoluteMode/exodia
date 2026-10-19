@@ -277,6 +277,7 @@ final class IslandDropModeControlTests: XCTestCase {
         let expected: [(tool: HoverTool, title: String, effect: HoverSlotEffect)] = [
             (.dropMode, "Drop Mode", .toggleDropMode),
             (.clipboard, "History", .openPanel(.history)),
+            (.notifs, "Notify", .openPanel(.notifications)),
             (.vocab, "Vocab", .openPanel(.vocabularyEditor)),
             (.caseVault, "Case", .openPanel(.caseVault)),
             (.filler, "Filler", .openPanel(.fillerEditor)),

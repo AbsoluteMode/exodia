@@ -114,3 +114,5 @@ For monitoring requests, the built-in agent also receives
 the passive JSON schema, collector boundaries and source-kit navigation. It can
 create a custom dashboard directly from that contract without locating a source
 checkout. Changes to the native app still require editing and rebuilding source.
+
+Custom notifications: [Notify scripts and agent setup](notifications.md).

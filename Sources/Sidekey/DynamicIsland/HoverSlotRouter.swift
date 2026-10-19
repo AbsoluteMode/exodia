@@ -10,6 +10,7 @@ enum HoverInlinePanel: Equatable {
     /// became this inline hover panel, so its ⌥N hotkey opens History in-place
     /// rather than firing the old bottom-strip action.
     case history
+    case notifications
     case vocabularyEditor
     case caseVault
     case fillerEditor
@@ -106,6 +107,8 @@ enum HoverSlotRouter {
         switch tool {
         case .dropMode:
             return .toggleDropMode
+        case .notifs:
+            return .openPanel(.notifications)
         case .clipboard:
             // #313: the Clipboard tile is now the History inline hover panel.
             // Open it in-place (D1: same as the tile click → `panelMode =

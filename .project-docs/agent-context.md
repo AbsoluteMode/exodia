@@ -444,6 +444,20 @@ Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
 
+Notify: agent-configured local scripts emit JSON lines with title, body, event
+ID, optional link, color, logo and duration. NotifyScriptSupervisor reads private
+sources/<id>.json manifests, supervises child process groups only during the app
+lifetime, restarts with bounded backoff and stops on disable, removal, sleep or
+quit. No backend or built-in provider connectors are restored. The original
+IslandNotificationPill / nonactivating panel sits left of the island, using the
+selected screen and screenshot-protection preference. Hover pauses dismissal.
+LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
+presentation in history; unreadable history is never silently overwritten. Notify
+opens through hover search, Toolbox and existing positional hotkeys without
+changing saved layouts. Agents get a resolved setup-guide path on every turn.
+Guide: docs/customization/notifications.md. WHY:
+.project-docs/decisions/2026-10-19-script-notifications.md
+
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change
 contracts and source entry points; `doctor --json` checks build prerequisites.
@@ -599,7 +613,8 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 1. **No Exodia-owned services.** The app never contacts an Exodia backend,
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
-   and monitoring sources the user configured (including their credential store), OpenCode's own provider
+   and monitoring sources the user configured (including their credential store),
+   notification sources accessed by user-configured local scripts, OpenCode's own provider
    traffic, its official GitHub release download, `google.com` opened in the
    browser, and the Sparkle feed on GitHub Releases.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any

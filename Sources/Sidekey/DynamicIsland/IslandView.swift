@@ -299,7 +299,7 @@ struct IslandView: View {
     ) -> CGFloat {
         let base: CGFloat
         switch mode {
-        case .controls, .monitor:
+        case .controls, .monitor, .notifications:
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .history:
             base = IslandDropModeControl.historyHoverPanelHeight
@@ -444,6 +444,8 @@ struct IslandView: View {
         switch panel {
         case .history:
             return .history
+        case .notifications:
+            return .notifications
         case .monitor:
             return .monitor
         case .brightness:
@@ -2379,6 +2381,7 @@ enum IslandHoverPanelMode: Equatable {
     case outputLanguagePicker
     case history
     case monitor
+    case notifications
     case vocabularyEditor
     case fillerEditor
     case caseVault
@@ -2387,8 +2390,8 @@ enum IslandHoverPanelMode: Equatable {
     var needsKeyboardFocus: Bool {
         switch self {
         // Brightness takes key status like Monitor so its slider and switch get clicks.
-        case .languagePicker, .outputLanguagePicker, .history, .monitor, .vocabularyEditor, .fillerEditor, .caseVault,
-             .brightness:
+        case .languagePicker, .outputLanguagePicker, .history, .monitor, .notifications, .vocabularyEditor, .fillerEditor,
+             .caseVault, .brightness:
             return true
         case .controls:
             return false
@@ -2489,6 +2492,9 @@ private struct IslandDropModeHoverPanel: View {
                     }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if panelMode == .notifications {
+                NotifyHoverPanel(onBack: { panelMode = .controls })
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if panelMode == .monitor {
                 MonitorHoverPanel(onBack: { panelMode = .controls })
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -2757,6 +2763,7 @@ private struct IslandDropModeHoverPanel: View {
         case .openPanel(let panel):
             switch panel {
             case .history: panelMode = .history
+            case .notifications: panelMode = .notifications
             case .monitor: panelMode = .monitor
             case .brightness: panelMode = .brightness
             case .vocabularyEditor: panelMode = .vocabularyEditor

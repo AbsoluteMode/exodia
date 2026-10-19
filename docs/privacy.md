@@ -40,6 +40,14 @@ and reads the battery charge and load through IOKit, only while its hover strip
 is open (plus one level read when hover opens with Display pinned). Nothing
 is stored, logged or sent, and it requests no macOS permissions.
 
+Notify stores notification history (up to 500 events), including text, links,
+colors and logo names, locally under Application Support. User-configured scripts
+can access the external sources required by their integration with the user's
+authorized credentials. They run with ordinary user permissions while the app is
+open and stop on quit; Exodia does not send notification content to a model or an
+Exodia server. Script output is not logged and stderr is discarded. History and
+source controls are in Notify. [Script contract](customization/notifications.md).
+
 ## What can leave the device, and only when you choose it
 
 | Route | Where data goes | When |

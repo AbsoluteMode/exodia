@@ -87,6 +87,14 @@ The agent can edit files and run tests by default. **Allow agent actions** can
 be turned off in Settings. Its model configuration, memory and conversation
 sessions stay local in the agent workspace.
 
+## Custom notifications
+
+Notify shows compact notifications to the left of the island and keeps their
+history, colors and logos. Ask your coding agent to connect the source and
+filters you want; Exodia runs its local script only while the app is open.
+Find **Notify** in hover search or add it in **Settings → Toolbox**.
+[Setup and script contract](docs/customization/notifications.md).
+
 ## Hotkeys
 
 | Action | Default |
