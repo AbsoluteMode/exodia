@@ -109,6 +109,8 @@ final class ScreenBrightnessController: ObservableObject {
     private var lastWrite: (display: CGDirectDisplayID, date: Date)?
     private var timer: Timer?
     private var viewers = 0
+    /// Between screensDidSleep and screensDidWake: the panel is dark whatever its level.
+    private var areScreensAsleep = false
     /// True while a visible strip follows outside changes.
     var isPolling: Bool { timer != nil }
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -136,7 +138,11 @@ final class ScreenBrightnessController: ObservableObject {
         observe(center, IslandScreenResolver.selectionDidChangeNotification) { $0.refresh() }
         // Sleep and a session switch leave Extra on; its frames pause meanwhile.
         observe(workspace, NSWorkspace.didWakeNotification) { $0.refresh() }
-        observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.refresh() }
+        observe(workspace, NSWorkspace.screensDidSleepNotification) { $0.areScreensAsleep = true }
+        observe(workspace, NSWorkspace.screensDidWakeNotification) {
+            $0.areScreensAsleep = false
+            $0.refresh()
+        }
         observe(center, ProcessInfo.thermalStateDidChangeNotification) { $0.thermalStateDidChange() }
     }
 
@@ -224,9 +230,11 @@ final class ScreenBrightnessController: ObservableObject {
 
     /// The built-in display's light for the battery estimate, times the boost Extra applies to it
     /// now (none while it waits for headroom or has none): 0 without a built-in display (a closed
-    /// lid), nil when its level can't be read. Reads only.
+    /// lid) or while the displays sleep, nil when its level can't be read. Reads only.
+    // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
     func builtInDisplayLoad() -> Double? {
-        guard let builtIn = device.displays().first(where: \.isBuiltIn) else { return 0 }
+        // A sleeping panel draws almost nothing, though its backlight keeps the level.
+        guard !areScreensAsleep, let builtIn = device.displays().first(where: \.isBuiltIn) else { return 0 }
         let isCurrent = display?.id == builtIn.id
         let level: Double
         if isCurrent, isSettling(builtIn.id) {

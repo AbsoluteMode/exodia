@@ -18,6 +18,9 @@ sources:
     reference: Later on 2026-10-19, with installed build 1472, the user reported that Vivid looked brighter than Extra and that the brightness still blinked on every app switch, then that Vivid does not blink on ⌘Tab. They reported the drawer closing on a quick move up to the strip from the third row (waiting first worked), the strip's Extra switch drawn grey instead of blue, and asked for a smart battery estimate that follows the battery charge, the screen brightness and the average load of the last half hour or hour, recomputed on every change.
     confirmed_at: 2026-10-19
   - type: repository
+    reference: Local runs on 2026-10-20 for the display-sleep change, written test-first. ScreenBrightnessControllerTests 34, BatteryRuntimeTests 28 and BatteryRuntimeMonitorTests 7, the filter 69 tests, 0 failures; removing the sleep checks failed all three new tests. Full swift test 3,548 tests, 9 skipped, 0 failures (98.478 s).
+    confirmed_at: 2026-10-20
+  - type: repository
     reference: Sources/Sidekey/Brightness/ScreenBrightnessController.swift
     confirmed_at: 2026-10-20
   - type: repository
@@ -248,7 +251,10 @@ between two readings 30 to 180 seconds apart, with the built-in display's
 light averaged over the same span (`ScreenBrightnessScale.displayLoad`): the
 level squared, times the light of the table factor Extra currently applies to
 that display (2.35 at 1.45, 1 while it waits for headroom or has none), and 0
-with the lid closed. A factor that changes on its own, with the headroom, is
+with the lid closed or while the displays sleep (from `screensDidSleep` until
+`screensDidWake`, including an idle Mac's display sleep). The monitor notes
+the sleep itself, since the controller may learn of it later, and reads the
+level again after every wake observer has run. A factor that changes on its own, with the headroom, is
 counted at the next reading: 5 seconds with the strip open, a minute without. A longer gap such as sleep, a counter reset or a clock change starts
 a new span without a sample; an empty history starts from the latest instant
 load, and loads under 0.5 W are dropped. The estimate uses the last 30
@@ -393,9 +399,14 @@ Brightness keys need the Accessibility permission the hotkeys use.
   Adjusting it for the brightness keeps the line moving with the slider
   meanwhile.
 - A span longer than 180 seconds, such as sleep, adds no sample because the
-  light and the load during it are unknown. The display's own sleep is not
-  detected: a display sleeps with an idle Mac, and counting its light as 0
-  would credit the idle Mac's lower load to the display.
+  light and the load during it are unknown.
+- A sleeping display counts as dark (changed on 2026-10-20; the first design
+  kept its backlight level). The panel then draws almost nothing, so samples
+  at the full level with a low load pulled the slope toward the 1 W bound and
+  the estimate away from the display's real share. The light is now what the
+  panel emits. The idle Mac's own lower load during display sleep can still
+  be credited partly to the display; the prior, the 1-15 W bounds and the 80 %
+  share cap limit that, and it is an accepted risk rather than a measurement.
 - The history stays in memory, so nothing about usage is written to disk;
   after a relaunch macOS's estimate covers the first minutes.
 - The settle is per display, so another display's reading stays current after
@@ -404,7 +415,7 @@ Brightness keys need the Accessibility permission the hotkeys use.
 
 ## What was tested
 
-- `ScreenBrightnessControllerTests` (32) with fake devices: read-only opening,
+- `ScreenBrightnessControllerTests` (34) with fake devices: read-only opening,
   per-display settle, Extra starting the boost without a backlight write,
   switching it off leaving the backlight as it is, the slider and outside
   changes keeping it at any level, sleep and a session switch keeping it, a
@@ -414,8 +425,8 @@ Brightness keys need the Accessibility permission the hotkeys use.
   unreadable display that is never written and has no switch, thermal
   pressure blocking Extra and pausing only an active one, and the built-in
   display's light for the battery (the level squared, Extra only on that
-  display, 0 without one, none when unreadable, the slider's level while the
-  reading settles). The six fixed-boost tests failed first against the
+  display, 0 without one or while the displays sleep, Extra still on, none
+  when unreadable, the slider's level while the reading settles). The six fixed-boost tests failed first against the
   earlier model, for example `["write 1 1.0", "overlay 1"]` instead of
   `["overlay 1"]`; six tests of the earlier restore model were removed with it.
 - `GammaBrightnessBoostTests` (25) with a fake `DisplayGammaAccess`, never a
@@ -452,7 +463,7 @@ Brightness keys need the Accessibility permission the hotkeys use.
   panels it replaces, 2 seconds, the pointer holding it from below, which
   failed first). Seven mutations of the parsing, filter, handler and setting
   were each caught.
-- `BatteryRuntimeTests` (27) and `BatteryRuntimeMonitorTests` (5) with recorded
+- `BatteryRuntimeTests` (28) and `BatteryRuntimeMonitorTests` (7) with recorded
   snapshots, never the real battery or display: macOS's estimate first on
   battery and with few samples, adjusted for a brightness change and kept as
   is without watt-hours; the history's time without macOS's estimate and on
@@ -464,8 +475,11 @@ Brightness keys need the Accessibility permission the hotkeys use.
   changes and kept plausible, a lower brightness giving more time and Extra
   taking time; clamps, rounding and symbols available on macOS 14; and the
   monitor publishing only changes, recomputing on a display change without
-  reading the battery, recording from launch without a strip and recording
-  nothing without a battery.
+  reading the battery, recording from launch without a strip, recording
+  nothing without a battery, and a display sleep counted as dark from its
+  notification until the wake (through a private notification center, with a
+  display load that still reports the backlight) and in samples taken while
+  it sleeps.
 - `BrightnessHoverToolTests` (19): catalog-only registration, search aliases, a
   capsule title that fits one line at 310 points (it failed with Brightness),
   capsule status, band heights and the hold released only over the drawer's
@@ -591,8 +605,9 @@ Brightness keys need the Accessibility permission the hotkeys use.
   differ; the prior covers only the start.
 - Keeping the battery history across launches: it would write usage to disk,
   and macOS's estimate covers the first minutes.
-- Counting a sleeping display as dark: a display sleeps with an idle Mac, so
-  the idle load would be credited to the display.
+- Counting a sleeping display at its backlight level (the first design): the
+  panel is dark, so the slope learnt from those samples understated the
+  display's share.
 - Drawing only while the strip is open: the boost blinked once the app lost focus.
 - `preferredDynamicRange = .high` with `contentsHeadroom` for the overlay
   (Codex's proposal): the overlay itself was replaced, and the change would not

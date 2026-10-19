@@ -386,6 +386,24 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertEqual(Fixture().controller.builtInDisplayLoad(), 0)
     }
 
+    func testASleepingBuiltInDisplayHasNoLoadUntilItWakes() {
+        // A sleeping panel draws almost nothing, whatever level its backlight keeps.
+        let f = Fixture(), device = f.device
+        f.observesSystem = true
+        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
+        let controller = f.controllerWithExtra()
+        defer { controller.shutdown() }
+
+        f.workspace.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        XCTAssertEqual(controller.builtInDisplayLoad(), 0, "Extra's boost doesn't count either.")
+        XCTAssertTrue(controller.isExtraOn, "Display sleep keeps Extra.")
+
+        f.workspace.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.16 * ScreenBrightnessScale.extraLight,
+                       accuracy: 0.0001)
+        XCTAssertEqual(device.events, ["boost 1"], "Only reads.")
+    }
+
     func testAnUnreadableBuiltInDisplayHasNoLoad() {
         let f = Fixture(), device = f.device
         device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
