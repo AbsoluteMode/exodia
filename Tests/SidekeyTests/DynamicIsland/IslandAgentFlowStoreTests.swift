@@ -9,10 +9,12 @@ final class IslandAgentFlowStoreTests: XCTestCase {
         // The store observes `AppState.shared.$phase` for the drop wing; reset
         // the singleton so a prior test's drop phase can't leak in.
         AppState.shared.phase = .idle
+        AppState.shared.dropDeliveryFailureMessage = nil
     }
 
     override func tearDown() {
         AppState.shared.phase = .idle
+        AppState.shared.dropDeliveryFailureMessage = nil
         super.tearDown()
     }
 
@@ -74,6 +76,19 @@ final class IslandAgentFlowStoreTests: XCTestCase {
         let (store, _) = makeStore()
         XCTAssertEqual(store.wing, .hidden)
         XCTAssertFalse(store.answerPanelVisible)
+    }
+
+    func testSmartFailureShowsItsOwnMessageAndClearsOnNewTake() async {
+        let (store, _) = makeStore()
+        AppState.shared.dropDeliveryFailureMessage = "Smart failed (503)"
+        AppState.shared.phase = .deliveryFailed
+        await drainMain()
+        XCTAssertEqual(store.wing, .deliveryFailed(message: "Smart failed (503)"))
+
+        AppState.shared.dropDeliveryFailureMessage = nil
+        AppState.shared.phase = .recording
+        await drainMain()
+        XCTAssertEqual(store.wing, .recording(transcript: ""))
     }
 
     func testVoiceRecordingShowsWingWithTranscript() {
@@ -470,9 +485,10 @@ final class IslandAgentFlowStoreTests: XCTestCase {
         store.dropPhaseChanged(.verifying)
         if case .acting = store.wing {} else { XCTFail("expected acting, got \(store.wing)") }
         XCTAssertEqual(store.activityLabel, "thinking…")
-        // the paste tail keeps the thinking slot until idle
+        // The paste tail has its own label and no active LLM provider.
         store.dropPhaseChanged(.inserting)
         if case .acting = store.wing {} else { XCTFail("expected acting, got \(store.wing)") }
+        XCTAssertEqual(store.activityLabel, "pasting…")
     }
 
     func testDropSmartPostProcessExposesCleanupBrand() {
@@ -492,10 +508,24 @@ final class IslandAgentFlowStoreTests: XCTestCase {
 
         store.dropPhaseChanged(.inserting)
         if case .acting = store.wing {} else { XCTFail("expected acting, got \(store.wing)") }
-        XCTAssertEqual(store.recordingProviderBrand, cleanupBrand)
+        XCTAssertNil(store.recordingProviderBrand)
 
         store.dropPhaseChanged(.idle)
         XCTAssertNil(store.recordingProviderBrand)
+    }
+
+    func testFastPasteNeverExposesConfiguredCleanupProvider() {
+        var cleanupBrandReads = 0
+        let (store, _) = makeStore(dropCleanupBrand: {
+            cleanupBrandReads += 1
+            return .openRouter
+        })
+        store.dropPhaseChanged(.recording)
+        store.dropPhaseChanged(.inserting)
+        XCTAssertEqual(store.wing, .acting)
+        XCTAssertEqual(store.activityLabel, "pasting…")
+        XCTAssertNil(store.recordingProviderBrand)
+        XCTAssertEqual(cleanupBrandReads, 0)
     }
 
     func testDropIdleHidesWingAndClearsTranscript() {

@@ -140,13 +140,14 @@ struct ProviderBatchTranscriber: BatchTranscribing {
 
     /// Deepgram pre-recorded: the realtime query on `/v1/listen`.
     private func deepgram(_ wav: Data, apiKey: String, model: String, language: String?) async throws -> String {
+        let language = try DeepgramLanguagePolicy.queryLanguage(model: model, language: language)
         var components = URLComponents(string: "https://api.deepgram.com/v1/listen")!
         var items = [
             URLQueryItem(name: "model", value: model),
             URLQueryItem(name: "smart_format", value: "true"),
             URLQueryItem(name: "punctuate", value: "true"),
         ]
-        if let language { items.append(URLQueryItem(name: "language", value: language)) }
+        items.append(URLQueryItem(name: "language", value: language))
         components.queryItems = items
         var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"

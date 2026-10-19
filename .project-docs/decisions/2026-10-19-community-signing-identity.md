@@ -44,7 +44,7 @@ sources:
   - type: trace
     reference: Production candidate build 90003 from 2040de9, signed with the committed certificate; its designated requirement pins SHA-1 39da3636 and provenance verification passed. Full local swift test on 2040de9, 2,895 tests, 5 skipped, 0 failures in 55.518 seconds.
     confirmed_at: 2026-10-19
-related: [../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md]
+related: [../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md, 2026-10-19-one-running-copy.md]
 ---
 
 # Stable code-signing identity for community builds
@@ -223,6 +223,11 @@ does not depend on Apple Developer membership.
   requirement does not need trust.
 - A key per build, release or machine: each one is a new identity, the same
   as ad hoc.
+- Pin the maintainer's existing local "Sidekey Dev" certificate (Codex
+  candidate, 2026-10-19). The user chose this certificate instead on
+  2026-10-19: that key exists only in one login keychain with no backup, and
+  the certificate expires in 2036. The cost of the choice is one more grant
+  for installs that already run a build signed with "Sidekey Dev".
 
 ## Supersedes
 

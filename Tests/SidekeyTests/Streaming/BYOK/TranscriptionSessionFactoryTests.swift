@@ -81,6 +81,35 @@ final class TranscriptionSessionFactoryTests: XCTestCase {
         XCTAssertEqual(BYOKProvider.elevenLabs.defaultTranscriptionModel, "scribe_v2_realtime")
     }
 
+    func testDeepgramInvalidLanguageIsASetupErrorWithoutChangingSavedSelections() throws {
+        let p = prefs(.yourKey, .deepgram)
+        p.setTranscriptionModel("nova-3", for: .deepgram)
+        let keys = BYOKKeyStore.inMemory()
+        try keys.save(key: "fake-test-key", for: .deepgram)
+        let factory = TranscriptionSessionFactory(prefs: p, keyStore: keys, vocab: vocab())
+
+        XCTAssertThrowsError(try factory.make(language: "cy")) {
+            XCTAssertEqual($0 as? TranscriptionFactoryError, .invalidLanguageConfiguration(.unsupportedLanguage))
+        }
+        XCTAssertEqual(p.selectedProvider, .deepgram)
+        XCTAssertEqual(p.transcriptionModel(for: .deepgram), "nova-3")
+    }
+
+    func testDeepgramUnknownModelAutoRequiresSetupButExplicitLanguageIsPreserved() throws {
+        let p = prefs(.yourKey, .deepgram)
+        p.setTranscriptionModel("custom-model", for: .deepgram)
+        let keys = BYOKKeyStore.inMemory()
+        try keys.save(key: "fake-test-key", for: .deepgram)
+        let factory = TranscriptionSessionFactory(prefs: p, keyStore: keys, vocab: vocab())
+
+        XCTAssertThrowsError(try factory.make(language: nil)) {
+            XCTAssertEqual($0 as? TranscriptionFactoryError, .invalidLanguageConfiguration(.automaticLanguageUnavailable))
+        }
+        XCTAssertTrue(try factory.make(language: "ru") is DirectProviderStreamingSession)
+        XCTAssertEqual(p.transcriptionModel(for: .deepgram), "custom-model")
+        XCTAssertEqual(p.selectedProvider, .deepgram)
+    }
+
     // MARK: - Resilient scoping in the factory (source inspection)
     //
     // `make(language:resilient:)` is a small factory; behavioral tests can't

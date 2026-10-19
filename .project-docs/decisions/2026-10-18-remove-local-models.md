@@ -23,7 +23,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Settings/RetiredLocalRouteTests.swift
     confirmed_at: 2026-10-18
-related: [2026-10-18-legacy-model-cleanup.md, 2026-10-18-no-default-realtime-host.md, 2026-10-18-provider-batch-transcription.md, ../project.md, 2026-09-10-byok-and-local-builds.md, 2026-10-18-silent-meetings.md]
+related: [2026-10-19-strict-drop-modes.md, 2026-10-18-legacy-model-cleanup.md, 2026-10-18-no-default-realtime-host.md, 2026-10-18-provider-batch-transcription.md, ../project.md, 2026-09-10-byok-and-local-builds.md, 2026-10-18-silent-meetings.md]
 ---
 
 # Remove on-device models
@@ -54,8 +54,10 @@ from an on-device diarizer.
   `.yourKey` and `.custom`. Both getters are optional. A stored `local`, or no
   stored level on Apple Silicon, reads as not configured even when a provider
   key is stored. Intel keeps its Your key default.
-- Not configured: Drop opens Settings -> Models and records nothing; cleanup
-  returns the no-LLM output; a recorded meeting stays staged as failed with
+- Not configured: Drop opens Settings -> Models and records nothing. The
+  original cleanup-to-Fast fallback is superseded by
+  [strict Drop modes](2026-10-19-strict-drop-modes.md): Smart retains its
+  transcript with an explicit failure and Retry. A recorded meeting stays staged as failed with
   "Add your own provider keys in Settings > Models to process this meeting."
   until both routes are chosen. Settings shows "not set up" banners.
 - Keep the batch seam. Production binds `UnavailableBatchTranscriber` to

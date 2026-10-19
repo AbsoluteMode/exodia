@@ -193,15 +193,40 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.capturedBodies.first, wav)
     }
 
-    // Breaks if Auto input sends an empty or invented language instead of
-    // leaving it to the provider, as the realtime request does.
-    func test_deepgram_autoLanguage_sendsNoLanguage() async throws {
+    // Omitting language defaults to English. Batch must use the same bounded
+    // multilingual policy as realtime without detect_language model fallback.
+    func test_deepgram_autoLanguage_usesMultilingualAndPreservesTheModel() async throws {
         StubURLProtocol.handler = { _ in (200, [:], Self.deepgramBody(transcript: "Hello.")) }
 
         _ = try await transcriber(.deepgram(apiKey: "dg-key", model: "nova-3")).transcribe(audio: pcm, language: nil)
 
         let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
-        XCTAssertEqual(Self.query(request), ["model": "nova-3", "smart_format": "true", "punctuate": "true"])
+        XCTAssertEqual(Self.query(request), ["model": "nova-3", "smart_format": "true", "punctuate": "true", "language": "multi"])
+    }
+
+    func test_deepgram_explicitEnglish_staysEnglish() async throws {
+        StubURLProtocol.handler = { _ in (200, [:], Self.deepgramBody(transcript: "Hello.")) }
+        _ = try await transcriber(.deepgram(apiKey: "dg-key", model: "nova-3"))
+            .transcribe(audio: pcm, language: "en")
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(Self.query(request)["language"], "en")
+        XCTAssertEqual(Self.query(request)["model"], "nova-3")
+    }
+
+    func test_deepgram_invalidLanguageOrUnknownModelAuto_sendsNoAudio() async {
+        for (model, language, expected) in [
+            ("nova-3", "cy" as String?, DeepgramLanguageConfigurationError.unsupportedLanguage),
+            ("custom-model", nil, DeepgramLanguageConfigurationError.automaticLanguageUnavailable),
+        ] {
+            do {
+                _ = try await transcriber(.deepgram(apiKey: "dg-key", model: model))
+                    .transcribe(audio: pcm, language: language)
+                XCTFail("Invalid language setup must not upload audio")
+            } catch {
+                XCTAssertEqual(error as? DeepgramLanguageConfigurationError, expected)
+            }
+            XCTAssertTrue(StubURLProtocol.capturedRequests.isEmpty)
+        }
     }
 
     // Breaks if a recorder WAV gets a second header: the provider would read

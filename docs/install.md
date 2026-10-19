@@ -98,9 +98,13 @@ while preserving local changes, then validate and rebuild. See
 - **“Install Exodia before opening it”:** drag the app to Applications and open
   that copy instead of the disk-image copy. For source builds, use the writable
   checkout and `scripts/dev-run.sh`.
-- **The shortcut or paste does not work:** check Microphone and Accessibility
-  for the installed copy, then quit and reopen it. Regrant if an update changed
-  its code identity.
+- **The shortcut or paste does not work:** open **Exodia Settings → Permissions**,
+  check the Drop shortcut status and click **Retry Shortcut** after granting
+  the missing permission. Refresh and reopening Exodia also recheck the monitors.
+- **An unexpected copy opens:** Settings shows the actual version, channel and
+  application path. New builds allow one running copy across production and
+  beta; a second copy offers to activate the existing app. Quit the running
+  copy before switching. Older binaries do not implement this coordination.
 - **The API key does not connect:** check the provider, key, endpoint/model and
   internet connection. Never include the key in a bug report.
 - **The source build fails:** run `python3 scripts/customize.py doctor --json`

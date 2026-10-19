@@ -41,8 +41,8 @@ struct PostProcessor {
     /// as a data-only envelope so the cleaner can disambiguate names/terms.
     ///
     /// Throws when no LLM is chosen or the chosen route is not usable (missing
-    /// key / base URL, endpoint unreachable). The Drop path catches that and
-    /// pastes the raw transcript — cleanup never blocks a paste.
+    /// key / base URL, endpoint unreachable). Smart retains the transcript for
+    /// Retry on failure; Fast bypasses this processor entirely.
     func process(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil) async throws -> String {
         _ = screenshot
         let resolver = DirectLLMRouteResolver(

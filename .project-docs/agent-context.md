@@ -80,9 +80,16 @@ Voice flow (Drop / dictation):
        finished=true also completes it. The 10s watchdog remains the backstop.
        -> cleanup (PostProcessor, level = LLMIsolationLevel):
             OpenRouter with the user's key / custom OpenAI-compatible endpoint
-            (Ollama, LM Studio, vLLM) / none (raw transcript + Filler
-            stripping). An unconfigured route, including the retired Local
-            one, degrades to the no-LLM output; the paste never fails on it.
+            (Ollama, LM Studio, vLLM). The mode is captured at take start:
+            Fast bypasses the LLM; Smart requires processed text and never
+            silently pastes raw speech after a cleanup error or empty result.
+            Smart failures retain the transcript in memory and show Retry with
+            the original mode and target; configuration errors open Models.
+            Full, batch-recovered and partial transcripts use the same rule.
+            A new take discards the old retry. The island observes persisted
+            mode changes from every control. The cleanup provider mark appears
+            only while processing; paste shows “pasting…” without a provider. WHY:
+            .project-docs/decisions/2026-10-19-strict-drop-modes.md
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting
@@ -414,6 +421,11 @@ WHY: .project-docs/decisions/2026-10-18-clipboard-retention.md
 Installation: SidekeyAppMain checks InstallationGuard before constructing the
 app delegate. A read-only or AppTranslocation copy shows Finder installation
 instructions and quits before permissions, provider discovery or updates.
+ApplicationInstanceCoordinator then acquires one common prod/beta/worktree lease
+before constructing AppDelegate. A second copy offers to activate the owner and
+quits without starting permissions, providers or hotkeys. Legacy binaries launched
+later cannot honor the lease. Settings shows actual channel/version/build/path/revision.
+WHY: .project-docs/decisions/2026-10-19-one-running-copy.md
 `--installation-check` loads the packaged executable and verifies resources
 without starting the app runtime. User guide: `docs/install.md`. Policy:
 `.project-docs/decisions/2026-09-10-public-installation.md`.
@@ -444,6 +456,12 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
   without the grant the tap silently yields zeros, so `SystemAudioVADProbe`
   rebuilds it at every recording start.
 - **Microphone** for Drop, agent voice and meetings.
+
+Drop reconciles failed installations and permission changes on activation,
+reopen, Settings Refresh/Retry and a bounded quiet polling session. Carbon tap
+shortcuts remain registered without AX so invocation can show permission repair.
+Permission checks guard Start only; Stop is always available. Rebuilding active
+capture monitors waits until capture ends. Background polling never asks for a grant.
 
 ## Commands
 

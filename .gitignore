@@ -43,3 +43,7 @@ dist/
 
 # Node (BlockNote bundle sources)
 node_modules/
+
+# Python helper caches
+__pycache__/
+*.pyc

@@ -32,6 +32,13 @@ bundle identity. It uses an existing local `Sidekey Dev` signing identity or
 falls back to ad-hoc signing. Do not launch the main app with `swift run`.
 Ad-hoc rebuilds may require granting macOS permissions again.
 
+Building leaves other running apps alone and does not register build-only
+bundles in LaunchServices. If the usual development bundle is running, the
+script assembles a separate candidate. New builds coordinate one running copy
+across production, beta and worktrees before starting providers or permissions.
+The second copy offers to activate the existing app; it never stops a recording.
+Settings shows the actual app path, channel, version, build and source revision.
+
 Development version `0.0.0-dev` / build `9999` keeps published binary updates
 from replacing the custom app. Update the checkout with your coding agent,
 preserve local changes, validate and rerun the script. Production users receive

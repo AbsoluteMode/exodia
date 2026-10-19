@@ -132,49 +132,6 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
         XCTAssertFalse(AppDelegate.streamingTranscriptIsEmpty("  hi  "))
     }
 
-    // MARK: - Empty-cleanup-output guard (ROO-257)
-    //
-    // A degenerate cleanup reply can be whitespace-only (and `DropFillerFilter`
-    // can also strip cleanup output to ""). Without a guard,
-    // `runPostProcessAndPaste` would feed "" into the paste tail, whose
-    // `deliverDropTranscript` early-returns on empty — silently
-    // eating the paste with no error surfaced. The deliverable decision is
-    // extracted here so the fallback is covered behaviorally.
-
-    func test_empty_cleanup_output_falls_back_to_raw_transcript() {
-        // Degenerate LLM cleanup → "" must NOT eat the paste; deliver the raw
-        // transcript instead so a non-empty dictation is never silently dropped.
-        XCTAssertEqual(
-            AppDelegate.dropDeliverableAfterCleanup(cleaned: "", rawTranscript: "привет мир"),
-            "привет мир"
-        )
-        XCTAssertEqual(
-            AppDelegate.dropDeliverableAfterCleanup(cleaned: "   ", rawTranscript: "hello world"),
-            "hello world"
-        )
-        XCTAssertEqual(
-            AppDelegate.dropDeliverableAfterCleanup(cleaned: "\n\t  \n", rawTranscript: "raw"),
-            "raw"
-        )
-    }
-
-    func test_nonempty_cleanup_output_is_delivered_verbatim() {
-        // The happy path: a real cleanup result is what gets pasted, untouched.
-        XCTAssertEqual(
-            AppDelegate.dropDeliverableAfterCleanup(cleaned: "Cleaned text.", rawTranscript: "cleaned text"),
-            "Cleaned text."
-        )
-    }
-
-    func test_empty_cleanup_with_empty_raw_stays_empty() {
-        // Both empty → nothing to deliver; the downstream empty-guard still idles
-        // without pasting (no hallucinated text onto the focused field).
-        XCTAssertEqual(
-            AppDelegate.dropDeliverableAfterCleanup(cleaned: "", rawTranscript: ""),
-            ""
-        )
-    }
-
     func test_streaming_setup_failure_before_stop_falls_back_to_recorder() {
         XCTAssertTrue(AppDelegate.shouldFallbackToRecorderOnStreamingFailure(
             stopRequested: false,
@@ -754,7 +711,9 @@ final class AppDelegateDropFlowRouteTests: XCTestCase {
             XCTFail("retryPendingDelivery() must exist.")
             return
         }
-        let body = String(source[fnRange.lowerBound...].prefix(1500))
+        let tail = source[fnRange.lowerBound...]
+        let end = try XCTUnwrap(tail.range(of: "    /// The side-effect surface"))
+        let body = String(tail[..<end.lowerBound])
         XCTAssertTrue(
             body.contains("AppState.shared.phase != .deliveryFailed"),
             "The retry Task must detect a non-re-armed outcome."

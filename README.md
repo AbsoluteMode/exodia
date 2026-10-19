@@ -50,8 +50,10 @@ Source and custom builds remain available; see [Development](#development).
 
 Exodia no longer ships on-device speech or text models. If you used **Local**
 before, Exodia does not switch you to a provider on its own: dictation opens
-**Settings, Models** until you choose a speech provider, Smart cleanup is
-skipped until you choose an LLM, and recorded meetings wait for both.
+**Settings, Models** until you choose a speech provider, and recorded meetings
+wait for both speech and an LLM. Fast uses no cleanup LLM. Smart requires the
+LLM you chose: if it fails, Exodia keeps the transcript in memory and shows
+Retry instead of silently inserting unprocessed text.
 
 Keys you enter are stored in the macOS Keychain and sent only to the
 provider you selected. Transcripts, notes and history are SQLite files under

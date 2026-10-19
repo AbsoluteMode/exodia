@@ -92,6 +92,7 @@ final class IslandAgentFlowStore: ObservableObject {
     /// Drop writes `AppState.phase`; the agent writes `AppState.agentPhase`,
     /// so the two never contend for the wing.
     private var dropPhase: AppPhase = .idle
+    private var dropDeliveryFailureMessage: String?
     private var dropTranscript: String = ""
 
     /// Widest transcript seen in the current recording turn — drives the
@@ -141,8 +142,11 @@ final class IslandAgentFlowStore: ObservableObject {
         // DispatchQueue.main delivers regardless of activation.
         // WHY: docs/decisions/2026-06-16-island-drop-thinking-stuck.md
         AppState.shared.$phase
+            .combineLatest(AppState.shared.$dropDeliveryFailureMessage)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] phase in self?.dropPhaseChanged(phase) }
+            .sink { [weak self] phase, message in
+                self?.dropPhaseChanged(phase, failureMessage: message)
+            }
             .store(in: &cancellables)
     }
 
@@ -218,8 +222,9 @@ final class IslandAgentFlowStore: ObservableObject {
     /// LLM post-process (BYOK) + paste (`.verifying`/
     /// `.inserting`). Cleared on `.idle`. Wired in production from
     /// `AppState.$phase`; exposed for direct driving in tests.
-    func dropPhaseChanged(_ newPhase: AppPhase) {
+    func dropPhaseChanged(_ newPhase: AppPhase, failureMessage: String? = nil) {
         dropPhase = newPhase
+        dropDeliveryFailureMessage = failureMessage
         if newPhase == .idle {
             dropTranscript = ""
             recordingFaceWidthHint = ""
@@ -343,18 +348,22 @@ final class IslandAgentFlowStore: ObservableObject {
         case .idle:
             // Agent idle → the drop flow may own the wing. Live words while
             // dictating (`.recording`/`.transcribing`), then a "thinking…"
-            // slot through the LLM post-process + paste
-            // (`.verifying`/`.inserting`). Fast mode only flashes the slot
-            // (no LLM pass); Smart holds it for the real cleanup. Mapping `.transcribing` to the listening frame (not the
+            // slot through the LLM post-process + paste. Only `.verifying`
+            // represents an LLM request; `.inserting` must never advertise a
+            // cleanup provider, including in Fast. Mapping `.transcribing` to the listening frame (not the
             // slot) keeps the pre-roll setup + early partials as "listening…",
             // never a premature "thinking…".
             switch dropPhase {
             case .recording, .transcribing:
                 recordingProviderBrand = dropProviderBrand()
                 wing = .recording(transcript: dropTranscript)
-            case .verifying, .inserting:
+            case .verifying:
                 recordingProviderBrand = dropCleanupBrand()
                 activityLabel = AgentActivityCategorizer.label(toolLabel: nil, status: .thinking)
+                wing = .acting
+            case .inserting:
+                recordingProviderBrand = nil
+                activityLabel = "pasting…"
                 wing = .acting
             case .finishing:
                 // Degraded resilient-Drop recovery: the live stream broke but the
@@ -370,7 +379,7 @@ final class IslandAgentFlowStore: ObservableObject {
                 // (`AppDelegate.pendingRetryPCM`) until the user retries or starts
                 // a new turn.
                 recordingProviderBrand = nil
-                wing = .deliveryFailed(message: Self.deliveryFailedMessage)
+                wing = .deliveryFailed(message: dropDeliveryFailureMessage ?? Self.deliveryFailedMessage)
             case .idle:
                 recordingProviderBrand = nil
                 activeSourceIsGoogle = false

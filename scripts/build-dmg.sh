@@ -543,6 +543,8 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaSourceRevision string ${BUILD_SOURCE_SHA}" \
     "${APP_BUNDLE}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ExodiaInstanceLeaseVersion integer 1" \
+    "${APP_BUNDLE}/Contents/Info.plist"
 
 if [ -f "${PROJECT_DIR}/Resources/AppIcon.icns" ]; then
     cp "${PROJECT_DIR}/Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"

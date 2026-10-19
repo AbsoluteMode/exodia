@@ -1353,6 +1353,9 @@ struct IslandView: View {
         // ⌥N Drop-Mode toggle: sync the tile's local state and show the same
         // transient right-band ON Smart/Fast status the tile click shows. The
         // monotonic token makes repeated toggles to the same mode re-fire.
+        .onReceive(NotificationCenter.default.publisher(for: .sidekeyDropModeChanged)) { _ in
+            dropMode = actions.currentDropMode()
+        }
         .onChange(of: appState.dropModeHotkeyToggle) { _, toggle in
             guard let toggle else { return }
             dropMode = toggle.mode
