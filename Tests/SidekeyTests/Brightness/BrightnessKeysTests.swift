@@ -236,13 +236,37 @@ final class BrightnessKeysTests: XCTestCase {
         XCTAssertEqual(f.shown.count, 2)
     }
 
-    func testBrightnessDownKeepsExtraOn() {
+    func testBrightnessDownEndsExtraAndLowersTheBacklight() {
         let f = KeyFixture(level: 1)
         f.controller.refresh()
         f.controller.setExtra(true)
         f.press(key(.down))
-        XCTAssertTrue(f.controller.isExtraOn)
+        XCTAssertFalse(f.controller.isExtraOn)
         XCTAssertEqual(f.device.writes, [0.9375])
+    }
+
+    func testFineBrightnessDownEndsExtra() {
+        let f = KeyFixture(level: 1)
+        f.controller.refresh()
+        f.controller.setExtra(true)
+
+        f.press(key(.down, step: .fine))
+
+        XCTAssertFalse(f.controller.isExtraOn)
+        XCTAssertEqual(f.device.writes, [0.984375])
+    }
+
+    func testIncreasingAfterADecreaseDoesNotReenableExtraUntilTheTwoPressGesture() {
+        let f = KeyFixture(level: 1)
+        f.controller.refresh()
+        f.controller.setExtra(true)
+        f.press(key(.down))
+        f.press(key(.up))
+        XCTAssertFalse(f.controller.isExtraOn)
+        f.press(key(.up))
+        XCTAssertFalse(f.controller.isExtraOn)
+        f.press(key(.up))
+        XCTAssertTrue(f.controller.isExtraOn)
     }
 
     func testWithoutHeadroomTwoPressesOnlyShowTheStrip() {

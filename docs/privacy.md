@@ -47,7 +47,9 @@ the user’s local files and is absent from the source repository.
 The Display tool reads and sets the display backlight through macOS DisplayServices
 while its hover strip is open (each Brightness keys press opens it), and reads the
 level once when hover opens with Display pinned and when Settings -> Toolbox ->
-Display appears. For the time left on battery it reads the battery charge and load
+Display appears. While Extra is on, it also reads the selected display's level
+every half second with the strip closed, so any decrease turns Extra off.
+For the time left on battery it reads the battery charge and load
 through IOKit, and the built-in display's backlight level through DisplayServices,
 once a minute from launch and every 5 seconds while the strip is open, and keeps
 the last half hour of readings in memory only: they are never written to disk,
