@@ -8,18 +8,29 @@ struct OpenAIRealtimeAdapter: BYOKTranscriptionAdapter {
     private let model: String
     private let makeTransport: TransportFactory
 
-    /// Production initializer: builds an authenticated `URLSessionWebSocketTask`
-    /// to `url`, resolved by `BYOKRealtimeURL.openAIRealtime(baseURL:)`.
+    /// Production initializer: builds a `URLSessionWebSocketTask` to `url`,
+    /// resolved by `BYOKRealtimeURL.openAIRealtime(baseURL:)`, authenticated
+    /// when `apiKey` is not empty (see `handshakeRequest`).
     init(apiKey: String, url: URL, model: String) {
         self.model = model
         self.makeTransport = {
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            // GA Realtime API: NO `OpenAI-Beta: realtime=v1` header — that header
-            // selects the retired beta shape (server replies beta_api_shape_disabled).
+            let request = Self.handshakeRequest(url: url, apiKey: apiKey)
             let task = URLSession.shared.webSocketTask(with: request)
             return URLSessionWebSocketTransport(task: task)
         }
+    }
+
+    /// The WebSocket upgrade request. `Authorization: Bearer` is sent only for
+    /// a non-empty key: a user's own server may run without one, and a bare
+    /// "Bearer " header is something a gateway can reject.
+    static func handshakeRequest(url: URL, apiKey: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        if !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        // GA Realtime API: NO `OpenAI-Beta: realtime=v1` header — that header
+        // selects the retired beta shape (server replies beta_api_shape_disabled).
+        return request
     }
 
     /// Test initializer: inject a transport (e.g. StubWebSocketTransport).
