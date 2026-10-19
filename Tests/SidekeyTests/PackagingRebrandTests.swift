@@ -330,6 +330,14 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), result.output)
     }
 
+    func test_scriptRunnerDrainsOutputLargerThanPipeCapacity() throws {
+        let result = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+            arguments: ["-c", "import sys; sys.stdout.write('x' * 262144)"],
+            environment: ["PATH": "/usr/bin:/bin"])
+        XCTAssertEqual(result.status, 0)
+        XCTAssertEqual(result.output.utf8.count, 262144)
+    }
+
     private func runScript(_ script: URL, arguments: [String] = [],
                            environment: [String: String]) throws -> (status: Int32, output: String) {
         try runTool(URL(fileURLWithPath: "/bin/bash"), arguments: [script.path] + arguments,
@@ -346,12 +354,12 @@ final class PackagingRebrandTests: XCTestCase {
         process.standardOutput = output
         process.standardError = output
         try process.run()
-        // Drain while the child is running: even short preflight output can
-        // fill a pipe when the OS is under pipe-memory pressure.
-        let bytes = output.fileHandleForReading.readDataToEndOfFile()
+        // Drain while the child runs: waiting first can fill the pipe and
+        // deadlock even an otherwise successful packaging command.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return (process.terminationStatus,
-                String(decoding: bytes, as: UTF8.self))
+                String(decoding: data, as: UTF8.self))
     }
 
     /// Runs build-dmg.sh in a minimal committed checkout whose compiler stub exits 64.
