@@ -30,7 +30,7 @@ sources:
     reference: Read-only battery probe on the developer's MacBook (macOS 27.2, on battery), nine samples over four minutes.
     confirmed_at: 2026-10-18
   - type: trace
-    reference: Final local runs on the current sources. Focused hover, search, Monitor and Brightness filter 283 tests, 0 failures; full swift test 3,015 tests, 8 skipped, 0 failures (51.123 s); customize.py build exit 0 with the dev bundle signature verified; fourteen offscreen strip PNGs (seven states at 310 and 330 points).
+    reference: Final local runs. Before merging main, focused hover, search, Monitor and Brightness filter 283 tests, 0 failures, and full swift test 3,015 tests, 8 skipped, 0 failures (51.123 s). After merging main f3f9174, full swift test 2,892 tests, 5 skipped, 0 failures (49.711 s), then the four Brightness suites 53 tests, 0 failures, no warnings. customize.py build exit 0 with the dev bundle signature verified both times; fourteen offscreen strip PNGs (seven states at 310 and 330 points).
     confirmed_at: 2026-10-19
   - type: url
     reference: https://developer.apple.com/videos/play/wwdc2022/10114/ (Display EDR content with Core Image, Metal, and SwiftUI)
@@ -149,10 +149,13 @@ Nothing is stored, logged or sent, and no permission is requested.
   macOS estimated 123 minutes ("75% · 2 h left"; pmset "2:03 remaining"). Over
   four minutes the accumulator estimate read 178, 161, 149, 153 and 162 minutes
   while macOS read 133, 149, 142, 162 and 172 minutes.
-- Final runs on the current sources: the focused hover, search, Monitor and
-  Brightness filter passed 283 tests with 0 failures; the full `swift test`
-  executed 3,015 tests, 8 skipped, 0 failures (51.123 s); `customize.py build`
-  built the dev bundle and its signature verified.
+- Before merging main: the focused hover, search, Monitor and Brightness filter
+  passed 283 tests with 0 failures; the full `swift test` executed 3,015 tests,
+  8 skipped, 0 failures (51.123 s). After merging main f3f9174, which deleted
+  25 test files since the base: 2,892 tests, 5 skipped, 0 failures (49.711 s),
+  then the four Brightness suites passed 53 tests with 0 failures and no
+  warnings. `customize.py build` built the dev bundle and its signature
+  verified both times.
 
 ## Rejected alternatives
 
@@ -179,4 +182,4 @@ keeps its multiplier with the strip closed (no keepalive then), and the
 on-power line with a charger connected. macOS's own estimate moves from minute
 to minute.
 
-2026-10-19 · branch `claude/brightness-tool-battery-587fda`; PR pending.
+2026-10-19 · [AbsoluteMode/exodia#30](https://github.com/AbsoluteMode/exodia/pull/30), branch `claude/brightness-tool-battery-587fda`.
