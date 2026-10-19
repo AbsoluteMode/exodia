@@ -56,7 +56,7 @@ struct MeetingSpeakerSourceMapper {
         if immediate == "local" { total.local += min(local, 1000) }
         if immediate == "remote" { total.remote += min(remote, 1000) }
         evidence[speaker] = total
-        // Require multiple useful word intervals; never label a speaker from
+        // Require useful word duration; never label a speaker from
         // one tiny punctuation token, and withdraw a conflicting association.
         if total.local >= 500 && total.remote <= total.local * 0.1 { return "local" }
         if total.remote >= 500 && total.local <= total.remote * 0.1 { return "remote" }
@@ -276,7 +276,7 @@ private actor MeetingLiveTestWriter {
                 }
                 if response["error_code"] != nil { errorCode = "provider_error"; finished = true; return }
                 for token in response["tokens"] as? [[String: Any]] ?? [] {
-                    guard let text = token["text"] as? String, !text.hasPrefix("<"),
+                    guard let text = token["text"] as? String, text != "<fin>", text != "<end>",
                           token["is_final"] as? Bool == true,
                           let start = token["start_ms"] as? Double, let end = token["end_ms"] as? Double,
                           start.isFinite, end.isFinite, start >= 0, end >= start else { continue }

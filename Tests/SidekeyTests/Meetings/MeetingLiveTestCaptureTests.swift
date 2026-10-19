@@ -24,7 +24,7 @@ final class MeetingLiveTestCaptureTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTAssertTrue(liveAudioSeen, "Test audio must flow before the five-second archival fallback")
-        let event = await recorder.stop(reason: .userStop)
+        let event = await recorder.stop(reason: .user)
         XCTAssertFalse(event.chunkURLs.isEmpty)
         await capture.waitUntilFinished()
         let events = try jsonLines(onlyDirectory(root).appendingPathComponent("events.jsonl"))
