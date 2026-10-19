@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# dev-run.sh — Build (and optionally launch) Exodia as a stable .app bundle
+# dev-run.sh — Build (and optionally launch) Whytap as a stable .app bundle
 # for local development.
 #
 # Why this exists:
@@ -20,7 +20,7 @@
 #   - Debug build (swift build, not -c release)
 #   - Local dev signature ("Sidekey Dev") when available, not Developer ID
 #   - No notarization, no DMG packaging
-#   - Output at build/Exodia-Beta-dev.app to avoid colliding with release bundle
+#   - Output at build/Whytap-Beta-dev.app to avoid colliding with release bundle
 #
 # Usage:
 #   ./scripts/dev-run.sh                # build dev app (beta flavor)
@@ -44,11 +44,11 @@ APP_NAME="Sidekey"
 # ("Sidekey" — thin executable target SidekeyApp wrapping the shared
 # library; see Package.swift), so the artifact stays .build/debug/Sidekey.
 EXECUTABLE_NAME="Sidekey"
-APP_BUNDLE_NAME="Exodia-Beta-dev.app"
+APP_BUNDLE_NAME="Whytap-Beta-dev.app"
 BUNDLE_ID="com.rootwise.sidekey.beta"
-BUNDLE_DISPLAY_NAME="Exodia Beta"
+BUNDLE_DISPLAY_NAME="Whytap Beta"
 BUNDLE_ICON_FILE="AppIcon"
-DEV_APPCAST_URL="${DEV_APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/download/beta/appcast.xml}"
+DEV_APPCAST_URL="${DEV_APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/download/beta/appcast.xml}"
 SWIFT_BUILD_ARGS=(--product Sidekey -Xswiftc -DBETA)
 # Build/version values used only for the dev bundle's Info.plist. A high
 # CFBundleVersion stops Sparkle from "discovering" a prod release as a

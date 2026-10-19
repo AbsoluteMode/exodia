@@ -1,7 +1,7 @@
 # Privacy
 
-Exodia has no accounts, no Exodia-operated servers and no telemetry. This
-document lists every way data can leave the Mac, so that "no Exodia servers"
+Whytap has no accounts, no Whytap-operated servers and no telemetry. This
+document lists every way data can leave the Mac, so that "no Whytap servers"
 is a verifiable claim rather than a slogan.
 
 ## What stays on the device
@@ -53,8 +53,8 @@ Notify stores notification history (up to 500 events), including text, links,
 colors and logo names, locally under Application Support. User-configured scripts
 can access the external sources required by their integration with the user's
 authorized credentials. They run with ordinary user permissions while the app is
-open and stop on quit; Exodia does not send notification content to a model or an
-Exodia server. Script output is not logged and stderr is discarded. History and
+open and stop on quit; Whytap does not send notification content to a model or an
+Whytap server. Script output is not logged and stderr is discarded. History and
 source controls are in Notify. [Script contract](customization/notifications.md).
 
 ## What can leave the device, and only when you choose it
@@ -68,7 +68,7 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 | Model catalogs | the public model lists of OpenRouter and Deepgram (no key), and the model lists of Soniox and Anthropic (your key); a custom server's `/models` list. Only the request itself is sent, no audio or text | when you open API & Models and the cache is a day old, save a key, or press Refresh models |
 | OpenRouter providers | OpenRouter, with your key: the list of providers serving the model selected for an OpenRouter feature, with their latency and throughput. Only the request itself is sent, no audio or text. A pinned provider then receives that feature's requests alone, with no fallback | when an OpenRouter row is shown in API & Models (reused for 5 minutes) |
 | Model probes | the provider of the feature you are choosing a model for: 1 second of digital silence for speech models, the prompt "Reply with OK." (plus one fictitious tool for agent models) for text models. Never your audio, transcripts, prompts or notes. Costs a fraction of a cent | only when you pick a model that is not in the built-in list, or press Check now |
-| Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Exodia | after you explicitly configure and enable Backup |
+| Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Whytap | after you explicitly configure and enable Backup |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
@@ -100,11 +100,11 @@ brightness keys. Key contents are never logged or stored.
 
 ## Encrypted recovery copies
 
-Backup is optional. Exodia encrypts the portable workspace before copying or
+Backup is optional. Whytap encrypts the portable workspace before copying or
 uploading it, including provider keys and independently recoverable Case data.
-The recovery code is saved once outside Exodia; a local Keychain copy allows
+The recovery code is saved once outside Whytap; a local Keychain copy allows
 routine backups without repeatedly requesting it. GitHub authentication is not
-the decryption key. The code is excluded from Exodia's clipboard history when
+the decryption key. The code is excluded from Whytap's clipboard history when
 copied through its recovery-code button, marked private for other clipboard
 applications, and cleared after two minutes if the clipboard has not changed.
 Other applications decide how they handle private clipboard markers.

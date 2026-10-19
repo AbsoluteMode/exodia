@@ -15,7 +15,7 @@ final class SettingsWindowControllerTests: XCTestCase {
 
         let window = controller.window
         XCTAssertNotNil(window)
-        XCTAssertEqual(window?.title, "Exodia Settings")
+        XCTAssertEqual(window?.title, "Whytap Settings")
         XCTAssertTrue(window?.styleMask.contains(.titled) ?? false)
         XCTAssertTrue(window?.styleMask.contains(.closable) ?? false)
         XCTAssertTrue(window?.styleMask.contains(.resizable) ?? false)

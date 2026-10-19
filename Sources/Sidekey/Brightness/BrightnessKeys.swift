@@ -81,9 +81,9 @@ struct BrightnessExtraKeyGesture {
     }
 }
 
-/// Decides on the tap thread which events Exodia keeps from macOS. A press belongs wholly
-/// to Exodia or to macOS: its repeats and its release follow its first event, so macOS
-/// never sees half a press. A press Exodia did not see begin stays with macOS. A
+/// Decides on the tap thread which events Whytap keeps from macOS. A press belongs wholly
+/// to Whytap or to macOS: its repeats and its release follow its first event, so macOS
+/// never sees half a press. A press Whytap did not see begin stays with macOS. A
 /// combination macOS keeps is never taken. The presses outlive each tap, so one held while
 /// the hotkeys are rebuilt keeps its owner. After a longer gap, or once macOS disabled the
 /// tap, a new press may have begun unseen: the presses in progress finish with macOS.
@@ -101,7 +101,7 @@ struct BrightnessKeyFilter {
         return mine
     }
 
-    /// Events went past Exodia unseen, as while macOS disabled the tap.
+    /// Events went past Whytap unseen, as while macOS disabled the tap.
     mutating func forgetPresses() {
         kept = [:]
     }
@@ -160,12 +160,12 @@ protocol BrightnessKeyTapping: AnyObject {
     func start(deliver: @escaping @MainActor (BrightnessKeyEvent, Date) -> Void,
                onFailure: @escaping @MainActor () -> Void) -> Bool
     func stop()
-    /// Whether new presses go to Exodia instead of macOS.
+    /// Whether new presses go to Whytap instead of macOS.
     func setIntercepting(_ intercepting: Bool)
 }
 
 /// Settings -> Toolbox -> Display -> Brightness keys, off by default. While it is on, the
-/// Mac's brightness keys change the island display in Exodia instead of macOS: the strip
+/// Mac's brightness keys change the island display in Whytap instead of macOS: the strip
 /// shows instead of the system indicator, and two brightness-up presses at the maximum turn
 /// Extra on. The keys stay with macOS while hover is hidden, while the island display is not
 /// adjustable, and with Command, Control, Option or Shift alone. Nothing about the keys is

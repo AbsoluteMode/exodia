@@ -9,11 +9,11 @@ final class BuildConfigTests: XCTestCase {
         #if BETA
         XCTAssertEqual(BuildConfig.flavor, .beta)
         XCTAssertEqual(BuildConfig.bundleID, "com.rootwise.sidekey.beta")
-        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/exodia/releases/download/beta/appcast.xml")
+        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/whytap/releases/download/beta/appcast.xml")
         #else
         XCTAssertEqual(BuildConfig.flavor, .prod)
         XCTAssertEqual(BuildConfig.bundleID, "com.rootwise.sidekey")
-        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/exodia/releases/latest/download/appcast.xml")
+        XCTAssertEqual(BuildConfig.appcastURL.path, "/AbsoluteMode/whytap/releases/latest/download/appcast.xml")
         #endif
         // The keychain service mirrors the bundle ID so flavors never share
         // secrets in the user's login keychain.

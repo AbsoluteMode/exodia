@@ -107,7 +107,7 @@ final class ApplicationInstanceCoordinatorTests: XCTestCase {
         var conflicts: [ApplicationInstanceConflict] = []
         let candidate = coordinator(pid: 202, beta: false, peers: [legacy]) { conflicts.append($0) }
         XCTAssertFalse(candidate.canLaunch())
-        XCTAssertEqual(conflicts.first?.existing?.identity.bundlePath, "/tmp/checkout-101/Exodia-Beta-dev.app")
+        XCTAssertEqual(conflicts.first?.existing?.identity.bundlePath, "/tmp/checkout-101/Whytap-Beta-dev.app")
     }
 
     func testNewContendersElectOneOwnerAcrossFlavorsWithoutMutualRejection() {
@@ -141,6 +141,20 @@ final class ApplicationInstanceCoordinatorTests: XCTestCase {
         let candidate = coordinator(pid: 202, beta: true, peers: [existing]) { conflicts.append($0) }
         XCTAssertFalse(candidate.canLaunch())
         XCTAssertEqual(conflicts.first?.existing, existing)
+    }
+
+    func testRunningExodiaBlocksWhytapBeforeStartup() {
+        let existing = RunningExodiaInstance(processIdentifier: 101, identity: AppBuildIdentity(
+            info: ["CFBundleIdentifier": "com.rootwise.sidekey", "CFBundleDisplayName": "Exodia",
+                   "ExodiaSourceRevision": "legacy-revision", "ExodiaInstanceLeaseVersion": 1],
+            bundleURL: URL(fileURLWithPath: "/Applications/Exodia.app")
+        ))
+        var conflicts: [ApplicationInstanceConflict] = []
+        let candidate = coordinator(pid: 202, beta: false, peers: [existing]) { conflicts.append($0) }
+        XCTAssertFalse(candidate.canLaunch())
+        XCTAssertEqual(conflicts.first?.existing?.identity.name, "Exodia")
+        XCTAssertEqual(conflicts.first?.requested.name, "Whytap")
+        XCTAssertEqual(conflicts.first?.existing?.identity.sourceRevision, "legacy-revision")
     }
 
     func testOwnProcessAndUnrelatedAppsDoNotBlockLaunch() {
@@ -178,11 +192,11 @@ final class ApplicationInstanceCoordinatorTests: XCTestCase {
     }
 
     private func instance(pid: pid_t, beta: Bool, aware: Bool, finished: Bool = true) -> RunningExodiaInstance {
-        let app = beta ? "Exodia-Beta-dev.app" : "Exodia.app"
+        let app = beta ? "Whytap-Beta-dev.app" : "Whytap.app"
         return RunningExodiaInstance(processIdentifier: pid, identity: AppBuildIdentity(
             info: [
                 "CFBundleIdentifier": beta ? "com.rootwise.sidekey.beta" : "com.rootwise.sidekey",
-                "CFBundleDisplayName": beta ? "Exodia Beta" : "Exodia",
+                "CFBundleDisplayName": beta ? "Whytap Beta" : "Whytap",
                 "CFBundleShortVersionString": beta ? "0.0.0-dev" : "2.2.13",
                 "CFBundleVersion": beta ? "9999" : "1465",
                 AppBuildIdentity.instanceLeaseVersionKey: aware ? 1 : 0

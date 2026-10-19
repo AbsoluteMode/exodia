@@ -41,7 +41,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
         profiles.append(profile)
 
         profile.defaults.set("soniox", forKey: "sidekey.models.byokProvider")
-        profile.defaults.set(["Exodia", "Максим"], forKey: "sidekey.preferences.vocabularyTerms")
+        profile.defaults.set(["Whytap", "Максим"], forKey: "sidekey.preferences.vocabularyTerms")
         profile.defaults.set(true, forKey: "sidekey.privacy.screenshotProtectionEnabled")
 
         profile.addCredential(sonioxAccount, "synthetic-soniox-key")
@@ -218,7 +218,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
         // Settings and provider keys.
         XCTAssertEqual(target.defaults.string(forKey: "sidekey.models.byokProvider"), "soniox")
         XCTAssertEqual(target.defaults.stringArray(forKey: "sidekey.preferences.vocabularyTerms"),
-                       ["Exodia", "Максим"])
+                       ["Whytap", "Максим"])
         XCTAssertTrue(target.defaults.bool(forKey: "sidekey.privacy.screenshotProtectionEnabled"))
         XCTAssertEqual(target.credentialStores[sonioxAccount]?.value, "synthetic-soniox-key")
         XCTAssertEqual(target.credentialStores[routerAccount]?.value, "synthetic-openrouter-key")

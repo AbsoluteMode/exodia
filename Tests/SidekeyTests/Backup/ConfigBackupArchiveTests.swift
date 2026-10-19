@@ -7,7 +7,7 @@ final class ConfigBackupArchiveTests: XCTestCase {
         let key = ConfigBackupArchive.makeKey()
         let snapshot = ConfigBackupSnapshot(reason: "Saved version", preferences: [
             "sidekey.models.byokProvider": .string("soniox"),
-            "sidekey.preferences.vocabularyTerms": .strings(["Exodia", "Максим"])
+            "sidekey.preferences.vocabularyTerms": .strings(["Whytap", "Максим"])
         ], credentials: ["byok.soniox.api_key": "synthetic-test-value"])
         let archive = try ConfigBackupArchive.seal(snapshot, key: key)
         let restoredKey = try ConfigBackupArchive.key(from: ConfigBackupArchive.recoveryCode(for: key))
@@ -56,4 +56,14 @@ final class ConfigBackupArchiveTests: XCTestCase {
         }
         XCTAssertThrowsError(try ConfigBackupArchive.readEnvelope(Data(repeating: 0, count: ConfigBackupArchive.maxBytes + 1)))
     }
+    func testLegacyExodiaArchiveAndDestinationRemainReadableAfterWhytapRename() throws {
+        // Fixed synthetic schema-1 envelope, encrypted with the original
+        // format marker and associated data independently of today's encoder.
+        let fixture = "eyJmb3JtYXQiOiJleG9kaWEuc2V0dGluZ3MiLCJrZXlJRCI6IjRiYjA2ZjhlNGUzYTc3MTVkMjAxZDU3M2QwYWE0MjM3NjJlNTVkYWJkNjFhMmMwMjI3OGZhNTZjYzZkMjk0ZTAiLCJzZWFsZWQiOiJBUUVCQVFFQkFRRUJBUUVCRGNQNjFQamFnVytIc2E1U0dWZ2VFNUxLT05aeDh4a3BlZ0Z6VWxhRUJvdnluemlBckNPb3NHNUNlQ2J4VHQ2cG95dlpNbTJPejIrU2NwYzQ1d0NwdDhxVk8xRjZxVkpzRjNvalVJY0djXC8weVwvQXhaSWZBNVlVbFdlSkxCdUxsaGY3Ris0NDJoZGJWQWVnRE1RcFpobm1nUXBWYWhEMlB3eGRDaEh1Skw2dkU0YWNZcnJqcnFxZ2FzN1NGQ0lucWRaZFVlUGpcL1wvT3NOWDlodGRnMXRnUGJFa1VScUFWVE5MNnVyVEVCaXRVb2RCSzJVWGZxT2ZxU1U4YW81VVJOZ2FuejZUeGlQT3F3PT0iLCJ2ZXJzaW9uIjoxfQ=="
+        let snapshot = try ConfigBackupArchive.open(XCTUnwrap(Data(base64Encoded: fixture)), key: Data(repeating: 7, count: 32))
+        XCTAssertEqual(snapshot.schemaVersion, 1)
+        XCTAssertEqual(snapshot.preferences["sidekey.models.byokProvider"], .string("soniox"))
+        XCTAssertEqual(GitHubBackupTransport.repository, "Exodia-Backup")
+    }
+
 }

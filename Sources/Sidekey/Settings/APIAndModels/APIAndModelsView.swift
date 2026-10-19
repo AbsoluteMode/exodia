@@ -45,6 +45,7 @@ struct APIAndModelsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     keysBlock
+                    APIHintsView { activeSheet = .addKey }
                     modelsBlock
                 }
                 .padding(.horizontal, 24).padding(.vertical, 22)

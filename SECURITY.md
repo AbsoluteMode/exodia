@@ -1,6 +1,6 @@
 # Security policy
 
-Exodia runs entirely on your Mac. It has no accounts, no Exodia servers and
+Whytap runs entirely on your Mac. It has no accounts, no Whytap servers and
 no telemetry. The only network traffic is what you configure yourself: model
 downloads from Hugging Face, calls to a speech or LLM provider using your own
 API key, Sparkle update checks, OpenCode release downloads, and the local
