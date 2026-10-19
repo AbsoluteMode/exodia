@@ -82,13 +82,14 @@ final class AIRoutingStoreTests: XCTestCase {
         XCTAssertNil(AIRoutingStore(defaults: defaults).route(for: .agent))
     }
 
-    func test_unreadable_json_reads_as_empty_unmigrated_state() {
+    /// A stored state this build cannot read at all is never "not migrated":
+    /// running the migration again would overwrite the user's routes from the
+    /// frozen old settings (final review I3). Every feature is Not set instead.
+    func test_unreadable_state_counts_as_migrated_with_every_feature_not_set() {
         let unreadable: [(label: String, value: Any)] = [
             ("not json", Data("{ not json".utf8)),
             ("empty data", Data()),
             ("wrong shape", Data("[]".utf8)),
-            ("missing keys", Data(#"{"routes":{}}"#.utf8)),
-            ("unknown account", Data(#"{"routes":{"dropFast":{"account":"whisper","model":"m"}},"migratedRoutes":{},"servers":[],"migrationVersion":1}"#.utf8)),
             ("not data at all", "garbage"),
         ]
         for entry in unreadable {
@@ -97,13 +98,58 @@ final class AIRoutingStoreTests: XCTestCase {
 
             let store = AIRoutingStore(defaults: defaults)
 
-            XCTAssertFalse(store.isMigrated, entry.label)
-            XCTAssertEqual(store.state, AIRoutingState(routes: [:], migratedRoutes: [:], servers: [], migrationVersion: 0), entry.label)
+            XCTAssertTrue(store.isMigrated, entry.label)
+            XCTAssertEqual(store.state, AIRoutingState(routes: [:], migratedRoutes: [:], servers: [], migrationVersion: 1), entry.label)
             for feature in AIFeature.allCases {
                 XCTAssertNil(store.route(for: feature), "\(entry.label): \(feature.rawValue)")
-                XCTAssertNil(store.migratedRoute(for: feature), "\(entry.label): \(feature.rawValue)")
             }
         }
+    }
+
+    /// One entry this build does not know (an account a newer build added)
+    /// drops only that entry; the rest of the state is read as stored.
+    func test_unknown_entries_are_skipped_and_the_rest_is_kept() throws {
+        let defaults = makeDefaults()
+        let serverID = "6f1c1f7e-1111-4a5b-9c9d-000000000001"
+        let json = #"""
+        {"routes":{"dropFast":{"account":"openai","model":"gpt-x"},"meetings":{"account":"soniox","model":"stt-async-v5"}},
+         "migratedRoutes":{"dropFast":{"account":"openai","model":"gpt-x"},"meetingNotes":{"account":"openRouter","model":"m"}},
+         "servers":[{"id":"\#(serverID)","name":"Lab","baseURL":"http://10.0.0.2/v1","keyAccount":"byok.server.x.api_key"},{"id":"bad"}],
+         "migrationVersion":1,"futureField":true}
+        """#
+        defaults.set(Data(json.utf8), forKey: key)
+
+        let store = AIRoutingStore(defaults: defaults)
+
+        XCTAssertTrue(store.isMigrated)
+        XCTAssertNil(store.route(for: .dropFast))
+        XCTAssertEqual(store.route(for: .meetings), FeatureRoute(account: .soniox, model: "stt-async-v5"))
+        XCTAssertNil(store.migratedRoute(for: .dropFast))
+        XCTAssertEqual(store.migratedRoute(for: .meetingNotes), FeatureRoute(account: .openRouter, model: "m"))
+        XCTAssertEqual(store.state.servers.map(\.name), ["Lab"])
+        XCTAssertEqual(defaults.data(forKey: key), Data(json.utf8), "loading must not rewrite the stored value")
+    }
+
+    /// The first real change keeps a copy of a value that was not read in
+    /// full, so a rollback never destroys a newer build's state outright.
+    func test_first_change_backs_up_a_value_that_was_not_read_in_full() {
+        let defaults = makeDefaults()
+        let partial = Data(#"{"routes":{"dropFast":{"account":"openai","model":"gpt-x"}},"migratedRoutes":{},"servers":[],"migrationVersion":1}"#.utf8)
+        defaults.set(partial, forKey: key)
+        let store = AIRoutingStore(defaults: defaults)
+        XCTAssertNil(defaults.object(forKey: AIRoutingStore.backupKey))
+
+        store.setRoute(FeatureRoute(account: .deepgram, model: "nova-3"), for: .dropSmart)
+
+        XCTAssertEqual(defaults.data(forKey: AIRoutingStore.backupKey), partial)
+        XCTAssertNotEqual(defaults.data(forKey: key), partial)
+
+        // A state read in full needs no copy.
+        let clean = makeDefaults()
+        let cleanStore = AIRoutingStore(defaults: clean)
+        cleanStore.setRoute(FeatureRoute(account: .deepgram, model: "nova-3"), for: .dropSmart)
+        AIRoutingStore(defaults: clean).setRoute(nil, for: .dropSmart)
+        XCTAssertNil(clean.object(forKey: AIRoutingStore.backupKey))
     }
 
     func test_unreadable_json_is_replaced_only_by_the_next_real_mutation() {
@@ -122,6 +168,7 @@ final class AIRoutingStoreTests: XCTestCase {
         store.setRoute(route, for: .dropFast)
 
         XCTAssertNotEqual(defaults.data(forKey: key), garbage)
+        XCTAssertEqual(defaults.data(forKey: AIRoutingStore.backupKey), garbage, "the unreadable value is kept aside")
         XCTAssertEqual(AIRoutingStore(defaults: defaults).route(for: .dropFast), route)
     }
 

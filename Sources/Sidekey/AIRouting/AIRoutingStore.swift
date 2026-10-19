@@ -33,6 +33,9 @@ final class AIRoutingStore: ObservableObject {
     static let shared = AIRoutingStore()
 
     static let defaultsKey = "sidekey.aiRouting.v1"
+    /// A copy of a stored value this build did not read in full, written just
+    /// before the first change replaces it.
+    static let backupKey = "sidekey.aiRouting.v1.unreadable"
 
     private static let emptyState = AIRoutingState(
         routes: [:], migratedRoutes: [:], servers: [], migrationVersion: 0
@@ -41,11 +44,15 @@ final class AIRoutingStore: ObservableObject {
     @Published private(set) var state: AIRoutingState
 
     private let defaults: UserDefaults
+    /// The stored value as loaded, when part or all of it could not be read.
+    private var pendingBackup: Any?
 
     /// Production uses `UserDefaults.standard`. Tests pass an isolated suite.
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.state = Self.load(from: defaults)
+        let loaded = Self.load(from: defaults)
+        self.state = loaded.state
+        self.pendingBackup = loaded.unreadValue
     }
 
     var isMigrated: Bool { state.migrationVersion >= 1 }
@@ -127,20 +134,31 @@ final class AIRoutingStore: ObservableObject {
 
     // MARK: - Persistence
 
-    /// Anything unreadable (garbage bytes, a shape this build does not know, an
-    /// account it does not know) reads as the empty, unmigrated state. Loading
-    /// never writes; the stored value is replaced by the next real change.
-    private static func load(from defaults: UserDefaults) -> AIRoutingState {
-        guard let data = defaults.data(forKey: defaultsKey),
-              let stored = try? JSONDecoder().decode(AIRoutingState.self, from: data)
-        else { return emptyState }
-        return stored
+    /// Reads entry by entry: a route or server this build does not know (an
+    /// account a newer build added) is skipped and the rest is kept. A stored
+    /// value that cannot be read at all still counts as migrated, with every
+    /// feature Not set: running the migration again would overwrite the user's
+    /// choices from the frozen old settings. Loading never writes; the first
+    /// real change saves a copy of such a value under `backupKey`.
+    // WHY: .project-docs/decisions/2026-10-19-api-and-models.md
+    private static func load(from defaults: UserDefaults) -> (state: AIRoutingState, unreadValue: Any?) {
+        guard let stored = defaults.object(forKey: defaultsKey) else { return (emptyState, nil) }
+        guard let data = stored as? Data,
+              let read = try? JSONDecoder().decode(LenientRoutingState.self, from: data)
+        else {
+            return (AIRoutingState(routes: [:], migratedRoutes: [:], servers: [], migrationVersion: 1), stored)
+        }
+        return (read.state, read.isComplete ? nil : data)
     }
 
     /// Applies a change in one step (one `objectWillChange`) and saves the
     /// whole state. A change that alters nothing neither publishes nor writes.
     private func commit(_ updated: AIRoutingState) {
         guard updated != state else { return }
+        if let backup = pendingBackup {
+            defaults.set(backup, forKey: Self.backupKey)
+            pendingBackup = nil
+        }
         state = updated
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
@@ -149,5 +167,43 @@ final class AIRoutingStore: ObservableObject {
         } catch {
             assertionFailure("AIRoutingState cannot be encoded: \(error)")
         }
+    }
+}
+
+/// `AIRoutingState` read leniently: each route and server on its own, unknown
+/// keys ignored, absent fields empty. A state without a version marker was
+/// still written by this store after the migration, so it counts as migrated.
+private struct LenientRoutingState: Decodable {
+    let state: AIRoutingState
+    /// Nothing was skipped.
+    let isComplete: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case routes, migratedRoutes, servers, migrationVersion
+    }
+
+    /// One value that may not decode; `nil` then, instead of failing the whole.
+    private struct Entry<Value: Decodable>: Decodable {
+        let value: Value?
+        init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let routes = (try? container.decodeIfPresent([String: Entry<FeatureRoute>].self, forKey: .routes)) ?? nil
+        let migrated = (try? container.decodeIfPresent([String: Entry<FeatureRoute>].self, forKey: .migratedRoutes)) ?? nil
+        let servers = (try? container.decodeIfPresent([Entry<ServerEndpoint>].self, forKey: .servers)) ?? nil
+        let version = (try? container.decodeIfPresent(Int.self, forKey: .migrationVersion)) ?? nil
+
+        state = AIRoutingState(
+            routes: (routes ?? [:]).compactMapValues(\.value),
+            migratedRoutes: (migrated ?? [:]).compactMapValues(\.value),
+            servers: (servers ?? []).compactMap(\.value),
+            migrationVersion: version ?? 1
+        )
+        let skippedEntry = (routes ?? [:]).values.contains { $0.value == nil }
+            || (migrated ?? [:]).values.contains { $0.value == nil }
+            || (servers ?? []).contains { $0.value == nil }
+        isComplete = routes != nil && migrated != nil && servers != nil && version != nil && !skippedEntry
     }
 }

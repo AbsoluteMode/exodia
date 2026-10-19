@@ -409,6 +409,55 @@ final class AIRoutingMigrationTests: XCTestCase {
 
     /// Writing an old key, even with the same value, or removing one would
     /// make a rollback to the previous build see settings it never had.
+    /// A stored state with an account this build does not know (written by a
+    /// newer build before a rollback) keeps its other routes, and the
+    /// migration does not run again over it (final review I3).
+    func test_unknown_account_in_stored_state_keeps_the_other_routes_and_does_not_migrate_again() throws {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let stored = Data(#"""
+        {"routes":{"dropFast":{"account":"openai","model":"gpt-x"},"meetingNotes":{"account":"openRouter","model":"vendor/notes"}},
+         "migratedRoutes":{},"servers":[],"migrationVersion":1}
+        """#.utf8)
+        defaults.set(stored, forKey: AIRoutingStore.defaultsKey)
+        // Old settings that a second migration would apply.
+        defaults.set("yourKey", forKey: Old.level)
+        defaults.set("soniox", forKey: Old.provider)
+        defaults.set("yourKey", forKey: Old.llmLevel)
+        defaults.set("google/gemini-3.8-flash", forKey: Old.openRouterModel)
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        try keys.save("soniox-key", account: Account.soniox)
+        try keys.save("openrouter-key", account: Account.openRouter)
+        let env = Env(defaults: defaults, routing: AIRoutingStore(defaults: defaults), keys: keys)
+
+        migrate(env)
+
+        XCTAssertNil(env.routing.route(for: .dropFast))
+        XCTAssertEqual(env.routing.route(for: .meetingNotes), FeatureRoute(account: .openRouter, model: "vendor/notes"))
+        for feature in AIFeature.allCases where feature != .meetingNotes {
+            XCTAssertNil(env.routing.route(for: feature), "\(feature) must not be migrated again")
+        }
+        XCTAssertEqual(defaults.data(forKey: AIRoutingStore.defaultsKey), stored, "the stored state is not overwritten")
+    }
+
+    /// A stored state that cannot be read at all is not "not migrated" either.
+    func test_unreadable_stored_state_does_not_migrate_again() throws {
+        let env = makeEnv()
+        let garbage = Data("{ not json".utf8)
+        env.defaults.set(garbage, forKey: AIRoutingStore.defaultsKey)
+        env.defaults.set("yourKey", forKey: Old.level)
+        env.defaults.set("soniox", forKey: Old.provider)
+        try env.keys.save("soniox-key", account: Account.soniox)
+        let routing = AIRoutingStore(defaults: env.defaults)
+
+        migrate(Env(defaults: env.defaults, routing: routing, keys: env.keys))
+
+        assertAllNotSet(routing)
+        XCTAssertEqual(env.defaults.data(forKey: AIRoutingStore.defaultsKey), garbage)
+    }
+
     func test_old_user_defaults_are_left_untouched() throws {
         let env = makeEnv()
         env.defaults.set("yourKey", forKey: Old.level)
