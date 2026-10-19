@@ -487,6 +487,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopHistoryHotkey()
         agentController?.stop()
         clipboardWatcher?.stop()
+        // Terminate the MediaRemote `run.pl stream` child synchronously;
+        // otherwise it outlives the app as an orphan (PPID 1).
+        nowPlayingCoordinator?.shutdown()
         IslandPanel.shared.hide()
         IslandNotificationPanel.shared.hide()
         meetingsEventConsumer?.cancel()
