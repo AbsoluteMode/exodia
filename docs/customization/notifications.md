@@ -67,7 +67,10 @@ and mailto. A notification without a link simply dismisses.
 
 Scripts run while Exodia is open, even when the drawer is closed. They pause on
 system sleep and restart on wake. Disabling/removing a source or quitting Exodia
-stops its process group, including helpers. Do not daemonize or install a separate
+stops its process group, including helpers. The same happens within about a
+second when Exodia is killed or crashes: a small guard process leads the group
+and ends it when the app's end of its stdin closes. Scripts get /dev/null as
+stdin. Do not daemonize or install a separate
 LaunchAgent. Scripts that intentionally detach from their process group are
 outside this cooperative contract. No shell interpolation is performed by Exodia.
 

@@ -43,7 +43,8 @@ enum NotifySetupGuide {
         pass and exit; a successful pass repeats after that delay. Failures retry
         with bounded backoff up to 60 seconds. Sources pause on system sleep and
         restart after wake. Exodia stops the process group, including helpers,
-        when the source is disabled/removed or the app quits. Do not daemonize,
+        when the source is disabled/removed or the app quits, is killed or crashes.
+        Stdin is /dev/null. Do not daemonize,
         detach, install LaunchAgents or arrange workers to survive Exodia.
 
         ## Emit events

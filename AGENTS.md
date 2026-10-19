@@ -500,7 +500,9 @@ Notify: agent-configured local scripts emit JSON lines with title, body, event
 ID, optional link, color, logo and duration. NotifyScriptSupervisor reads private
 sources/<id>.json manifests, supervises child process groups only during the app
 lifetime, restarts with bounded backoff and stops on disable, removal, sleep or
-quit. No backend or built-in provider connectors are restored. The original
+quit. A perl stdin-EOF guard (NotifyProcess.parentWatchGuardScript) leads each
+group and ends it when the app is killed or crashes. WHY:
+.project-docs/decisions/2026-10-19-notify-parent-death-guard.md. No backend or built-in provider connectors are restored. The original
 IslandNotificationPill / nonactivating panel sits left of the island, using the
 selected screen and screenshot-protection preference. Hover pauses dismissal.
 LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
