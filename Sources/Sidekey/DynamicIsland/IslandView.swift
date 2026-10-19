@@ -2919,6 +2919,7 @@ private struct IslandDropModeHoverPanel: View {
             circleSize: circleSize,
             accessibilityLabel: presentation.title,
             isDimmed: tool == .outputLang && mode == .fast,
+            isRecording: tool == .meetingRecord && meetingRecordingActive,
             width: IslandHoverControlsLayout.tileWidth(panelWidth: panelWidth),
             action: { activateTool(tool) }
         )
