@@ -366,6 +366,14 @@ speech-to-text (`scribe_v2`), self-hosted `/v1/audio/transcriptions` на хос
 
 ## Meeting Notes
 
+**Live-assistant test preparation (2026-10-19):** Internal opt-in capture uses
+the local `sidekey.meetings.liveTestCapture` flag when Meeting Notes uses Soniox.
+The user requested no test-mode controls or test-files row in Settings.
+It adds a separate live diarization stream, stores private source tracks and
+timing locally, and preserves ordinary notes processing. No automatic
+suggestions are enabled. Real-call source attribution and latency remain
+acceptance tests. See [testing instructions](meeting-assistant-testing.md).
+
 Auto-detect когда пользователь на голосовой встрече (Zoom, Meet, Teams, FaceTime, Discord, Slack huddle и т.п.) и предложить записать структурированную заметку. Whytap уже всегда запущен и имеет JWT — нативное место для этой фичи (vs. Granola/tl;dv как отдельные продукты с собственной авторизацией).
 
 **Signal:** mic-in-use AND speech-in-system-audio (CoreAudio process-tap). Отсекает Whytap-like dictation (нет двусторонней речи) и музыку/видео (нет mic). VAD через FluidAudio (Silero на ANE, macOS 14.2+).

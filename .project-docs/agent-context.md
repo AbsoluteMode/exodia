@@ -237,6 +237,16 @@ Meeting Notes:
   the next launch). WHY:
   .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
 
+  Internal opt-in research (no Settings controls): the local
+  sidekey.meetings.liveTestCapture flag adds a separate Soniox stt-rt-v5 stream
+  only when Meetings uses Soniox. Preserve its explicitly chosen value. It saves
+  private aligned source PCM, signal activity, final diarized tokens and receipt
+  times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
+  no automatic suggestions are enabled. The independent 100ms test mixer uses
+  a 150ms jitter allowance and approximate callback timing; source-role labels
+  are experimental. Guide: docs/meeting-assistant-testing.md. WHY:
+  .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
+
 Hover capsules and materials:
   The 2026-10-17 user correction requires hover and the compact island to have
   exactly the same width, with three smaller capsules per row. Follow the actual
