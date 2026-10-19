@@ -180,6 +180,18 @@ final class BrightnessHoverToolTests: XCTestCase {
         XCTAssertFalse(fixture.battery.isSampling)
     }
 
+    /// The time left follows the slider at once, without waiting for the next battery reading.
+    func testTheTimeLeftFollowsTheSlider() {
+        let fixture = StripFixture(state: .extraOff, width: 310, followsDisplay: true)
+        defer { fixture.close() }
+        fixture.settle()
+        XCTAssertEqual(fixture.battery.status, .remaining(percent: 84, minutes: 260))
+
+        fixture.controller.setLevel(0.2)
+        fixture.settle()
+        XCTAssertEqual(fixture.battery.status, .remaining(percent: 84, minutes: 320))
+    }
+
     // MARK: Settings
 
     func testSettingsPaneReadsTheDisplayWithoutPolling() {
@@ -270,14 +282,22 @@ private final class StripFixture {
     let window: NSWindow
     let host: NSHostingView<AnyView>
 
-    init(state: StripState, width: CGFloat) {
-        controller = state.makeController()
+    /// With `followsDisplay`, the battery estimate sees the fake display's level and Extra.
+    init(state: StripState, width: CGFloat, followsDisplay: Bool = false) {
+        let controller = state.makeController()
+        self.controller = controller
         let snapshot: BatterySnapshot? = switch state {
         case .noBattery: nil
         case .onPower: BatterySnapshot(percent: 100, isOnAC: true, isCharging: false)
-        default: BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, systemMinutesToEmpty: 260)
+        default: BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, systemMinutesToEmpty: 260,
+                                 remainingWattHours: followsDisplay ? 40 : nil,
+                                 instantLoadWatts: followsDisplay ? 20 : nil)
         }
-        battery = BatteryRuntimeMonitor(read: { snapshot })
+        battery = BatteryRuntimeMonitor(read: { snapshot }, displayLoad: {
+            followsDisplay
+                ? ScreenBrightnessScale.displayLoad(level: controller.level, isExtraOn: controller.isExtraOn)
+                : nil
+        })
         state.prepare(controller)
 
         window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width,

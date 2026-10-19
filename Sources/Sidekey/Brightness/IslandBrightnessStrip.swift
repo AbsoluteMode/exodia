@@ -85,6 +85,9 @@ struct IslandBrightnessStrip: View {
             controller.endInteraction()
             battery.stop()
         }
+        // The time left follows the display at once, between battery readings.
+        .onChange(of: controller.level) { _, _ in battery.displayDidChange() }
+        .onChange(of: controller.isExtraOn) { _, _ in battery.displayDidChange() }
     }
 
     private var statusLine: (text: String, systemImage: String?, isNotice: Bool)? {

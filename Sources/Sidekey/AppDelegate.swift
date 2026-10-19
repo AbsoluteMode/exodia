@@ -453,6 +453,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installNowPlayingCoordinator()
         installDisplayPreferenceObserver()
         installWorkspacePowerObservers()
+        // The Display tool's time left learns the load from the last half hour, in memory only.
+        BatteryRuntimeMonitor.shared.startHistory()
 
         startReady()
         ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore)

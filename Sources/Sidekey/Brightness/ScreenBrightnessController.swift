@@ -20,12 +20,24 @@ enum ScreenBrightnessScale {
         guard currentHeadroom.isFinite, currentHeadroom > 1 else { return 1 }
         return min(maximumExtraGamma, 1.055 * pow(currentHeadroom, 1 / 2.4) - 0.055)
     }
+
+    /// White's light with Extra relative to SDR white: the table factor through sRGB's curve.
+    static let extraLight = pow((maximumExtraGamma + 0.055) / 1.055, 2.4)
+
+    /// The display's light relative to its full SDR white, for the battery estimate. The level
+    /// is perceptual, so the backlight's light grows about with its square (an assumption).
+    static func displayLoad(level: Double, isExtraOn: Bool) -> Double {
+        let level = clampedLevel(level)
+        return level * level * (isExtraOn ? extraLight : 1)
+    }
 }
 
 struct ScreenBrightnessDisplay: Equatable {
     let id: CGDirectDisplayID
     /// `NSScreen.maximumPotentialExtendedDynamicRangeColorComponentValue`.
     let potentialHeadroom: Double
+    /// The Mac's own panel, whose light the battery estimate counts.
+    var isBuiltIn = false
 
     var supportsExtra: Bool { potentialHeadroom > 1.01 }
 }
@@ -202,6 +214,21 @@ final class ScreenBrightnessController: ObservableObject {
         observers.removeAll()
     }
 
+    /// The built-in display's light for the battery estimate, times Extra's boost while Extra is
+    /// on it: 0 without a built-in display (a closed lid), nil when its level can't be read. Reads only.
+    func builtInDisplayLoad() -> Double? {
+        guard let builtIn = device.displays().first(where: \.isBuiltIn) else { return 0 }
+        let isCurrent = display?.id == builtIn.id
+        let level: Double
+        if isCurrent, isSettling(builtIn.id) {
+            level = self.level
+        } else {
+            guard let hardware = device.read(builtIn.id), hardware.isFinite else { return nil }
+            level = hardware
+        }
+        return ScreenBrightnessScale.displayLoad(level: level, isExtraOn: isCurrent && isExtraOn)
+    }
+
     private func startExtra() {
         guard !isExtraOn, isAvailable, let display, display.supportsExtra else { return }
         guard extraAllowed() else {
@@ -296,7 +323,8 @@ final class NativeScreenBrightnessDevice: ScreenBrightnessDevice {
             guard let id = screen.brightnessDisplayID else { return nil }
             return ScreenBrightnessDisplay(
                 id: id,
-                potentialHeadroom: Double(screen.maximumPotentialExtendedDynamicRangeColorComponentValue))
+                potentialHeadroom: Double(screen.maximumPotentialExtendedDynamicRangeColorComponentValue),
+                isBuiltIn: CGDisplayIsBuiltin(id) != 0)
         }
     }
 
