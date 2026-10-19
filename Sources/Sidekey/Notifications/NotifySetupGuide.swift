@@ -6,9 +6,16 @@ enum NotifySetupGuide {
         # Exodia Notify: local script sources
 
         Notifications appear as the existing compact pill LEFT of the island.
+        Two types are available: presentation="card" (Large, default) or
+        presentation="icon" (Small, no visible text). The small icon covers the
+        island's right wing above hints, meetings and music. It gently shakes and
+        disappears after 5 seconds by default. Hover pauses dismissal/shaking,
+        slightly enlarges the icon and reveals a small close button. Reduce Motion
+        disables shake/scale. Clicking opens its link; close only dismisses.
         History (including each event's color and logo) and source controls are in
         Notify. Find Notify with Search all tools or add it through Settings > Toolbox.
-        Settings > Notifications lists all connected sources with individual on/off switches.
+        Settings > Notifications lists all sources with Notification type (Large /
+        Small) and individual on/off switches.
         No Exodia server or model request is needed to deliver a notification.
 
         ## Configure a source
@@ -29,7 +36,8 @@ enum NotifySetupGuide {
         Required: id (1..64 letters/digits/dot/underscore/hyphen, starts alphanumeric),
         name (1..100 chars), command (argv array, first entry an absolute executable
         path). Optional: enabled (default true), intervalSeconds (5..86400), tint
-        (#RRGGBB), logo, duration (2..60 seconds, default 8). At most 16 sources.
+        (#RRGGBB), logo, presentation (card or icon), duration (2..60 seconds,
+        default 8 for cards or 5 for icons). At most 16 sources.
         Working files/cursors should be private files under the notification root.
         Preserve unrelated sources and notifications.
 
@@ -56,20 +64,31 @@ enum NotifySetupGuide {
 
         {"id":"upstream-event-123","title":"Message from Alex","body":"The build is ready","tint":"#299FD6","logo":"paperplane.fill","duration":8,"link":"https://example.com/message/123"}
 
-        title is required (1..200 chars). Optional: body (up to 8000 chars), id (up
-        to 256 bytes), tint, logo, duration, link. Event fields override source
+        title is required for cards (1..200 chars). Icon events may omit it: the
+        source name is used for history/VoiceOver, with no visible text. Optional:
+        body (up to 8000 chars), id (up to 256 bytes), tint, logo, duration, link,
+        presentation. Event fields override source
         defaults. A stable id is deduplicated per source across launches while it
         remains in the retained history (500 events). Without id each event is new.
         Keep the upstream cursor/checkpoint in private storage so reconnects don't
         repeatedly deliver a backlog. Notifications aren't replayed on app launch.
         Link is optional: a pill without a link only dismisses. Links open only
         after a user click; supported schemes: https, http, tg, slack, linear,
-        github, mailto. No executable, file or JavaScript links.
+        github, mailto, plus codex://threads/<thread-id> for an existing local
+        Codex chat (no query/fragment or new-chat links). No executable, file or
+        JavaScript links; a click never runs a command.
 
         logo is an SF Symbol or a local image name without extension. Put <name>.png,
         .jpg, .jpeg or .pdf (at most 2 MiB) in logos; no paths or remote image URLs.
         Bundled brand PDFs are also available. Unknown names fall back to a monogram.
         Color/logo are persisted with the event, so history keeps its presentation.
+        Bundled logos include codex and claude-code. Example small event:
+        {"id":"session-123:turn-456:done","title":"Finished","presentation":"icon","logo":"codex","tint":"#373A42","link":"codex://threads/session-123"}
+        A logo alone doesn't connect Codex or Claude Code. Configure actual
+        completion/needs-input signals, and use the exact originating session's
+        supported link. Claude Code hooks can supply events; its click target
+        depends on the terminal/IDE/desktop host. Do not invent a universal URL,
+        send prompts or approve operations to test delivery.
 
         ## Verify and maintain
 

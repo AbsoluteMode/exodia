@@ -11,6 +11,16 @@ final class NotifyRenderTests: XCTestCase {
         }
         let directory = URL(fileURLWithPath: output)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // SwiftPM doesn't package the production assets. Load the same PDFs
+        // directly for this isolated fixture, without touching the user's logos.
+        let checkout = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let loadImage: (String) -> NSImage? = { name in
+            NSImage(contentsOf: checkout.appendingPathComponent("Resources/UsefulLinkIcons/\(name).pdf"))
+        }
+        for name in ["codex", "claude-code"] {
+            XCTAssertNotNil(loadImage(name))
+        }
         let fixtures = [("telegram", "Message from Alex", "The build is ready", "#299FD6", "paperplane.fill"),
                         ("warning", "Deployment needs attention", "A deliberately long message that must fit the original left-side slot without overflowing", "#F2A03B", "exclamationmark.triangle.fill")]
         var events: [LocalNotificationEvent] = []
@@ -22,6 +32,17 @@ final class NotifyRenderTests: XCTestCase {
             let view = IslandNotificationPill(event: event, deadline: Date().addingTimeInterval(6), duration: 8)
                 .frame(width: 300, height: 48, alignment: .topTrailing)
             try render(view, size: NSSize(width: 300, height: 48), to: directory.appendingPathComponent(id + ".png"))
+        }
+        for (name, logo, tint) in [("codex", "codex", "#373A42"), ("claude", "claude-code", "#C87554")] {
+            let event = LocalNotificationEvent(id: name, source: name, sourceName: name, title: "Waiting for your answer",
+                body: "", link: URL(string: "https://example.com/session"), timestamp: Date(),
+                customTint: tint, customLogo: logo, presentation: .icon)
+            for hovered in [false, true] {
+                let icon = IslandNotificationIconContent(event: event, hovered: hovered, rotation: 0,
+                    onTap: {}, onDismiss: {}, imageLoader: loadImage)
+                try render(icon, size: NSSize(width: 70, height: 38),
+                    to: directory.appendingPathComponent("icon-\(name)-\(hovered ? "hover" : "idle").png"))
+            }
         }
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: temporary) }
@@ -49,6 +70,10 @@ final class NotifyRenderTests: XCTestCase {
         XCTAssertEqual(supervisor.sources.count, 2)
         try render(settings(supervisor), size: NSSize(width: 760, height: 560),
                    to: directory.appendingPathComponent("settings-sources.png"))
+        supervisor.setPresentation(.icon, id: "telegram")
+        XCTAssertEqual(try JSONDecoder().decode(NotifyScript.self, from: Data(contentsOf: registry.appendingPathComponent("telegram.json"))).presentation, .icon)
+        try render(settings(supervisor), size: NSSize(width: 760, height: 560),
+                   to: directory.appendingPathComponent("settings-small.png"))
         supervisor.setEnabled(false, id: "telegram")
         XCTAssertFalse(try JSONDecoder().decode(NotifyScript.self, from: Data(contentsOf: registry.appendingPathComponent("telegram.json"))).enabled)
         try render(settings(supervisor), size: NSSize(width: 760, height: 560),

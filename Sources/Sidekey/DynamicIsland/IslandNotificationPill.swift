@@ -26,7 +26,7 @@ struct IslandNotificationPill: View {
 
     /// Effective Island lifetime: payload override, else the config default.
     static func resolvedDuration(for event: LocalNotificationEvent) -> TimeInterval {
-        event.customDuration ?? 8
+        event.resolvedDuration
     }
 
     /// Effective accent: payload hex override, else the source's accent.
@@ -210,12 +210,15 @@ struct NotificationSourceIcon: View {
     let glyph: LogoGlyph
     var tint: Color
     var size: CGFloat = 22
+    var imageLoader: (String) -> NSImage?
 
     /// For the pill: explicit glyph (supports payload `customLogo` override).
-    init(glyph: LogoGlyph, tint: Color, size: CGFloat = 22) {
+    init(glyph: LogoGlyph, tint: Color, size: CGFloat = 22,
+         imageLoader: ((String) -> NSImage?)? = nil) {
         self.glyph = glyph
         self.tint = tint
         self.size = size
+        self.imageLoader = imageLoader ?? { NotifyLogoStore.image(named: $0) }
     }
 
     var body: some View {
@@ -239,7 +242,7 @@ struct NotificationSourceIcon: View {
         Group {
             switch glyph {
             case .brandImage(let name):
-                if let image = NotifyLogoStore.image(named: name) {
+                if let image = imageLoader(name) {
                     Image(nsImage: image).resizable().renderingMode(.template).scaledToFit()
                 }
             case .symbol(let symbol):

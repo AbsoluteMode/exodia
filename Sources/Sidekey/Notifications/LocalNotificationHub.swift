@@ -101,9 +101,9 @@ final class LocalNotificationHub: ObservableObject {
         dismissTask?.cancel(); remaining = nil
         if queue.isEmpty { current = nil; deadline = nil; return }
         let event = queue.removeFirst()
-        deadline = Date().addingTimeInterval(event.customDuration ?? 8)
+        deadline = Date().addingTimeInterval(event.resolvedDuration)
         current = event
-        schedule(after: event.customDuration ?? 8)
+        schedule(after: event.resolvedDuration)
     }
     private func schedule(after seconds: TimeInterval) {
         deadline = Date().addingTimeInterval(seconds)
