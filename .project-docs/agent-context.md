@@ -549,7 +549,7 @@ before constructing AppDelegate. A second copy offers to activate the owner and
 quits without starting permissions, providers or hotkeys. Legacy binaries launched
 later cannot honor the lease. The Settings footer shows only the actual app name
 and display version, with website and GitHub links. Detailed build identity stays
-in bundle metadata and the common runtime lease, outside this compact footer.
+in bundle metadata, outside this compact footer.
 WHY: .project-docs/decisions/2026-10-19-one-running-copy.md
 `--installation-check` loads the packaged executable and verifies resources
 without starting the app runtime. User guide: `docs/install.md`. Policy:

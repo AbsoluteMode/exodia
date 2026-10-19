@@ -57,7 +57,7 @@ the script assembles a separate candidate instead of replacing it. Settings
 shows the actual app name and display version, followed by whytap.ai and GitHub
 links that open in the browser only when clicked. At the user's request, the
 footer omits channel, build number, revision and path. Detailed identity remains
-in bundle metadata and the common runtime lease for integration diagnostics.
+available from bundle metadata for integration diagnostics.
 
 ## Signing is decided separately
 
