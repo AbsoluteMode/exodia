@@ -10,6 +10,7 @@ import SwiftUI
 final class PermissionRepairWindowController: NSWindowController, NSWindowDelegate {
     private let viewModel: PermissionsSettingsViewModel
     private var pollTimer: Timer?
+    private var pollBudget = DropHotkeyRecoveryPollBudget()
 
     init(onComplete: @escaping () -> Void) {
         let viewModel = PermissionsSettingsViewModel(onComplete: onComplete, autoComplete: true)
@@ -25,7 +26,7 @@ final class PermissionRepairWindowController: NSWindowController, NSWindowDelega
             backing: .buffered,
             defer: false
         )
-        window.title = "Exodia"
+        window.title = "Whytap"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
@@ -66,9 +67,12 @@ final class PermissionRepairWindowController: NSWindowController, NSWindowDelega
     /// once `snapshot.allRequiredGranted` becomes true.
     private func startPolling() {
         stopPolling()
+        pollBudget = DropHotkeyRecoveryPollBudget()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.viewModel.refresh()
+                guard let self else { return }
+                guard self.pollBudget.consume() else { self.stopPolling(); return }
+                self.viewModel.refresh(restartRecoveryPolling: false)
             }
         }
     }

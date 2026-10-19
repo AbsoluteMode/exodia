@@ -17,11 +17,7 @@ final class AgentSettingsStore: ObservableObject {
     @Published var codexModel: String?        { didSet { write(Keys.codexModel, codexModel) } }
     @Published var codexEffort: String?       { didSet { write(Keys.codexEffort, codexEffort) } }
     @Published var codexServiceTier: String?  { didSet { write(Keys.codexServiceTier, codexServiceTier) } }
-    @Published var openCodeModel: String? { didSet { write(Keys.openCodeModel, openCodeModel) } }
     @Published var openCodeAllowActions: Bool { didSet { defaults.set(openCodeAllowActions, forKey: Keys.openCodeAllowActions) } }
-    @Published private(set) var openRouterCatalog: [OpenRouterModelOption] = []
-    @Published private(set) var openRouterCatalogLoading = false
-    @Published private(set) var openRouterCatalogError: String?
 
     private enum Keys {
         static let claudeModel = "agent.claude.model"
@@ -29,7 +25,6 @@ final class AgentSettingsStore: ObservableObject {
         static let codexModel = "agent.codex.model"
         static let codexEffort = "agent.codex.effort"
         static let codexServiceTier = "agent.codex.serviceTier"
-        static let openCodeModel = "agent.opencode.model"
         static let openCodeAllowActions = "agent.opencode.allowActions"
     }
 
@@ -39,10 +34,18 @@ final class AgentSettingsStore: ObservableObject {
     private var catalogUpdatedAt: Date?
     private var codexConfig: CodexConfigSnapshot
     private let defaults: UserDefaults
+    /// `nil` means the shared store, looked up when the model is read.
+    private let injectedRouting: AIRoutingStore?
+    private var routing: AIRoutingStore { injectedRouting ?? .shared }
+    private let injectedCatalogs: ModelCatalogStore?
+    private var catalogs: ModelCatalogStore { injectedCatalogs ?? .shared }
 
-    init(defaults: UserDefaults = .standard, codexConfig: CodexConfigSnapshot = CodexConfigReader().read()) {
+    init(defaults: UserDefaults = .standard, codexConfig: CodexConfigSnapshot = CodexConfigReader().read(), routing: AIRoutingStore? = nil,
+         catalogs: ModelCatalogStore? = nil) {
         self.codexConfig = codexConfig
         self.defaults = defaults
+        self.injectedRouting = routing
+        self.injectedCatalogs = catalogs
         self.openCodeAllowActions = defaults.object(forKey: Keys.openCodeAllowActions) as? Bool ?? true
         // Property observers do not fire on initial assignment in init, so this
         // load does not write back.
@@ -55,7 +58,6 @@ final class AgentSettingsStore: ObservableObject {
         self.codexModel = defaults.string(forKey: Keys.codexModel)
         self.codexEffort = defaults.string(forKey: Keys.codexEffort)
         self.codexServiceTier = defaults.string(forKey: Keys.codexServiceTier)
-        self.openCodeModel = defaults.string(forKey: Keys.openCodeModel)
     }
 
     /// Resolve the overrides for one provider into the run-time options struct.
@@ -76,33 +78,47 @@ final class AgentSettingsStore: ObservableObject {
                 serviceTier: selectedCodexOption?.resolvedTier(codexServiceTier ?? codexConfig.serviceTier)
             )
         case .opencode:
-            return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions)
+            return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions,
+                                   openCodeModelSpec: selectedOpenCodeModelSpec,
+                                   openCodeProvider: selectedOpenCodeProvider ?? .openRouter)
         }
     }
 
+    /// The OpenCode provider of the `Agent` route: OpenRouter or Anthropic, or
+    /// `nil` for no route or a route OpenCode cannot run.
+    var selectedOpenCodeProvider: OpenCodeModelProvider? {
+        routing.route(for: .agent).flatMap { OpenCodeModelProvider(account: $0.account) }
+    }
+
+    /// The model OpenCode runs: the `Agent` feature's route when it is on
+    /// OpenRouter or Anthropic, else none. The old `agent.opencode.model`
+    /// preference is only read by the routing migration.
     var selectedOpenCodeModel: String? {
-        guard let value = openCodeModel.map(OpenCodeEnvironment.normalizeModel),
-              !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
+        guard let route = routing.route(for: .agent), selectedOpenCodeProvider != nil else { return nil }
+        let value = OpenCodeEnvironment.normalizeModel(route.model)
+        guard !value.isEmpty, !value.contains(where: \.isWhitespace) else { return nil }
         return value
     }
 
-    func refreshOpenRouterCatalog(
-        load: () async throws -> [OpenRouterModelOption] = {
-            try await OpenRouterLLMClient().listModels(apiKey: OpenRouterLLMKeyStore().read())
-        }
-    ) async {
-        guard !openRouterCatalogLoading else { return }
-        openRouterCatalogLoading = true
-        defer { openRouterCatalogLoading = false }
-        do {
-            let models = try await load()
-            try Task.checkCancellation()
-            openRouterCatalog = models.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
-            openRouterCatalogError = nil
-        } catch is CancellationError {
-        } catch {
-            openRouterCatalogError = "Couldn’t refresh OpenRouter models. Check your key and network, then retry."
-        }
+    /// `"<provider> · <model id>"` for the agent route, or `nil` without a
+    /// usable model. New agent providers add a case to `OpenCodeModelProvider`.
+    var selectedOpenCodeModelLabel: String? {
+        guard let route = routing.route(for: .agent), let model = selectedOpenCodeModel else { return nil }
+        return "\(route.account.kind.displayName) · \(model)"
+    }
+
+    /// The selected model's limits from the route provider's catalog snapshot;
+    /// `nil` when the catalog does not give a context length.
+    var selectedOpenCodeModelSpec: OpenCodeModelSpec? {
+        guard let id = selectedOpenCodeModel, let provider = selectedOpenCodeProvider,
+              let entry = catalogs.snapshot(for: provider.account)?.models.first(where: {
+                  OpenCodeEnvironment.normalizeModel($0.id) == id
+              }),
+              let context = entry.contextLength else { return nil }
+        return OpenCodeModelSpec(toolCall: entry.supportsTools ?? true,
+                                 reasoning: entry.supportsReasoning ?? false,
+                                 contextLimit: context,
+                                 outputLimit: entry.maxOutputTokens ?? 16_384)
     }
 
     /// The user's explicit pick when it is a level this CLI accepts, else Low.

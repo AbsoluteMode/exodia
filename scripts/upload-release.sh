@@ -9,14 +9,14 @@
 #
 # Required env:
 #   FLAVOR               "prod" | "beta"
-#   APP_BUNDLE_NAME      "Exodia" | "Exodia-Beta"
+#   APP_BUNDLE_NAME      "Whytap" | "Whytap-Beta"
 #   SHORT_VERSION        SemVer (e.g. 2.0.0)
 #   BUILD_VERSION        monotonic int (e.g. 1444); Sparkle compares this
 #   SPARKLE_ED_PRIVATE_KEY        base64 Ed25519 seed (32 bytes decoded), OR
 #   SPARKLE_ED_PRIVATE_KEY_FILE   path to a file holding the same value
 #
 # Optional env:
-#   GITHUB_REPO          owner/name (default: AbsoluteMode/exodia)
+#   GITHUB_REPO          owner/name (default: AbsoluteMode/whytap)
 #   RELEASE_NOTES_FILE   markdown file used as the release body
 #                        (default: GitHub auto-generated notes)
 #
@@ -62,7 +62,7 @@ if ! [[ "$BUILD_VERSION" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/exodia}"
+GITHUB_REPO="${GITHUB_REPO:-AbsoluteMode/whytap}"
 DOWNLOAD_BASE="https://github.com/${GITHUB_REPO}/releases/download"
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -82,13 +82,13 @@ fi
 case "$FLAVOR" in
     prod)
         TAG="v${SHORT_VERSION}"
-        TITLE="Exodia ${SHORT_VERSION}"
+        TITLE="Whytap ${SHORT_VERSION}"
         FEED_TAG="$TAG"
         FEED_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/appcast.xml"
         ;;
     beta)
         TAG="beta-v${SHORT_VERSION}-b${BUILD_VERSION}"
-        TITLE="Exodia Beta ${SHORT_VERSION} (build ${BUILD_VERSION})"
+        TITLE="Whytap Beta ${SHORT_VERSION} (build ${BUILD_VERSION})"
         FEED_TAG="beta"
         FEED_URL="${DOWNLOAD_BASE}/beta/appcast.xml"
         ;;
@@ -100,11 +100,25 @@ case "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" in
     1) DISTRIBUTION_MODE="developer-id" ;;
     *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 1 ;;
 esac
+# A community archive must carry the identity committed with its source: the
+# community certificate when present, otherwise ad-hoc. Test certificate
+# overrides and ad-hoc opt-outs therefore cannot be published.
+# WHY: .project-docs/decisions/2026-10-19-community-signing-identity.md
+COMMUNITY_SIGNING_CERTIFICATE="${PROJECT_DIR}/Resources/community-signing-certificate.pem"
+if [ "${DISTRIBUTION_MODE}" = "developer-id" ]; then
+    EXPECTED_CODE_SIGNING="developer-id"
+elif [ -f "${COMMUNITY_SIGNING_CERTIFICATE}" ]; then
+    EXPECTED_CODE_SIGNING="certificate:$(/usr/bin/openssl x509 -in "${COMMUNITY_SIGNING_CERTIFICATE}" \
+        -noout -fingerprint -sha1 | sed 's/^.*=//; s/://g' | tr 'A-F' 'a-f')"
+else
+    EXPECTED_CODE_SIGNING="adhoc"
+fi
 verify_archive_provenance() {
     /usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" verify \
         --project-root "${PROJECT_DIR}" --archive "$1" --manifest "${DMG_MANIFEST}" \
         --version "${SHORT_VERSION}" --build "${BUILD_VERSION}" \
-        --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}"
+        --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}" \
+        --code-signing "${EXPECTED_CODE_SIGNING}"
 }
 # Validate before key access or any GitHub operation. Never infer provenance from a filename.
 SOURCE_SHA="$(verify_archive_provenance "${DMG_LOCAL}")"
@@ -344,7 +358,7 @@ fi
 if [ "$FLAVOR" = "beta" ]; then
     if ! gh release view "$FEED_TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
         gh release create "$FEED_TAG" --repo "$GITHUB_REPO" --prerelease \
-            --target "$SOURCE_SHA" --title "Exodia Beta feed" \
+            --target "$SOURCE_SHA" --title "Whytap Beta feed" \
             --notes "Rolling prerelease that carries the beta Sparkle feed. Install from the versioned beta releases."
     fi
     gh release upload "$FEED_TAG" --repo "$GITHUB_REPO" --clobber \

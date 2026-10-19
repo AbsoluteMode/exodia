@@ -20,6 +20,13 @@ protocol MeetingsSidebarSource: AnyObject {
 @MainActor
 protocol MeetingsSidebarDelegate: AnyObject {
     func sidebarDidSelectMeeting(id: UUID)
+    /// The user picked Delete on a row. Optional for conformers: the default
+    /// does nothing, so a delegate that cannot delete simply ignores it.
+    func sidebarDidRequestDelete(id: UUID)
+}
+
+extension MeetingsSidebarDelegate {
+    func sidebarDidRequestDelete(id: UUID) {}
 }
 
 /// Adapter that lets the production `MeetingsStore` actor satisfy the
@@ -49,6 +56,9 @@ final class MeetingsStoreSidebarSource: MeetingsSidebarSource {
 final class MeetingsSidebarController: NSViewController {
 
     private let model: MeetingListModel
+    /// Whether rows offer Delete in their context menu. Off by default: only
+    /// surfaces wired to a delete handler turn it on.
+    private let canDelete: Bool
     weak var delegate: MeetingsSidebarDelegate?
 
     /// Flat newest-first list, exposed for callers that resolve a title by id.
@@ -64,9 +74,11 @@ final class MeetingsSidebarController: NSViewController {
 
     init(
         source: MeetingsSidebarSource,
-        nowProvider: @escaping () -> Date = { Date() }
+        nowProvider: @escaping () -> Date = { Date() },
+        canDelete: Bool = false
     ) {
         self.model = MeetingListModel(source: source, nowProvider: nowProvider)
+        self.canDelete = canDelete
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -79,9 +91,15 @@ final class MeetingsSidebarController: NSViewController {
 
     override func loadView() {
         let host = NSHostingView(
-            rootView: MeetingListView(model: model) { [weak self] id in
-                self?.handleUserSelection(id: id)
-            }
+            rootView: MeetingListView(
+                model: model,
+                onSelect: { [weak self] id in
+                    self?.handleUserSelection(id: id)
+                },
+                onDelete: canDelete
+                    ? { [weak self] id in self?.delegate?.sidebarDidRequestDelete(id: id) }
+                    : nil
+            )
         )
         host.translatesAutoresizingMaskIntoConstraints = false
 

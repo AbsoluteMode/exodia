@@ -53,71 +53,68 @@ final class TranscriptionProviderBrandTests: XCTestCase {
         XCTAssertEqual(brand.systemName, "server.rack")
     }
 
-    func testProviderBrandsDefaultToMonochrome() {
-        // Every provider mark stays template/white in the island.
-        XCTAssertFalse(TranscriptionProviderBrand.agent(.codex).isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.agent(.claude).isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.google.isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.openRouter.isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.customLLM.isFullColor)
-        XCTAssertFalse(TranscriptionProviderBrand.byok(.soniox).isFullColor)
+    // MARK: routes
+
+    @MainActor
+    private func makeRouting() -> AIRoutingStore {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return AIRoutingStore(defaults: defaults)
     }
 
     @MainActor
-    func testCurrentDropBrandIsNilWithoutChosenProvider() {
-        // A retired on-device choice reads as "no provider chosen" on any
-        // hardware: no audio goes to a provider, so there is no brand to show.
-        withStoredLevel("local", forKey: "sidekey.models.transcriptionLevel") {
-            XCTAssertNil(TranscriptionProviderBrand.currentDrop())
-        }
+    func test_brand_for_built_in_accounts_keeps_the_old_assets() {
+        let routing = makeRouting()
+        XCTAssertEqual(TranscriptionProviderBrand.brand(for: .soniox, in: routing),
+                       TranscriptionProviderBrand(assetName: "soniox", label: "Soniox"))
+        XCTAssertEqual(TranscriptionProviderBrand.brand(for: .deepgram, in: routing),
+                       TranscriptionProviderBrand(assetName: "deepgram", label: "Deepgram"))
+        XCTAssertEqual(TranscriptionProviderBrand.brand(for: .elevenLabs, in: routing),
+                       TranscriptionProviderBrand(assetName: "elevenlabs", label: "ElevenLabs"))
+        XCTAssertEqual(TranscriptionProviderBrand.brand(for: .openRouter, in: routing), .openRouter)
     }
 
     @MainActor
-    func testCurrentDropBrandReturnsSelectedProviderForYourKey() {
-        let prefs = SelfKeyPreferences.shared
-        let originalLevel = prefs.transcriptionLevel
-        let originalProvider = prefs.selectedProvider
-        defer {
-            prefs.transcriptionLevel = originalLevel
-            prefs.selectedProvider = originalProvider
-        }
-
-        prefs.transcriptionLevel = .yourKey
-        prefs.selectedProvider = .deepgram
-
-        XCTAssertEqual(TranscriptionProviderBrand.currentDrop(), .byok(.deepgram))
+    func test_brand_for_a_server_shows_its_name() {
+        let routing = makeRouting()
+        let server = routing.addServer(name: "llm.local", baseURL: "http://llm.local/v1")
+        let brand = TranscriptionProviderBrand.brand(for: .server(server.id), in: routing)
+        XCTAssertEqual(brand.systemName, "server.rack")
+        XCTAssertNil(brand.assetName)
+        XCTAssertEqual(brand.label, "llm.local")
     }
 
     @MainActor
-    func testCurrentDropCleanupBrandFollowsLLMRoute() {
-        let prefs = SelfKeyPreferences.shared
-        let originalLLMLevel = prefs.llmLevel
-        defer { prefs.llmLevel = originalLLMLevel }
+    func test_drop_brand_follows_the_latched_take() {
+        let routing = makeRouting()
+        let take = DropTake()
+        XCTAssertNil(TranscriptionProviderBrand.currentDrop(take: take, routing: routing))
 
-        prefs.llmLevel = .yourKey
-        XCTAssertEqual(TranscriptionProviderBrand.currentDropCleanup(), .openRouter)
+        take.begin(mode: .fast, route: FeatureRoute(account: .elevenLabs, model: "scribe_v2_realtime"))
+        XCTAssertEqual(TranscriptionProviderBrand.currentDrop(take: take, routing: routing)?.label, "ElevenLabs")
 
-        prefs.llmLevel = .custom
-        XCTAssertEqual(TranscriptionProviderBrand.currentDropCleanup(), .customLLM)
+        // The route held by the take wins over the store's current route.
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v4"), for: .dropFast)
+        XCTAssertEqual(TranscriptionProviderBrand.currentDrop(take: take, routing: routing)?.label, "ElevenLabs")
 
-        // No route chosen (a retired on-device choice): nothing to surface.
-        withStoredLevel("local", forKey: "sidekey.models.llmLevel") {
-            XCTAssertNil(TranscriptionProviderBrand.currentDropCleanup())
-        }
+        take.begin(mode: .smart, route: nil)
+        XCTAssertNil(TranscriptionProviderBrand.currentDrop(take: take, routing: routing))
     }
 
-    /// Stores a raw level in the defaults `SelfKeyPreferences.shared` reads,
-    /// runs `body`, then restores whatever was stored before.
     @MainActor
-    private func withStoredLevel(_ rawValue: String, forKey key: String, _ body: () -> Void) {
-        let defaults = UserDefaults.standard
-        let original = defaults.object(forKey: key)
-        defer {
-            if let original { defaults.set(original, forKey: key) }
-            else { defaults.removeObject(forKey: key) }
-        }
-        defaults.set(rawValue, forKey: key)
-        body()
+    func test_cleanup_brand_follows_the_cleanup_route() {
+        let routing = makeRouting()
+        XCTAssertNil(TranscriptionProviderBrand.currentDropCleanup(routing: routing))
+
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "anthropic/claude-haiku-4.5"), for: .dropSmartCleanup)
+        XCTAssertEqual(TranscriptionProviderBrand.currentDropCleanup(routing: routing), .openRouter)
+
+        let server = routing.addServer(name: "llm.local", baseURL: "http://llm.local/v1")
+        routing.setRoute(FeatureRoute(account: .server(server.id), model: "qwen"), for: .dropSmartCleanup)
+        let brand = TranscriptionProviderBrand.currentDropCleanup(routing: routing)
+        XCTAssertEqual(brand?.systemName, "server.rack")
+        XCTAssertEqual(brand?.label, "llm.local")
     }
 
     // MARK: assets resolve to bundled files

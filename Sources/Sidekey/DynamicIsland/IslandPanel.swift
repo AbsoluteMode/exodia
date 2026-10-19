@@ -655,7 +655,7 @@ final class IslandPanel: NSPanel {
     /// broad wake-zone (spec §4.1). Wired by `AppDelegate` to the idle
     /// controller's `registerActivity()`, which wakes `.hiddenIdle → .active`
     /// instantly and resets the idle timer. Carries NO event payload
-    /// (invariant #3). Default no-op so the panel works before wiring.
+    /// (invariant #2). Default no-op so the panel works before wiring.
     var onIslandMouseActivity: () -> Void = {}
 
     /// Fired when the cursor enters/leaves the island's rendered content
@@ -1537,7 +1537,7 @@ final class IslandPanel: NSPanel {
     /// Track whether the cursor is over rendered island content and fire the
     /// hover blocker (B10) on the edge only. Called from every routing pass —
     /// including state-change refreshes — which is safe because it only reflects
-    /// the current cursor-over-content fact. Carries only a bool (invariant #3).
+    /// the current cursor-over-content fact. Carries only a bool (invariant #2).
     private func updateIslandHover(cursorOverContent: Bool) {
         guard islandHovered != cursorOverContent else { return }
         islandHovered = cursorOverContent
@@ -1552,7 +1552,7 @@ final class IslandPanel: NSPanel {
     /// gates plain activity ticks, so mousing far from the pill doesn't keep
     /// resetting the idle timer either. Wired only into the mouse monitors so
     /// a collapse-triggered `refreshMouseEventRouting` can never self-wake.
-    /// No payload (invariant #3).
+    /// No payload (invariant #2).
     private func handleIslandMouseActivity() {
         let zone = IslandPanelMouseEventPolicy.idleWakeZone(
             compactFrame: Self.computeLayout().compactFrame,

@@ -1,6 +1,6 @@
 # Hotkey display standard
 
-Single source of truth for how Exodia renders hotkey hints in its UI.
+Single source of truth for how Whytap renders hotkey hints in its UI.
 
 ## Component
 
@@ -32,7 +32,7 @@ Modifier glyphs and their VoiceOver pronunciations live on
   `HotkeyGlyph.shift` (⇧), `HotkeyGlyph.control` (⌃). Never the
   word `"Option"` / `"Command"` etc. as the cap label.
 - **Side disambiguation lives INSIDE the keycap.** When a hotkey is
-  wired to a specific physical side of a modifier key (e.g. Exodia's
+  wired to a specific physical side of a modifier key (e.g. Whytap's
   Agent uses Right Command only), use
   `KeycapContent.prefixedGlyph(prefix: "right", glyph: HotkeyGlyph.command, ...)`
   to bake the qualifier in front of the glyph inside the SAME cap
@@ -55,7 +55,7 @@ Modifier glyphs and their VoiceOver pronunciations live on
   response panel close row, and every Help window row look
   identical at the chip level for this reason. Two styles opt out
   of the outer capsule: `.keycaps` (each cap draws its own mini
-  chip — the Hover-slot hints above the tiles) and `.bare` (loose
+  chip — the Tool hotkey hints above the tiles) and `.bare` (loose
   glyphs, an API option with no production callsites today). Both
   still route through `HotkeyHintView`.
 - **Every hotkey must appear in the Help window**
@@ -162,46 +162,80 @@ and the gesture, as determined by `HotkeyShortcutMonitor.isDropHoldTap`:
 
 | Shortcut type | Gesture | Monitor | Effect |
 |---------------|---------|---------|--------|
-| `.holdSpace` (normalized hold) | hold | `SpaceHoldMonitor` (CGEventTap, Input Monitoring) | Swallows Space; plain typing unaffected by release |
-| bare combo (`modifiers == 0`) | hold | `SpaceHoldMonitor` (CGEventTap, Input Monitoring) | Swallows the key on hold; plain taps still type |
+| `.holdSpace` (normalized hold) | hold | `SpaceHoldMonitor` (CGEventTap, Accessibility) | Swallows Space; plain typing unaffected by release |
+| bare combo (`modifiers == 0`) | hold | `SpaceHoldMonitor` (CGEventTap, Accessibility) | Swallows the key on hold; plain taps still type |
 | bare combo (`modifiers == 0`) | tap/Toggle | Carbon `RegisterEventHotKey` | Key grabbed globally — **stops typing**; Settings shows a warning |
-| modifier combo | hold | `SpaceHoldMonitor` (CGEventTap, Input Monitoring) | Swallows the key on hold |
+| modifier combo | hold | `SpaceHoldMonitor` (CGEventTap, Accessibility) | Swallows the key on hold |
 | modifier combo | tap/Toggle | Carbon `RegisterEventHotKey` | Standard combo registration; modifier key still types normally |
 | `.modifier` (R⌘, R⌥) | — | `ModifierOnlyHotkeyMonitor` | Tap/hold split on the same physical key |
 
 `voiceTitle` in display: `.tap` shows as "Toggle" on voice rows;
 `HotkeyGesture.rawValue` ("tap"/"hold") is for persistence only, never for UI.
 
-## Hover-slot hotkeys
+### Drop permissions and shortcut recovery
 
-The five Hover buttons each have a configurable **positional** hotkey
-(default ⌥1..⌥5). The binding follows the slot **position**, not the tool:
-⌥N activates whatever tool currently occupies `HoverLayoutStore.slots[N-1]`,
-so reordering tiles in the Toolbox re-points ⌥N at the new occupant. The five
-rows live in Settings → Hotkeys (`hoverSlotSection` in
-`HotkeysSettingsView.swift`) and the bindings are
-`HotkeyConfiguration.hoverSlot1Shortcut … hoverSlot5Shortcut`.
+Carbon tap/Toggle shortcuts stay registered when Accessibility is missing.
+Pressing the saved shortcut, including a bare key such as `]`, opens the
+existing permission-repair surface before a new recording starts. A Stop or
+release for an active take is never blocked by the start-permission check.
+Hold and modifier monitors still need Accessibility to install. Input
+Monitoring is a fallback only when macOS cannot create the hold event tap;
+it is not required for Carbon tap shortcuts. A failed tap or Carbon
+registration is an installation failure, never a ready monitor.
 
-- **Keycap hint above each button.** Each Hover tile shows its hotkey as a
-  `HotkeyHintView(style: .keycaps, size: .tiny)` sitting above it — each
-  glyph in its own mini keycap chip, no outer capsule — sourced from
-  `configuration.hoverSlot<N>Shortcut.contents` (dynamic — a rebind updates
-  the hint). The hint is visible only while the cursor hovers that tile; the
-  other tiles hide theirs via `opacity` (not conditional removal), so the
-  layout slot above every tile stays reserved and tiles never jump. The fade
-  is `easeInOut(0.15s)`, riding the same `hoveredTool` value as the
-  description strip below.
-- **Activation behaviour** (`AppDelegate.onHoverSlotActivated`): for
-  inline-panel tools, ⌥N expands the Hover (only when
-  `IslandHoverPolicy.allowsExpansion` — e.g. not during a meeting) and opens
-  the tool's sub-panel; for action / navigate tools it runs the effect
-  directly without forcing the drawer open. A tile click and its ⌥N hotkey
-  share one code path (`HoverSlotRouter`).
-- **Slot 5 is the locked Settings slot** (`HoverLayoutStore.lockSlotIndex`):
-  the hotkey is editable, but the tool in that position is permanently
-  `.settings`.
-- Like every other monitor, the keystroke content is never logged — only the
-  fact of the trigger (invariant #3).
+Settings → Permissions shows the actual **Drop shortcut** state. **Retry
+shortcut** reinstalls it even when the permission status has not changed.
+A shortcut owned by another app or Whytap copy is reported as **Shortcut is
+in use**, with **Hotkeys…** available to change it; this error does not ask
+for more permissions. The repair view also identifies the running app in
+Finder when an old Accessibility entry needs replacing.
+
+Reopening Whytap, activating it, or pressing **Refresh** in Permissions
+quietly reconciles permission state and monitor installation. While waiting
+for repair, checks run once a second for up to 120 attempts and stop once
+ready. These checks do not request grants or open background repair windows.
+After that bounded session, reopening Whytap, Refresh, or Retry can start a
+new session. Rebuilding a live monitor waits until the current capture can
+stop; if a hold tap itself is lost, the captured take is finalized, including
+a Stop received during setup. Saved shortcuts, gestures, modes and providers
+are not changed by recovery.
+
+Source contract: `DropHotkeyRecovery`, `AppDelegate.refreshRuntimePermissions`,
+and `PermissionsSettingsViewModel`. The source correction and remaining
+installed-app checks are recorded in the
+[permission stability audit](../.project-docs/bugs/2026-10-19-permission-stability-audit.md).
+
+## Tool hotkeys
+
+Settings → Hotkeys → Tools lists the complete `HoverTool` catalog. Record a
+shortcut beside a named function and Save; remove it with the clear button and
+Save. Escape cancels recording, Revert discards the draft, and Reset to defaults
+clears optional tool bindings. New installs do not reserve Option 1–5.
+
+Bindings use stable tool IDs in `HotkeyConfiguration.toolShortcuts` and
+`hotkeys.toolShortcuts.v1`. Moving or removing a tile never changes its shortcut;
+a tool need not be pinned to run from the keyboard. `ToolHotkeyBinding.resolve`
+produces registrations with independent Carbon IDs, and `AppDelegate` captures
+the tool directly. Tile clicks, search and hotkeys share `HoverSlotRouter`.
+Inline panels request the existing policy-gated hover expansion; actions and
+navigation run directly. Output Language retains its Smart Mode requirement.
+The existing Meeting record row remains the primary record toggle; Record in
+the Tools section provides an optional additional shortcut for the same action.
+
+Assigned hints above tiles and named Help rows read the same configuration.
+Unassigned tools have no hint or Help hotkey row. Conflicts use the existing
+physical-key model, including the fixed Help and History-strip shortcuts.
+If macOS cannot register a binding, its saved row shows an unavailable message
+with permission/shortcut recovery guidance.
+
+On first load, explicitly saved legacy `hotkeys.hoverSlotNShortcut` values map
+to the tools currently occupying the first five positions. Empty positions and
+invalid or Drop-only Space values are ignored. The resulting dictionary is
+saved once; an intentionally empty dictionary prevents old slots from returning
+after a clear, reset or backup restore. Existing legacy keys remain untouched
+for compatibility. Configuration backups include the new dictionary.
+
+WHY: [Feature hotkeys](decisions/2026-10-19-feature-hotkeys.md).
 
 ## Meeting-record hotkey
 
@@ -210,8 +244,7 @@ Manual Meeting Notes recording has a configurable global hotkey (default
 bypassing the detector nudge (empty pre-record lead-in, detector cooldown
 engaged); press again stops it through the regular finalize path. The same
 toggle backs the Hover `Record` tile (Toolbox catalog, not in the default
-slots) and the "Record a meeting now" button in Settings → Other — all
-three converge on `MeetingsCoordinator.toggleManualRecording()`.
+slots); both converge on `MeetingsCoordinator.toggleManualRecording()`.
 
 - Binding: `HotkeyConfiguration.meetingRecordShortcut`, row in
   Settings → Hotkeys, standard physical-key conflict model, Carbon tap
@@ -222,6 +255,31 @@ three converge on `MeetingsCoordinator.toggleManualRecording()`.
   Never a silent no-op.
 - Help window row: "Meeting record" — contents come from the live
   configuration like every other row.
+
+## Brightness keys
+
+The Mac's own brightness keys are not a Whytap hotkey: they have no
+`HotkeyConfiguration` binding, recorder row, `HotkeyHintView` or Help window
+row. Settings → Toolbox → Display → Brightness keys (off by default) lets
+Whytap take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
+
+- A head-insert session tap for system-defined events (needs Accessibility)
+  swallows brightness up/down presses, so the macOS indicator does not show.
+  Each press steps the island display's backlight by a sixteenth (⌥⇧: a
+  sixty-fourth) and opens the Display strip as a glance: about 2 s, no
+  keyboard focus, never over another panel under the pointer or a focused
+  search.
+- Two brightness-up presses at the maximum within 1.5 s, timed when the tap
+  sees them, turn Extra on; the press that reaches the maximum and repeats
+  from holding the key do not count.
+- ⌘, ⌃, ⌥ or ⇧ (other than ⌥⇧), hidden hover widgets and an unadjustable
+  display leave the keys with macOS; ⌥ still opens Displays settings. Fn and
+  Caps Lock do not matter. A press belongs wholly to whoever got its first
+  event, Whytap or macOS, also across the hotkeys' rebuild. After a longer
+  gap or a tap macOS disabled, the presses in progress finish with macOS.
+- The tap is reinstalled with the other monitors after wake or an
+  Accessibility change. As with every monitor, key contents are never logged
+  or stored (invariant #2).
 
 ## Canonical reference
 
@@ -236,7 +294,7 @@ HotkeyHintView(label: "Quit", keys: [HotkeyGlyph.option, "Q"])  // response pane
 HotkeyHintView(label: "Help", keys: [HotkeyGlyph.option, "H"])  // floating Keybindings hint
 HotkeyHintView(keys: ["Space"])                                 // Drop = hold Space (Help row; title column already labels it)
 HotkeyHintView(label: "Hold", keys: [HotkeyGlyph.command])      // Help window row needing tap/hold disambiguation
-// Hover-slot hints above the tiles:
+// Tool hotkey hints above the tiles:
 HotkeyHintView(contents: shortcut.contents, style: .keycaps, size: .tiny)
 // Each glyph renders in its own mini rounded keycap (KeycapChrome.chip),
 // no outer capsule. Reads as [⌥][1] — two distinct tiny keys.

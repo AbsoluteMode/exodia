@@ -150,18 +150,12 @@ final class HistoryStripFeedTests: XCTestCase {
         XCTAssertEqual(feed.cards(for: .clipboard), [])
     }
 
-    // MARK: - Cap to 10 newest entries (iteration 2)
+    // MARK: - Per-mode feed limits
 
-    /// ROO-208 iter 2: the feed surfaces only the 10 newest entries per
-    /// filter to the UI deck. The SQLite store still retains older rows
-    /// — this cap is a UI-only slice so the deck stays interactive and
-    /// doesn't paint dozens of phantom dimmed copies behind the front
-    /// card. Order semantics (newest-first) preserved.
-    func testClipboardFeedCapsAtTenNewest() throws {
+    /// Clipboard exposes twenty copies without deleting older stored rows.
+    func testClipboardFeedCapsAtTwentyNewestWithoutDeletingOlderEntries() throws {
         let store = try makeStore()
-        // Insert 15 clipboard entries with monotonically increasing
-        // timestamps. Newest = id 15 (ts 15).
-        for i in 1...15 {
+        for i in 1...25 {
             _ = try store.insertClipboardTextEntry(
                 createdAt: Date(timeIntervalSince1970: TimeInterval(i)),
                 text: "entry-\(i)"
@@ -170,9 +164,9 @@ final class HistoryStripFeedTests: XCTestCase {
 
         let feed = HistoryStripFeed(store: store)
         let cards = feed.cards(for: .clipboard)
-        XCTAssertEqual(cards.count, 10, "feed must cap at 10 newest entries")
+        XCTAssertEqual(cards.count, 20, "clipboard must expose the latest 20 entries")
 
-        // Newest first: cards[0] should be the most recent (ts 15).
+        // Newest first: cards[0] should be the most recent (ts 25).
         guard
             case .clipboard(let newest) = cards.first,
             case .text(let s) = newest.payload
@@ -180,19 +174,18 @@ final class HistoryStripFeedTests: XCTestCase {
             XCTFail("expected first card to be newest clipboard text")
             return
         }
-        XCTAssertEqual(s, "entry-15")
+        XCTAssertEqual(s, "entry-25")
 
-        // Oldest in the capped window (cards[9]) should be ts 6 — i.e.
-        // the 10th newest. Older rows (1..5) are dropped from the UI
-        // feed but remain in the store.
+        // The twentieth card is ts 6. Rows 1...5 remain in storage.
         guard
             case .clipboard(let oldestInWindow) = cards.last,
             case .text(let lastStr) = oldestInWindow.payload
         else {
-            XCTFail("expected last card to be oldest within the 10-window")
+            XCTFail("expected last card to be oldest within the 20-window")
             return
         }
         XCTAssertEqual(lastStr, "entry-6")
+        XCTAssertEqual(try store.latestClipboardEntries(limit: 100).count, 25)
     }
 
     func testDropFeedCapsAtTenNewest() throws {

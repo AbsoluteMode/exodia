@@ -11,11 +11,10 @@ new account system, hosted service or second copy of the user's knowledge.
 | Clipboard, Drop and agent history | `History/HistoryStore.swift`, `History/SQLiteHistoryStore.swift` | `Application Support/<bundle ID>/history.sqlite`, with local image sidecars |
 | Meeting notes and checkpoints | `Meetings/MeetingsStore.swift`, `Meetings/MeetingFinalizeManifest.swift` | `Application Support/Sidekey/Meetings/`; staged audio and durable processing state |
 | Case snippets | `Case/CaseVaultStore.swift` | AES-GCM encrypted file under `Application Support/<bundle ID>/`, Keychain encryption key, backup before save |
-| Agent memory and sessions | `AgentDaemon/AgentDaemonWorkingDirectory.swift`, `AgentDaemon/AgentSessionStore.swift` | Neutral `Application Support/whytap/agent/` or sibling `project-agents/<UUID>/`; each has AGENTS.md, sessions.json and isolated OpenCode runtime data |
-| Project library | `Knowledge/ProjectKnowledgeStore.swift` | Local `projects/projects.json` catalog and `projects/knowledge.sqlite` text index under `Application Support/<bundle ID>/`; explicitly selected folders and manual notes |
+| Agent memory and sessions | `AgentDaemon/AgentDaemonWorkingDirectory.swift`, `AgentDaemon/AgentSessionStore.swift` | `Application Support/whytap/agent/` with AGENTS.md, sessions.json and isolated OpenCode runtime data |
 
 Paths in the code column start at `Sources/Sidekey/`. Application Support is the
-current macOS user's directory. Exodia retains the historical `Sidekey`, `whytap`
+current macOS user's directory. Whytap retains the historical `Sidekey`, `whytap`
 and `Whytap` store names to preserve existing keys, notes and memory. Do not
 rename them without an explicit migration and recovery path.
 

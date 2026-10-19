@@ -6,8 +6,8 @@ import Foundation
 ///   no LLM cleanup).
 /// - `smart`: the transcript runs through the configured cleanup LLM
 ///   (OpenRouter or a custom OpenAI-compatible endpoint)
-///   before it is pasted. When no LLM route is usable the Drop degrades to
-///   the `fast` output instead of failing the paste.
+///   before it is pasted. An unavailable route or failed cleanup retains the
+///   transcript and offers Retry; it never silently substitutes Fast output.
 ///
 /// Brand-new users default to `fast`.
 enum TranscriptionMode: String, Codable, CaseIterable, Equatable, Sendable {

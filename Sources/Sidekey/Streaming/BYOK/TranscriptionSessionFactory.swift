@@ -1,65 +1,53 @@
 import Foundation
 
-enum TranscriptionFactoryError: Error, Equatable {
-    case missingKey
-    case missingBaseURL
-    /// No transcription provider has been chosen yet (Settings -> Models).
-    /// A former on-device user lands here too: their audio never left the Mac.
-    case notConfigured
-}
-
-/// Turns the current isolation-level config into a `StreamingSessionRunning`:
-/// a `DirectProviderStreamingSession` driving the per-provider BYOK adapter
-/// (openAI/selfHosted -> OpenAI Realtime standard; deepgram/soniox/elevenLabs
-/// -> their native client-direct adapters).
+/// Opens a real-time transcription session on the route of the feature that
+/// asks for it: the feature's own provider account, model and key. A feature
+/// that is Not set, or whose key is missing, fails with `FeatureRouteError`;
+/// nothing is ever opened on another feature's provider.
 @MainActor
 struct TranscriptionSessionFactory {
-    let prefs: SelfKeyPreferences
-    let keyStore: BYOKKeyStore
-    let vocab: VocabularyCache
+    private let resolver: FeatureRouteResolver
+    private let vocab: VocabularyCache
+    private let makeAdapter: (ResolvedRoute) throws -> BYOKTranscriptionAdapter
 
-    /// Build the session for the current isolation level. `resilient` enables
-    /// degraded-turn batch recovery and must be `true` ONLY for the Drop flow;
-    /// agent-voice and Google-search pass `false` so they can never resolve
-    /// `.degraded` (their handlers treat it as a no-op, which would silently
-    /// drop dictation).
+    /// `vocab` defaults to the shared cache, looked up when the session is
+    /// built: a literal `.shared` default does not compile for a main-actor
+    /// value in Swift 5 mode.
+    init(
+        resolver: FeatureRouteResolver = FeatureRouteResolver(),
+        vocab: VocabularyCache? = nil,
+        makeAdapter: @escaping (ResolvedRoute) throws -> BYOKTranscriptionAdapter = RealtimeAdapterFactory.make
+    ) {
+        self.resolver = resolver
+        self.vocab = vocab ?? .shared
+        self.makeAdapter = makeAdapter
+    }
+
+    /// Build the session for `feature`. `resilient` enables degraded-turn batch
+    /// recovery and must be `true` ONLY for the Drop flow; agent-voice and
+    /// Google-search pass `false` so they can never resolve `.degraded` (their
+    /// handlers treat it as a no-op, which would silently drop dictation).
     func make(
+        feature: AIFeature,
         language: String?,
         resilient: Bool = false
     ) throws -> StreamingSessionRunning {
-        switch prefs.transcriptionLevel {
-        case nil:
-            throw TranscriptionFactoryError.notConfigured
-        case .yourKey:
-            let provider = prefs.selectedProvider
-            guard let key = (try? keyStore.read(for: provider)), !key.isEmpty else {
-                throw TranscriptionFactoryError.missingKey
-            }
-            // The user's per-provider model selection (Models UI); falls back to
-            // the provider default, and to `selfHostedModel` for self-hosted.
-            let model = prefs.transcriptionModel(for: provider)
-            let adapter: BYOKTranscriptionAdapter
-            switch provider {
-            case .openAI, .selfHosted:
-                let baseURL = provider == .selfHosted ? prefs.selfHostedBaseURL : nil
-                if provider == .selfHosted, (baseURL?.isEmpty ?? true) {
-                    throw TranscriptionFactoryError.missingBaseURL
-                }
-                adapter = OpenAIRealtimeAdapter(apiKey: key, baseURL: baseURL, model: model)
-            case .deepgram:
-                adapter = DeepgramBYOKAdapter(apiKey: key, model: model)
-            case .soniox:
-                adapter = SonioxBYOKAdapter(apiKey: key, model: model)
-            case .elevenLabs:
-                adapter = ElevenLabsBYOKAdapter(apiKey: key, model: model)
-            }
-            return DirectProviderStreamingSession(
-                audioEngine: StreamingAudioEngine(),
-                adapter: adapter,
-                language: language,
-                terms: vocab.terms,
-                resilient: resilient
-            )
+        guard let route = resolver.route(for: feature) else {
+            throw FeatureRouteError.notSet(feature)
         }
+        // The language check comes before the key: a model that cannot take
+        // the input language is a setup problem whatever the key says.
+        if route.account == .deepgram,
+           let error = DeepgramLanguagePolicy.configurationError(model: route.model, language: language) {
+            throw FeatureRouteError.invalidLanguageConfiguration(feature, error)
+        }
+        let adapter = try makeAdapter(try resolver.resolve(route, for: feature))
+        return DirectProviderStreamingSession(
+            audioEngine: StreamingAudioEngine(),
+            adapter: adapter,
+            language: language,
+            terms: vocab.terms,
+            resilient: resilient
+        )
     }
 }

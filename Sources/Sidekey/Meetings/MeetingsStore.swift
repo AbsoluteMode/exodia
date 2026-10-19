@@ -33,6 +33,18 @@ enum MeetingProgressStatus: String, Sendable, Codable, Equatable {
         case .failed: return "Failed"
         }
     }
+
+    /// A finished meeting (ready or failed) can be deleted. One that is still
+    /// waiting, uploading or being transcribed cannot: its processor would
+    /// store the row again when it finishes.
+    var canBeDeleted: Bool {
+        switch self {
+        case .ready, .failed:
+            return true
+        case .waitingToReconnect, .uploading, .transcribing, .generatingProtocol:
+            return false
+        }
+    }
 }
 
 /// Flat row type for the meetings list: the recording timestamps plus the
@@ -128,7 +140,7 @@ enum MeetingsStoreError: Error, CustomStringConvertible {
 /// BLOB column) so users can inspect / diff notes with regular CLI
 /// tools, and so the BlockNote viewer (Stage 8b) can `loadFileURL` the
 /// markdown directly without a round-trip through the actor.
-actor MeetingsStore: MeetingsStoring {
+actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
     private static let log = OSLog(subsystem: "com.sidekey.meetings", category: "store")
 
     /// Database file name inside `rootDirectory`. Spec-fixed.
@@ -319,26 +331,34 @@ actor MeetingsStore: MeetingsStoring {
         return (MeetingProgressStatus(rawValue: String(cString: raw)) ?? .ready, failureReason)
     }
 
+    /// Deletes the meeting for good: its row AND its note and transcript
+    /// files. The row's delete commits only once the transcript and then the
+    /// note are gone, so a delete that fails on the row or on a file leaves
+    /// the meeting listed with its note and can be retried. Safe to repeat,
+    /// and for rows that never had a note (a failed meeting).
+    /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
     func delete(id: UUID) throws {
-        let sql = "DELETE FROM meetings WHERE id = ?"
-        var stmt: OpaquePointer?
-        let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
-        defer { sqlite3_finalize(stmt) }
-        guard prepareResult == SQLITE_OK else {
-            throw MeetingsStoreError.sqlitePrepareFailed(code: prepareResult, message: lastErrorMessage())
-        }
-        try bindText(stmt: stmt, position: 1, value: id.uuidString)
-        let step = sqlite3_step(stmt)
-        guard step == SQLITE_DONE else {
-            throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+        try execute("BEGIN IMMEDIATE")
+        do {
+            try deleteRow(id: id)
+            try removeSidecars(of: id)
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
         }
     }
 
     /// Replaces an existing meeting's markdown body and bumps its
-    /// `server_version`. Used by Stage 8c's edit sync path.
-    func update(id: UUID, markdown: String, version: Int) throws {
+    /// `server_version`. Used by the note editor's save path. `false` when the
+    /// meeting is no longer stored (a save that lands after Delete): the row
+    /// is checked first, so nothing is written and the deleted note does not
+    /// come back.
+    @discardableResult
+    func update(id: UUID, markdown: String, version: Int) throws -> Bool {
+        guard try updateRow(id: id, version: version) else { return false }
         try writeMarkdown(id, markdown: markdown)
-        try updateRow(id: id, version: version)
+        return true
     }
 
     /// Persists `title` for the matching row. Called by the manual
@@ -655,7 +675,8 @@ actor MeetingsStore: MeetingsStoring {
         }
     }
 
-    private func updateRow(id: UUID, version: Int) throws {
+    /// `false` when no row has this id.
+    private func updateRow(id: UUID, version: Int) throws -> Bool {
         let sql = "UPDATE meetings SET server_version = ? WHERE id = ?"
         var stmt: OpaquePointer?
         let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
@@ -675,6 +696,29 @@ actor MeetingsStore: MeetingsStoring {
                 message: lastErrorMessage()
             )
         }
+        return sqlite3_changes(db) > 0
+    }
+
+    private func deleteRow(id: UUID) throws {
+        let sql = "DELETE FROM meetings WHERE id = ?"
+        var stmt: OpaquePointer?
+        let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+        defer { sqlite3_finalize(stmt) }
+        guard prepareResult == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: prepareResult, message: lastErrorMessage())
+        }
+        try bindText(stmt: stmt, position: 1, value: id.uuidString)
+        let step = sqlite3_step(stmt)
+        guard step == SQLITE_DONE else {
+            throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+        }
+    }
+
+    private func execute(_ sql: String) throws {
+        guard let db else {
+            throw MeetingsStoreError.sqliteStepFailed(code: SQLITE_MISUSE, message: "no db handle")
+        }
+        try Self.executeRaw(db: db, sql: sql)
     }
 
     private static func decodeRow(stmt: OpaquePointer?) throws -> MeetingMetaWithLocalState {
@@ -790,6 +834,110 @@ actor MeetingsStore: MeetingsStoring {
 
     private func transcriptURL(for id: UUID) -> URL {
         rootDirectory.appendingPathComponent("\(id.uuidString)-transcript.json")
+    }
+
+    /// Removes `<uuid>-transcript.json`, then `<uuid>.md`. A missing file is
+    /// fine. The first other failure stops it, so the note goes last and a
+    /// delete that fails on a file keeps the note.
+    private func removeSidecars(of id: UUID) throws {
+        for url in [transcriptURL(for: id), markdownURL(for: id)] {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                throw MeetingsStoreError.filesystem(
+                    "Could not remove \(url.lastPathComponent): \(error)"
+                )
+            }
+        }
+    }
+
+    // MARK: - Complete-artifact backup export
+
+    /// Coherent, immutable export of the catalog and its sidecars for the
+    /// encrypted artifact backup.
+    ///
+    /// WHY this lives in the store: the database rows and the `<uuid>.md` /
+    /// `<uuid>-transcript.json` files are two halves of one meeting, and
+    /// SQLite's snapshot mechanism knows nothing about the files. Running
+    /// inside the actor is the barrier — no insert, note update, title change
+    /// or delete can interleave — so the `VACUUM INTO` copy and the sidecars
+    /// copied right after describe the same state. Copying the live
+    /// `meetings.sqlite` byte-for-byte would instead capture whatever
+    /// transaction happened to be open.
+    ///
+    /// The exported copy is verified with `PRAGMA integrity_check` before it
+    /// is handed back, so a damaged snapshot fails the backup instead of
+    /// becoming an unusable "successful" one.
+    /// WHY: .project-docs/decisions/2026-10-19-config-backup.md
+    func exportArtifactGeneration(into directory: URL) async throws -> [ArtifactExportedFile] {
+        guard let db, isOpen else {
+            throw MeetingsStoreError.filesystem("meetings store is closed")
+        }
+        let manager = FileManager.default
+        let databaseDirectory = directory.appendingPathComponent("db", isDirectory: true)
+        let notesDirectory = directory.appendingPathComponent("notes", isDirectory: true)
+        for folder in [databaseDirectory, notesDirectory] {
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true,
+                                        attributes: [.posixPermissions: 0o700])
+        }
+        let snapshot = databaseDirectory.appendingPathComponent(Self.databaseFileName)
+        if manager.fileExists(atPath: snapshot.path) {
+            try manager.removeItem(at: snapshot)
+        }
+        let quoted = snapshot.path.replacingOccurrences(of: "'", with: "''")
+        try Self.executeRaw(db: db, sql: "VACUUM INTO '\(quoted)'")
+        try Self.verifyIntegrity(of: snapshot)
+        var files = [ArtifactExportedFile(relativePath: "db/" + Self.databaseFileName, url: snapshot)]
+
+        // The rows come from the same actor-isolated state as the snapshot, so
+        // the sidecars copied below belong to exactly those rows. A meeting
+        // that never produced a note (a failed one, for instance) has no file;
+        // a READY meeting without its note is a damaged profile, and a backup
+        // that quietly dropped it would restore a row with no content.
+        for row in try list() {
+            let id = row.id
+            if row.progressStatus == .ready,
+               !manager.fileExists(atPath: markdownURL(for: id).path) {
+                throw ArtifactBackupError.requiredFileMissing("\(id.uuidString).md")
+            }
+            for source in [markdownURL(for: id), transcriptURL(for: id)] {
+                guard manager.fileExists(atPath: source.path) else { continue }
+                let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                    throw MeetingsStoreError.filesystem("unexpected sidecar at \(source.lastPathComponent)")
+                }
+                let destination = notesDirectory.appendingPathComponent(source.lastPathComponent)
+                if manager.fileExists(atPath: destination.path) {
+                    try manager.removeItem(at: destination)
+                }
+                try manager.copyItem(at: source, to: destination)
+                try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+                files.append(ArtifactExportedFile(relativePath: "notes/" + source.lastPathComponent,
+                                                  url: destination))
+            }
+        }
+        return files
+    }
+
+    nonisolated private static func verifyIntegrity(of database: URL) throws {
+        var handle: OpaquePointer?
+        let open = sqlite3_open_v2(database.path, &handle, SQLITE_OPEN_READONLY, nil)
+        guard open == SQLITE_OK, let handle else {
+            if let handle { sqlite3_close(handle) }
+            throw MeetingsStoreError.sqliteOpenFailed(code: open, message: "export snapshot")
+        }
+        defer { sqlite3_close(handle) }
+        var stmt: OpaquePointer?
+        let prepared = sqlite3_prepare_v2(handle, "PRAGMA integrity_check", -1, &stmt, nil)
+        guard prepared == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: prepared, message: "integrity_check")
+        }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0),
+              String(cString: raw) == "ok" else {
+            throw MeetingsStoreError.invalidRow("meetings export failed its integrity check")
+        }
     }
 
     private func writeMarkdown(_ id: UUID, markdown: String) throws {

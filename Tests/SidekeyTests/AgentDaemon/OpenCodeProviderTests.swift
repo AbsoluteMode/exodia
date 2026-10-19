@@ -24,7 +24,7 @@ final class OpenCodeProviderTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         var lines: [(String) -> Void] = []
         var exits: [(Int32) -> Void] = []
-        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { "test-key" },
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { _ in "test-key" },
             runStreaming: { _, _, _, _, _, onLine, onExit in
                 lines.append(onLine); exits.append(onExit)
                 return CodexProcessHandle.noop
@@ -45,9 +45,9 @@ final class OpenCodeProviderTests: XCTestCase {
     func testConnectChecksVersionAndKeyWithoutModelRequest() async {
         var validations = 0
         let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") },
-            readKey: { "test-key" },
+            readKey: { _ in "test-key" },
             versionProbe: { _ in ProcessResult(stdout: "1.17.12\n", stderr: "", exitCode: 0) },
-            validateKey: { _ in validations += 1; return .connected(sessionID: nil) })
+            validateKey: { _, _ in validations += 1; return .connected(sessionID: nil) })
         let result = await provider.probe()
         XCTAssertEqual(result, .connected(sessionID: nil))
         XCTAssertEqual(validations, 1)
@@ -56,9 +56,9 @@ final class OpenCodeProviderTests: XCTestCase {
     func testOldCLIIsRejectedBeforeContactingProvider() async {
         var validations = 0
         let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") },
-            readKey: { "test-key" },
+            readKey: { _ in "test-key" },
             versionProbe: { _ in ProcessResult(stdout: "1.16.0", stderr: "", exitCode: 0) },
-            validateKey: { _ in validations += 1; return .connected(sessionID: nil) })
+            validateKey: { _, _ in validations += 1; return .connected(sessionID: nil) })
         guard case .failed(let code, _) = await provider.probe() else { return XCTFail("Expected update requirement") }
         XCTAssertEqual(code, "unsupported_version")
         XCTAssertEqual(validations, 0)
@@ -70,7 +70,7 @@ final class OpenCodeProviderTests: XCTestCase {
         var capturedArguments: [String] = []
         var capturedInput = ""
         var capturedEnvironment: [String: String] = [:]
-        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { "test-key" },
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { _ in "test-key" },
             runStreaming: { _, args, _, env, input, onLine, onExit in
                 capturedArguments = args; capturedInput = input; capturedEnvironment = env
                 onLine(#"{"type":"step_start","sessionID":"ses_123"}"#)
@@ -95,13 +95,121 @@ final class OpenCodeProviderTests: XCTestCase {
 
     func testMissingModelDoesNotStartProcess() async {
         var started = false
-        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { "test-key" },
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { _ in "test-key" },
             runStreaming: { _, _, _, _, _, _, _ in started = true; return CodexProcessHandle.noop })
         var events: [AgentSSEEvent] = []
         for await event in provider.run(prompt: "hello", resumeSessionID: nil, options: AgentRunOptions()) { events.append(event) }
         XCTAssertFalse(started)
         guard case .error(let code, _, _) = events.first else { return XCTFail("Expected missing model error") }
         XCTAssertEqual(code, "missing_model")
+        if case .error(_, let message, _) = events.first {
+            XCTAssertEqual(message, "Choose a model in API & Models.")
+        }
+    }
+
+    func testMissingKeyAndInvalidModelPointToAPIAndModels() async {
+        let noKey = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { _ in nil },
+            runStreaming: { _, _, _, _, _, _, _ in CodexProcessHandle.noop })
+        var events: [AgentSSEEvent] = []
+        for await event in noKey.run(prompt: "hello", resumeSessionID: nil, options: AgentRunOptions()) { events.append(event) }
+        guard case .error(let code, let message, _) = events.first else { return XCTFail("Expected missing key error") }
+        XCTAssertEqual(code, "missing_key")
+        XCTAssertEqual(message, "Add your OpenRouter key in Settings → API & Models.")
+
+        let badModel = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { _ in "test-key" },
+            runStreaming: { _, _, _, _, _, _, _ in CodexProcessHandle.noop })
+        events = []
+        for await event in badModel.run(prompt: "hello", resumeSessionID: nil, options: AgentRunOptions(model: "has space")) { events.append(event) }
+        guard case .error(let badCode, let badMessage, _) = events.first else { return XCTFail("Expected missing model error") }
+        XCTAssertEqual(badCode, "missing_model")
+        XCTAssertEqual(badMessage, "Choose a model in API & Models.")
+    }
+
+    /// The Agent route on Anthropic: OpenCode's `anthropic` provider, the key
+    /// from the Anthropic Keychain item in `ANTHROPIC_API_KEY`, no OpenRouter.
+    func test_opencode_config_for_anthropic_route() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var asked: [OpenCodeModelProvider] = []
+        var capturedArguments: [String] = []
+        var capturedEnvironment: [String: String] = [:]
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") },
+            readKey: { asked.append($0); return $0 == .anthropic ? "sk-ant-keychain" : "or-keychain" },
+            runStreaming: { _, args, _, env, _, _, onExit in
+                capturedArguments = args; capturedEnvironment = env; onExit(0)
+                return CodexProcessHandle.noop
+            })
+        let spec = OpenCodeModelSpec(toolCall: true, reasoning: true, contextLimit: 1_000_000, outputLimit: 128_000)
+        for await _ in provider.run(prompt: "hi", resumeSessionID: nil,
+            options: AgentRunOptions(model: "claude-sonnet-5-5", workingDirectory: directory,
+                                     openCodeModelSpec: spec, openCodeProvider: .anthropic)) {}
+
+        XCTAssertEqual(asked, [.anthropic])
+        let modelFlag = try XCTUnwrap(capturedArguments.firstIndex(of: "--model"))
+        XCTAssertEqual(capturedArguments[modelFlag + 1], "anthropic/claude-sonnet-5-5")
+        XCTAssertFalse(capturedArguments.contains("sk-ant-keychain"))
+        XCTAssertEqual(capturedEnvironment["ANTHROPIC_API_KEY"], "sk-ant-keychain")
+        XCTAssertNil(capturedEnvironment["OPENROUTER_API_KEY"])
+
+        let content = try XCTUnwrap(capturedEnvironment["OPENCODE_CONFIG_CONTENT"])
+        XCTAssertFalse(content.contains("sk-ant-keychain"))
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any])
+        XCTAssertEqual(json["enabled_providers"] as? [String], ["anthropic"])
+        XCTAssertEqual(json["model"] as? String, "anthropic/claude-sonnet-5-5")
+        let providers = try XCTUnwrap(json["provider"] as? [String: Any])
+        XCTAssertNil(providers["openrouter"])
+        let anthropic = try XCTUnwrap(providers["anthropic"] as? [String: Any])
+        XCTAssertEqual((anthropic["options"] as? [String: String])?["apiKey"], "{env:ANTHROPIC_API_KEY}")
+        let models = try XCTUnwrap(anthropic["models"] as? [String: Any])
+        let model = try XCTUnwrap(models["claude-sonnet-5-5"] as? [String: Any])
+        XCTAssertEqual(model["limit"] as? [String: Int], ["context": 1_000_000, "output": 128_000])
+        XCTAssertEqual(model["tool_call"] as? Bool, true)
+        XCTAssertEqual(model["reasoning"] as? Bool, true)
+    }
+
+    func test_missing_anthropic_key_message_names_anthropic() async throws {
+        var started = false
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") },
+            readKey: { $0 == .openRouter ? "or-keychain" : nil },
+            runStreaming: { _, _, _, _, _, _, _ in started = true; return CodexProcessHandle.noop })
+        var events: [AgentSSEEvent] = []
+        for await event in provider.run(prompt: "hello", resumeSessionID: nil,
+            options: AgentRunOptions(model: "claude-sonnet-5-5", openCodeProvider: .anthropic)) { events.append(event) }
+        XCTAssertFalse(started, "an OpenRouter key never stands in for the Anthropic one")
+        guard case .error(let code, let message, _) = events.first else { return XCTFail("Expected missing key error") }
+        XCTAssertEqual(code, "missing_key")
+        XCTAssertEqual(message, "Add your Anthropic key in Settings → API & Models.")
+
+        var mapper = OpenCodeEventMapper(provider: .anthropic)
+        let auth = mapper.map(line: #"{"type":"error","error":{"name":"ProviderAuthError"}}"#)
+        guard case .error(_, let authMessage, _) = auth.first else { return XCTFail("Expected auth error") }
+        XCTAssertEqual(authMessage, "Check your Anthropic key in Settings → API & Models.")
+
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let exiting = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { _ in "k" },
+            runStreaming: { _, _, _, _, _, _, onExit in onExit(1); return CodexProcessHandle.noop })
+        events = []
+        for await event in exiting.run(prompt: "hello", resumeSessionID: nil,
+            options: AgentRunOptions(model: "claude-sonnet-5-5", workingDirectory: directory,
+                                     openCodeProvider: .anthropic)) { events.append(event) }
+        let exitMessage = events.compactMap { event -> String? in
+            if case .error("opencode_exit", let message, _) = event { return message }
+            return nil
+        }.first
+        XCTAssertEqual(exitMessage, "OpenCode stopped before completing the request. Check your model and Anthropic key, then retry.")
+    }
+
+    func test_connect_on_an_anthropic_route_checks_the_anthropic_key() async {
+        var validated: [OpenCodeModelProvider] = []
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") },
+            readKey: { $0 == .anthropic ? "sk-ant" : nil },
+            currentProvider: { .anthropic },
+            versionProbe: { _ in ProcessResult(stdout: "1.17.12\n", stderr: "", exitCode: 0) },
+            validateKey: { provider, _ in validated.append(provider); return .connected(sessionID: nil) })
+        let result = await provider.probe()
+        XCTAssertEqual(result, .connected(sessionID: nil))
+        XCTAssertEqual(validated, [.anthropic])
     }
 
     func testMapperDoesNotFinishOnToolStepOrRepeatParts() {
@@ -121,6 +229,7 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertTrue(mapper.failed)
         guard case .error(let code, let message, _) = events.first else { return XCTFail("Expected error") }
         XCTAssertEqual(code, "opencode_auth")
+        XCTAssertEqual(message, "Check your OpenRouter key in Settings → API & Models.")
         XCTAssertFalse(message.contains("secret-key"))
         XCTAssertFalse(message.contains("private prompt"))
     }
@@ -144,6 +253,23 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertEqual((json["permission"] as? [String: String])?["*"], "allow")
     }
 
+    func testRunPassesTheCatalogSpecIntoTheEnvironment() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var capturedEnvironment: [String: String] = [:]
+        let provider = OpenCodeProvider(locate: { URL(fileURLWithPath: "/tmp/opencode") }, readKey: { _ in "test-key" },
+            runStreaming: { _, _, _, env, _, _, onExit in
+                capturedEnvironment = env; onExit(0)
+                return CodexProcessHandle.noop
+            })
+        let spec = OpenCodeModelSpec(toolCall: true, reasoning: false, contextLimit: 300_000, outputLimit: 8_000)
+        for await _ in provider.run(prompt: "hi", resumeSessionID: nil,
+            options: AgentRunOptions(model: "vendor/model", workingDirectory: directory, openCodeModelSpec: spec)) {}
+        let config = try XCTUnwrap(capturedEnvironment["OPENCODE_CONFIG_CONTENT"])
+        XCTAssertTrue(config.contains("300000"))
+        XCTAssertTrue(config.contains("8000"))
+    }
+
     func testReadOnlyIsOptionalAndNeverTheDefault() throws {
         XCTAssertTrue(AgentRunOptions().allowActions)
         let directory = try temporaryDirectory()
@@ -159,30 +285,12 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertEqual(OpenCodeEnvironment.normalizeModel("openrouter/google/example"), "google/example")
     }
 
-    func testProjectDirectoryIsSiblingOfNeutralMemory() throws {
-        let root = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let neutral = try AgentDaemonWorkingDirectory.ensure(appSupportDirectory: root)
-        let first = try AgentDaemonWorkingDirectory.ensure(projectID: UUID(), appSupportDirectory: root)
-        let second = try AgentDaemonWorkingDirectory.ensure(projectID: UUID(), appSupportDirectory: root)
-        XCTAssertFalse(first.path.hasPrefix(neutral.path + "/"))
-        XCTAssertNotEqual(first, second)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: first.appendingPathComponent("AGENTS.md").path))
-    }
-
     func testInstallerRequiresExactOfficialSHA256() {
         let data = Data("hello".utf8)
         XCTAssertTrue(OpenCodeInstaller.verify(data, digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"))
         XCTAssertFalse(OpenCodeInstaller.verify(data, digest: nil))
         XCTAssertFalse(OpenCodeInstaller.verify(Data("changed".utf8), digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"))
         XCTAssertEqual(OpenCodeInstaller.assetName(appleSilicon: false), "opencode-darwin-x64-baseline.zip")
-    }
-
-    func testProjectPromptLabelsExcerptsAsUntrustedAndRequiresCitations() {
-        let context = AgentProjectContext(projectID: UUID(), displayName: "Example", sourceExcerpts: "schema.sql:12 status CHECK ('new','done')")
-        XCTAssertTrue(context.promptEvidence.contains("untrusted project evidence"))
-        XCTAssertTrue(context.promptEvidence.contains("schema.sql:12"))
-        XCTAssertTrue(context.promptEvidence.contains("Observed database values do not prove"))
     }
 
     private func temporaryDirectory() throws -> URL {

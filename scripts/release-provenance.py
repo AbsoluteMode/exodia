@@ -14,6 +14,8 @@ import tempfile
 
 BUILD_INPUTS = ("Sources", "Resources", "Package.swift", "Package.resolved", "VERSION", "scripts")
 BUNDLE_IDS = {"prod": "com.rootwise.sidekey", "beta": "com.rootwise.sidekey.beta"}
+# adhoc, developer-id, or the SHA-1 of the self-signed community certificate.
+CODE_SIGNING = re.compile(r"adhoc|developer-id|certificate:[0-9a-f]{40}")
 
 
 class InvalidProvenance(ValueError):
@@ -60,13 +62,16 @@ def metadata(args: argparse.Namespace) -> dict:
         raise InvalidProvenance("release version must be a semantic version")
     if args.build <= 0:
         raise InvalidProvenance("release build must be a positive integer")
-    bundle = "Exodia" if args.flavor == "prod" else "Exodia-Beta"
+    if not CODE_SIGNING.fullmatch(args.code_signing):
+        raise InvalidProvenance("code signing must be adhoc, developer-id or certificate:<sha1>")
+    bundle = "Whytap" if args.flavor == "prod" else "Whytap-Beta"
     expected_name = f"{bundle}-{args.version}-build{args.build}.dmg"
     if args.archive.name != expected_name:
         raise InvalidProvenance("archive name does not match release version, build and flavor")
-    return {"schema_version": 1, "archive": expected_name, "version": args.version,
+    return {"schema_version": 2, "archive": expected_name, "version": args.version,
             "build": args.build, "flavor": args.flavor, "bundle_id": BUNDLE_IDS[args.flavor],
-            "distribution": args.distribution, "architectures": ["arm64", "x86_64"]}
+            "distribution": args.distribution, "code_signing": args.code_signing,
+            "architectures": ["arm64", "x86_64"]}
 
 
 def manifest_path(args: argparse.Namespace) -> Path:
@@ -106,6 +111,8 @@ def verify(args: argparse.Namespace) -> str:
     if not isinstance(value, dict):
         raise InvalidProvenance("archive manifest must be an object")
     expected = metadata(args)
+    if value.get("code_signing") != expected["code_signing"]:
+        raise InvalidProvenance("archive code signing does not match the release signing identity; rebuild the release")
     if any(type(value.get(key)) is not type(item) or value.get(key) != item for key, item in expected.items()):
         raise InvalidProvenance("archive manifest metadata does not match the requested release")
     revision = clean_revision(args.project_root)
@@ -132,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
             child.add_argument("--build", type=int, required=True)
             child.add_argument("--flavor", choices=BUNDLE_IDS, required=True)
             child.add_argument("--distribution", choices=("community", "developer-id"), required=True)
+            child.add_argument("--code-signing", required=True)
         if command == "seal":
             child.add_argument("--source-sha", required=True)
     args = parser.parse_args(argv)

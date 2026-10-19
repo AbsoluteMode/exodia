@@ -59,7 +59,7 @@ enum MediaRemoteStreamLine {
 /// Same-track artwork anti-flicker. The MediaRemote substrate sometimes
 /// briefly drops artwork (unloads then reloads it) while the track is
 /// unchanged; without this, the strip would flash empty art for one poll.
-/// When the incoming event is the **same track** (title + artist) as the
+/// When the incoming event is the **same track and player** as the
 /// previous one but has lost its artwork, the previous decoded image is
 /// carried over. A track change, or fresh incoming artwork, passes through.
 enum MediaRemoteArtworkPreserver {
@@ -79,10 +79,13 @@ enum MediaRemoteArtworkPreserver {
         return incoming.withArtwork(previous.artwork)
     }
 
-    private static func isSameTrack(
+    static func isSameTrack(
         _ a: MediaRemoteTrackInfo, _ b: MediaRemoteTrackInfo
     ) -> Bool {
-        (a.title ?? "") == (b.title ?? "") && (a.artist ?? "") == (b.artist ?? "")
+        a.bundleIdentifier == b.bundleIdentifier
+            && a.processIdentifier == b.processIdentifier
+            && a.contentItemIdentifier == b.contentItemIdentifier
+            && a.title == b.title && a.artist == b.artist && a.album == b.album
     }
 }
 
@@ -94,6 +97,7 @@ extension MediaRemoteTrackInfo {
             durationMicros: durationMicros, elapsedTimeMicros: elapsedTimeMicros,
             timestampEpochMicros: timestampEpochMicros, playbackRate: playbackRate,
             bundleIdentifier: bundleIdentifier, processIdentifier: processIdentifier,
+            contentItemIdentifier: contentItemIdentifier,
             artwork: image)
     }
 }

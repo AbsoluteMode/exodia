@@ -318,8 +318,12 @@ struct ToolboxSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .dropMode:
                 dropModePane
+            case .notifs:
+                NotifyHoverPanel(showsBackButton: false, onBack: {})
             case .clipboard:
                 clipboardPane
+            case .brightness:
+                ToolboxDisplayPane()
             case .hotkeys, .notes, .meetingRecord, .monitor, .quit, .settings:
                 Color.clear
             }
@@ -492,13 +496,20 @@ struct ToolboxHoverEditor<Tile: View>: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: hoverStore.slots)
     }
 
-    @ViewBuilder
     private func editorCell(_ item: ToolboxHoverEditorItem) -> some View {
-        if item == .tool(.settings) {
-            // Settings remains pinned, with no drop target of its own: Add now
-            // occupies the insertion position immediately before it.
-            tile(item)
-        } else {
+        ToolboxNativeDropTarget(
+            targetID: item,
+            isEnabled: item != .tool(.settings),
+            validate: { raw in acceptsDrop(raw, onto: item) },
+            onTarget: { isTargeted in
+                if isTargeted {
+                    targetedItem = item
+                } else if targetedItem == item {
+                    targetedItem = nil
+                }
+            },
+            onDrop: { raw in commitDrop([raw], onto: item) }
+        ) {
             tile(item)
                 .overlay {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -514,15 +525,14 @@ struct ToolboxHoverEditor<Tile: View>: View {
                         .animation(reduceMotion ? nil : .easeOut(duration: 0.1),
                                    value: targetedItem == item)
                 }
-                .dropDestination(for: String.self) { items, _ in
-                    commitDrop(items, onto: item)
-                } isTargeted: { isTargeted in
-                    if isTargeted {
-                        targetedItem = item
-                    } else if targetedItem == item {
-                        targetedItem = nil
-                    }
-                }
+        }
+    }
+
+    private func acceptsDrop(_ raw: String, onto item: ToolboxHoverEditorItem) -> Bool {
+        guard let tool = HoverTool(rawValue: raw), tool != .settings else { return false }
+        switch item {
+        case .add: return true
+        case .tool(let target): return target != .settings && hoverStore.slots.contains(target)
         }
     }
 

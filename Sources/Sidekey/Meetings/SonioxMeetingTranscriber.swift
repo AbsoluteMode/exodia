@@ -18,14 +18,15 @@ actor SonioxMeetingTranscriber {
     }
 
     private let apiKey: String
+    private let model: String
     private let session: URLSession
     private let pollInterval: Duration
     private let timeout: TimeInterval
-    private let baseURL = URL(string: "https://api.soniox.com/v1/")!
 
-    init(apiKey: String, session: URLSession = .shared,
+    init(apiKey: String, model: String, session: URLSession = .shared,
          pollInterval: Duration = .seconds(3), timeout: TimeInterval = 1800) {
         self.apiKey = apiKey
+        self.model = model
         self.session = session
         self.pollInterval = pollInterval
         self.timeout = timeout
@@ -74,7 +75,7 @@ actor SonioxMeetingTranscriber {
         }
         if checkpoint.transcriptionID == nil {
             var body: [String: Any] = [
-                "model": "stt-async-v5", "file_id": checkpoint.fileID!,
+                "model": model, "file_id": checkpoint.fileID!,
                 "enable_language_identification": true,
                 "enable_speaker_diarization": true,
                 "client_reference_id": directory.lastPathComponent,
@@ -195,11 +196,7 @@ actor SonioxMeetingTranscriber {
     }
 
     private func request(path: String, method: String) -> URLRequest {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
-        request.httpMethod = method
-        request.timeoutInterval = 60
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        return request
+        SonioxFileAPI.request(path: path, method: method, apiKey: apiKey)
     }
 
     private func send(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
@@ -221,8 +218,7 @@ actor SonioxMeetingTranscriber {
     }
 
     private static func identifier(in data: Data) throws -> String {
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let id = object?["id"] as? String, UUID(uuidString: id) != nil else {
+        guard let id = try SonioxFileAPI.resourceID(in: data) else {
             throw MeetingBYOKProcessingError.upstreamError("Invalid Soniox resource identifier.")
         }
         return id

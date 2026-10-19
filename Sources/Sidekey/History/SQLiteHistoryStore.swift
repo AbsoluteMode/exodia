@@ -5,7 +5,7 @@ import SQLite3
 /// dependency). All access is serialised on a private `DispatchQueue` —
 /// callers can be on any thread; the queue plus SQLite's own locking keep
 /// the database consistent.
-final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
+final class SQLiteHistoryStore: HistoryStore, ArtifactHistoryExporting, @unchecked Sendable {
     enum Error: Swift.Error, CustomStringConvertible {
         case openFailed(String)
         case prepareFailed(String)
@@ -672,20 +672,6 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
         }
     }
 
-    /// Wipes all clipboard rows + every file under `assetsDirectory`.
-    /// Used by `ClipboardHistoryLaunchPurge`.
-    func wipeAllClipboardEntries(assetsDirectory: URL) throws {
-        try queue.sync {
-            try exec("DELETE FROM clipboard_entries;")
-        }
-        if FileManager.default.fileExists(atPath: assetsDirectory.path) {
-            let contents = (try? FileManager.default.contentsOfDirectory(at: assetsDirectory, includingPropertiesForKeys: nil)) ?? []
-            for url in contents {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
-    }
-
     // MARK: - Drop / agent cap enforcement (Strip feature)
 
     /// Strip-feature cap for `drop_entries`: keep the newest `maxRows`,
@@ -732,6 +718,102 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
             return []
         }
         return paths.map { URL(fileURLWithPath: $0) }
+    }
+
+    // MARK: - Complete-artifact backup export
+
+    /// Coherent export of the history database together with the clipboard
+    /// image bytes its rows point at.
+    ///
+    /// WHY this lives in the store: the private serial queue is the barrier.
+    /// Everything that writes a row or an image sidecar goes through it, so
+    /// inside one `queue.sync` the `VACUUM INTO` snapshot and the asset files
+    /// copied next cannot disagree. The live `history.sqlite` runs in WAL
+    /// mode; copying that file alone (without its `-wal`) is not a backup.
+    ///
+    /// A row whose image sidecar is gone fails the export instead of
+    /// producing a backup that silently restores an empty attachment.
+    /// WHY: .project-docs/decisions/2026-10-19-config-backup.md
+    func exportArtifactGeneration(into directory: URL, assetsFrom assets: URL) throws -> ArtifactHistoryExport {
+        let manager = FileManager.default
+        let databaseDirectory = directory.appendingPathComponent("db", isDirectory: true)
+        let assetsDirectory = directory.appendingPathComponent("assets", isDirectory: true)
+        for folder in [databaseDirectory, assetsDirectory] {
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true,
+                                        attributes: [.posixPermissions: 0o700])
+        }
+        let snapshot = databaseDirectory.appendingPathComponent("history.sqlite")
+        if manager.fileExists(atPath: snapshot.path) {
+            try manager.removeItem(at: snapshot)
+        }
+        // Everything happens inside one `queue.sync`: the snapshot, the row
+        // list and the asset copies. Releasing the queue in between would let
+        // an eviction delete a sidecar a row still points at, and the export
+        // would either fail spuriously or describe files it no longer has.
+        let (files, externalLinks) = try queue.sync { () -> ([ArtifactExportedFile], Int) in
+            let quoted = snapshot.path.replacingOccurrences(of: "'", with: "''")
+            try exec("VACUUM INTO '\(quoted)';")
+            var rows: [(String, String)] = []
+            let stmt = try prepare("""
+                SELECT image_uuid, image_extension FROM clipboard_entries
+                WHERE kind = 'image' AND image_uuid IS NOT NULL AND image_extension IS NOT NULL;
+            """)
+            defer { sqlite3_finalize(stmt) }
+            while true {
+                let rc = sqlite3_step(stmt)
+                if rc == SQLITE_DONE { break }
+                guard rc == SQLITE_ROW else { throw Error.stepFailed(lastErrorMessage()) }
+                guard let uuid = readText(stmt, column: 0), let ext = readText(stmt, column: 1) else { continue }
+                rows.append((uuid, ext))
+            }
+            let countStmt = try prepare("SELECT COUNT(*) FROM clipboard_entries WHERE kind = 'file_urls';")
+            defer { sqlite3_finalize(countStmt) }
+            guard sqlite3_step(countStmt) == SQLITE_ROW else { throw Error.stepFailed(lastErrorMessage()) }
+            let links = Int(sqlite3_column_int64(countStmt, 0))
+
+            try Self.verifyArtifactIntegrity(of: snapshot)
+            var exported = [ArtifactExportedFile(relativePath: "db/history.sqlite", url: snapshot)]
+            for (uuid, ext) in rows {
+                guard UUID(uuidString: uuid) != nil,
+                      !ext.isEmpty, ext.count <= 8,
+                      ext.allSatisfy({ $0.isLetter || $0.isNumber }) else {
+                    throw ArtifactBackupError.unsafeContent
+                }
+                let name = "\(uuid).\(ext)"
+                let source = assets.appendingPathComponent(name, isDirectory: false)
+                let values = try? source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values?.isRegularFile == true, values?.isSymbolicLink != true else {
+                    throw ArtifactBackupError.requiredFileMissing(name)
+                }
+                let destination = assetsDirectory.appendingPathComponent(name, isDirectory: false)
+                if manager.fileExists(atPath: destination.path) { try manager.removeItem(at: destination) }
+                do { try manager.copyItem(at: source, to: destination) }
+                catch { throw ArtifactBackupError.requiredFileMissing(name) }
+                try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+                exported.append(ArtifactExportedFile(relativePath: "assets/" + name, url: destination))
+            }
+            return (exported, links)
+        }
+        return ArtifactHistoryExport(files: files, externalLinkCount: externalLinks)
+    }
+
+    private static func verifyArtifactIntegrity(of database: URL) throws {
+        var handle: OpaquePointer?
+        let open = sqlite3_open_v2(database.path, &handle, SQLITE_OPEN_READONLY, nil)
+        guard open == SQLITE_OK, let handle else {
+            if let handle { sqlite3_close(handle) }
+            throw Error.openFailed("history export snapshot")
+        }
+        defer { sqlite3_close(handle) }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, "PRAGMA integrity_check", -1, &stmt, nil) == SQLITE_OK else {
+            throw Error.prepareFailed("integrity_check")
+        }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0),
+              String(cString: raw) == "ok" else {
+            throw Error.execFailed("history export failed its integrity check")
+        }
     }
 
     // MARK: - Low level helpers

@@ -52,7 +52,7 @@ final class NowPlayingController: ObservableObject {
 
     #if DEBUG
     /// DEBUG-only log surface. Track metadata is NEVER written to prod
-    /// `os_log` (invariant #3 extension) — this whole logging path is
+    /// `os_log` (invariant #2 extension) — this whole logging path is
     /// compiled out of release builds.
     private static let log = OSLog(subsystem: "com.sidekey.nowplaying", category: "controller")
     #endif
@@ -123,6 +123,13 @@ final class NowPlayingController: ObservableObject {
         emptyStreak = 0
         cancelCatchUp()
         AppState.shared.clearNowPlaying()
+    }
+
+    /// App termination: stop polling and synchronously release the source
+    /// (the MediaRemote stream child process).
+    func shutdown() {
+        stop()
+        source.shutdown()
     }
 
     // MARK: - Transport (forwarded to the active player)

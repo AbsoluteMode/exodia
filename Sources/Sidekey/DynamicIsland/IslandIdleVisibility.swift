@@ -57,10 +57,10 @@ struct IslandIdleBlockers: Equatable {
     var meetingSuggestionActive: Bool
     /// B5 — Meeting recording active or paused (`meetingRecordingActive`).
     var meetingRecordingActive: Bool
-    /// B7 — Update pill visible (`updateAvailable != nil`, invariant #5).
+    /// B7 — Update pill visible (`updateAvailable != nil`, invariant #4).
     var updateAvailable: Bool
     /// B13 — Post-relaunch "Updated" indicator visible
-    /// (`justUpdatedVersion != nil`, invariant #5). Its own ~5 s timer normally
+    /// (`justUpdatedVersion != nil`, invariant #4). Its own ~5 s timer normally
     /// hides it well before the idle timeout, but holding `.active` while it is
     /// up guarantees idle-hide never races it away early.
     var justUpdatedVisible: Bool
@@ -70,6 +70,7 @@ struct IslandIdleBlockers: Equatable {
     var rightModifierHeld: Bool
     /// B12 — Programmatic hover expansion via ⌥N (`programmaticHoverExpansion`).
     var programmaticHoverExpansion: Bool
+    var notificationActive: Bool = false
 
     /// The disjunction — `true` if any blocker is up.
     var isBusy: Bool {
@@ -83,5 +84,6 @@ struct IslandIdleBlockers: Equatable {
             || nowPlayingActive
             || rightModifierHeld
             || programmaticHoverExpansion
+            || notificationActive
     }
 }

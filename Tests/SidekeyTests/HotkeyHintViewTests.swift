@@ -325,7 +325,7 @@ final class HotkeyHintViewTests: XCTestCase {
 
     func testBareTinyHintPreservesCombinedAccessibilityLabel() {
         // VoiceOver must still announce the shortcut in one swipe even with
-        // the container stripped (extension of invariant #3 accessibility).
+        // the container stripped (HotkeyHintView's combined accessibility element).
         let hint = HotkeyHintView(
             contents: [.text(HotkeyGlyph.option), .text("3")],
             style: .bare,

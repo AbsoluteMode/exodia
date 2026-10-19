@@ -277,6 +277,7 @@ final class IslandDropModeControlTests: XCTestCase {
         let expected: [(tool: HoverTool, title: String, effect: HoverSlotEffect)] = [
             (.dropMode, "Drop Mode", .toggleDropMode),
             (.clipboard, "History", .openPanel(.history)),
+            (.notifs, "Notify", .openPanel(.notifications)),
             (.vocab, "Vocab", .openPanel(.vocabularyEditor)),
             (.caseVault, "Case", .openPanel(.caseVault)),
             (.filler, "Filler", .openPanel(.fillerEditor)),
@@ -286,6 +287,7 @@ final class IslandDropModeControlTests: XCTestCase {
             (.notes, "Notes", .openNotes),
             (.meetingRecord, "Record", .toggleMeetingRecord),
             (.monitor, "Monitor", .openPanel(.monitor)),
+            (.brightness, "Display", .openPanel(.brightness)),
             (.quit, "Quit", .quit),
             (.settings, "Settings", .openSettings)
         ]
@@ -324,7 +326,7 @@ final class IslandDropModeControlTests: XCTestCase {
         }
         XCTAssertEqual(capsule(.meetingRecord).spokenAccessibilityLabel, "Record, Not recording")
         XCTAssertEqual(capsule(.meetingRecord, recording: true).spokenAccessibilityLabel, "Record, Recording")
-        XCTAssertEqual(HoverToolRegistry.info(for: .quit).description, "Quit Exodia")
+        XCTAssertEqual(HoverToolRegistry.info(for: .quit).description, "Quit Whytap")
         XCTAssertEqual(capsule(.dropMode, mode: .fast).spokenAccessibilityLabel, "Drop Mode, Fast")
         XCTAssertEqual(capsule(.dropMode, mode: .smart).spokenAccessibilityLabel, "Drop Mode, Smart")
         XCTAssertEqual(capsule(.inputLang).spokenAccessibilityLabel, "Input Lang, Auto")

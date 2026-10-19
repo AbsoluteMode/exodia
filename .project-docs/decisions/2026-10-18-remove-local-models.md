@@ -23,7 +23,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Settings/RetiredLocalRouteTests.swift
     confirmed_at: 2026-10-18
-related: [../project.md, 2026-09-10-byok-and-local-builds.md, 2026-10-18-silent-meetings.md]
+related: [2026-10-19-api-and-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-18-legacy-model-cleanup.md, 2026-10-18-no-default-realtime-host.md, 2026-10-18-provider-batch-transcription.md, ../project.md, 2026-09-10-byok-and-local-builds.md, 2026-10-18-silent-meetings.md]
 ---
 
 # Remove on-device models
@@ -54,14 +54,17 @@ from an on-device diarizer.
   `.yourKey` and `.custom`. Both getters are optional. A stored `local`, or no
   stored level on Apple Silicon, reads as not configured even when a provider
   key is stored. Intel keeps its Your key default.
-- Not configured: Drop opens Settings -> Models and records nothing; cleanup
-  returns the no-LLM output; a recorded meeting stays staged as failed with
+- Not configured: Drop opens Settings -> Models and records nothing. The
+  original cleanup-to-Fast fallback is superseded by
+  [strict Drop modes](2026-10-19-strict-drop-modes.md): Smart retains its
+  transcript with an explicit failure and Retry. A recorded meeting stays staged as failed with
   "Add your own provider keys in Settings > Models to process this meeting."
   until both routes are chosen. Settings shows "not set up" banners.
 - Keep the batch seam. Production binds `UnavailableBatchTranscriber` to
   `BatchTranscribing`, so the resilient-delivery batch rung is skipped, and
   Retry, the recorder fallback and agent batch voice have no recognizer until
-  provider batch APIs are wired.
+  provider batch APIs are wired. Superseded: production now binds
+  `ProviderBatchTranscriber` (see below).
 - `LocalPathLoggingInvariantTests` now guards the provider paths that carry the
   same content: `OpenRouterLLMClient`, `MeetingBYOKProcessor` and
   `DirectProviderStreamingSession`. The class name stays because docs and the
@@ -114,6 +117,13 @@ from an on-device diarizer.
 - Delete previously downloaded model files on upgrade: not done here. The
   app no longer reads `LocalTranscriptionModels`, `LocalLLMModels` or
   `LocalDiarizationModels` under Application Support/Sidekey; cleaning them
-  up is a separate decision.
+  up is a separate decision. Decided later: a one-time launch cleanup,
+  `2026-10-18-legacy-model-cleanup.md`.
+
+## Supersedes / superseded by
+
+The "Keep the batch seam" bullet is superseded by
+[provider batch transcription](2026-10-18-provider-batch-transcription.md).
+The rest of this decision stands.
 
 2026-10-18, PR https://github.com/AbsoluteMode/exodia/pull/22.

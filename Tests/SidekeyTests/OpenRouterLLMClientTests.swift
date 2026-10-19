@@ -53,7 +53,7 @@ final class OpenRouterLLMClientTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer or-key")
             XCTAssertEqual(request.value(forHTTPHeaderField: "HTTP-Referer"), BuildConfig.landingURL.absoluteString)
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "Exodia")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Title"), "Whytap")
             let body = try XCTUnwrap(StubURLProtocol.capturedBodies.last)
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
             XCTAssertEqual(json["model"] as? String, "openrouter/auto")
@@ -162,4 +162,7 @@ final class OpenRouterLLMClientTests: XCTestCase {
         XCTAssertNil(OpenRouterReasoningCapabilities(mandatory: true, supportedEfforts: ["none"]).dictationSetting)
     }
 
+    func testNotConfiguredPointsToAPIAndModels() {
+        XCTAssertEqual(OpenRouterLLMError.notConfigured.description, "No LLM is chosen in Settings > API & Models.")
+    }
 }

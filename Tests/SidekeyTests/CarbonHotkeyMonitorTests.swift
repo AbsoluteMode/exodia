@@ -87,11 +87,7 @@ final class CarbonHotkeyMonitorTests: XCTestCase {
         )
 
         XCTAssertThrowsError(try monitor.start()) { error in
-            guard case VEError.hotkeyFailed(let message) = error else {
-                XCTFail("expected VEError.hotkeyFailed, got \(error)")
-                return
-            }
-            XCTAssertTrue(message.contains("RegisterEventHotKey"))
+            XCTAssertEqual(error as? HotkeyRegistrationError, .carbonRegistration(OSStatus(-1)))
         }
 
         XCTAssertEqual(recorder.removeCalls, 1, "handler must be cleaned up when register fails")
@@ -111,11 +107,7 @@ final class CarbonHotkeyMonitorTests: XCTestCase {
         )
 
         XCTAssertThrowsError(try monitor.start()) { error in
-            guard case VEError.hotkeyFailed(let message) = error else {
-                XCTFail("expected VEError.hotkeyFailed, got \(error)")
-                return
-            }
-            XCTAssertTrue(message.contains("InstallEventHandler"))
+            XCTAssertEqual(error as? HotkeyRegistrationError, .carbonHandler(OSStatus(-1)))
         }
 
         XCTAssertEqual(recorder.registerCalls.count, 0)

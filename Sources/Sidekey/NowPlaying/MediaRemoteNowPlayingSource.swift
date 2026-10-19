@@ -11,7 +11,8 @@ import os.log
 /// **Shape:** push-based cache, identical external contract to
 /// `AppleScriptNowPlayingSource`, so `NowPlayingController` / `Coordinator` /
 /// `Config` are unchanged. A long-lived `perl run.pl <framework> stream
-/// --no-diff --micros` process emits one self-contained JSON line per
+/// --no-diff --micros` process (wrapped in `parentWatchGuardScript`, so it
+/// dies with the app even on SIGKILL/crash) emits one self-contained JSON line per
 /// update; a `readabilityHandler` frames lines off the main thread, decodes
 /// each into a `NowPlayingSnapshot`, and stores it under a lock.
 /// `currentSnapshot()` returns the cached value synchronously (the
@@ -33,7 +34,7 @@ import os.log
 /// proactively recycled every ~`restartEventThreshold` events to bound any
 /// long-lived leak in the private substrate.
 ///
-/// **Privacy:** track metadata is never written to `os_log` (invariant #3);
+/// **Privacy:** track metadata is never written to `os_log` (invariant #2);
 /// the DEBUG log path only records lifecycle, never titles.
 final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
@@ -70,14 +71,47 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
     /// Delay before relaunching after the stream exits/crashes.
     private static let relaunchDelay: TimeInterval = 0.2
 
+    /// Parent-death guard around the vendored stream (`run.pl` stays
+    /// untouched). `/usr/bin/perl -e <this> -- run.pl <framework> stream …`
+    /// forks the real stream with stdin on /dev/null and blocks reading its
+    /// own stdin, the write end of which only this app holds. The kernel
+    /// closes that end whenever the app dies, including SIGKILL and crashes,
+    /// so EOF makes the guard terminate the stream and exit. SIGTERM (our
+    /// recycle/shutdown) is forwarded to the stream; when the stream exits
+    /// on its own the guard exits too, so the relaunch path still sees it.
+    /// WHY: .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+    static let parentWatchGuardScript = """
+        use POSIX ();
+        my $pid;
+        $SIG{CHLD} = sub { POSIX::_exit(0) if $pid && waitpid($pid, POSIX::WNOHANG()) == $pid };
+        $SIG{TERM} = $SIG{INT} = $SIG{HUP} = sub { kill('TERM', $pid) if $pid; POSIX::_exit(0) };
+        $pid = fork();
+        POSIX::_exit(1) unless defined $pid;
+        if ($pid == 0) {
+          open(STDIN, '<', '/dev/null');
+          exec('/usr/bin/perl', @ARGV) or POSIX::_exit(127);
+        }
+        my $buf;
+        while (1) {
+          my $n = sysread(STDIN, $buf, 4096);
+          last if defined $n && $n == 0;
+          next if defined $n;
+          last unless $!{EINTR};
+        }
+        kill('TERM', $pid);
+        POSIX::_exit(0);
+        """
+
     // MARK: - State
 
     private let runScript: URL
     private let framework: URL
+    private let artworkReader: (URL, URL) -> MediaRemoteTrackInfo?
+    private let uptime: () -> TimeInterval
 
     /// Serial queue owning all process lifecycle + stdout handling. The
-    /// controller's `currentSnapshot()` only reads the locked cache, never
-    /// touches this queue.
+    /// controller's `currentSnapshot()` reads the locked cache and schedules
+    /// missing-artwork checks here without waiting for this queue.
     private let queue = DispatchQueue(label: "com.sidekey.nowplaying.mediaremote")
 
     /// Dedicated queue for one-shot transport `send` processes. Kept separate
@@ -89,6 +123,13 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
         label: "com.sidekey.nowplaying.mediaremote.command",
         qos: .userInitiated
     )
+    private let artworkQueue = DispatchQueue(label: "com.sidekey.nowplaying.mediaremote.artwork")
+
+    // Owned by `queue`. One refresh at a time, at most once every five seconds
+    // while artwork is absent. A generation rejects A → DJ → A stale results.
+    private var artworkGeneration = UUID()
+    private var artworkRefreshInFlight = false
+    private var lastArtworkAttempt: TimeInterval?
 
     private let lock = NSLock()
     private var _latest: NowPlayingSnapshot?
@@ -110,16 +151,44 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
     /// - Returns: `nil` when the bundled assets are missing (fail-closed —
     ///   the factory then falls back to AppleScript).
-    init?(bundle: Bundle = .main) {
+    convenience init?(bundle: Bundle = .main) {
         guard
             let runScript = Self.runScriptURL(bundle: bundle),
             let framework = Self.frameworkURL(bundle: bundle)
         else {
             return nil
         }
+        self.init(runScript: runScript, framework: framework)
+    }
+
+    /// Explicit asset paths. Tests point `runScript` at a stand-in perl
+    /// script to exercise the real process lifecycle without the adapter.
+    init(
+        runScript: URL,
+        framework: URL,
+        artworkReader: @escaping (URL, URL) -> MediaRemoteTrackInfo? = {
+            MediaRemoteNowPlayingSource.readArtworkSnapshot(runScript: $0, framework: $1)
+        },
+        uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) {
         self.runScript = runScript
         self.framework = framework
+        self.artworkReader = artworkReader
+        self.uptime = uptime
         _ = Self.ignoreSIGPIPE
+    }
+
+    /// PID of the live stream process, or `nil`. Test seam only.
+    var streamProcessIdentifierForTesting: pid_t? {
+        queue.sync { process?.processIdentifier }
+    }
+
+    /// Close the guard's stdin exactly as the kernel does when the app
+    /// dies. Test seam only.
+    func closeStreamStdinForTesting() {
+        queue.sync {
+            (process?.standardInput as? Pipe)?.fileHandleForWriting.closeFile()
+        }
     }
 
     // MARK: - Lifecycle
@@ -142,6 +211,23 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
             self.teardownProcess()
             self.setLatest(nil)
             self.lock.lock(); self._previousInfo = nil; self.lock.unlock()
+            self.resetArtworkRecovery()
+        }
+    }
+
+    /// Synchronous stop for app termination. `stop()` hops onto `queue`
+    /// asynchronously, and the process exits before that block runs, which
+    /// left the `run.pl stream` child orphaned (PPID 1) after every quit.
+    /// Here the stream is terminated before this call returns, and the
+    /// cleared `started` flag stops any pending relaunch.
+    /// WHY: .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+    func shutdown() {
+        queue.sync {
+            started = false
+            teardownProcess()
+            setLatest(nil)
+            lock.lock(); _previousInfo = nil; lock.unlock()
+            resetArtworkRecovery()
         }
     }
 
@@ -149,8 +235,10 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
     func currentSnapshot() -> NowPlayingSnapshot? {
         lock.lock()
-        defer { lock.unlock() }
-        return _latest
+        let snapshot = _latest
+        lock.unlock()
+        queue.async { [weak self] in self?.refreshMissingArtwork() }
+        return snapshot
     }
 
     func previous() { sendCommand(.previousTrack) }
@@ -167,7 +255,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        proc.arguments = [
+        proc.arguments = ["-e", Self.parentWatchGuardScript, "--"] + [
             runScript.path,
             framework.path,
             "stream", "--no-diff", "--micros",
@@ -217,6 +305,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
             // `null` / blank line is the adapter's "nothing playing" signal.
             setLatest(nil)
             lock.lock(); _previousInfo = nil; lock.unlock()
+            resetArtworkRecovery()
             return
         }
 
@@ -224,6 +313,9 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
         let previous = _previousInfo
         lock.unlock()
 
+        if previous.map({ !MediaRemoteArtworkPreserver.isSameTrack($0, info) }) ?? true {
+            resetArtworkRecovery()
+        }
         let merged = MediaRemoteArtworkPreserver.merge(previous: previous, incoming: info)
         let snapshot = MediaRemoteSnapshotMapper.snapshot(from: merged, capturedAt: Date())
 
@@ -232,6 +324,92 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
         lock.unlock()
 
         setLatest(snapshot)
+        refreshMissingArtwork()
+    }
+
+    // MARK: - Missing artwork recovery
+
+    private func resetArtworkRecovery() {
+        artworkGeneration = UUID()
+        lastArtworkAttempt = nil
+    }
+
+    /// A DJ/interstitial can leave the stream without artwork even after music
+    /// returns. Re-read through a fresh adapter process without Automation or
+    /// blocking the stream, transport or UI. Preserve current playback metadata.
+    /// WHY: .project-docs/decisions/2026-10-19-nowplaying-artwork-recovery.md
+    private func refreshMissingArtwork() {
+        guard started, !artworkRefreshInFlight,
+              let info = _previousInfo, info.artwork == nil,
+              MediaRemoteSnapshotMapper.snapshot(from: info, capturedAt: Date()) != nil
+        else { return }
+        let now = uptime()
+        if let lastArtworkAttempt, now - lastArtworkAttempt < 5 { return }
+        lastArtworkAttempt = now
+        artworkRefreshInFlight = true
+        let generation = artworkGeneration
+        let reader = artworkReader
+        let runScript = runScript
+        let framework = framework
+        artworkQueue.async { [weak self] in
+            let refreshed = reader(runScript, framework)
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.artworkRefreshInFlight = false
+                guard self.started, self.artworkGeneration == generation,
+                      let current = self._previousInfo, current.artwork == nil,
+                      let refreshed, let image = refreshed.artwork,
+                      MediaRemoteArtworkPreserver.isSameTrack(current, refreshed)
+                else { return }
+                let recovered = current.withArtwork(image)
+                self.lock.lock()
+                self._previousInfo = recovered
+                self.lock.unlock()
+                self.setLatest(MediaRemoteSnapshotMapper.snapshot(from: recovered, capturedAt: Date()))
+            }
+        }
+    }
+
+    /// Both stdout drain and process exit share one deadline. Draining in
+    /// parallel is necessary because a base64 cover can exceed the pipe buffer.
+    /// The same parent-EOF guard as the stream prevents an orphan on app death.
+    static func readArtworkSnapshot(
+        runScript: URL, framework: URL, timeout: TimeInterval = 2
+    ) -> MediaRemoteTrackInfo? {
+        final class Output { var data = Data() }
+        let output = Output()
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        proc.arguments = ["-e", parentWatchGuardScript, "--", runScript.path, framework.path, "get", "--micros"]
+        let stdout = Pipe()
+        proc.standardOutput = stdout
+        proc.standardInput = Pipe()
+        proc.standardError = FileHandle.nullDevice
+        let done = DispatchGroup()
+        done.enter()
+        proc.terminationHandler = { _ in done.leave() }
+        do { try proc.run() } catch { done.leave(); return nil }
+        done.enter()
+        DispatchQueue.global(qos: .utility).async {
+            output.data = stdout.fileHandleForReading.readDataToEndOfFile()
+            done.leave()
+        }
+        guard done.wait(timeout: .now() + timeout) == .success else {
+            proc.terminate()
+            return nil
+        }
+        guard proc.terminationStatus == 0 else { return nil }
+        return MediaRemoteStreamLine.decode(String(decoding: output.data, as: UTF8.self))
+    }
+
+    /// Feed synthetic adapter lines through the real serial ingestion path.
+    func ingestForTesting(_ data: Data) {
+        queue.sync { ingest(data) }
+    }
+
+    func finishArtworkRefreshForTesting() {
+        artworkQueue.sync {}
+        queue.sync {}
     }
 
     private func setLatest(_ snapshot: NowPlayingSnapshot?) {
@@ -243,6 +421,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
     private func handleTermination() {
         setLatest(nil)
         lock.lock(); _previousInfo = nil; lock.unlock()
+        resetArtworkRecovery()
         process = nil
         if started {
             os_log("mediaremote stream exited — relaunching", log: Self.log, type: .info)

@@ -11,6 +11,10 @@ public enum SidekeyAppMain {
             exit(valid ? 0 : 1)
         }
         guard InstallationGuard.canLaunch() else { return }
+        guard ApplicationInstanceCoordinator.shared.canLaunch() else { return }
+        // Restore before stores open or jobs start; a completed rollback can
+        // safely continue, while an unfinished transaction keeps its originals.
+        guard ArtifactBackupStartup.finishPendingRestore() else { return }
         AppDelegate.main()
     }
 }

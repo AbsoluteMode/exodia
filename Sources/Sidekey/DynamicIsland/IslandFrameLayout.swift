@@ -515,4 +515,52 @@ enum IslandFrameLayout {
             expanded: expanded
         )
     }
+    /// Frame for the STANDALONE notification window that sits to the LEFT of
+    /// the island. Unlike `leftNotificationFrame` (island + slot as one rect),
+    /// this is ONLY the slot zone, so it can back a separate `NSPanel` whose
+    /// screenshot capture behavior is user-toggleable. Right edge abuts the
+    /// island's left edge; top + height match the compact island. The 8pt
+    /// visual gap is applied inside the window by the pill, exactly as the
+    /// in-island slot did.
+    static func notificationPanelFrame(
+        frame: NSRect,
+        visibleFrame: NSRect,
+        safeAreaTopInset: CGFloat,
+        auxiliaryTopLeftArea: NSRect?,
+        auxiliaryTopRightArea: NSRect?
+    ) -> NSRect {
+        let island = islandFrame(
+            frame: frame,
+            visibleFrame: visibleFrame,
+            safeAreaTopInset: safeAreaTopInset,
+            auxiliaryTopLeftArea: auxiliaryTopLeftArea,
+            auxiliaryTopRightArea: auxiliaryTopRightArea
+        )
+        return NSRect(
+            x: island.minX - leftNotificationWidth,
+            y: island.minY,
+            width: leftNotificationWidth,
+            height: island.height
+        )
+    }
+
+    static func notificationPanelFrame(on screen: IslandScreenDescriptor) -> NSRect {
+        notificationPanelFrame(
+            frame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            safeAreaTopInset: screen.safeAreaTopInset,
+            auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
+            auxiliaryTopRightArea: screen.auxiliaryTopRightArea
+        )
+    }
+
+    static func notificationIconPanelFrame(on screen: IslandScreenDescriptor) -> NSRect {
+        let island = islandFrame(frame: screen.frame, visibleFrame: screen.visibleFrame,
+            safeAreaTopInset: screen.safeAreaTopInset, auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
+            auxiliaryTopRightArea: screen.auxiliaryTopRightArea)
+        // The notification temporarily replaces the compact right wing. An
+        // independent higher panel keeps it above music, meetings and hints.
+        return NSRect(x: island.maxX - rightSideWidth, y: island.minY,
+                      width: rightSideWidth, height: island.height)
+    }
 }

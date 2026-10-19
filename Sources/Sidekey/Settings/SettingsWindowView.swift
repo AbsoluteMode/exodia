@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 struct SettingsWindowView: View {
     @ObservedObject var permissionsViewModel: PermissionsSettingsViewModel
-    @ObservedObject var modelsViewModel: SettingsModelsViewModel
+    @ObservedObject var apiAndModelsViewModel: APIAndModelsViewModel
     @ObservedObject var selection: SettingsWindowSelection
     @ObservedObject var agentModeViewModel: AgentModeViewModel
     let toolboxDeps: ToolboxDeps
@@ -30,7 +30,7 @@ struct SettingsWindowView: View {
     /// own (that init is also `@MainActor`-gated and builds fine at call time).
     init(
         permissionsViewModel: PermissionsSettingsViewModel,
-        modelsViewModel: SettingsModelsViewModel,
+        apiAndModelsViewModel: APIAndModelsViewModel,
         selection: SettingsWindowSelection,
         agentModeViewModel: AgentModeViewModel,
         toolboxDeps: ToolboxDeps = ToolboxDeps(),
@@ -45,7 +45,7 @@ struct SettingsWindowView: View {
         screenshotProtectionChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.permissionsViewModel = permissionsViewModel
-        self.modelsViewModel = modelsViewModel
+        self.apiAndModelsViewModel = apiAndModelsViewModel
         self.selection = selection
         self.agentModeViewModel = agentModeViewModel
         self.toolboxDeps = toolboxDeps
@@ -61,7 +61,7 @@ struct SettingsWindowView: View {
     }
 
     var body: some View {
-        SidekeyAuroraWindow(title: "Settings") {
+        SidekeyAuroraWindow(title: AppBuildIdentity.current.settingsTitle) {
             settingsShell
         }
     }
@@ -84,15 +84,16 @@ struct SettingsWindowView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Scrollable tab list
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(SettingsWindowTab.availableCases) { tab in
-                    sidebarTabButton(tab)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(SettingsWindowTab.availableCases) { tab in
+                        sidebarTabButton(tab)
+                    }
                 }
+                .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
+                .padding(.vertical, SettingsSidebarStyle.verticalPadding)
             }
-            .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
-            .padding(.vertical, SettingsSidebarStyle.verticalPadding)
-
-            Spacer(minLength: 0)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             // Pinned support + Quit rows stay visible even when the settings
             // tab list grows beyond the available window height.
@@ -102,11 +103,13 @@ struct SettingsWindowView: View {
                 .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
 
             VStack(alignment: .leading, spacing: 4) {
+                SettingsProjectFooter(identity: .current)
                 learningCenterRow
                 quitRow
             }
                 .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
                 .padding(.vertical, 10)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(width: SettingsSidebarStyle.width, alignment: .topLeading)
     }
@@ -180,7 +183,7 @@ struct SettingsWindowView: View {
             NSApp.terminate(nil)
         } label: {
             HStack(spacing: 0) {
-                Text("Quit Exodia")
+                Text(AppBuildIdentity.current.quitActionTitle)
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
                     .layoutPriority(1)
@@ -197,14 +200,14 @@ struct SettingsWindowView: View {
             .animation(.easeOut(duration: 0.2), value: isHighlighted)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Quit Exodia")
+        .accessibilityLabel(AppBuildIdentity.current.quitActionTitle)
     }
 
     @ViewBuilder
     private var detailPane: some View {
         switch selection.selectedTab {
-        case .models:
-            SettingsModelsView(viewModel: modelsViewModel)
+        case .apiAndModels:
+            APIAndModelsView(viewModel: apiAndModelsViewModel, focusedFeature: $selection.focusedFeature)
         case .hotkeys:
             HotkeysSettingsView()
         case .permissions:
@@ -225,11 +228,6 @@ struct SettingsWindowView: View {
                 googleEnabled: otherGoogleEnabled,
                 onMeetingsToggle: otherOnMeetingsToggle,
                 onGoogleToggle: otherOnGoogleToggle,
-                onMeetingRecordToggle: {
-                    Task { @MainActor in
-                        await AppState.shared.meetingsCoordinator?.toggleManualRecording()
-                    }
-                },
                 privacyPreferences: privacyPreferences,
                 screenshotProtectionChanged: screenshotProtectionChanged
             )
@@ -239,7 +237,8 @@ struct SettingsWindowView: View {
                 settings: AgentSettingsStore.shared,
                 store: AgentProviderStore.shared,
                 agentEnabled: agentEnabled,
-                onAgentToggle: onAgentToggle
+                onAgentToggle: onAgentToggle,
+                openAPIAndModels: { selection.focus($0) }
             )
         case .toolbox:
             ToolboxSettingsView(
@@ -247,8 +246,10 @@ struct SettingsWindowView: View {
                 selection: selection,
                 deps: toolboxDeps
             )
-        case .projects:
-            ProjectsSettingsView()
+        case .notifications:
+            SettingsNotificationsView()
+        case .backup:
+            SettingsBackupView()
         }
     }
 }
@@ -291,6 +292,8 @@ private struct SettingsNotesUnavailableView: View {
 final class SettingsWindowSelection: ObservableObject {
     @Published var selectedTab: SettingsWindowTab
     @Published var notesController: MeetingsContentController?
+    /// The feature row API & Models scrolls to and highlights; the tab clears it once shown.
+    @Published var focusedFeature: AIFeature?
     /// Non-nil for ~1s while a Toolbox navigate-tool click highlights a
     /// sidebar row or the Quit row. Cleared automatically by `setHighlight`.
     @Published private(set) var highlightedTarget: HoverNavigationTarget?
@@ -298,7 +301,7 @@ final class SettingsWindowSelection: ObservableObject {
     private var previousNonNotesTab: SettingsWindowTab
     private var highlightTask: Task<Void, Never>?
 
-    init(selectedTab: SettingsWindowTab = .models) {
+    init(selectedTab: SettingsWindowTab = .apiAndModels) {
         let availableTab = selectedTab.isAvailable ? selectedTab : SettingsWindowTab.defaultAvailable
         self.selectedTab = availableTab
         previousNonNotesTab = availableTab == .notes ? SettingsWindowTab.defaultAvailable : availableTab
@@ -314,6 +317,12 @@ final class SettingsWindowSelection: ObservableObject {
             previousNonNotesTab = availableTab
         }
         selectedTab = availableTab
+    }
+
+    /// Opens API & Models on one feature's row.
+    func focus(_ feature: AIFeature) {
+        select(.apiAndModels)
+        focusedFeature = feature
     }
 
     func leaveNotes() {

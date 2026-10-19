@@ -1,11 +1,12 @@
 import AppKit
+import Combine
 import SwiftUI
 import XCTest
 @testable import Sidekey
 
 /// `SettingsWindowController` integration with the new settings shell.
 /// Asserts the controller wires the Aurora window chrome correctly and
-/// opens on the Models tab by default.
+/// opens on the API & Models tab by default.
 @MainActor
 final class SettingsWindowControllerTests: XCTestCase {
 
@@ -14,7 +15,7 @@ final class SettingsWindowControllerTests: XCTestCase {
 
         let window = controller.window
         XCTAssertNotNil(window)
-        XCTAssertEqual(window?.title, "Exodia Settings")
+        XCTAssertEqual(window?.title, "Whytap Settings")
         XCTAssertTrue(window?.styleMask.contains(.titled) ?? false)
         XCTAssertTrue(window?.styleMask.contains(.closable) ?? false)
         XCTAssertTrue(window?.styleMask.contains(.resizable) ?? false)
@@ -34,10 +35,34 @@ final class SettingsWindowControllerTests: XCTestCase {
         XCTAssertFalse(window?.isReleasedWhenClosed ?? true)
     }
 
-    func test_window_controller_opens_models_by_default() {
+    func test_window_controller_opens_api_and_models_by_default() {
         let controller = SettingsWindowController()
 
-        XCTAssertEqual(controller.selectedTab, .models)
+        XCTAssertEqual(controller.selectedTab, .apiAndModels)
+    }
+
+    func test_show_with_feature_focuses_that_row() {
+        let controller = SettingsWindowController()
+        // The live tab hands the request back once it has scrolled to the
+        // row, so record what was published rather than the final value.
+        var published: [AIFeature?] = []
+        let subscription = controller.selection.$focusedFeature.sink { published.append($0) }
+
+        controller.show(tab: .apiAndModels, feature: .dropSmart)
+
+        XCTAssertEqual(controller.selectedTab, .apiAndModels)
+        XCTAssertTrue(published.contains(.dropSmart), "published: \(published)")
+        subscription.cancel()
+        controller.close()
+    }
+
+    func test_show_without_feature_leaves_no_focus() {
+        let controller = SettingsWindowController()
+
+        controller.show(tab: .hotkeys)
+
+        XCTAssertNil(controller.selection.focusedFeature)
+        controller.close()
     }
 
     func test_configureToolboxDepsRefreshesHostedSettingsRoot() throws {
@@ -60,7 +85,7 @@ final class SettingsWindowControllerTests: XCTestCase {
             .appendingPathComponent("Settings")
             .appendingPathComponent("SettingsWindowController.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        guard let showRange = source.range(of: "func show(tab: SettingsWindowTab = .models)") else {
+        guard let showRange = source.range(of: "func show(tab: SettingsWindowTab = .apiAndModels, feature: AIFeature? = nil)") else {
             XCTFail("SettingsWindowController should keep an explicit show(tab:) entrypoint.")
             return
         }
@@ -114,7 +139,7 @@ final class SettingsWindowControllerTests: XCTestCase {
     }
 
     func test_notes_back_navigation_returns_to_previous_settings_tab() {
-        let selection = SettingsWindowSelection(selectedTab: .models)
+        let selection = SettingsWindowSelection(selectedTab: .apiAndModels)
 
         selection.select(.hotkeys)
         selection.select(.notes)
@@ -163,7 +188,7 @@ final class SettingsWindowControllerTests: XCTestCase {
         XCTAssertTrue(source.contains("openSettingsWindow(tab: .notes)"))
     }
 
-    func test_dynamic_island_routes_settings_tile_to_models_tab() throws {
+    func test_dynamic_island_routes_settings_tile_to_api_and_models_tab() throws {
         let root = try projectRoot()
         let sourceURL = root
             .appendingPathComponent("Sources")
@@ -172,7 +197,7 @@ final class SettingsWindowControllerTests: XCTestCase {
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         XCTAssertTrue(source.contains("openSettings: { [weak self] in"))
-        XCTAssertTrue(source.contains("self?.openSettingsWindow(tab: .models)"))
+        XCTAssertTrue(source.contains("self?.openSettingsWindow(tab: .apiAndModels)"))
     }
 
     func test_window_controller_show_close_show_does_not_crash() {
@@ -222,8 +247,6 @@ final class SettingsWindowControllerTests: XCTestCase {
             .appendingPathComponent("Settings")
             .appendingPathComponent("SettingsWindowView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        XCTAssertTrue(source.contains("Quit Exodia"),
-                      "Sidebar must have a pinned Quit Exodia row")
         XCTAssertTrue(source.contains("NSApp.terminate(nil)"),
                       "Quit row must call NSApp.terminate(nil)")
     }
@@ -241,6 +264,16 @@ final class SettingsWindowControllerTests: XCTestCase {
                       "Settings sidebar must expose the FAQ without a hidden hotkey")
         XCTAssertTrue(source.contains("HelpWindowContent.learningCenterURL"),
                       "FAQ row must open the flavor-aware Learning Center URL")
+    }
+
+    func test_app_delegate_opens_api_and_models_on_the_failing_feature_row() throws {
+        let sourceURL = try projectRoot()
+            .appendingPathComponent("Sources/Sidekey/AppDelegate.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertFalse(source.contains("tab: .models"), "the Models tab is gone")
+        XCTAssertTrue(source.contains("openSettingsWindow(tab: .apiAndModels, feature: routeError.feature)"))
+        XCTAssertTrue(source.contains("openSettingsWindow(tab: .apiAndModels, feature: .dropSmartCleanup)"))
     }
 
     func test_settings_window_view_source_has_toolbox_case() throws {

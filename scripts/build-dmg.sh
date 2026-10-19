@@ -1,7 +1,9 @@
 #!/bin/bash
 #
-# build-dmg.sh — Build a universal community Exodia DMG.
-# Default: ad-hoc signing; no Apple Developer account or notarization.
+# build-dmg.sh — Build a universal community Whytap DMG.
+# Default: Whytap's self-signed community certificate when
+# Resources/community-signing-certificate.pem is committed, otherwise ad-hoc;
+# no Apple Developer account or notarization.
 # Developer-ID/notarization is available only with EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
 # Usage:
@@ -16,6 +18,11 @@
 #   BUILD_VERSION  monotonic    (default: 1; user-release picks next live build)
 #                  integer
 #   EXODIA_DMG_HEADLESS  1 skips optional Finder layout (default: 0)
+#   EXODIA_COMMUNITY_SIGNING  auto|adhoc (default: auto = committed certificate)
+#   EXODIA_COMMUNITY_SIGNING_KEY or EXODIA_COMMUNITY_SIGNING_KEY_FILE
+#                  PEM private key of that certificate (Doppler, never printed)
+#   EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE  test-only certificate override;
+#                  its archives cannot be published
 #
 # Community requirements: local Swift/Xcode macOS 26 SDK and build resources.
 # Optional legacy mode additionally needs TEAM_ID and ASC_API_KEY_* credentials.
@@ -23,7 +30,7 @@
 #
 # Outputs:
 #   - build/${APP_BUNDLE_NAME}-${SHORT_VERSION}-build${BUILD_VERSION}.dmg
-#     where APP_BUNDLE_NAME = Exodia (prod) or Exodia-Beta (beta).
+#     where APP_BUNDLE_NAME = Whytap (prod) or Whytap-Beta (beta).
 
 set -euo pipefail
 
@@ -68,25 +75,25 @@ fi
 # wrapping the shared "Sidekey" library — see Package.swift), so the
 # artifact stays .build/release/Sidekey and CFBundleExecutable is stable
 # across the product-line split. The .app bundle wrapping it can be named
-# differently per flavor (Exodia.app vs Exodia-Beta.app) so both flavors
+# differently per flavor (Whytap.app vs Whytap-Beta.app) so both flavors
 # can sit side-by-side in /Applications without colliding.
 EXECUTABLE_NAME="Sidekey"
 BUNDLE_ICON_FILE="AppIcon"
 
 case "$FLAVOR" in
     beta)
-        APP_BUNDLE_NAME="Exodia-Beta"
+        APP_BUNDLE_NAME="Whytap-Beta"
         BUNDLE_ID="com.rootwise.sidekey.beta"
-        BUNDLE_DISPLAY_NAME="Exodia Beta"
+        BUNDLE_DISPLAY_NAME="Whytap Beta"
         SWIFT_FLAGS="-Xswiftc -DBETA"
-        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/download/beta/appcast.xml}"
+        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/download/beta/appcast.xml}"
         ;;
     prod)
-        APP_BUNDLE_NAME="Exodia"
+        APP_BUNDLE_NAME="Whytap"
         BUNDLE_ID="com.rootwise.sidekey"
-        BUNDLE_DISPLAY_NAME="Exodia"
+        BUNDLE_DISPLAY_NAME="Whytap"
         SWIFT_FLAGS=""
-        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/exodia}/releases/latest/download/appcast.xml}"
+        APPCAST_URL="${APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/latest/download/appcast.xml}"
         ;;
     *)
         echo "ERROR: invalid FLAVOR='${FLAVOR}' (expected beta|prod)" >&2
@@ -112,6 +119,90 @@ INFO_PLIST_TEMPLATE="${PROJECT_DIR}/Resources/Info.plist.template"
 SPARKLE_PUBKEY_FILE="${PROJECT_DIR}/Resources/sparkle-public-ed-key.txt"
 DMG_BACKGROUND_SRC="${PROJECT_DIR}/Resources/dmg-background.png"
 MENU_BAR_ICON="${PROJECT_DIR}/Resources/MenuBarIconTemplate.pdf"
+
+# --- Community code-signing identity -------------------------------------
+# WHY: .project-docs/decisions/2026-10-19-community-signing-identity.md
+# An ad-hoc designated requirement is the cdhash, so TCC treats every update
+# as a new app and Microphone/System Audio must be granted again. A committed
+# self-signed certificate keeps it at identifier + certificate leaf hash
+# across builds; its private key lives in Doppler like the Sparkle key.
+COMMUNITY_SIGNING="${EXODIA_COMMUNITY_SIGNING:-auto}"
+case "${COMMUNITY_SIGNING}" in
+    auto|adhoc) ;;
+    *) echo "ERROR: EXODIA_COMMUNITY_SIGNING must be auto or adhoc" >&2; exit 2 ;;
+esac
+CODE_SIGNING="adhoc"
+SIGNING_CERTIFICATE_FILE=""
+SIGNING_CERTIFICATE_SHA1=""
+EXPECTED_DESIGNATED_REQUIREMENT=""
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    CODE_SIGNING="developer-id"
+elif [ "${COMMUNITY_SIGNING}" = "auto" ]; then
+    if [ -n "${EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE:-}" ]; then
+        SIGNING_CERTIFICATE_FILE="${EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE}"
+        if [ ! -f "${SIGNING_CERTIFICATE_FILE}" ]; then
+            echo "ERROR: EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE is not a file: ${SIGNING_CERTIFICATE_FILE}" >&2
+            exit 1
+        fi
+    elif [ -f "${PROJECT_DIR}/Resources/community-signing-certificate.pem" ]; then
+        SIGNING_CERTIFICATE_FILE="${PROJECT_DIR}/Resources/community-signing-certificate.pem"
+    fi
+fi
+
+# Prints the community signing key; callers only pipe it into openssl.
+community_signing_key() {
+    if [ -n "${EXODIA_COMMUNITY_SIGNING_KEY_FILE:-}" ]; then
+        cat "${EXODIA_COMMUNITY_SIGNING_KEY_FILE}"
+    else
+        printf '%s\n' "${EXODIA_COMMUNITY_SIGNING_KEY:-}"
+    fi
+}
+
+wipe_file() {
+    local size
+    if [ -f "$1" ]; then
+        size="$(wc -c < "$1" 2>/dev/null | tr -d ' ' || echo 0)"
+        if [ "${size:-0}" -gt 0 ]; then
+            dd if=/dev/zero of="$1" bs=1 count="${size}" conv=notrunc >/dev/null 2>&1 || true
+        fi
+        rm -f "$1"
+    fi
+}
+
+# $1 = signed code, $2 = requirement it must satisfy.
+require_signature() {
+    if ! codesign --verify --strict --all-architectures -R "=$2" "$1" >/dev/null 2>&1; then
+        echo "ERROR: ${1#"${PROJECT_DIR}"/} does not satisfy: $2" >&2
+        exit 1
+    fi
+}
+
+# The designated requirement TCC stores with each grant must be exactly the
+# pinned identity, in every architecture, for the app and its nested code.
+verify_community_signature() {
+    local bundle="$1"
+    local actual
+    actual="$(codesign -d -r- "${bundle}" 2>/dev/null | sed -n 's/^#* *designated => //p')"
+    if [ "${actual}" != "${EXPECTED_DESIGNATED_REQUIREMENT}" ]; then
+        echo "ERROR: unexpected designated requirement for ${bundle#"${PROJECT_DIR}"/}" >&2
+        echo "  expected: ${EXPECTED_DESIGNATED_REQUIREMENT}" >&2
+        echo "  actual:   ${actual:-none}" >&2
+        exit 1
+    fi
+    require_signature "${bundle}" "${EXPECTED_DESIGNATED_REQUIREMENT}"
+    local nested
+    for nested in \
+        "Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc" \
+        "Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc" \
+        "Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" \
+        "Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app" \
+        "Contents/Frameworks/Sparkle.framework/Versions/B" \
+        "Contents/Frameworks/MediaRemoteAdapter.framework"; do
+        if [ -e "${bundle}/${nested}" ]; then
+            require_signature "${bundle}/${nested}" "certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
+        fi
+    done
+}
 
 detach_dmg_mount() {
     local mount_point="$1"
@@ -217,16 +308,61 @@ if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
 
 fi
 
+if [ -n "${SIGNING_CERTIFICATE_FILE}" ]; then
+    SIGNING_CERTIFICATE_TEXT="$(/usr/bin/openssl x509 -in "${SIGNING_CERTIFICATE_FILE}" -noout -text 2>/dev/null || true)"
+    if [[ "${SIGNING_CERTIFICATE_TEXT}" != *"Code Signing"* ]]; then
+        echo "ERROR: ${SIGNING_CERTIFICATE_FILE#"${PROJECT_DIR}"/} is not a PEM code-signing certificate." >&2
+        exit 1
+    fi
+    SIGNING_CERTIFICATE_SHA1="$(/usr/bin/openssl x509 -in "${SIGNING_CERTIFICATE_FILE}" -noout -fingerprint -sha1 \
+        | sed 's/^.*=//; s/://g' | tr 'A-F' 'a-f')"
+    if ! [[ "${SIGNING_CERTIFICATE_SHA1}" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "ERROR: could not read the SHA-1 of ${SIGNING_CERTIFICATE_FILE#"${PROJECT_DIR}"/}." >&2
+        exit 1
+    fi
+    CODE_SIGNING="certificate:${SIGNING_CERTIFICATE_SHA1}"
+    EXPECTED_DESIGNATED_REQUIREMENT="identifier \"${BUNDLE_ID}\" and certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
+fi
+echo "▶ Code signing: ${CODE_SIGNING}"
+
 if [ "${PREFLIGHT_ONLY}" -eq 1 ]; then
-    /usr/bin/python3 - "${DISTRIBUTION_MODE}" "${BUNDLE_ID}" "${SHORT_VERSION}" "${BUILD_VERSION}" <<'PYJSON'
+    SIGNING_KEY_CONFIGURED=0
+    if [ -n "${EXODIA_COMMUNITY_SIGNING_KEY:-}" ] || [ -n "${EXODIA_COMMUNITY_SIGNING_KEY_FILE:-}" ]; then
+        SIGNING_KEY_CONFIGURED=1
+    fi
+    /usr/bin/python3 - "${DISTRIBUTION_MODE}" "${BUNDLE_ID}" "${SHORT_VERSION}" "${BUILD_VERSION}" \
+        "${CODE_SIGNING}" "${SIGNING_KEY_CONFIGURED}" <<'PYJSON'
 import json, sys
-mode, bundle_id, version, build = sys.argv[1:]
+mode, bundle_id, version, build, code_signing, key_configured = sys.argv[1:]
+certificate = code_signing.split(":", 1)[1] if code_signing.startswith("certificate:") else None
 print(json.dumps({"distribution": mode, "bundle_id": bundle_id,
     "version": version, "build": int(build), "architectures": ["arm64", "x86_64"],
+    "code_signing": code_signing, "signing_certificate_sha1": certificate,
+    "signing_key_configured": key_configured == "1",
     "requires_apple_developer": mode == "developer-id",
     "requires_notarization": mode == "developer-id"}))
 PYJSON
     exit 0
+fi
+
+# Certificate mode needs the matching private key; check it before compiling.
+if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
+    if [ -z "${EXODIA_COMMUNITY_SIGNING_KEY:-}" ] && [ -z "${EXODIA_COMMUNITY_SIGNING_KEY_FILE:-}" ]; then
+        echo "ERROR: certificate signing needs EXODIA_COMMUNITY_SIGNING_KEY or EXODIA_COMMUNITY_SIGNING_KEY_FILE." >&2
+        echo "Run via 'doppler run --project sidekey --config dev -- ./scripts/build-dmg.sh', or set" >&2
+        echo "EXODIA_COMMUNITY_SIGNING=adhoc for a local ad-hoc build that cannot be published." >&2
+        exit 1
+    fi
+    if [ -n "${EXODIA_COMMUNITY_SIGNING_KEY_FILE:-}" ] && [ ! -f "${EXODIA_COMMUNITY_SIGNING_KEY_FILE}" ]; then
+        echo "ERROR: EXODIA_COMMUNITY_SIGNING_KEY_FILE is not a file." >&2
+        exit 1
+    fi
+    CERTIFICATE_PUBLIC_KEY="$(/usr/bin/openssl x509 -in "${SIGNING_CERTIFICATE_FILE}" -noout -pubkey)"
+    SIGNING_KEY_PUBLIC_KEY="$(community_signing_key | /usr/bin/openssl pkey -passin pass: -pubout 2>/dev/null || true)"
+    if [ -z "${SIGNING_KEY_PUBLIC_KEY}" ] || [ "${SIGNING_KEY_PUBLIC_KEY}" != "${CERTIFICATE_PUBLIC_KEY}" ]; then
+        echo "ERROR: the community signing key does not match ${SIGNING_CERTIFICATE_FILE#"${PROJECT_DIR}"/}." >&2
+        exit 1
+    fi
 fi
 
 # Pin the clean build-input commit before compiling; sealing checks it again.
@@ -238,9 +374,20 @@ BUILD_SOURCE_SHA="$(/usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.
 ASC_KEY_DIR=""
 ASC_KEY_PATH=""
 
+SIGNING_DIR=""
+SIGNING_KEYCHAIN=""
+
 cleanup() {
     if [ -n "${ASC_KEY_DIR:-}" ] && [ -d "${ASC_KEY_DIR}" ]; then
         rm -rf "${ASC_KEY_DIR}"
+    fi
+    if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -f "${SIGNING_KEYCHAIN}" ]; then
+        security delete-keychain "${SIGNING_KEYCHAIN}" >/dev/null 2>&1 || true
+    fi
+    if [ -n "${SIGNING_DIR:-}" ] && [ -d "${SIGNING_DIR}" ]; then
+        wipe_file "${SIGNING_DIR}/key.pem"
+        wipe_file "${SIGNING_DIR}/identity.p12"
+        rm -rf "${SIGNING_DIR}"
     fi
     if [ -n "${DMG_ROOT:-}" ] && [ -d "${DMG_ROOT}" ]; then
         rm -rf "${DMG_ROOT}"
@@ -395,6 +542,8 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
 /usr/libexec/PlistBuddy -c "Add :ExodiaDistribution string ${DISTRIBUTION_MODE}" \
     "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaSourceRevision string ${BUILD_SOURCE_SHA}" \
+    "${APP_BUNDLE}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ExodiaInstanceLeaseVersion integer 1" \
     "${APP_BUNDLE}/Contents/Info.plist"
 
 if [ -f "${PROJECT_DIR}/Resources/AppIcon.icns" ]; then
@@ -580,17 +729,52 @@ done
 # because Sparkle bundles sandbox entitlements into Downloader that our app
 # entitlements would otherwise overwrite.
 
+SIGNING_ARGS=(--sign "${SIGNING_IDENTITY}")
+if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
+    # A private keychain outside the user's search list holds the identity only
+    # while signing; cleanup() deletes it and wipes the staged key material.
+    echo "▶ Importing the community signing identity into a temporary keychain..."
+    ORIGINAL_UMASK="$(umask)"
+    umask 077
+    SIGNING_DIR="$(mktemp -d -t exodia-signing)"
+    SIGNING_KEYCHAIN="${SIGNING_DIR}/signing.keychain-db"
+    community_signing_key > "${SIGNING_DIR}/key.pem"
+    SIGNING_KEYCHAIN_PASSWORD="$(/usr/bin/openssl rand -hex 24)"
+    EXODIA_SIGNING_P12_PASSWORD="$(/usr/bin/openssl rand -hex 24)"
+    export EXODIA_SIGNING_P12_PASSWORD
+    /usr/bin/openssl pkcs12 -export -inkey "${SIGNING_DIR}/key.pem" -in "${SIGNING_CERTIFICATE_FILE}" \
+        -name "Exodia Community Code Signing" -out "${SIGNING_DIR}/identity.p12" \
+        -passin pass: -passout env:EXODIA_SIGNING_P12_PASSWORD
+    wipe_file "${SIGNING_DIR}/key.pem"
+    umask "${ORIGINAL_UMASK}"
+    security create-keychain -p "${SIGNING_KEYCHAIN_PASSWORD}" "${SIGNING_KEYCHAIN}"
+    security set-keychain-settings -lut 3600 "${SIGNING_KEYCHAIN}"
+    security unlock-keychain -p "${SIGNING_KEYCHAIN_PASSWORD}" "${SIGNING_KEYCHAIN}"
+    security import "${SIGNING_DIR}/identity.p12" -k "${SIGNING_KEYCHAIN}" \
+        -P "${EXODIA_SIGNING_P12_PASSWORD}" -f pkcs12 -T /usr/bin/codesign >/dev/null
+    wipe_file "${SIGNING_DIR}/identity.p12"
+    unset EXODIA_SIGNING_P12_PASSWORD
+    security set-key-partition-list -S apple-tool:,apple: -s -k "${SIGNING_KEYCHAIN_PASSWORD}" \
+        "${SIGNING_KEYCHAIN}" >/dev/null
+    SIGNING_IDENTITIES="$(security find-identity -p codesigning "${SIGNING_KEYCHAIN}")"
+    if [[ "${SIGNING_IDENTITIES}" != *"$(printf '%s' "${SIGNING_CERTIFICATE_SHA1}" | tr 'a-f' 'A-F')"* ]]; then
+        echo "ERROR: the community certificate is not usable as a code-signing identity." >&2
+        exit 1
+    fi
+    SIGNING_ARGS=(--sign "${SIGNING_CERTIFICATE_SHA1}" --keychain "${SIGNING_KEYCHAIN}")
+fi
+
 echo "▶ Code signing Sparkle XPC services..."
 if [ -d "${SPARKLE_BUNDLE}/XPCServices/Installer.xpc" ]; then
     codesign --force \
-        --sign "${SIGNING_IDENTITY}" \
+        "${SIGNING_ARGS[@]}" \
         --options runtime \
         "${SIGNING_TIMESTAMP_ARGS[@]}" \
         "${SPARKLE_BUNDLE}/XPCServices/Installer.xpc"
 fi
 if [ -d "${SPARKLE_BUNDLE}/XPCServices/Downloader.xpc" ]; then
     codesign --force \
-        --sign "${SIGNING_IDENTITY}" \
+        "${SIGNING_ARGS[@]}" \
         --options runtime \
         "${SIGNING_TIMESTAMP_ARGS[@]}" \
         --preserve-metadata=entitlements \
@@ -600,7 +784,7 @@ fi
 if [ -f "${SPARKLE_BUNDLE}/Autoupdate" ]; then
     echo "▶ Code signing Sparkle Autoupdate helper..."
     codesign --force \
-        --sign "${SIGNING_IDENTITY}" \
+        "${SIGNING_ARGS[@]}" \
         --options runtime \
         "${SIGNING_TIMESTAMP_ARGS[@]}" \
         "${SPARKLE_BUNDLE}/Autoupdate"
@@ -609,7 +793,7 @@ fi
 if [ -d "${SPARKLE_BUNDLE}/Updater.app" ]; then
     echo "▶ Code signing Sparkle Updater.app helper..."
     codesign --force \
-        --sign "${SIGNING_IDENTITY}" \
+        "${SIGNING_ARGS[@]}" \
         --options runtime \
         "${SIGNING_TIMESTAMP_ARGS[@]}" \
         "${SPARKLE_BUNDLE}/Updater.app"
@@ -617,7 +801,7 @@ fi
 
 echo "▶ Code signing Sparkle.framework..."
 codesign --force \
-    --sign "${SIGNING_IDENTITY}" \
+    "${SIGNING_ARGS[@]}" \
     --options runtime \
     "${SIGNING_TIMESTAMP_ARGS[@]}" \
     "${SPARKLE_BUNDLE}"
@@ -630,7 +814,7 @@ codesign --force \
 # nested framework.
 echo "▶ Code signing MediaRemoteAdapter.framework..."
 codesign --force \
-    --sign "${SIGNING_IDENTITY}" \
+    "${SIGNING_ARGS[@]}" \
     --options runtime \
     "${SIGNING_TIMESTAMP_ARGS[@]}" \
     "${APP_BUNDLE}/Contents/Frameworks/MediaRemoteAdapter.framework"
@@ -639,7 +823,7 @@ echo "▶ Code signing app bundle..."
 # No --deep — Sparkle helpers and framework are already signed individually.
 codesign \
     --force \
-    --sign "${SIGNING_IDENTITY}" \
+    "${SIGNING_ARGS[@]}" \
     --entitlements "${ENTITLEMENTS}" \
     --options runtime \
     "${SIGNING_TIMESTAMP_ARGS[@]}" \
@@ -647,6 +831,10 @@ codesign \
 
 echo "▶ Verifying signature..."
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
+    verify_community_signature "${APP_BUNDLE}"
+    echo "  ok: designated requirement ${EXPECTED_DESIGNATED_REQUIREMENT}"
+fi
 otool -L "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" | grep -i sparkle || {
     echo "ERROR: app binary does not link against Sparkle.framework" >&2
     exit 1
@@ -950,6 +1138,13 @@ BACKGROUND_OK=0
 if [ -f "${DMG_MOUNT_POINT}/.background/background.png" ]; then
     BACKGROUND_OK=1
 fi
+if [ -n "${SIGNING_CERTIFICATE_SHA1}" ] && [ "${APP_PRESENT}" -eq 1 ]; then
+    if ! (verify_community_signature "${DMG_MOUNT_POINT}/${APP_BUNDLE_NAME}.app"); then
+        detach_dmg_mount "${DMG_MOUNT_POINT}" 3 >/dev/null 2>&1 || true
+        exit 1
+    fi
+    echo "  ok: ${APP_BUNDLE_NAME}.app in the DMG keeps the designated requirement"
+fi
 detach_dmg_mount "${DMG_MOUNT_POINT}" 3 >/dev/null 2>&1 || true
 
 if [ "${SYMLINK_OK}" -ne 1 ]; then
@@ -981,10 +1176,14 @@ fi
 echo "▶ Code signing DMG..."
 codesign \
     --force \
-    --sign "${SIGNING_IDENTITY}" \
+    "${SIGNING_ARGS[@]}" \
     "${SIGNING_TIMESTAMP_ARGS[@]}" \
     --identifier "${BUNDLE_ID}.dmg" \
     "${DMG_PATH}"
+if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
+    require_signature "${DMG_PATH}" \
+        "identifier \"${BUNDLE_ID}.dmg\" and certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
+fi
 
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     # --- Notarize DMG -------------------------------------------------------
@@ -1015,13 +1214,16 @@ fi
 /usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" seal \
     --project-root "${PROJECT_DIR}" --source-sha "${BUILD_SOURCE_SHA}" \
     --archive "${DMG_PATH}" --version "${SHORT_VERSION}" --build "${BUILD_VERSION}" \
-    --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}" >/dev/null
+    --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}" \
+    --code-signing "${CODE_SIGNING}" >/dev/null
 
 # --- Final ---------------------------------------------------------------
 
 echo ""
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "✓ Developer-ID signed + notarized DMG: ${DMG_PATH}"
+elif [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
+    echo "✓ Community DMG (Whytap certificate ${SIGNING_CERTIFICATE_SHA1}, not Apple-notarized): ${DMG_PATH}"
 else
     echo "✓ Community DMG (ad-hoc signed, not Apple-notarized): ${DMG_PATH}"
 fi

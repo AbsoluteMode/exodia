@@ -1,11 +1,12 @@
 enum SettingsWindowTab: String, CaseIterable, Identifiable {
-    case models
+    case apiAndModels
     case hotkeys
     case permissions
     case notes
     case agentMode
     case toolbox
-    case projects
+    case notifications
+    case backup
     case other
 
     var id: String { rawValue }
@@ -15,7 +16,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
     }
 
     static var defaultAvailable: SettingsWindowTab {
-        availableCases.first ?? .models
+        availableCases.first ?? .apiAndModels
     }
 
     var isAvailable: Bool {
@@ -24,8 +25,8 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .models:
-            return "Models"
+        case .apiAndModels:
+            return "API & Models"
         case .hotkeys:
             return "Hotkeys"
         case .permissions:
@@ -36,8 +37,10 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
             return "Agents"
         case .toolbox:
             return "Toolbox"
-        case .projects:
-            return "Projects"
+        case .notifications:
+            return "Notifications"
+        case .backup:
+            return "Backup"
         case .other:
             return "Other"
         }
@@ -49,7 +52,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var fallbackSystemImageName: String {
         switch self {
-        case .models:
+        case .apiAndModels:
             return "cpu"
         case .hotkeys:
             return "keyboard"
@@ -61,8 +64,10 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
             return "bolt.horizontal.circle.fill"
         case .toolbox:
             return "square.grid.2x2"
-        case .projects:
-            return "folder"
+        case .notifications:
+            return "bell.badge"
+        case .backup:
+            return "externaldrive.badge.timemachine"
         case .other:
             return "ellipsis.circle"
         }
@@ -70,7 +75,7 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var pdfResourceName: String? {
         switch self {
-        case .models, .hotkeys, .permissions, .notes, .agentMode, .toolbox, .projects, .other:
+        case .apiAndModels, .hotkeys, .permissions, .notes, .agentMode, .toolbox, .notifications, .backup, .other:
             return nil
         }
     }

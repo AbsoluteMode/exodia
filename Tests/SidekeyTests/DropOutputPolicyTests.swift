@@ -1,0 +1,105 @@
+import XCTest
+@testable import Sidekey
+
+@MainActor
+final class DropOutputPolicyTests: XCTestCase {
+    func testFastNeverCallsCleanupEvenWhenItWouldFail() async throws {
+        var calls = 0
+        let result = try await DropOutputPolicy(mode: .fast).prepare(
+            rawText: "well hello", fillerTerms: ["well"]
+        ) {
+            calls += 1
+            throw OpenRouterLLMError.missingKey
+        }
+        XCTAssertEqual(result, "Hello")
+        XCTAssertEqual(calls, 0)
+    }
+
+    func testSmartDeliversCleanupAndAppliesFillerRules() async throws {
+        var calls = 0
+        let result = try await DropOutputPolicy(mode: .smart).prepare(
+            rawText: "uh actually send Friday", fillerTerms: ["uh"]
+        ) {
+            calls += 1
+            return "uh Send it on Friday."
+        }
+        XCTAssertEqual(result, "Send it on Friday.")
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testSmartPropagatesFailureWithoutReturningRawText() async {
+        for error in [OpenRouterLLMError.notConfigured, .missingKey, .unexpectedStatus(503, "private body")] {
+            do {
+                _ = try await DropOutputPolicy(mode: .smart).prepare(rawText: "raw dictation", fillerTerms: []) {
+                    throw error
+                }
+                XCTFail("Smart must not silently return Fast output")
+            } catch let actual as OpenRouterLLMError {
+                XCTAssertEqual(actual, error)
+            } catch { XCTFail("Unexpected error type") }
+        }
+    }
+
+    func testSmartRejectsEmptyCleanupIncludingAfterFillerRemoval() async {
+        for output in ["", " \n\t", "uh"] {
+            do {
+                _ = try await DropOutputPolicy(mode: .smart).prepare(rawText: "real dictation", fillerTerms: ["uh"]) {
+                    output
+                }
+                XCTFail("An empty cleanup must remain retryable")
+            } catch let error as OpenRouterLLMError {
+                XCTAssertEqual(error, .emptyContent)
+            } catch { XCTFail("Unexpected error type") }
+        }
+    }
+
+    func testModeChangesDuringCleanupCannotDowngradeTheTake() async throws {
+        let defaults = UserDefaults(suiteName: "drop.mode.\(UUID().uuidString)")!
+        let preferences = UserPreferencesCache(defaults: defaults)
+        preferences.setMode(.smart)
+        let policy = DropOutputPolicy(mode: preferences.currentMode)
+        let result = try await policy.prepare(rawText: "raw", fillerTerms: []) {
+            preferences.setMode(.fast)
+            await Task.yield()
+            return "Processed."
+        }
+        XCTAssertEqual(result, "Processed.")
+        XCTAssertEqual(preferences.currentMode, .fast)
+    }
+
+    func testRetryKeepsSmartAfterPreferenceChanges() async throws {
+        let defaults = UserDefaults(suiteName: "drop.retry.\(UUID().uuidString)")!
+        let preferences = UserPreferencesCache(defaults: defaults)
+        preferences.setMode(.smart)
+        let retry = DropProcessingRetry(rawText: "raw", targetApp: "Notes", targetPID: 123, mode: preferences.currentMode)
+        preferences.setMode(.fast)
+        var calls = 0
+        let result = try await DropOutputPolicy(mode: retry.mode).prepare(rawText: retry.rawText, fillerTerms: []) {
+            calls += 1
+            return "Retried."
+        }
+        XCTAssertEqual(result, "Retried.")
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(retry.targetPID, 123)
+    }
+
+    func testFastPreservesSpeechWhenFillerRulesWouldRemoveEverything() async throws {
+        let result = try await DropOutputPolicy(mode: .fast).prepare(rawText: "uh", fillerTerms: ["uh"]) {
+            XCTFail("Fast must not contact the LLM")
+            return "unused"
+        }
+        XCTAssertEqual(result, "uh")
+    }
+
+    func testConfigurationErrorsOpenModelsButTransientFailuresRemainRetryable() {
+        XCTAssertTrue(DropOutputPolicy.requiresConfiguration(for: OpenRouterLLMError.missingKey))
+        XCTAssertTrue(DropOutputPolicy.requiresConfiguration(for: OpenRouterLLMError.unexpectedStatus(404, nil)))
+        XCTAssertFalse(DropOutputPolicy.requiresConfiguration(for: OpenRouterLLMError.unexpectedStatus(503, nil)))
+        XCTAssertFalse(DropOutputPolicy.requiresConfiguration(for: OpenRouterLLMError.emptyContent))
+    }
+
+    func testFailureCopyExcludesProviderBodiesAndEndpointValues() {
+        XCTAssertEqual(DropOutputPolicy.failureMessage(for: OpenRouterLLMError.unexpectedStatus(401, "private response")), "Smart failed (401)")
+        XCTAssertEqual(DropOutputPolicy.failureMessage(for: OpenRouterLLMError.invalidBaseURL("private endpoint")), "Set up Smart in API & Models")
+    }
+}

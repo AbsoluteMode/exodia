@@ -11,13 +11,13 @@ sources:
   - type: user-confirmed
     reference: User instruction in the 2026-09-10 Whytap task to put BYOK before local and build every update on this Mac because GitHub is expensive.
     confirmed_at: 2026-09-10
-  - type: repository
-    reference: Sources/Sidekey/Settings/SettingsModelsView.swift
+  - type: commit
+    reference: a3165080780d57635e8c4da48e9a91719fa082ee:Sources/Sidekey/Settings/SettingsModelsView.swift
     confirmed_at: 2026-09-10
   - type: repository
     reference: docs/build-and-release.md
     confirmed_at: 2026-09-10
-related: [../project.md, 2026-10-17-source-first-distribution.md, 2026-10-18-remove-local-models.md]
+related: [2026-10-18-provider-batch-transcription.md, ../project.md, 2026-10-17-source-first-distribution.md, 2026-10-18-remove-local-models.md]
 ---
 
 # BYOK presentation and local builds

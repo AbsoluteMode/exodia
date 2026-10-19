@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import Sidekey
 
@@ -42,6 +43,19 @@ final class UserPreferencesCacheTests: XCTestCase {
     }
 
     // MARK: - Persistence + round-trip
+
+    func testModeChangeNotificationFollowsPersistenceAndSkipsUnchangedValues() {
+        let cache = UserPreferencesCache(defaults: defaults)
+        var observed: [TranscriptionMode] = []
+        let subscription = NotificationCenter.default.publisher(for: .sidekeyDropModeChanged)
+            .filter { ($0.object as? UserPreferencesCache) === cache }
+            .sink { _ in observed.append(cache.currentMode) }
+        cache.setMode(.smart)
+        cache.setMode(.smart)
+        cache.setMode(.fast)
+        XCTAssertEqual(observed, [.smart, .fast])
+        withExtendedLifetime(subscription) {}
+    }
 
     func test_setMode_persists_to_userDefaults() {
         let cache = UserPreferencesCache(defaults: defaults)

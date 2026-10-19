@@ -49,7 +49,7 @@ struct AgentAnswerBodyView: View {
                 PermissionPromptView(
                     prompt: p,
                     onAllow: { store.decide(.allow(inputJSON: p.inputJSON)) },
-                    onDeny: { store.decide(.deny(message: "User declined in Exodia")) }
+                    onDeny: { store.decide(.deny(message: "User declined in Whytap")) }
                 )
             }
 

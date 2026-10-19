@@ -5,7 +5,8 @@ import os
 /// query string (Deepgram has no client config message); repeated `keyterm`
 /// params are how Deepgram expects multiple terms.
 enum DeepgramRealtimeURL {
-    static func make(model: String, language: String?, terms: [String]) -> URL {
+    static func make(model: String, language: String?, terms: [String]) throws -> URL {
+        let language = try DeepgramLanguagePolicy.queryLanguage(model: model, language: language)
         var comps = URLComponents(string: "wss://api.deepgram.com/v1/listen")!
         var items: [URLQueryItem] = [
             URLQueryItem(name: "model", value: model),
@@ -16,7 +17,7 @@ enum DeepgramRealtimeURL {
             URLQueryItem(name: "smart_format", value: "true"),
             URLQueryItem(name: "punctuate", value: "true"),
         ]
-        if let language, !language.isEmpty { items.append(URLQueryItem(name: "language", value: language)) }
+        items.append(URLQueryItem(name: "language", value: language))
         for term in terms { items.append(URLQueryItem(name: "keyterm", value: term)) }
         comps.queryItems = items
         return comps.url!
@@ -26,13 +27,15 @@ enum DeepgramRealtimeURL {
 /// Deepgram Nova-3 BYOK adapter: client-direct with the user's key.
 struct DeepgramBYOKAdapter: BYOKTranscriptionAdapter {
     /// Language/terms reach the URL (query), so the factory is parameterized.
-    typealias TransportFactory = (_ language: String?, _ terms: [String]) -> StreamingTransporting
+    typealias TransportFactory = (_ language: String?, _ terms: [String]) throws -> StreamingTransporting
+    private let model: String
     private let makeTransport: TransportFactory
 
     /// Production: authenticated `URLSessionWebSocketTask` with the URL query.
     init(apiKey: String, model: String) {
+        self.model = model
         self.makeTransport = { language, terms in
-            let url = DeepgramRealtimeURL.make(model: model, language: language, terms: terms)
+            let url = try DeepgramRealtimeURL.make(model: model, language: language, terms: terms)
             var request = URLRequest(url: url)
             request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
             let task = URLSession.shared.webSocketTask(with: request)
@@ -42,11 +45,13 @@ struct DeepgramBYOKAdapter: BYOKTranscriptionAdapter {
 
     /// Test: inject a transport.
     init(model: String, transport: @escaping TransportFactory) {
+        self.model = model
         self.makeTransport = transport
     }
 
     func open(language: String?, terms: [String]) async throws -> BYOKUpstreamSession {
-        let transport = makeTransport(language, terms)
+        _ = try DeepgramLanguagePolicy.queryLanguage(model: model, language: language)
+        let transport = try makeTransport(language, terms)
         transport.resume()
         let session = DeepgramBYOKSession(transport: transport)
         session.start()

@@ -15,7 +15,8 @@ final class MeetingsWindowController: NSWindowController {
         transcriptProvider: @escaping @MainActor (UUID) async throws -> [TranscriptSegment]?,
         bundleURL: URL?,
         bundleAccessRoot: URL?,
-        refreshHandler: (@MainActor (UUID) async -> Void)? = nil
+        refreshHandler: (@MainActor (UUID) async -> Void)? = nil,
+        deleteHandler: (@MainActor (UUID) async -> Bool)? = nil
     ) {
         let contentController = MeetingsContentController(
             source: source,
@@ -24,6 +25,7 @@ final class MeetingsWindowController: NSWindowController {
             bundleURL: bundleURL,
             bundleAccessRoot: bundleAccessRoot,
             refreshHandler: refreshHandler,
+            deleteHandler: deleteHandler,
             topBarLeadingInset: 14
         )
         self.contentController = contentController
@@ -97,7 +99,8 @@ extension MeetingsWindowController {
         source: MeetingsSidebarSource,
         markdownProvider: @escaping @MainActor (UUID) async throws -> String?,
         transcriptProvider: @escaping @MainActor (UUID) async throws -> [TranscriptSegment]?,
-        refreshHandler: (@MainActor (UUID) async -> Void)? = nil
+        refreshHandler: (@MainActor (UUID) async -> Void)? = nil,
+        deleteHandler: (@MainActor (UUID) async -> Bool)? = nil
     ) -> MeetingsWindowController {
         let bundleURL = Bundle.main.url(
             forResource: "index",
@@ -111,7 +114,8 @@ extension MeetingsWindowController {
             transcriptProvider: transcriptProvider,
             bundleURL: bundleURL,
             bundleAccessRoot: bundleRoot,
-            refreshHandler: refreshHandler
+            refreshHandler: refreshHandler,
+            deleteHandler: deleteHandler
         )
     }
 }
