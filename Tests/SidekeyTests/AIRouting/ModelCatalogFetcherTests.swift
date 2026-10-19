@@ -1,0 +1,157 @@
+import XCTest
+@testable import Sidekey
+
+final class ModelCatalogFetcherTests: XCTestCase {
+    private func makeFetcher(status: Int = 200, body: String = "{}") -> ModelCatalogFetcher {
+        StubURLProtocol.reset()
+        addTeardownBlock { StubURLProtocol.reset() }
+        StubURLProtocol.handler = { _ in (status, [:], Data(body.utf8)) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: config)
+        addTeardownBlock { session.invalidateAndCancel() }
+        return ModelCatalogFetcher(session: session)
+    }
+
+    private func server(_ baseURL: String) -> ServerEndpoint {
+        ServerEndpoint(id: UUID(), name: "Local", baseURL: baseURL, keyAccount: "byok.server.test.api_key")
+    }
+
+    func test_soniox_catalog_maps_modes_and_aliases() async throws {
+        let fetcher = makeFetcher(body: """
+        {"models":[
+          {"id":"stt-rt-v5","transcription_mode":"real_time","aliased_model_id":null},
+          {"id":"stt-rt-v4","transcription_mode":"real_time","aliased_model_id":"stt-rt-v5"},
+          {"id":"stt-async-v5","transcription_mode":"async"}
+        ]}
+        """)
+        let models = try await fetcher.fetch(account: .soniox, apiKey: "sx-key", server: nil)
+        XCTAssertEqual(models.map(\.id), ["stt-rt-v5", "stt-rt-v4", "stt-async-v5"])
+        XCTAssertEqual(models.map(\.uses), [[.realtimeSTT], [.realtimeSTT], [.asyncSTT]])
+        XCTAssertEqual(models.map(\.aliasOf), [nil, "stt-rt-v5", nil])
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://api.soniox.com/v1/models")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sx-key")
+    }
+
+    func test_deepgram_catalog_merges_rows_and_keeps_nova_3() async throws {
+        let fetcher = makeFetcher(body: """
+        {"stt":[
+          {"name":"general","canonical_name":"nova-3-general","streaming":true,"batch":false},
+          {"name":"general","canonical_name":"nova-3-general","streaming":false,"batch":true},
+          {"name":"medical","canonical_name":"nova-3-medical","streaming":true,"batch":true}
+        ]}
+        """)
+        let models = try await fetcher.fetch(account: .deepgram, apiKey: "dg-key", server: nil)
+        XCTAssertEqual(models.map(\.id), ["nova-3", "nova-3-general", "nova-3-medical"])
+        XCTAssertEqual(models[0].uses, [.realtimeSTT, .asyncSTT])
+        XCTAssertEqual(models[1].uses, [.realtimeSTT, .asyncSTT])
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://api.deepgram.com/v1/models")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func test_openrouter_catalog_drops_batch_aliases_and_routers_but_keeps_auto() async throws {
+        let fetcher = makeFetcher(body: """
+        {"data":[
+          {"id":"google/gemini-3.8-flash","context_length":1048576,
+           "supported_parameters":["tools","reasoning","max_tokens"],
+           "architecture":{"output_modalities":["text"]},
+           "pricing":{"prompt":"0.0000003"},
+           "top_provider":{"max_completion_tokens":65536},
+           "expiration_date":"2027-03-01",
+           "reasoning":{"mandatory":true,"supported_efforts":["low","high"]}},
+          {"id":"google/gemini-3.8-flash:batch","architecture":{"output_modalities":["text"]},"pricing":{"prompt":"0.1"}},
+          {"id":"~anthropic/claude-sonnet-latest","architecture":{"output_modalities":["text"]},"pricing":{"prompt":"0.1"}},
+          {"id":"openrouter/fusion","architecture":{"output_modalities":["text"]},"pricing":{"prompt":"-1"}},
+          {"id":"openrouter/auto","architecture":{"output_modalities":["text"]},"pricing":{"prompt":"-1"}},
+          {"id":"some/image-model","architecture":{"output_modalities":["image"]},"pricing":{"prompt":"0.1"}}
+        ]}
+        """)
+        let models = try await fetcher.fetch(account: .openRouter, apiKey: "or-key", server: nil)
+        XCTAssertEqual(models.map(\.id), ["google/gemini-3.8-flash", "openrouter/auto"])
+        let gemini = models[0]
+        XCTAssertEqual(gemini.contextLength, 1_048_576)
+        XCTAssertEqual(gemini.maxOutputTokens, 65_536)
+        XCTAssertEqual(gemini.supportsTools, true)
+        XCTAssertEqual(gemini.supportsReasoning, true)
+        XCTAssertEqual(gemini.uses, [.chat, .chatWithTools])
+        XCTAssertEqual(gemini.reasoning?.mandatory, true)
+        XCTAssertNotNil(gemini.expiresAt)
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://openrouter.ai/api/v1/models")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func test_server_models_url_rules() {
+        XCTAssertEqual(server("http://h:8000/v1").modelsURL?.absoluteString, "http://h:8000/v1/models")
+        XCTAssertEqual(server("http://h:8000/v1/").modelsURL?.absoluteString, "http://h:8000/v1/models")
+        XCTAssertEqual(server("wss://h/v1/realtime").modelsURL?.absoluteString, "https://h/v1/models")
+        XCTAssertEqual(server("ws://h:9000/v1").modelsURL?.absoluteString, "http://h:9000/v1/models")
+        XCTAssertEqual(server("http://h:11434").modelsURL?.absoluteString, "http://h:11434/v1/models")
+        XCTAssertNil(server("not a url").modelsURL)
+        XCTAssertNil(server("ftp://h/v1").modelsURL)
+    }
+
+    func test_server_catalog_without_key_sends_no_authorization() async throws {
+        let fetcher = makeFetcher(body: #"{"data":[{"id":"qwen"},{"id":"llama"}]}"#)
+        for key in [nil, ""] as [String?] {
+            StubURLProtocol.capturedRequests = []
+            let models = try await fetcher.fetch(
+                account: .server(UUID()), apiKey: key, server: server("http://h:8000/v1"))
+            XCTAssertEqual(models.map(\.id), ["qwen", "llama"])
+            XCTAssertNil(models[0].uses)
+            let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        }
+        StubURLProtocol.capturedRequests = []
+        _ = try await fetcher.fetch(account: .server(UUID()), apiKey: "k", server: server("http://h:8000/v1"))
+        XCTAssertEqual(StubURLProtocol.capturedRequests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer k")
+    }
+
+    func test_elevenlabs_catalog_makes_no_request() async throws {
+        let fetcher = makeFetcher()
+        let models = try await fetcher.fetch(account: .elevenLabs, apiKey: "xi", server: nil)
+        XCTAssertEqual(models, [])
+        XCTAssertTrue(StubURLProtocol.capturedRequests.isEmpty)
+    }
+
+    func test_errors_map_to_http_offline_and_malformed() async throws {
+        var fetcher = makeFetcher(status: 401, body: #"{"error_type":"unauthenticated","error_message":"x"}"#)
+        await assertFetchThrows(fetcher, .http(401, code: "unauthenticated"))
+
+        fetcher = makeFetcher(status: 403, body: #"{"detail":{"status":"insufficient_permissions"}}"#)
+        await assertFetchThrows(fetcher, .http(403, code: "insufficient_permissions"))
+
+        fetcher = makeFetcher(status: 401, body: #"{"err_code":"INVALID_AUTH","category":"auth"}"#)
+        await assertFetchThrows(fetcher, .http(401, code: "INVALID_AUTH"))
+
+        fetcher = makeFetcher(status: 502, body: "<html>bad gateway</html>")
+        await assertFetchThrows(fetcher, .http(502, code: nil))
+
+        fetcher = makeFetcher(status: 200, body: "<html>not json</html>")
+        await assertFetchThrows(fetcher, .malformed)
+
+        fetcher = makeFetcher()
+        StubURLProtocol.handler = { _ in throw URLError(.notConnectedToInternet) }
+        await assertFetchThrows(fetcher, .offline)
+
+        fetcher = makeFetcher(status: 404)
+        await assertFetchThrows(fetcher, .http(404, code: nil), account: .server(UUID()))
+    }
+
+    private func assertFetchThrows(
+        _ fetcher: ModelCatalogFetcher,
+        _ expected: CatalogFetchError,
+        account: ProviderAccount = .soniox,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await fetcher.fetch(account: account, apiKey: "k", server: server("http://h/v1"))
+            XCTFail("expected \(expected)", file: file, line: line)
+        } catch {
+            XCTAssertEqual(error as? CatalogFetchError, expected, file: file, line: line)
+        }
+    }
+}
