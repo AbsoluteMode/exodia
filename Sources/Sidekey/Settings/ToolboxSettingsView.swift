@@ -318,8 +318,12 @@ struct ToolboxSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .dropMode:
                 dropModePane
+            case .notifs:
+                NotifyHoverPanel(showsBackButton: false, onBack: {})
             case .clipboard:
                 clipboardPane
+            case .brightness:
+                ToolboxDisplayPane()
             case .hotkeys, .notes, .meetingRecord, .monitor, .quit, .settings:
                 Color.clear
             }

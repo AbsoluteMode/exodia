@@ -35,18 +35,10 @@ struct SettingsOtherView: View {
     private let googleEnabledProvider: () -> Bool
     private let onMeetingsToggle: (Bool) -> Void
     private let onGoogleToggle: (Bool) -> Void
-    /// Fires the manual meeting-record toggle (same path as the ⌥M hotkey
-    /// and the hover "Record" tile). The host wires the coordinator call.
-    private let onMeetingRecordToggle: () -> Void
     /// Backing store for the screenshot-protection toggle.
     private let privacyPreferences: PrivacyPreferences
     /// Applies the toggle to the live island panel (host-wired).
     private let screenshotProtectionChanged: (Bool) -> Void
-
-    /// Live recording state for the Start/Stop button label —
-    /// `meetingRecordingActive` is already published on `AppState` by the
-    /// recording pill pipeline.
-    @ObservedObject private var appState = AppState.shared
 
     /// Local mirror of the volume-duck flag. Seeded from `volumeDuckConfig`
     /// on init and re-read on appear; written back on every toggle.
@@ -92,7 +84,6 @@ struct SettingsOtherView: View {
         googleEnabled: @escaping () -> Bool = { false },
         onMeetingsToggle: @escaping (Bool) -> Void = { _ in },
         onGoogleToggle: @escaping (Bool) -> Void = { _ in },
-        onMeetingRecordToggle: @escaping () -> Void = {},
         privacyPreferences: PrivacyPreferences? = nil,
         screenshotProtectionChanged: @escaping (Bool) -> Void = { _ in }
     ) {
@@ -105,7 +96,6 @@ struct SettingsOtherView: View {
         self.googleEnabledProvider = googleEnabled
         self.onMeetingsToggle = onMeetingsToggle
         self.onGoogleToggle = onGoogleToggle
-        self.onMeetingRecordToggle = onMeetingRecordToggle
         let resolvedPrivacy = privacyPreferences ?? .shared
         self.privacyPreferences = resolvedPrivacy
         self.screenshotProtectionChanged = screenshotProtectionChanged
@@ -146,17 +136,6 @@ struct SettingsOtherView: View {
                             subtitle: "Right Option searches your selection on Google."
                         ) {
                             MacSwitch(isOn: googleToggleBinding)
-                        }
-
-                        MacRow(
-                            title: "Record a meeting now",
-                            subtitle: "Start recording anytime — even mid-call; press again to stop."
-                        ) {
-                            Button(appState.meetingRecordingActive ? "Stop" : "Start") {
-                                onMeetingRecordToggle()
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(!meetingsEnabled)
                         }
                     }
                 }
@@ -223,9 +202,8 @@ struct SettingsOtherView: View {
         ) { _ in
             // Capability flags can flip while this tab is OPEN — accepting the
             // ⌥M enable nudge writes Meetings ON from outside Settings, and
-            // hydration can rewrite either flag. Without this the toggle (and
-            // the capability-gated Start button) sit stale until a tab
-            // revisit.
+            // hydration can rewrite either flag. Without this the toggles
+            // sit stale until a tab revisit.
             meetingsEnabled = meetingsEnabledProvider()
             googleEnabled = googleEnabledProvider()
         }

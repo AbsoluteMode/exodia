@@ -3,6 +3,22 @@ import Foundation
 /// App-owned instructions for the user's local agent. Paths are resolved on the
 /// user's Mac, never embedded from a developer's source checkout or logged.
 enum WhytapCustomizationContext {
+    /// Repeat the discovery pointer on every turn, including resumed CLI sessions.
+    static var notificationInstructions: String {
+        """
+        Exodia Notify supports agent-configured local script notifications to the
+        left of the island. Setup contract on this Mac: \(NotifyPaths.root.appendingPathComponent("README.md").path)
+        Registry: \(NotifyPaths.sources.path). Write a <source-id>.json manifest with
+        id, name, command (literal argv, absolute executable), optional enabled,
+        intervalSeconds, tint (#RRGGBB), logo, duration. The app runs these scripts
+        only during its lifetime, stops their process groups on quit, and accepts
+        one flushed JSON object per stdout line: title, optional body/id/tint/logo/
+        duration/link. Read the local guide for limits, credentials, deduplication,
+        validation and verification before installing. Ask the user for the source,
+        filters and required authorized access; never invent a working connection.
+        """
+    }
+
     static var promptInstructions: String {
         """
         Exodia customization capabilities:

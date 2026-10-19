@@ -285,30 +285,12 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertEqual(OpenCodeEnvironment.normalizeModel("openrouter/google/example"), "google/example")
     }
 
-    func testProjectDirectoryIsSiblingOfNeutralMemory() throws {
-        let root = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let neutral = try AgentDaemonWorkingDirectory.ensure(appSupportDirectory: root)
-        let first = try AgentDaemonWorkingDirectory.ensure(projectID: UUID(), appSupportDirectory: root)
-        let second = try AgentDaemonWorkingDirectory.ensure(projectID: UUID(), appSupportDirectory: root)
-        XCTAssertFalse(first.path.hasPrefix(neutral.path + "/"))
-        XCTAssertNotEqual(first, second)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: first.appendingPathComponent("AGENTS.md").path))
-    }
-
     func testInstallerRequiresExactOfficialSHA256() {
         let data = Data("hello".utf8)
         XCTAssertTrue(OpenCodeInstaller.verify(data, digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"))
         XCTAssertFalse(OpenCodeInstaller.verify(data, digest: nil))
         XCTAssertFalse(OpenCodeInstaller.verify(Data("changed".utf8), digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"))
         XCTAssertEqual(OpenCodeInstaller.assetName(appleSilicon: false), "opencode-darwin-x64-baseline.zip")
-    }
-
-    func testProjectPromptLabelsExcerptsAsUntrustedAndRequiresCitations() {
-        let context = AgentProjectContext(projectID: UUID(), displayName: "Example", sourceExcerpts: "schema.sql:12 status CHECK ('new','done')")
-        XCTAssertTrue(context.promptEvidence.contains("untrusted project evidence"))
-        XCTAssertTrue(context.promptEvidence.contains("schema.sql:12"))
-        XCTAssertTrue(context.promptEvidence.contains("Observed database values do not prove"))
     }
 
     private func temporaryDirectory() throws -> URL {

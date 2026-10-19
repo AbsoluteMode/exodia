@@ -166,11 +166,12 @@ Agent flow (OpenCode + OpenRouter or Anthropic):
   Actions are allowed by default so the agent can edit and run tests; the user
   can turn them off in Settings. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
-  AgentDaemonWorkingDirectory uses neutral agent/ or sibling
-  project-agents/<UUID>/ under Application Support/whytap. Each project has its
-  own AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
-  AgentController adds selected project evidence to each turn and uses scoped
-  resume IDs. Evidence is untrusted content, never executable instructions.
+  AgentDaemonWorkingDirectory uses agent/ under Application Support/whytap
+  with AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
+  Projects, folder indexing and automatic project evidence are removed. Old
+  project catalogs, indexes and project-agent workspaces remain unused on disk;
+  never migrate their content or resume IDs into the neutral workspace. WHY:
+  .project-docs/decisions/2026-10-19-remove-projects.md
   WhytapCustomizationContext.promptInstructions exposes resolved local Monitor
   paths, dashboard/collector contracts and source-kit discovery to the runtime
   agent, so creating a dashboard does not require finding the source checkout.
@@ -211,8 +212,8 @@ Meeting Notes:
   a meeting that already has a note, and keeps the audio when the note is
   missing. Remote Soniox resources are not cleaned by Delete. WHY:
   .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
-  Manual start: Option M (configurable), the Record hover tile, or Settings ->
-  Other; all converge in MeetingsCoordinator.toggleManualRecording(). With the
+  Manual start: Option M (configurable) or the Record hover tile; both
+  converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
   enable-prompt. Auto-end when the system mic is released for 3s (not before
   the 30s startup grace); an auto-ended recording waits 45 seconds as
@@ -239,8 +240,9 @@ Hover capsules and materials:
   Historical 2.2.5 icon-refinement proof covers 101 focused tests and 18
   source-matched offscreen renders with no visible/key windows (layout/text only).
   Bundled icon assets retain their own presentation. HoverToolPresentation
-  resolves state purely from mode, languages and recording: Fast/Smart, input
-  Auto/language, output Smart only/Off/language, and Recording/Not recording.
+  resolves state purely from mode, languages, recording and brightness:
+  Fast/Smart, input Auto/language, output Smart only/Off/language,
+  Recording/Not recording, and NN%/Extra (none for an unreadable display).
   Stateless navigation tools have no invented status.
   HoverLayoutStore.columns=3. Shared geometry uses 68 pt rows, a 76 pt row
   stride, 8 pt row/column gaps, 12 pt horizontal and 8 pt vertical insets.
@@ -302,6 +304,60 @@ Monitor inside hover:
   collectors/user data; native glass, real pointer/focus and installed-app
   acceptance remain separate. Guide: docs/customization/dashboards.md.
 
+Brightness inside hover:
+  Brightness is an inlinePanel tool offered only from the Toolbox catalog and
+  search; its capsule title is Display, which fits one line of the narrowest
+  capsule. HoverLayoutStore.defaultSlots and saved layouts are unchanged.
+  HoverSlotRouter resolves .openPanel(.brightness) to IslandBrightnessStrip:
+  Back, a white capsule backlight slider, an Extra switch and one status line
+  (a notice, or the battery time left). The strip is 68 pt (76 pt band, 126 pt
+  with music) and needsKeyboardFocus for its controls. Opened from a lower
+  tile, the band keeps the previous height as transparent hover space under the
+  top-aligned drawer until the pointer reaches the strip (onContinuousHover
+  releases it), so the drawer does not close under the pointer.
+  ScreenBrightnessController follows the island display (IslandScreenResolver)
+  and reads/writes its backlight through private DisplayServices (dlopen); an
+  unreadable display gets a disabled slider and no switch. Showing the strip
+  only reads, polling every 0.5 s while it is visible; a pinned capsule
+  refreshes NN%/Extra when hover opens. Extra exists only for potential EDR
+  headroom > 1.01 and never writes the backlight: it orders a click-through
+  shielding-level BrightnessBoostOverlay (1x1 rgba16Float extended-linear
+  MTKView, multiply compositing, multiplier min(2, headroom), sharingType none)
+  over whatever level the backlight has. BrightnessBoostFrameTimer presents a
+  frame every 0.2 s while the overlay window is visible, strip open or not:
+  without focus WindowServer keeps the boost only ~0.8 s after the last frame,
+  so the former 2 s keepalive blinked. Each app activation adds a frame at once
+  and 15 more at 1/60 s, because every ⌘Tab dimmed the boost (pending live
+  check). Frames pause during display sleep, system sleep and another user's
+  session, each until its own end notification. Extra is a fixed boost: the
+  slider at any level, brightness keys, automatic brightness, idle dimming,
+  closing the strip, sleep and a session switch keep it. Only its switch (strip
+  or Settings) ends it, apart from serious thermal state, a display change or
+  lost headroom, an overlay failure and quit; ending it leaves the backlight as
+  it is. Extra is never persisted or resumed after relaunch.
+  Settings -> Toolbox -> Display (ToolboxDisplayPane) holds the Extra and
+  Brightness keys switches without a slider; it reads the display on appear,
+  never polls and fits the 188 pt Toolbox area in every state. Brightness keys
+  are off by default and saved. BrightnessKeyEventTap, a head-insert session
+  tap for system-defined events on a SpaceHoldMonitor.TapThread, takes the
+  brightness key presses from macOS, so its indicator does not show: sixteenth
+  steps (Option-Shift: 64ths), two brightness-up presses at the maximum within
+  1.5 s (timed when the tap sees them) turn Extra on, and each press opens the
+  strip as a glance (2 s, no keyboard focus, never over another panel under
+  the pointer or a focused search; a pointer reaching it holds the drawer).
+  Other modifier combinations, hidden hover widgets and an unadjustable
+  display leave the keys with macOS. A press stays with whoever got its first
+  event, also across the hotkeys' rebuild; after a gap over 0.1 s or a tap
+  macOS disabled, the presses in progress finish with macOS. The tap needs
+  Accessibility, is reinstalled with the hotkeys and retried when the Settings
+  pane appears. They are the Mac's keys, not an Exodia hotkey: no Help row.
+  BatteryRuntimeMonitor reads IOKit
+  power sources and AppleSmartBattery every 5 s while the strip is visible: on
+  battery macOS's estimate wins, otherwise remaining Wh over the smoothed
+  accumulator load; on power the line shows the time if unplugged. Battery
+  readings and key events are never stored, logged or sent. WHY:
+  .project-docs/decisions/2026-10-18-brightness-tool.md
+
 Hover tool search and pointer routing:
   Search all tools searches the full catalog (titles, descriptions and aliases),
   including tools not pinned in Toolbox. Activation shares HoverSlotRouter and
@@ -359,6 +415,17 @@ Island display selection (multi-monitor):
   through currentDescriptor()/currentVisibleFrame() and follow
   selectionDidChangeNotification. WHY:
   docs/decisions/2026-07-07-island-display-selection-not-nsscreen-main.md
+
+Now Playing:
+  MediaRemoteNowPlayingSource runs the vendored adapter as a long-lived child
+  (`perl run.pl <framework> stream --no-diff --micros`). The AppleScript
+  source is the fallback. applicationWillTerminate calls
+  NowPlayingCoordinator.shutdown(), which terminates that child synchronously
+  (the async stop() would never run before exit()); the stream keeps running
+  through sleep. For SIGKILL/crash the stream runs under a perl guard
+  (parentWatchGuardScript) that ends it when the app's end of the guard's
+  stdin closes; vendored run.pl stays untouched. WHY:
+  .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
 
 Island idle-hide:
   ~20s without activity -> the compact pill fades to the bare notch (opacity
@@ -427,15 +494,22 @@ Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
 
-Project knowledge: Settings -> Projects registers a user-selected folder and
-manual notes. ProjectKnowledgeStore keeps a local catalog and SQLite FTS5
-index, with explicit reindexing and path/line citations. Hidden files,
-symlinks, build directories and common credential filenames are excluded;
-indexing is bounded to 5,000 files and 32 MB of text. It does not scan the
-home directory automatically or use semantic embeddings. Retrieval requires
-an explicitly selected project. Matching excerpts and notes become context
-for that project's agent request and may go to its configured API provider.
-This is a knowledge foundation, not live meeting-question detection.
+Notify: agent-configured local scripts emit JSON lines with title, body, event
+ID, optional link, color, logo and duration. NotifyScriptSupervisor reads private
+sources/<id>.json manifests, supervises child process groups only during the app
+lifetime, restarts with bounded backoff and stops on disable, removal, sleep or
+quit. No backend or built-in provider connectors are restored. The original
+IslandNotificationPill / nonactivating panel sits left of the island, using the
+selected screen and screenshot-protection preference. Hover pauses dismissal.
+LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
+presentation in history; unreadable history is never silently overwritten. Notify
+opens through hover search, Toolbox and existing positional hotkeys without
+changing saved layouts. Settings -> Notifications lists connected sources with
+their name, logo, runtime status and individual persistent enable switches.
+Disabling stops the source and keeps its setup/history for re-enabling.
+Agents get a resolved setup-guide path on every turn.
+Guide: docs/customization/notifications.md. WHY:
+.project-docs/decisions/2026-10-19-script-notifications.md
 
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change
@@ -478,7 +552,8 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
   close for the visible agent answer, WHY:
   docs/decisions/2026-07-02-escape-close-passive-monitor.md), the AX check
   of the focused field (`PasteTargetValidator`) and, empirically, the active
-  `CGEventTap` in `SpaceHoldMonitor`.
+  `CGEventTap` in `SpaceHoldMonitor` and the optional Brightness keys tap
+  (`BrightnessKeyEventTap`).
 - **Post Event** gates `CGEvent.post` for the synthetic Cmd+V and Backspace
   (`CGPreflightPostEventAccess` / `CGRequestPostEventAccess`, a separate TCC
   bucket from Accessibility since 10.15; Tahoe shows both in one panel).
@@ -591,7 +666,8 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 1. **No Exodia-owned services.** The app never contacts an Exodia backend,
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
-   and monitoring sources the user configured (including their credential store), OpenCode's own provider
+   and monitoring sources the user configured (including their credential store),
+   notification sources accessed by user-configured local scripts, OpenCode's own provider
    traffic, the model catalogs and free key checks of providers the user added
    a key for, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
@@ -602,7 +678,8 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 2. **Keys and content never leave through logs.** BYOK keys live only in the
    Keychain (`BuildConfig.keychainService`). `os_log` never receives
    transcripts, prompts, replies or keys (`LocalPathLoggingInvariantTests`).
-   Key contents read by the hotkey tap are never logged or persisted.
+   Key contents read by the hotkey tap or the Brightness keys tap are never
+   logged or persisted.
 3. **No on-device models and no silent route change.** Speech, cleanup and
    meeting processing run only on providers or endpoints the user chose. A
    stored retired `local` level, or no stored level on Apple Silicon (where

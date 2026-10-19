@@ -2,7 +2,7 @@
 id: whytap-project
 type: project
 title: Exodia desktop application
-summary: Native macOS voice input, meeting notes, local project knowledge and a customizable local agent workspace.
+summary: Native macOS voice input, meeting notes and a customizable local agent workspace.
 status: confirmed
 tags: [macos, swift, dictation, meetings, agent]
 canonical_for: [project-overview]
@@ -14,7 +14,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/PostProcessor.swift
     confirmed_at: 2026-09-07
-related: [processes/shared-app-development.md, decisions/2026-10-19-shared-working-app.md, decisions/2026-10-19-community-signing-identity.md, decisions/2026-10-19-one-running-copy.md, bugs/2026-10-19-permission-stability-audit.md, bugs/2026-10-19-input-language-audit.md, decisions/2026-10-19-strict-drop-modes.md, decisions/2026-10-18-clipboard-retention.md, decisions/2026-10-18-toolbox-drag-feedback.md, decisions/2026-10-17-community-updates.md, decisions/2026-10-17-source-first-distribution.md, decisions/2026-10-17-hover-tool-search.md, decisions/2026-10-17-exodia-name.md, decisions/2026-10-17-native-hover-glass.md, decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md, decisions/2026-10-18-remove-local-models.md, decisions/2026-10-18-legacy-model-cleanup.md, decisions/2026-10-18-no-default-realtime-host.md, decisions/2026-10-18-provider-batch-transcription.md]
+related: [decisions/2026-10-19-script-notifications.md, decisions/2026-10-19-remove-projects.md, processes/shared-app-development.md, decisions/2026-10-19-shared-working-app.md, decisions/2026-10-19-community-signing-identity.md, decisions/2026-10-19-one-running-copy.md, bugs/2026-10-19-permission-stability-audit.md, bugs/2026-10-19-input-language-audit.md, decisions/2026-10-19-strict-drop-modes.md, decisions/2026-10-18-brightness-tool.md, decisions/2026-10-18-clipboard-retention.md, decisions/2026-10-18-toolbox-drag-feedback.md, decisions/2026-10-17-community-updates.md, decisions/2026-10-17-source-first-distribution.md, decisions/2026-10-17-hover-tool-search.md, decisions/2026-10-17-exodia-name.md, decisions/2026-10-17-native-hover-glass.md, decisions/2026-09-07-smart-latency.md, decisions/2026-09-07-codex-model-registry.md, decisions/2026-09-07-soniox-meeting-files.md, decisions/2026-09-08-transcript-copy.md, decisions/2026-09-10-byok-and-local-builds.md, decisions/2026-09-10-onboarding-models.md, decisions/2026-09-10-public-installation.md, decisions/2026-10-17-local-workspace.md, decisions/2026-10-18-remove-local-models.md, decisions/2026-10-18-legacy-model-cleanup.md, decisions/2026-10-18-no-default-realtime-host.md, decisions/2026-10-18-provider-batch-transcription.md]
 ---
 
 # Exodia
@@ -33,9 +33,10 @@ Drop honors [the selected Fast or Smart mode](decisions/2026-10-19-strict-drop-m
 
 Build and publication policy: [local builds](decisions/2026-09-10-byok-and-local-builds.md).
 
-Launch opens the island directly; setup lives in Settings. Project folders,
-notes and a lexical source index stay local. Current scope and limits:
-[local workspace and direct launch](decisions/2026-10-17-local-workspace.md).
+Launch opens the island directly; setup lives in Settings.
+[Projects and automatic project context are removed](decisions/2026-10-19-remove-projects.md).
+Existing project-library files are retained, unused. The ordinary agent uses
+its neutral workspace and sessions.
 
 Coding harnesses share the [source customization workflow](../docs/customization/README.md).
 
@@ -49,6 +50,8 @@ The current development candidate follows the user's 2026-10-17 correction:
 smaller capsules in a drawer matching the actual compact island width.
 Monitor opens its dashboard picker inside the same hover drawer; see
 [dashboard contracts](../docs/customization/dashboards.md).
+Brightness, added from the catalog, opens a backlight slider with an Extra
+(EDR) switch and the battery time left: [brightness tool](decisions/2026-10-18-brightness-tool.md).
 
 Public source: [AbsoluteMode/exodia](https://github.com/AbsoluteMode/exodia).
 Naming and storage compatibility: [Exodia rename](decisions/2026-10-17-exodia-name.md).
@@ -67,3 +70,5 @@ Input language: [provider transport audit and Deepgram corrections](bugs/2026-10
 
 Community signing: [one self-signed community certificate](decisions/2026-10-19-community-signing-identity.md).
 Application ownership: [one running copy](decisions/2026-10-19-one-running-copy.md).
+
+[Notify](decisions/2026-10-19-script-notifications.md) restores left-side pills and agent-configured local script sources.

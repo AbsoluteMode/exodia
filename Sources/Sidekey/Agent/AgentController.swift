@@ -45,7 +45,6 @@ final class AgentController: ObservableObject {
     private let snapshotProvider: () -> FocusSnapshot?
     private let resolveProvider: @MainActor () -> (any CLIProvider)?
     private let resolveRunOptions: @MainActor (CLIProviderID) -> AgentRunOptions
-    private let resolveProjectContext: @MainActor (String) -> AgentProjectContext?
     /// The provider that drove the most-recently-started turn. Set at the
     /// top of `continueSubmit`; nil between turns.
     private var activeTurnProvider: (any CLIProvider)?
@@ -53,7 +52,6 @@ final class AgentController: ObservableObject {
     /// lets each CLI use its own native resume / auto-compact state without
     /// leaking one provider's thread id into the other.
     private let agentSessionStore: any AgentSessionStoring
-    private var activeTurnSessionStore: (any AgentSessionStoring)?
     private let audioTranscriber: any AgentAudioTranscribing
     private let voiceSessionFactory: @MainActor () -> any AgentVoiceSessioning
     private let chatStackStore: ChatStackStore?
@@ -250,7 +248,6 @@ final class AgentController: ObservableObject {
         snapshotProvider: @escaping () -> FocusSnapshot? = FocusSnapshot.capture,
         resolveProvider: @escaping @MainActor () -> (any CLIProvider)? = { ClaudeCodeProvider() },
         resolveRunOptions: @escaping @MainActor (CLIProviderID) -> AgentRunOptions = { AgentSettingsStore.shared.options(for: $0) },
-        resolveProjectContext: @escaping @MainActor (String) -> AgentProjectContext? = { _ in nil },
         agentSessionStore: (any AgentSessionStoring)? = nil,
         audioTranscriber: (any AgentAudioTranscribing)? = nil,
         voiceSessionFactory: (@MainActor () -> any AgentVoiceSessioning)? = nil,
@@ -274,7 +271,6 @@ final class AgentController: ObservableObject {
         self.snapshotProvider = snapshotProvider
         self.resolveProvider = resolveProvider
         self.resolveRunOptions = resolveRunOptions
-        self.resolveProjectContext = resolveProjectContext
         self.agentSessionStore = agentSessionStore ?? AgentSessionStore.shared
         self.audioTranscriber = audioTranscriber ?? BatchAgentAudioTranscriber()
         self.voiceSessionFactory = voiceSessionFactory ?? {
@@ -931,8 +927,7 @@ final class AgentController: ObservableObject {
     /// prepended only when `includePreamble` is true — the first turn of a
     /// fresh session. On resume it is already in the CLI's history, so callers
     /// pass `false` and the prompt is just the optional selection plus query.
-    private func buildPrompt(query: String, snapshot: FocusSnapshot, includePreamble: Bool,
-                             projectContext: AgentProjectContext? = nil) -> String {
+    private func buildPrompt(query: String, snapshot: FocusSnapshot, includePreamble: Bool) -> String {
         var parts: [String] = []
         if includePreamble {
             parts.append(Self.sharedMemoryPromptPreamble)
@@ -945,7 +940,7 @@ final class AgentController: ObservableObject {
         // resumed. Repeat this one small language rule every turn so tool
         // output or older conversation context cannot make the answer drift.
         parts.append(Self.perTurnLanguageInstruction)
-        if let projectContext { parts.append(projectContext.promptEvidence) }
+        parts.append(WhytapCustomizationContext.notificationInstructions)
         parts.append(query)
         return parts.joined(separator: "\n\n")
     }
@@ -982,29 +977,10 @@ final class AgentController: ObservableObject {
         islandAgentFlow?.querySubmitted(text)
 
         activeTurnProvider = provider
-        var options = resolveRunOptions(provider.id)
-        let projectContext = resolveProjectContext(text)
-        options.projectContext = projectContext
-        let sessionStore: any AgentSessionStoring
-        if let projectContext {
-            do {
-                let dir = try AgentDaemonWorkingDirectory.ensure(projectID: projectContext.projectID)
-                options.workingDirectory = dir
-                options.sessionScope = projectContext.projectID.uuidString
-                sessionStore = AgentSessionStore(fileURL: dir.appendingPathComponent(AgentSessionStore.fileName))
-            } catch {
-                responseStore.markErrorBlock(StateErrorBlock(title: "Project workspace unavailable",
-                    subtitle: "Local storage", message: "Couldn’t open this project’s local agent workspace.",
-                    code: "project_workspace_unavailable", retryable: true))
-                markActiveRowError(message: "Project workspace unavailable")
-                finalizeActiveRow()
-                setAgentPhase(.idle)
-                return
-            }
-        } else {
-            sessionStore = agentSessionStore
-        }
-        activeTurnSessionStore = sessionStore
+        let options = resolveRunOptions(provider.id)
+        // WHY: .project-docs/decisions/2026-10-19-remove-projects.md
+        // Agent requests use only the neutral workspace and session store.
+        let sessionStore = agentSessionStore
         // Resume id drives both the CLI resume AND whether to send the
         // behavioural preamble: nil means a fresh session (first turn) that has
         // never seen it, so prepend; non-nil means the preamble is already in
@@ -1014,8 +990,7 @@ final class AgentController: ObservableObject {
         let prompt = buildPrompt(
             query: text,
             snapshot: snapshot,
-            includePreamble: resumeSessionID == nil,
-            projectContext: projectContext
+            includePreamble: resumeSessionID == nil
         )
         consume(provider.run(prompt: prompt, resumeSessionID: resumeSessionID, options: options))
     }
@@ -1406,7 +1381,7 @@ final class AgentController: ObservableObject {
         invalidateCurrentStream()
         let generation = consumeGeneration
         let provider = activeTurnProvider
-        let sessionStore = activeTurnSessionStore ?? agentSessionStore
+        let sessionStore = agentSessionStore
         consumeTask = Task { @MainActor [weak self] in
             guard let self, self.consumeGeneration == generation, !Task.isCancelled else { return }
             await responseStore.consume(

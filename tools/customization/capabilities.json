@@ -45,14 +45,15 @@
       "entry_points": ["Sources/Sidekey/Auth/KeychainStore.swift", "Sources/Sidekey/Auth/CredentialMigration.swift", "Sources/Sidekey/History/SQLiteHistoryStore.swift", "Sources/Sidekey/Meetings/MeetingsStore.swift", "Sources/Sidekey/Case/CaseVaultStore.swift", "Sources/Sidekey/Settings/VocabularyCache.swift"],
       "focused_test_filter": "CloudRemovalTests|LocalPathLoggingInvariantTests|KeychainStoreTests"
     },
-    "knowledge": {
-      "guide": "docs/customization/local-data.md",
-      "entry_points": ["Sources/Sidekey/Knowledge/ProjectKnowledgeStore.swift", "Sources/Sidekey/Settings/ProjectsSettingsView.swift"],
-      "focused_test_filter": "ProjectKnowledgeStoreTests"
-    },
     "agent": {
       "entry_points": ["Sources/Sidekey/Agent/AgentController.swift", "Sources/Sidekey/AgentDaemon/OpenCodeProvider.swift", "Sources/Sidekey/AgentDaemon/OpenCodeEnvironment.swift", "Sources/Sidekey/AgentDaemon/OpenCodeInstaller.swift", "Sources/Sidekey/Settings/AgentModeView.swift", "Sources/Sidekey/Customization/WhytapCustomizationContext.swift"],
-      "contract": "OpenCode plus user-selected OpenRouter model; Keychain key in child environment; per-project local memory and sessions; actions allowed by default."
+      "contract": "OpenCode plus user-selected OpenRouter model; Keychain key in child environment; local memory and sessions in the neutral agent workspace; actions allowed by default."
+    },
+    "notifications": {
+      "guide": "docs/customization/notifications.md",
+      "entry_points": ["Sources/Sidekey/Notifications/NotifyScriptSupervisor.swift", "Sources/Sidekey/Notifications/NotifySetupGuide.swift", "Sources/Sidekey/Notifications/ScriptNotification.swift", "Sources/Sidekey/Notifications/LocalNotificationHub.swift", "Sources/Sidekey/DynamicIsland/IslandNotificationPill.swift", "Sources/Sidekey/DynamicIsland/NotifyHoverPanel.swift"],
+      "focused_test_filter": "ScriptNotificationContractTests|LocalNotificationHubTests|NotifyProcessTests|NotifyScriptSupervisorTests",
+      "contract": "Private local script manifests and flushed JSON lines; app lifetime process groups; left-side pills and persistent event presentation. No secrets in manifests, argv, notifications or logs."
     },
     "dashboard": {
       "guide": "docs/customization/dashboards.md",

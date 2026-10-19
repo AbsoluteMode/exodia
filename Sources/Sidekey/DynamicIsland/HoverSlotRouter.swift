@@ -10,12 +10,14 @@ enum HoverInlinePanel: Equatable {
     /// became this inline hover panel, so its ⌥N hotkey opens History in-place
     /// rather than firing the old bottom-strip action.
     case history
+    case notifications
     case vocabularyEditor
     case caseVault
     case fillerEditor
     case inputLanguagePicker
     case outputLanguagePicker
     case monitor
+    case brightness
 }
 
 /// A one-shot "open this inline panel" request carried on `AppState`. The
@@ -25,6 +27,8 @@ enum HoverInlinePanel: Equatable {
 struct HoverPanelRequest: Equatable {
     let panel: HoverInlinePanel
     let token: Int
+    /// A brightness key: show the strip briefly without taking keyboard focus.
+    var isGlance = false
 }
 
 /// The single effect a Hover slot produces when activated — by a tile click OR
@@ -103,6 +107,8 @@ enum HoverSlotRouter {
         switch tool {
         case .dropMode:
             return .toggleDropMode
+        case .notifs:
+            return .openPanel(.notifications)
         case .clipboard:
             // #313: the Clipboard tile is now the History inline hover panel.
             // Open it in-place (D1: same as the tile click → `panelMode =
@@ -118,6 +124,8 @@ enum HoverSlotRouter {
             return .toggleMeetingRecord
         case .monitor:
             return .openPanel(.monitor)
+        case .brightness:
+            return .openPanel(.brightness)
         case .quit:
             return .quit
         case .vocab:

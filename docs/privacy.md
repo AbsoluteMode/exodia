@@ -30,19 +30,29 @@ is a verifiable claim rather than a slogan.
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
   enforces that for the provider paths that carry this content.
 
-Project folders are indexed only after you select them in Settings → Projects.
-The catalog, notes and SQLite text index stay in the app’s local Application
-Support directory. Search is lexical and requires explicit reindexing. The
-selected project’s notes and matching source excerpts are included in that
-project’s agent requests and can therefore reach OpenRouter and its provider.
-Each project has a separate agent workspace and session store. Hidden files,
-symlinks, build folders and common credential filenames are excluded from the
-index; this is not a complete secret detector. Do not add secrets to notes.
+The Projects feature has been removed. The app does not open the old project
+catalog or index, scan registered folders, or attach saved project notes and
+source excerpts to agent requests. Existing project-library files and separate
+project-agent workspaces are left on disk, unused; they are not migrated into
+the regular agent workspace.
 
 Monitor dashboard snapshots and server connection references also stay locally.
 The app runs a fixed read-only Linux metrics collector through SSH; dashboards
 cannot embed commands or executable HTML. UT/Sferyx configuration belongs to
 the user’s local files and is absent from the source repository.
+
+The Display tool reads and sets the display backlight through macOS DisplayServices
+and reads the battery charge and load through IOKit, only while its hover strip
+is open (plus one level read when hover opens with Display pinned). Nothing
+is stored, logged or sent, and it requests no macOS permissions.
+
+Notify stores notification history (up to 500 events), including text, links,
+colors and logo names, locally under Application Support. User-configured scripts
+can access the external sources required by their integration with the user's
+authorized credentials. They run with ordinary user permissions while the app is
+open and stop on quit; Exodia does not send notification content to a model or an
+Exodia server. Script output is not logged and stderr is discarded. History and
+source controls are in Notify. [Script contract](customization/notifications.md).
 
 ## What can leave the device, and only when you choose it
 
@@ -68,8 +78,9 @@ Data-use policies depend on the selected provider and its account settings.
 
 ## Permissions
 
-- Accessibility: global hotkeys (hold Space, Right Command) and detecting an
-  editable text field before recording.
+- Accessibility: global hotkeys (hold Space, Right Command), detecting an
+  editable text field before recording and, only when Brightness keys is
+  switched on in Settings → Toolbox → Display, the Mac's brightness keys.
 - Microphone: dictation and meetings.
 - System Audio Recording: the other side of a call, only while a meeting is
   being recorded. The audio tap is created at recording start and torn down
@@ -78,4 +89,6 @@ Data-use policies depend on the selected provider and its account settings.
   Command-V used to paste.
 
 The hold-Space detector reads keyboard events only to recognise the trigger
-key and Escape. Key contents are never logged or stored.
+key and Escape. The Brightness keys tap receives only system-defined events,
+such as the brightness, volume and media keys, and acts only on the
+brightness keys. Key contents are never logged or stored.

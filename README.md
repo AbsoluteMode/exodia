@@ -92,18 +92,15 @@ connection check itself does not submit a paid model request.
 
 The agent can edit files and run tests by default. **Allow agent actions** can
 be turned off in Settings. Its model configuration, memory and conversation
-sessions stay local and are separated by active project.
+sessions stay local in the agent workspace.
 
-## Local project knowledge
+## Custom notifications
 
-In **Settings, Projects**, add a project folder, index it and select the active
-project. Keep project notes there too. The local search returns code and document
-excerpts with file and line references for the agent's question; it does not
-send the entire folder to a provider. Reindex explicitly after source changes.
-There is no automatic live meeting copilot yet.
-
-The catalog and text index stay on your Mac. Selected excerpts and notes can be
-sent to the model provider you configure when you ask the agent a question.
+Notify shows compact notifications to the left of the island and keeps their
+history, colors and logos. Ask your coding agent to connect the source and
+filters you want; Exodia runs its local script only while the app is open.
+Find **Notify** in hover search or add it in **Settings → Toolbox**.
+[Setup and script contract](docs/customization/notifications.md).
 
 ## Hotkeys
 

@@ -16,6 +16,7 @@ private enum IslandVocabularyEditorStyle {
 
 struct IslandVocabularyEditorPanel: View {
     @ObservedObject var viewModel: IslandVocabularyViewModel
+    var onFocusChange: (Bool) -> Void = { _ in }
 
     @State private var inputFocused = false
 
@@ -72,6 +73,10 @@ struct IslandVocabularyEditorPanel: View {
             IslandVocabularyInputField(
                 text: $viewModel.query,
                 isFocused: inputFocused,
+                onFocusChange: { focused in
+                    inputFocused = focused
+                    onFocusChange(focused)
+                },
                 onSubmit: {
                     Task { await viewModel.submitCurrentQuery() }
                 }
@@ -213,11 +218,13 @@ private struct IslandVocabularyFlowLayout: Layout {
 private struct IslandVocabularyInputField: NSViewRepresentable {
     @Binding var text: String
     let isFocused: Bool
+    let onFocusChange: (Bool) -> Void
     let onSubmit: () -> Void
 
     func makeNSView(context: Context) -> IslandVocabularyTextView {
         let textView = IslandVocabularyTextView(frame: .zero)
         textView.delegate = context.coordinator
+        textView.onFocusChange = onFocusChange
         textView.string = text
         textView.shouldAutoFocusOnWindowAttach = isFocused
         Self.configure(textView)
@@ -227,6 +234,7 @@ private struct IslandVocabularyInputField: NSViewRepresentable {
     func updateNSView(_ textView: IslandVocabularyTextView, context: Context) {
         context.coordinator.parent = self
         textView.delegate = context.coordinator
+        textView.onFocusChange = onFocusChange
         textView.shouldAutoFocusOnWindowAttach = isFocused
         Self.configure(textView)
 
@@ -245,6 +253,12 @@ private struct IslandVocabularyInputField: NSViewRepresentable {
                 }
             }
         }
+    }
+
+    static func dismantleNSView(_ textView: IslandVocabularyTextView, coordinator: Coordinator) {
+        textView.removeWindowObserver()
+        textView.onFocusChange = { _ in }
+        textView.delegate = nil
     }
 
     func makeCoordinator() -> Coordinator {
@@ -306,18 +320,45 @@ private struct IslandVocabularyInputField: NSViewRepresentable {
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
+            switch commandSelector {
+            case #selector(NSResponder.insertNewline(_:)):
+                parent.onSubmit()
+            case #selector(NSResponder.cancelOperation(_:)):
+                textView.window?.makeFirstResponder(nil)
+            default:
                 return false
             }
-            parent.onSubmit()
             return true
         }
     }
 }
 
 @MainActor
-private final class IslandVocabularyTextView: NSTextView {
+final class IslandVocabularyTextView: NSTextView {
     var shouldAutoFocusOnWindowAttach = false
+    var onFocusChange: (Bool) -> Void = { _ in }
+    private var resignKeyObserver: NSObjectProtocol?
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onFocusChange(true) }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { onFocusChange(false) }
+        return accepted
+    }
+
+    func removeWindowObserver() {
+        if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
+        resignKeyObserver = nil
+    }
+
+    deinit {
+        if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
+    }
 
     var vocabularyCursorColor: NSColor {
         NSColor(white: 1, alpha: 0.86)
@@ -345,7 +386,14 @@ private final class IslandVocabularyTextView: NSTextView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard shouldAutoFocusOnWindowAttach, window != nil else { return }
+        removeWindowObserver()
+        guard let window else { return }
+        resignKeyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.onFocusChange(false) }
+        }
+        guard shouldAutoFocusOnWindowAttach else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window else { return }
             if window.firstResponder !== self {

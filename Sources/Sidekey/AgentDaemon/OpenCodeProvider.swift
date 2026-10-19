@@ -137,11 +137,7 @@ final class OpenCodeProvider: CLIProvider {
             let workingDir: URL
             let env: [String: String]
             do {
-                if let project = options.projectContext {
-                    workingDir = try AgentDaemonWorkingDirectory.ensure(projectID: project.projectID)
-                } else {
-                    workingDir = try options.workingDirectory ?? AgentDaemonWorkingDirectory.ensure()
-                }
+                workingDir = try options.workingDirectory ?? AgentDaemonWorkingDirectory.ensure()
                 env = try OpenCodeEnvironment.make(workingDirectory: workingDir, model: model, provider: provider,
                                                    key: key, allowActions: options.allowActions,
                                                    modelSpec: options.openCodeModelSpec)

@@ -237,7 +237,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             selection.ensureNotesController()?.refreshOnShow()
         case .agentMode:
             break
-        case .toolbox, .projects:
+        case .toolbox:
+            break
+        case .notifications:
             break
         case .other:
             break

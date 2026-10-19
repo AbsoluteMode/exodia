@@ -333,6 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotifyScriptSupervisor.shared.start()
         Task { await AgentSettingsStore.shared.refreshCodexCatalog() }
         // Final-rubber-stamp diagnostic + last-resort retry. If we reach
         // `applicationDidFinishLaunching` with a non-`.accessory` policy
@@ -468,10 +469,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showRuntimeSurfaceAfterReopen() {
         refreshRuntimePermissions()
         IslandPanel.shared.show()
+        IslandNotificationPanel.shared.show()
         registerIslandHotkeyActivity()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Remove the Extra overlay; Extra never changes the backlight.
+        ScreenBrightnessController.shared.shutdown()
+        BrightnessKeys.shared.stop()
+        NotifyScriptSupervisor.shared.stop()
         stopPermissionRecoveryPolling()
         permissionCaptureEndObserver?.cancel()
         permissionCaptureEndObserver = nil
@@ -488,7 +494,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopHistoryHotkey()
         agentController?.stop()
         clipboardWatcher?.stop()
+        // Terminate the MediaRemote `run.pl stream` child synchronously;
+        // otherwise it outlives the app as an orphan (PPID 1).
+        nowPlayingCoordinator?.shutdown()
         IslandPanel.shared.hide()
+        IslandNotificationPanel.shared.hide()
         meetingsEventConsumer?.cancel()
         meetingsEventConsumer = nil
     }
@@ -637,6 +647,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         IslandPanel.shared.actions = makeIslandActions()
         configureSettingsDeps(from: IslandPanel.shared.actions)
         IslandPanel.shared.show()
+        IslandNotificationPanel.shared.show()
         installIslandIdleControllerIfNeeded()
         // Post-relaunch "Updated" indicator (variant A): if the previous
         // session installed an update and this is the new binary, surface a
@@ -845,6 +856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // luminance window-ID bookkeeping survive the sleep.
         panel?.orderOut(nil)
         IslandPanel.shared.hide()
+        IslandNotificationPanel.shared.hide()
 
         Task { @MainActor in
             await BackgroundLuminanceObserver.shared.stop()
@@ -936,6 +948,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         historyHotkey = nil
         meetingRecordHotkey = nil
         hoverSlotHotkeys = []
+        // The setting stays; registerHotkey installs the tap again.
+        BrightnessKeys.shared.stop()
     }
 
     /// Test seam for the rebuild teardown: stops each supplied monitor,
@@ -1234,6 +1248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindowController = SettingsWindowController(
                 screenshotProtectionChanged: { enabled in
                     IslandPanel.setScreenshotProtectionEnabled(enabled)
+                    IslandNotificationPanel.setScreenshotProtectionEnabled(enabled)
                 },
                 notesControllerProvider: { [weak self] in
                     self?.meetingsCoordinator?.settingsMeetingsContentController
@@ -1321,6 +1336,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHelpHotkey()
         registerHoverSlotHotkeys()
         registerMeetingRecordHotkey()
+        // Brightness keys install their tap only when switched on in Settings -> Toolbox.
+        BrightnessKeys.shared.start(showStrip: { [weak self] in self?.showBrightnessGlance() })
         guard hotkey == nil else { return }
         // Keep Drop working during meetings. Meeting mic capture and the
         // Drop voice route can coexist, so configurable drop shortcuts
@@ -1931,7 +1948,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case nil: return nil
                 }
             },
-            resolveProjectContext: { ProjectKnowledgeStore.shared.activeProjectContext(query: $0) },
             audioTranscriber: BatchAgentAudioTranscriber(batch: agentBatchTranscriber),
             responseStore: responseStore,
             chatStackStore: chatStackStore,
@@ -3845,6 +3861,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { _ in DispatchQueue.main.async(execute: recomputeBusy) }
             .store(in: &islandIdleCancellables)
+        LocalNotificationHub.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { _ in DispatchQueue.main.async(execute: recomputeBusy) }
+            .store(in: &islandIdleCancellables)
         // Push the initial blocker state so a launch that is already busy
         // (e.g. an update pill already up) starts held.
         recomputeBusy()
@@ -3856,6 +3876,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         IslandPanel.shared.onIslandHoverChange = { [weak controller] hovered in
             controller?.setHovered(hovered)
         }
+    }
+
+    /// A brightness key changed the island display: show the Display strip briefly, without
+    /// keyboard focus. While the island cannot expand the level still changes, without the strip.
+    private func showBrightnessGlance() {
+        registerIslandHotkeyActivity()
+        let appState = AppState.shared
+        guard IslandHoverPolicy.allowsExpansion(
+            meetingSuggestionActive: appState.meetingSuggestionActive,
+            meetingRecordingActive: appState.meetingRecordingActive,
+            agentFlowActive: IslandPanel.shared.agentFlow.isActive
+        ) else { return }
+        appState.programmaticHoverExpansion = true
+        hoverPanelRequestToken += 1
+        appState.programmaticHoverPanelRequest = HoverPanelRequest(
+            panel: .brightness, token: hoverPanelRequestToken, isGlance: true
+        )
     }
 
     /// Register a hotkey activation as island activity (spec §4.2): resets the
@@ -3882,7 +3919,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             justUpdatedVisible: appState.justUpdatedVersion != nil,
             nowPlayingActive: appState.nowPlaying != nil,
             rightModifierHeld: appState.rightCommandHeld || appState.rightOptionHeld,
-            programmaticHoverExpansion: appState.programmaticHoverExpansion
+            programmaticHoverExpansion: appState.programmaticHoverExpansion,
+            notificationActive: LocalNotificationHub.shared.current != nil
         )
     }
 

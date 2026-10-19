@@ -733,6 +733,8 @@ extension SpaceHoldMonitor {
     /// This object only owns Core Foundation run-loop plumbing; all FSM logic
     /// stays in `SpaceHoldMonitor`. It is excluded from unit tests (which inject
     /// closures in its place), so it carries no test seams of its own.
+    /// Brightness keys host their system-defined event tap on one too, without
+    /// the timer.
     final class TapThread {
         private let queueLabel: String
         private var thread: Thread?
@@ -750,13 +752,15 @@ extension SpaceHoldMonitor {
         /// and returns an opaque handle (the `CFMachPort` as a token). Returns
         /// `nil` if `CGEvent.tapCreate` fails (Input Monitoring not granted) or
         /// the tap is disabled the instant it is created.
-        func installTap(callback: @escaping CGEventTapCallBack) -> TapHandle? {
-            let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        func installTap(
+            mask: CGEventMask = CGEventMask((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)),
+            callback: @escaping CGEventTapCallBack
+        ) -> TapHandle? {
             guard let port = CGEvent.tapCreate(
                 tap: .cgSessionEventTap,
                 place: .headInsertEventTap,
                 options: .defaultTap,
-                eventsOfInterest: CGEventMask(mask),
+                eventsOfInterest: mask,
                 callback: callback,
                 userInfo: nil
             ) else {

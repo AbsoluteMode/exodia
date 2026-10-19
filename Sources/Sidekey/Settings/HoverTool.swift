@@ -7,6 +7,7 @@ import Foundation
 enum HoverTool: String, CaseIterable, Hashable {
     case dropMode
     case clipboard
+    case notifs
     case vocab
     case caseVault
     case filler
@@ -16,6 +17,7 @@ enum HoverTool: String, CaseIterable, Hashable {
     case notes
     case meetingRecord
     case monitor
+    case brightness
     case quit
     case settings
 }
@@ -51,6 +53,9 @@ enum HoverToolRegistry {
         case .dropMode:
             return HoverToolInfo(title: "Drop Mode", sfSymbol: "bolt", kind: .action,
                                  description: "Switch between Fast and Smart transcription")
+        case .notifs:
+            return HoverToolInfo(title: "Notify", sfSymbol: "bell.badge", kind: .inlinePanel,
+                                 description: "View notifications and manage script sources")
         case .clipboard:
             return HoverToolInfo(title: "History", sfSymbol: "clock.arrow.circlepath", kind: .inlinePanel,
                                  description: "Open unified history")
@@ -83,6 +88,9 @@ enum HoverToolRegistry {
         case .monitor:
             return HoverToolInfo(title: "Monitor", sfSymbol: "waveform.path.ecg", kind: .inlinePanel,
                                  description: "Open server status and custom dashboards")
+        case .brightness:
+            return HoverToolInfo(title: "Display", sfSymbol: "sun.max", kind: .inlinePanel,
+                                 description: "Screen brightness, Extra boost and battery time")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
                                  kind: .navigate(.quitRow),

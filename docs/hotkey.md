@@ -243,8 +243,7 @@ Manual Meeting Notes recording has a configurable global hotkey (default
 bypassing the detector nudge (empty pre-record lead-in, detector cooldown
 engaged); press again stops it through the regular finalize path. The same
 toggle backs the Hover `Record` tile (Toolbox catalog, not in the default
-slots) and the "Record a meeting now" button in Settings → Other — all
-three converge on `MeetingsCoordinator.toggleManualRecording()`.
+slots); both converge on `MeetingsCoordinator.toggleManualRecording()`.
 
 - Binding: `HotkeyConfiguration.meetingRecordShortcut`, row in
   Settings → Hotkeys, standard physical-key conflict model, Carbon tap
@@ -255,6 +254,31 @@ three converge on `MeetingsCoordinator.toggleManualRecording()`.
   Never a silent no-op.
 - Help window row: "Meeting record" — contents come from the live
   configuration like every other row.
+
+## Brightness keys
+
+The Mac's own brightness keys are not an Exodia hotkey: they have no
+`HotkeyConfiguration` binding, recorder row, `HotkeyHintView` or Help window
+row. Settings → Toolbox → Display → Brightness keys (off by default) lets
+Exodia take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
+
+- A head-insert session tap for system-defined events (needs Accessibility)
+  swallows brightness up/down presses, so the macOS indicator does not show.
+  Each press steps the island display's backlight by a sixteenth (⌥⇧: a
+  sixty-fourth) and opens the Display strip as a glance: about 2 s, no
+  keyboard focus, never over another panel under the pointer or a focused
+  search.
+- Two brightness-up presses at the maximum within 1.5 s, timed when the tap
+  sees them, turn Extra on; the press that reaches the maximum and repeats
+  from holding the key do not count.
+- ⌘, ⌃, ⌥ or ⇧ (other than ⌥⇧), hidden hover widgets and an unadjustable
+  display leave the keys with macOS; ⌥ still opens Displays settings. Fn and
+  Caps Lock do not matter. A press belongs wholly to whoever got its first
+  event, Exodia or macOS, also across the hotkeys' rebuild. After a longer
+  gap or a tap macOS disabled, the presses in progress finish with macOS.
+- The tap is reinstalled with the other monitors after wake or an
+  Accessibility change. As with every monitor, key contents are never logged
+  or stored (invariant #2).
 
 ## Canonical reference
 
