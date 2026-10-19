@@ -79,8 +79,11 @@ set `BUILD_VERSION` explicitly for a first release when neither exists.
 Every upload must be bound to the commit used for its build. The release helper
 `scripts/release-provenance.py` must capture the build-time HEAD and clean input
 state, then seal the completed DMG's SHA-256 and size together with its version,
-build, flavor, distribution mode, bundle ID and architectures. Its subcommands
-are `capture`, `seal` and `verify`; the build and upload scripts call them.
+build, flavor, distribution mode, code-signing identity, bundle ID and
+architectures. Its subcommands are `capture`, `seal` and `verify`; the build and
+upload scripts call them. The upload derives the expected code-signing identity
+from the committed certificate (see below), so a local ad-hoc or test-certificate
+build cannot be published.
 Keep the adjacent `<DMG>.manifest.json` with the archive;
 `--upload-only` requires both files from the same build.
 
@@ -96,17 +99,68 @@ For CLI packaging without a live Finder layout session, set
 `EXODIA_DMG_HEADLESS=1`. It skips only cosmetic Finder layout; packaging and
 verification remain the same. The default keeps the Finder layout step.
 
-Default community mode signs ad hoc and skips Apple notarization. Publication
-still requires authenticated GitHub release access and Exodia's Sparkle Ed25519
-private key through `SPARKLE_ED_PRIVATE_KEY` or `SPARKLE_ED_PRIVATE_KEY_FILE`.
-Keep its matching public key in `Resources/sparkle-public-ed-key.txt`. Never
-commit or print the private key. `upload-release.sh` verifies the generated
-archive signature before upload.
+Community mode skips Apple notarization. Publication still requires
+authenticated GitHub release access and Exodia's Sparkle Ed25519 private key
+through `SPARKLE_ED_PRIVATE_KEY` or `SPARKLE_ED_PRIVATE_KEY_FILE`. Keep its
+matching public key in `Resources/sparkle-public-ed-key.txt`. Never commit or
+print the private key. `upload-release.sh` verifies the generated archive
+signature before upload.
 
 Sparkle signatures authenticate update archives using Exodia's own key. They
 are independent of Apple code signing and do not make a community download
-Apple-notarized. First-download Gatekeeper warnings and permission regrants after
-ad-hoc updates remain possible; see [installation](install.md).
+Apple-notarized. First-download Gatekeeper warnings remain; see
+[installation](install.md).
+
+### Community code-signing identity
+
+When `Resources/community-signing-certificate.pem` is committed, `build-dmg.sh`
+signs the app, its nested code and the DMG with Exodia's self-signed
+code-signing certificate. Without that file, as in a fork that has not created
+its own, it signs ad hoc.
+
+The certificate gives every build the same designated requirement:
+`identifier "com.rootwise.sidekey" and certificate leaf = H"<certificate SHA-1>"`
+(`com.rootwise.sidekey.beta` for beta). macOS privacy grants such as Microphone
+and System Audio Recording are stored against that requirement, so they survive
+updates. An ad-hoc requirement is the build's code hash, which changes with
+every build, so each ad-hoc update asked for those permissions again. The
+certificate is not issued by Apple and changes nothing for Gatekeeper; users
+never trust or install it.
+
+The certificate is public. Its private key lives only in Doppler as
+`EXODIA_COMMUNITY_SIGNING_KEY` in `sidekey/dev`, next to the Sparkle key. Never
+commit or print it. Build with the key in the environment:
+
+```bash
+doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh --build-only
+```
+
+`EXODIA_COMMUNITY_SIGNING_KEY_FILE` reads the key from a file instead. Before
+compiling, the build checks that the key matches the certificate. For signing it
+imports the identity into a temporary keychain that is not added to the keychain
+search list and is deleted on exit. It checks the app against the expected
+designated requirement, checks that each nested component and the DMG carry the
+certificate, repeats the app check on the mounted DMG and seals
+`code_signing: certificate:<SHA-1>` in the manifest.
+
+`./scripts/community-signing-bootstrap.sh` creates the identity once. It refuses
+to replace an existing certificate or Doppler secret. A new certificate is a new
+identity: every install has to grant its permissions once more, so rotate only
+if the key leaks. Code signed with the key inherits the users' grants, which is
+why the key stays as private as the Sparkle key.
+
+The first certificate-signed release changes the requirement of installs that
+came from an ad-hoc build, so they grant Microphone and System Audio Recording
+one last time. Sparkle accepts the change: it checks the archive's EdDSA
+signature and the new app's code signature, not its identity. Keychain prompts
+after an update stay as before, because without an Apple team ID the keychain
+ties its access to the code hash.
+
+For local experiments, `EXODIA_COMMUNITY_SIGNING=adhoc` forces ad-hoc signing
+and `EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE` signs with another certificate.
+Neither can be published: `user-release.sh` refuses them in a full run, and the
+upload rejects any archive whose identity differs from the committed
+certificate.
 
 `EXODIA_LEGACY_SIGNED_RELEASE=1` explicitly selects the optional Developer ID and
 notarization path. Only that mode requires `TEAM_ID`, a Developer ID certificate
