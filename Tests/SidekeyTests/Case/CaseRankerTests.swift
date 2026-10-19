@@ -57,7 +57,7 @@ final class CaseRankerTests: XCTestCase {
         XCTAssertEqual(sorted.first?.displayName, "AWS prod")
     }
 
-    func test_secret_with_group_id_is_not_emitted_individually_when_group_key_ids_are_stale() {
+    func test_every_key_is_an_entry_next_to_its_project() {
         let groupID = UUID()
         let child = secret(name: "STALE_CHILD", groupID: groupID, copyCount: 3, lastCopiedDaysAgo: 1, createdDaysAgo: 20)
         let group = CaseProject(
@@ -70,7 +70,7 @@ final class CaseRankerTests: XCTestCase {
 
         let sorted = CaseRanker.sortedEntries(secrets: [child], projects: [group], query: "", now: now)
 
-        XCTAssertEqual(sorted.map(\.displayName), ["Stale group"])
+        XCTAssertEqual(Set(sorted.map(\.displayName)), ["Stale group", "STALE_CHILD"])
     }
 
     func test_group_child_usage_includes_secret_group_id_when_group_key_ids_are_stale() {

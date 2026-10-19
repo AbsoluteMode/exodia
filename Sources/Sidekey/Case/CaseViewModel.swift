@@ -3,6 +3,7 @@ import Combine
 import CryptoKit
 import Foundation
 import LocalAuthentication
+import WhytapCaseKit
 
 protocol CaseVaultStoring {
     func load(using key: SymmetricKey) throws -> CaseVaultPayload
@@ -95,6 +96,10 @@ struct CaseDisplayRow: Equatable, Identifiable {
     let description: String
     /// For a secret, its project; for a project, its own ID.
     let projectID: UUID
+    /// The key's value is shorter than `CaseOutputMasker.minimumMaskedLength`
+    /// bytes, so `whytap case run` cannot hide it in output. Only this flag
+    /// reaches the row, never the value or its length.
+    var valueNotMasked = false
 }
 
 /// One collapsible project in the island list: header data plus the keys
@@ -357,9 +362,17 @@ final class CaseViewModel: ObservableObject {
         }
         return payload.secrets
             .filter { $0.projectID == projectID }
-            .map {
-                CaseDisplayRow(id: $0.id, kind: .secret, displayName: $0.name, description: $0.description, projectID: $0.projectID)
-            }
+            .map { Self.secretRow($0, in: payload) }
+    }
+
+    private static func secretRow(_ secret: CaseSecret, in payload: CaseVaultPayload) -> CaseDisplayRow {
+        CaseDisplayRow(id: secret.id, kind: .secret, displayName: secret.name, description: secret.description,
+                       projectID: secret.projectID, valueNotMasked: valueNotMasked(secret.id, in: payload))
+    }
+
+    private static func valueNotMasked(_ secretID: UUID, in payload: CaseVaultPayload) -> Bool {
+        guard let value = payload.value(for: secretID) else { return false }
+        return value.utf8.count < CaseOutputMasker.minimumMaskedLength
     }
 
     var isSearching: Bool {
@@ -386,9 +399,7 @@ final class CaseViewModel: ObservableObject {
         return ordered.compactMap { project in
             let all = payload.secrets
                 .filter { $0.projectID == project.id }
-                .map {
-                    CaseDisplayRow(id: $0.id, kind: .secret, displayName: $0.name, description: $0.description, projectID: $0.projectID)
-                }
+                .map { Self.secretRow($0, in: payload) }
                 .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
             var shown = all
             if searching {
@@ -860,7 +871,8 @@ final class CaseViewModel: ObservableObject {
                 kind: entry.kind == .secret ? .secret : .project,
                 displayName: entry.displayName,
                 description: entry.description,
-                projectID: entry.projectID
+                projectID: entry.projectID,
+                valueNotMasked: entry.kind == .secret && Self.valueNotMasked(entry.id, in: payload)
             )
         }
     }

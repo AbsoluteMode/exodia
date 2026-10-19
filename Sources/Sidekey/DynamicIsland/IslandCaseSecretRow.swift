@@ -17,6 +17,8 @@ struct IslandCaseSecretRow: View {
     static let copy = IslandCaseRowAction(systemImage: "doc.on.doc", accessibilityIdentifier: "case.secret.copy", accessibilityLabel: "Copy key")
     static let delete = IslandCaseRowAction(systemImage: "trash", accessibilityIdentifier: "case.secret.delete", accessibilityLabel: "Delete key")
     static let actions = [edit, copy, delete]
+    /// Under a key whose value is too short for `whytap case run` to mask.
+    static let notMaskedHint = "не скрываются в выводе"
 
     let row: CaseDisplayRow
     var isDropTargeted = false
@@ -41,6 +43,17 @@ struct IslandCaseSecretRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
+
+                if row.valueNotMasked {
+                    Label(Self.notMaskedHint, systemImage: "eye")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: IslandCaseVaultStyle.descriptionFontSize, weight: .medium))
+                        .foregroundStyle(Color.orange.opacity(0.78))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .accessibilityIdentifier("case.secret.notMasked")
+                        .help("Значение короче 4 байт: whytap case run не сможет скрыть его в выводе")
+                }
             }
             .layoutPriority(-1)
 
@@ -55,7 +68,7 @@ struct IslandCaseSecretRow: View {
         }
         .padding(.leading, 10)
         .padding(.trailing, 6)
-        .padding(.vertical, row.description.isEmpty ? 0 : 3)
+        .padding(.vertical, row.description.isEmpty && !row.valueNotMasked ? 0 : 3)
         .frame(minHeight: IslandCaseVaultStyle.childRowHeight)
         .background(RoundedRectangle(cornerRadius: IslandCaseVaultStyle.rowCornerRadius, style: .continuous)
             .fill(Color.white.opacity(isDropTargeted ? 0.14 : 0.06)))

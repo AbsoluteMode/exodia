@@ -36,6 +36,29 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertEqual(vm.inputMode, .name)
     }
 
+    func test_short_values_are_flagged_as_not_masked_without_exposing_them() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        try vm.submitName("pin")
+        try vm.submitValue("abc")                 // 3 bytes: below the masking minimum
+        try vm.submitName("port")
+        try vm.submitValue("8080")                // 4 bytes: masked
+        try vm.submitName("emoji")
+        try vm.submitValue("é€")                  // 2 characters, 5 bytes: masked
+
+        let rows = vm.secretRows(inProject: CaseProject.generalID)
+        let flags = Dictionary(uniqueKeysWithValues: rows.map { ($0.displayName, $0.valueNotMasked) })
+        XCTAssertEqual(flags, ["PIN": true, "PORT": false, "EMOJI": false])
+        let sectionFlags = vm.projectSections.first?.secrets.map(\.valueNotMasked)
+        XCTAssertEqual(sectionFlags?.filter { $0 }.count, 1)
+
+        vm.query = "pin"
+        XCTAssertEqual(vm.rows.first { $0.displayName == "PIN" }?.valueNotMasked, true, "search results too")
+        XCTAssertFalse(String(describing: vm.rows).contains("abc"), "only a Bool reaches the row")
+        XCTAssertEqual(IslandCaseSecretRow.notMaskedHint, "не скрываются в выводе")
+    }
+
     func test_copy_writes_value_to_injected_pasteboard_and_updates_usage() async throws {
         let secretID = UUID()
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
@@ -411,7 +434,9 @@ final class CaseViewModelTests: XCTestCase {
 
         XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID, groupID])
         XCTAssertEqual(env.savedPayload?.secrets.first(where: { $0.id == survivingID })?.projectID, groupID)
-        XCTAssertEqual(vm.rows, [CaseDisplayRow(id: groupID, kind: .project, displayName: "AWS", description: "", projectID: groupID)])
+        let section = vm.projectSections.first { $0.id == groupID }
+        XCTAssertEqual(section?.name, "AWS")
+        XCTAssertEqual(section?.secrets.map(\.id), [survivingID])
     }
 
     func test_migrated_one_key_project_survives_unrelated_delete() async throws {

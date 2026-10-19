@@ -109,6 +109,10 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
             ("long header", AnyView(IslandCaseProjectRow(section: long, isExpanded: false, isDropTargeted: true,
                                                          onToggle: {}, onEdit: {}, onDelete: {}))),
             ("secret row", AnyView(IslandCaseSecretRow(row: secretRow, onEdit: {}, onCopy: {}, onDelete: {}))),
+            ("short value row", AnyView(IslandCaseSecretRow(
+                row: CaseDisplayRow(id: UUID(), kind: .secret, displayName: longKey, description: longDescription,
+                                    projectID: long.id, valueNotMasked: true),
+                onEdit: {}, onCopy: {}, onDelete: {}))),
             ("add key row", AnyView(IslandCaseAddKeyRow(projectName: longProject, action: {}))),
             ("delete confirmation", AnyView(IslandCaseProjectDeleteConfirmation(name: longProject, keyCount: 999,
                                                                                onConfirm: {}, onCancel: {}))),
