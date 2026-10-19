@@ -8,6 +8,8 @@ import Foundation
 struct PostProcessor {
     let llmRoute: DirectLLMRouteResolver
     let openRouterClient: any OpenRouterLLMClienting
+    /// Where a model refusal is recorded; `nil` is `ModelCheckStore.shared`.
+    private let checks: ModelCheckStore?
 
     /// Cleanup runs on the Drop Smart cleanup route, read at every call.
     @MainActor
@@ -20,10 +22,12 @@ struct PostProcessor {
 
     init(
         llmRoute: DirectLLMRouteResolver,
-        openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(profile: .dictation)
+        openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(profile: .dictation),
+        checks: ModelCheckStore? = nil
     ) {
         self.llmRoute = llmRoute
         self.openRouterClient = openRouterClient
+        self.checks = checks
     }
 
     /// `screenshot` parameter is preserved for caller compatibility but is
@@ -48,7 +52,16 @@ struct PostProcessor {
             outputLanguage: outputLanguage,
             transcriptionMode: transcriptionMode
         )
-        return try await openRouterClient.complete(endpoint: route.endpoint, model: route.model, messages: messages)
+        do {
+            return try await openRouterClient.complete(endpoint: route.endpoint, model: route.model, messages: messages)
+        } catch let error as OpenRouterLLMError where error.isModelRefusal {
+            // The row says so until the model changes; Drop still inserts the
+            // raw text (the caller's concern, as for any cleanup failure).
+            await MainActor.run {
+                (checks ?? .shared).recordRefusal(feature: .dropSmartCleanup, model: route.model, at: Date())
+            }
+            throw error
+        }
     }
 
     static func openRouterMessages(

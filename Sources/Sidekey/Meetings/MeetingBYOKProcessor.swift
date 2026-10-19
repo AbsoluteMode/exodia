@@ -50,6 +50,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
     private let vocab: VocabularyCache
     private let notesRoute: DirectLLMRouteResolver
     private let openRouterClient: any OpenRouterLLMClienting
+    private let checks: ModelCheckStore
     private let fileManager: FileManager
     private let sonioxSession: URLSession
     private let makeAdapter: (ResolvedRoute) throws -> BYOKTranscriptionAdapter
@@ -69,6 +70,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         vocab: VocabularyCache,
         notesRoute: DirectLLMRouteResolver,
         openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(),
+        checks: ModelCheckStore? = nil,
         fileManager: FileManager = .default,
         sonioxSession: URLSession = .shared,
         makeAdapter: @escaping (ResolvedRoute) throws -> BYOKTranscriptionAdapter = RealtimeAdapterFactory.make
@@ -78,6 +80,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         self.vocab = vocab
         self.notesRoute = notesRoute
         self.openRouterClient = openRouterClient
+        self.checks = checks ?? .shared
         self.fileManager = fileManager
         self.sonioxSession = sonioxSession
         self.makeAdapter = makeAdapter
@@ -258,14 +261,20 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         }
         context.append("<transcript>\n\(transcript)\n</transcript>")
 
-        return try await openRouterClient.complete(
-            endpoint: route.endpoint,
-            model: route.model,
-            messages: [
-                OpenRouterChatMessage(role: "system", content: Self.noteSystemPrompt),
-                OpenRouterChatMessage(role: "user", content: context.joined(separator: "\n\n")),
-            ]
-        )
+        do {
+            return try await openRouterClient.complete(
+                endpoint: route.endpoint,
+                model: route.model,
+                messages: [
+                    OpenRouterChatMessage(role: "system", content: Self.noteSystemPrompt),
+                    OpenRouterChatMessage(role: "user", content: context.joined(separator: "\n\n")),
+                ]
+            )
+        } catch let error as OpenRouterLLMError where error.isModelRefusal {
+            // The Meeting notes row shows the refusal until the model changes.
+            checks.recordRefusal(feature: .meetingNotes, model: route.model, at: Date())
+            throw error
+        }
     }
 
     private func cleanupStagingDirectory(for event: MeetingRecorder.FinalizedEvent) {

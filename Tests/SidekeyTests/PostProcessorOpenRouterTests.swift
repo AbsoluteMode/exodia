@@ -103,6 +103,42 @@ final class PostProcessorOpenRouterTests: XCTestCase {
         XCTAssertNil(openRouter.lastEndpoint)
     }
 
+    func test_model_refusal_is_recorded_for_cleanup() async throws {
+        let env = makeEnv()
+        try env.keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "vendor/gone"), for: .dropSmartCleanup)
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let checks = ModelCheckStore(defaults: defaults)
+
+        for status in [400, 404, 422] {
+            let processor = PostProcessor(
+                llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: env.routing, keys: env.keys),
+                openRouterClient: RefusingOpenRouterClient(status: status),
+                checks: checks
+            )
+            do {
+                _ = try await processor.process("raw", targetApp: nil)
+                XCTFail("Expected the refusal to reach the caller")
+            } catch let error as OpenRouterLLMError {
+                XCTAssertEqual(error, .unexpectedStatus(status, nil))
+            }
+            XCTAssertEqual(checks.refusedModel(for: .dropSmartCleanup), "vendor/gone")
+            checks.recordRefusal(feature: .dropSmartCleanup, model: "reset", at: Date())
+        }
+
+        // A key or quota problem is not a refusal of the model.
+        checks.recordRefusal(feature: .dropSmartCleanup, model: "reset", at: Date())
+        let unauthorized = PostProcessor(
+            llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: env.routing, keys: env.keys),
+            openRouterClient: RefusingOpenRouterClient(status: 401),
+            checks: checks
+        )
+        _ = try? await unauthorized.process("raw", targetApp: nil)
+        XCTAssertEqual(checks.refusedModel(for: .dropSmartCleanup), "reset")
+    }
+
     func test_cleanup_without_route_throws_not_configured() async throws {
         let env = makeEnv()
         // Another feature's route and a stored OpenRouter key do not choose
@@ -177,5 +213,21 @@ private final class FakeOpenRouterClient: OpenRouterLLMClienting {
         lastModel = model
         lastMessages = messages
         return completion
+    }
+}
+
+private final class RefusingOpenRouterClient: OpenRouterLLMClienting {
+    let status: Int
+
+    init(status: Int) {
+        self.status = status
+    }
+
+    func listModels(endpoint: OpenAICompatibleLLMEndpoint) async throws -> [OpenRouterModelOption] {
+        []
+    }
+
+    func complete(endpoint: OpenAICompatibleLLMEndpoint, model: String, messages: [OpenRouterChatMessage]) async throws -> String {
+        throw OpenRouterLLMError.unexpectedStatus(status, nil)
     }
 }
