@@ -169,6 +169,27 @@ final class CaseBrokerServer: @unchecked Sendable {
         lock.withLock { activeConnections -= 1 }
     }
 
+    // WHY: docs/decisions/2026-10-19-case-secrets-broker.md (flaky untrusted-helper reply)
+    /// Lingering close for a peer whose request was never read. Closing a
+    /// socket with unread inbound bytes makes BSD send RST, which discards the
+    /// answer still queued for the client (it then reads ECONNRESET). So: half
+    /// close the write side, then swallow whatever the client sent until it
+    /// closes, bounded in time and size.
+    private func drainBeforeClose(_ fd: Int32) {
+        shutdown(fd, SHUT_WR)
+        let deadline = Date().addingTimeInterval(1)
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        var total = 0
+        while total <= maxRequestBytes {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { return }
+            setTimeout(fd, SO_RCVTIMEO, remaining)
+            let n = read(fd, &buffer, buffer.count)
+            guard n > 0 else { return }
+            total += n
+        }
+    }
+
     private func serve(_ fd: Int32) {
         // BSD accept() inherits O_NONBLOCK from the listener; reads here block
         // with a timeout instead.
@@ -184,6 +205,7 @@ final class CaseBrokerServer: @unchecked Sendable {
         }
         guard inspector.isTrustedHelper(auditToken: peer.auditToken, helperURL: helperURL) else {
             send(.denied(reason: .untrustedHelper), to: fd)
+            drainBeforeClose(fd)
             finish(fd)
             return
         }

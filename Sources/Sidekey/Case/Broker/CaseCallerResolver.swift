@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 
+// WHY: docs/decisions/2026-10-19-case-secrets-broker.md
 /// Decides who is asking the broker by walking the verified helper's parent
 /// chain. The nearest registered or known AI ancestor wins; a chain with no
 /// AI app is a person at a terminal.

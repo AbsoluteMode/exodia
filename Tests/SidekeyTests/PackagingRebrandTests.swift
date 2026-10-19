@@ -53,6 +53,32 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("stop_conflicting_sidekey_processes"))
     }
 
+    /// The Case helper (`Contents/Helpers/whytap`) must ship in every bundle and
+    /// be signed before the app: the broker trusts it by cdhash and the CLI
+    /// reads its host bundle ID from `Contents/Info.plist` next to it.
+    func test_caseHelperIsBuiltCopiedAndSignedBeforeTheApp() throws {
+        let dmg = try readProjectFile("scripts/build-dmg.sh")
+        let dev = try readProjectFile("scripts/dev-run.sh")
+
+        for (name, source) in [("build-dmg.sh", dmg), ("dev-run.sh", dev)] {
+            XCTAssertTrue(source.contains("--product whytap"), "\(name) must build the helper")
+            XCTAssertTrue(source.contains(#""${APP_BUNDLE}/Contents/Helpers/whytap""#),
+                          "\(name) must place the helper at Contents/Helpers/whytap")
+            let helperSign = try XCTUnwrap(
+                source.range(of: #"--options runtime"#, options: [],
+                             range: try XCTUnwrap(source.range(of: "Signing whytap helper")
+                                ?? source.range(of: "Code signing whytap helper")).lowerBound..<source.endIndex),
+                "\(name) must sign the helper")
+            let appSign = try XCTUnwrap(source.range(of: #"--entitlements "#, options: .backwards))
+            XCTAssertLessThan(helperSign.lowerBound, appSign.lowerBound,
+                              "\(name) must sign the helper before the app bundle")
+        }
+        XCTAssertTrue(dmg.contains("--arch arm64 --product whytap"))
+        XCTAssertTrue(dmg.contains("--arch x86_64 --product whytap"))
+        XCTAssertTrue(dmg.contains(#"-output "${BUILD_DIR}/whytap""#), "helper must be lipo'd universal")
+        XCTAssertTrue(dmg.contains(#""Contents/Helpers/whytap""#), "release verification must cover the helper signature")
+    }
+
     /// Regression guard for the silent system-audio failure (June 2026): the
     /// CoreAudio process tap that records the other meeting participants is
     /// gated by the TCC "System Audio Recording" permission, and macOS only

@@ -1,5 +1,6 @@
 import Foundation
 
+// WHY: docs/decisions/2026-10-19-case-secrets-broker.md
 /// Runs `/bin/sh -c <command>` with secret values in its environment only
 /// (never argv) and passes stdout and stderr through the masker.
 public struct MaskedProcessRunner {

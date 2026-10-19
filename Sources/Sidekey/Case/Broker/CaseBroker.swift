@@ -44,6 +44,7 @@ struct CaseSystemCallerResolver: CaseCallerResolving {
 
 // MARK: Broker
 
+// WHY: docs/decisions/2026-10-19-case-secrets-broker.md
 /// Answers one already-authenticated helper request: who is asking, what the
 /// access policy says, and — only for an allowed `resolveRun` — the values of
 /// exactly the requested project's keys. Never logs requests, names or values.
