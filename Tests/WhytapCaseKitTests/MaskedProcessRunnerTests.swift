@@ -118,6 +118,19 @@ final class MaskedProcessRunnerTests: XCTestCase {
                                                      command: "make -p -- x", cwd: dir.path)])
     }
 
+    func test_double_dash_after_the_command_word_stays_in_the_command() {
+        for (args, command) in [
+            (["case", "run", "git", "checkout", "--", "file"], "git checkout -- file"),
+            (["case", "run", "rm", "--", "-x"], "rm -- -x"),
+            (["case", "run", "--", "rm", "--", "-x"], "rm -- -x"),
+        ] {
+            let broker = FakeBroker(.denied(reason: .userDeclined))
+            _ = capture { o, e in CaseCommand(client: broker, cwd: dir, stdout: o, stderr: e).run(args: args) }
+            XCTAssertEqual(broker.requests, [.resolveRun(project: nil, only: nil, command: command, cwd: dir.path)],
+                           "\(args)")
+        }
+    }
+
     func test_ls_prints_table_without_values() {
         let broker = FakeBroker(.keys([CaseKeyInfo(name: "API_KEY", description: "main", project: "alpha")]))
         let (code, out, _) = capture { o, e in

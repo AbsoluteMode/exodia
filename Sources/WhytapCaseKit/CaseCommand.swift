@@ -96,9 +96,11 @@ public struct CaseCommand {
         var i = 0
         while i < args.count {
             let a = args[i]
-            if a == "--" { rest += args[(i + 1)...]; break }
-            // Options end at the command: `run grep --only x f` keeps `--only x` in the command.
+            // Options end at the command: `run grep --only x f` keeps `--only x`
+            // and `run git checkout -- file` keeps `--` in the command.
             if !rest.isEmpty { rest += args[i...]; break }
+            // Only a `--` before the command word ends Case options.
+            if a == "--" { rest += args[(i + 1)...]; break }
             if a == "-p", i + 1 < args.count { project = args[i + 1]; i += 2; continue }
             if a == "--only", i + 1 < args.count {
                 only = args[i + 1].split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
