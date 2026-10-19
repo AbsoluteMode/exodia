@@ -73,7 +73,7 @@ final class ScreenBrightnessControllerTests: XCTestCase {
     }
 
     func testPollingRunsOnlyWhileAStripIsVisible() {
-        let f = Fixture(), device = f.device, controller = f.controller
+        let f = Fixture(), controller = f.controller
         controller.refresh()
         XCTAssertFalse(controller.isPolling, "The capsule status reads once and never polls.")
 
