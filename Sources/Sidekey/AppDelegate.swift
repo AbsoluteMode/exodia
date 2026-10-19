@@ -477,7 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         BackupViewModel.shared.stop()
-        // Remove the Extra overlay; Extra never changes the backlight.
+        // Give the display its own transfer table back; Extra never changes the backlight.
         ScreenBrightnessController.shared.shutdown()
         BrightnessKeys.shared.stop()
         NotifyScriptSupervisor.shared.stop()

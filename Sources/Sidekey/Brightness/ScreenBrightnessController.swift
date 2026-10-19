@@ -1,11 +1,11 @@
 import AppKit
 import Darwin
 
-/// Backlight levels are 0...1. Extra brightness multiplies the composited desktop
-/// through EDR on top of the current backlight level.
+/// Backlight levels are 0...1. Extra brightness scales the display's transfer table
+/// into the EDR headroom on top of the current backlight level.
 enum ScreenBrightnessScale {
-    /// Sustained full-screen range of XDR MacBook Pro panels over their SDR maximum.
-    static let maximumExtra = 2.0
+    /// Vivid's table factor on the same XDR panel at its SDR maximum (measured 2026-10-19).
+    static let maximumExtraGamma = 1.45
     /// A hardware level at or above this counts as the Mac's own maximum.
     static let hardwareMaximum = 0.99
 
@@ -14,9 +14,11 @@ enum ScreenBrightnessScale {
         return min(max(0, value), 1)
     }
 
-    static func extraMultiplier(potentialHeadroom: Double) -> Double {
-        guard potentialHeadroom.isFinite else { return 1 }
-        return min(maximumExtra, max(1, potentialHeadroom))
+    /// The table scales encoded values and sRGB's curve turns them into light, so the
+    /// factor stops where the boosted white reaches the current headroom.
+    static func extraGammaFactor(currentHeadroom: Double) -> Double {
+        guard currentHeadroom.isFinite, currentHeadroom > 1 else { return 1 }
+        return min(maximumExtraGamma, 1.055 * pow(currentHeadroom, 1 / 2.4) - 0.055)
     }
 }
 
@@ -28,9 +30,17 @@ struct ScreenBrightnessDisplay: Equatable {
     var supportsExtra: Bool { potentialHeadroom > 1.01 }
 }
 
+enum BrightnessBoostEnd: Equatable {
+    case unavailable
+    /// Another app wrote the display's table.
+    case otherApp
+}
+
 @MainActor
-protocol BrightnessOverlay: AnyObject {
-    func update(multiplier: Double)
+protocol BrightnessBoost: AnyObject {
+    /// Follows the display after a configuration change.
+    func refresh()
+    /// Gives the display its own table back.
     func close()
 }
 
@@ -39,16 +49,15 @@ protocol ScreenBrightnessDevice {
     func displays() -> [ScreenBrightnessDisplay]
     func read(_ id: CGDirectDisplayID) -> Double?
     func write(_ level: Double, to id: CGDirectDisplayID) -> Bool
-    func makeOverlay(for id: CGDirectDisplayID, multiplier: Double,
-                     onFailure: @escaping () -> Void) -> BrightnessOverlay?
+    func makeBoost(for id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void) -> BrightnessBoost?
 }
 
 /// Hover Display: the island display's backlight plus an Extra switch.
-/// Extra is a fixed EDR multiplier overlay on top of whatever the backlight is, and it
-/// never writes the backlight itself. The slider, the Mac's brightness keys, automatic
-/// brightness, idle dimming, closing the strip, sleep and a session switch leave it on.
-/// Only the switch ends it, apart from heat, a display change or lost headroom, an
-/// overlay failure and quit.
+/// Extra is a fixed EDR boost of the display's transfer table on top of whatever the
+/// backlight is, and it never writes the backlight itself. The slider, the Mac's brightness
+/// keys, automatic brightness, idle dimming, closing the strip, sleep and a session switch
+/// leave it on. Only the switch ends it, apart from heat, a display change or lost EDR
+/// support, another app adjusting the display's table, a boost failure and quit.
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
 final class ScreenBrightnessController: ObservableObject {
@@ -58,6 +67,7 @@ final class ScreenBrightnessController: ObservableObject {
     static let writeFailedNotice = "Couldn't change this display's brightness."
     static let extraUnavailableNotice = "Extra brightness isn't available right now."
     static let coolingNotice = "Extra is paused while your Mac cools down."
+    static let otherAppNotice = "Another app is adjusting this display."
     /// A read right after a write can still report the previous backlight level.
     static let writeSettleInterval: TimeInterval = 0.75
 
@@ -73,8 +83,8 @@ final class ScreenBrightnessController: ObservableObject {
     private let selectedDisplayID: @MainActor () -> CGDirectDisplayID?
     private let extraAllowed: () -> Bool
     private let now: () -> Date
-    private var overlay: BrightnessOverlay?
-    private var overlayGeneration = 0
+    private var boost: BrightnessBoost?
+    private var boostGeneration = 0
     /// A write settles only on its own display; another display's reading is current.
     private var lastWrite: (display: CGDirectDisplayID, date: Date)?
     private var timer: Timer?
@@ -144,8 +154,7 @@ final class ScreenBrightnessController: ObservableObject {
             if target.supportsExtra {
                 // A lower backlight here is not a request to end Extra: automatic
                 // brightness and idle dimming change it without the user.
-                overlay?.update(multiplier: ScreenBrightnessScale.extraMultiplier(
-                    potentialHeadroom: target.potentialHeadroom))
+                boost?.refresh()
             } else {
                 endExtra()
             }
@@ -199,27 +208,25 @@ final class ScreenBrightnessController: ObservableObject {
             notice = Self.coolingNotice
             return
         }
-        let multiplier = ScreenBrightnessScale.extraMultiplier(potentialHeadroom: display.potentialHeadroom)
-        let generation = overlayGeneration
-        guard let created = device.makeOverlay(for: display.id, multiplier: multiplier, onFailure: { [weak self] in
-            // A late failure from a closed overlay must not end a newer Extra.
-            guard let self, self.overlayGeneration == generation else { return }
-            self.stopExtra(notice: Self.extraUnavailableNotice)
+        let generation = boostGeneration
+        guard let created = device.makeBoost(for: display.id, onEnd: { [weak self] end in
+            // A late end from a closed boost must not end a newer Extra.
+            guard let self, self.boostGeneration == generation else { return }
+            self.stopExtra(notice: end == .otherApp ? Self.otherAppNotice : Self.extraUnavailableNotice)
         }) else {
             notice = Self.extraUnavailableNotice
             return
         }
-        overlay = created
+        boost = created
         isExtraOn = true
         notice = nil
-        created.update(multiplier: multiplier)
         updatePolling()
     }
 
     private func endExtra() {
-        overlayGeneration += 1
-        overlay?.close()
-        overlay = nil
+        boostGeneration += 1
+        boost?.close()
+        boost = nil
         guard isExtraOn else { return }
         isExtraOn = false
         updatePolling()
@@ -303,10 +310,8 @@ final class NativeScreenBrightnessDevice: ScreenBrightnessDevice {
         setBrightness?(id, Float(level)) == 0
     }
 
-    func makeOverlay(for id: CGDirectDisplayID, multiplier: Double,
-                     onFailure: @escaping () -> Void) -> BrightnessOverlay? {
-        guard let screen = NSScreen.screens.first(where: { $0.brightnessDisplayID == id }) else { return nil }
-        return BrightnessBoostOverlay(screen: screen, multiplier: multiplier, onFailure: onFailure)
+    func makeBoost(for id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void) -> BrightnessBoost? {
+        NativeBrightnessBoost(display: id, onEnd: onEnd)
     }
 
     deinit { if let library { dlclose(library) } }

@@ -250,7 +250,7 @@ final class BrightnessKeysTests: XCTestCase {
         f.press(key(.up))
         f.press(key(.up))
         XCTAssertFalse(f.controller.isExtraOn)
-        XCTAssertEqual(f.device.overlays, 0)
+        XCTAssertEqual(f.device.boosts, 0)
         XCTAssertEqual(f.shown.count, 2)
     }
 
@@ -540,7 +540,7 @@ private final class KeyBrightnessDevice: ScreenBrightnessDevice {
     let headroom: Double
     var appliesWrites = true
     private(set) var writes: [Double] = []
-    private(set) var overlays = 0
+    private(set) var boosts = 0
 
     init(level: Double?, headroom: Double) {
         self.level = level
@@ -558,15 +558,14 @@ private final class KeyBrightnessDevice: ScreenBrightnessDevice {
         return true
     }
 
-    func makeOverlay(for id: CGDirectDisplayID, multiplier: Double,
-                     onFailure: @escaping () -> Void) -> BrightnessOverlay? {
-        overlays += 1
-        return KeyNoOverlay()
+    func makeBoost(for id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void) -> BrightnessBoost? {
+        boosts += 1
+        return KeyNoBoost()
     }
 }
 
 @MainActor
-private final class KeyNoOverlay: BrightnessOverlay {
-    func update(multiplier: Double) {}
+private final class KeyNoBoost: BrightnessBoost {
+    func refresh() {}
     func close() {}
 }

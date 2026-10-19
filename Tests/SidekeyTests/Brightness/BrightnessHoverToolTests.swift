@@ -117,6 +117,7 @@ final class BrightnessHoverToolTests: XCTestCase {
         let iconAndSpacing: CGFloat = 19
         let notices = [ScreenBrightnessController.writeFailedNotice,
                        ScreenBrightnessController.extraUnavailableNotice,
+                       ScreenBrightnessController.otherAppNotice,
                        ScreenBrightnessController.coolingNotice]
         for notice in notices {
             XCTAssertLessThanOrEqual(Self.width(notice, size: 10) + iconAndSpacing, lineWidth, notice)
@@ -425,12 +426,13 @@ private final class StaticBrightnessDevice: ScreenBrightnessDevice {
         return true
     }
 
-    func makeOverlay(for id: CGDirectDisplayID, multiplier: Double,
-                     onFailure: @escaping () -> Void) -> BrightnessOverlay? { NoOverlay() }
+    func makeBoost(for id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void) -> BrightnessBoost? {
+        NoBoost()
+    }
 }
 
 @MainActor
-private final class NoOverlay: BrightnessOverlay {
-    func update(multiplier: Double) {}
+private final class NoBoost: BrightnessBoost {
+    func refresh() {}
     func close() {}
 }
