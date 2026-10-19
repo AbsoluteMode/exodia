@@ -25,7 +25,7 @@ Notify keeps the **500 newest notifications**. New, unseen history shows a red
 dot on the Notify tool in the island's hover drawer and search; Monitor receives
 no attention indicator. The dot survives temporary icon expiry and app restarts,
 and clears when Notify history is opened. **Clear All** clears history and current
-notifications after confirmation, without disconnecting sources.
+notifications immediately, without confirmation or disconnecting sources.
 
 **Settings → Notifications** lists every connected source, its logo and current
 status, a **Notification type** selector (Large / Small), and an on/off switch. Turning it off stops its script

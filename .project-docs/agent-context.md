@@ -547,7 +547,8 @@ New arrivals restart the stack lifetime; expiry dismisses the entire stack.
 Large cards separate bursts and retain queue order; presentation is bounded to
 33 events. Notify retains 500 history events. Unseen events show a red dot only
 on Notify in hover/search until history is opened, including after a restart.
-Clear All confirms clearing history and current events, preserving sources.
+Clear All is text-only and immediately clears history and current events without
+confirmation, preserving sources.
 Card remains the backwards-compatible
 default (8 seconds). Settings -> Notifications offers Notification type (Large /
 Small) per source; events can override it. Icon titles may be omitted and use
