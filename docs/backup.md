@@ -6,7 +6,7 @@ There is no Whytap account or backup server.
 
 ## Set up once
 
-1. Choose **Set up backup**. Save the recovery code in a password manager that
+1. Choose **Back up**. Save the recovery code in a password manager that
    you can access after losing this Mac. Use **Copy to password manager**, then
    paste the saved code back to verify it. Keep it outside Whytap and its backup
    repository. Whytap does not know a way to recover a lost code.
@@ -39,7 +39,7 @@ remain subject to GitHub and your account's limits. Whytap does not use Actions.
 
 ## Recover after a lost Mac or set up another Mac
 
-Open **Settings → Backup → Restore a backup**, reconnect the source and enter
+Open **Settings → Backup → Restore backup**, reconnect the source and enter
 the recovery code from your password manager. This works without the old Mac's
 Keychain. You can also open an `.exodiabackup` file directly.
 
@@ -67,6 +67,59 @@ Mac's remote provider jobs.
 A backup is a version you can recover. It does not continuously merge edits
 between two Macs.
 
+## Change a lost or exposed code, or delete backups
+
+The main screen has **Back up** and **Restore backup**. Expand **Manage backups**
+for scheduling, connection details, **Change code…** and **Delete backups…**.
+There is no registration step or Whytap account badge.
+
+**Change code…** works while this Mac still has its cached key; entering the old
+code is unnecessary. Save and paste back the new random code. Whytap pauses
+automatic backups, creates a standalone full archive with the new key, checks
+it locally and at the connected destination, then removes older full backups
+from this Mac and that destination. A failed upload keeps the old copies. A
+failed deletion remains visible and paused; **Finish backup management** resumes
+the durable request. Reopening Whytap attempts it once when idle; a failed
+attempt stays paused with an explicit retry. The new key stays in
+Keychain; the operation journal never contains it. Your previous automatic
+backup preference is restored only after cleanup succeeds.
+
+**Delete backups…** removes full local archives and the connected destination's
+archives, including unfinished GitHub drafts, then leaves automatic backup off.
+It retires the exposed code for future setup without asking you to save another
+one. Your working data, automatic local settings history and existing restore
+transaction checkpoints stay on this Mac. History keys remain only in this
+Mac's Keychain so a code change does not destroy the ability to undo settings.
+The GitHub repository, tags, source history and unrelated releases/files are kept.
+Explicit deletion also works if the backup repository became public.
+
+If a destination is permanently lost or a catalog cannot be read, **Stop…**
+ends the unfinished request after confirmation. It does not claim deletion:
+a persistent warning identifies copies that may remain. Remaining local files,
+keys and the original request/catalog are kept; **Show kept local copies…**
+opens their folder. Automatic backup stays off and a fresh code must be saved
+before starting again. Kept old-key copies are excluded from future automatic
+uploads and delta bases. The warning stays until you dismiss it, including if
+you start using a different destination.
+Parked request/catalog metadata and its staged key remain for manual recovery,
+even after later archive deletion. The request records the key identifier;
+the secret itself stays in Keychain. These records contain no archive content
+and remain until you remove them separately.
+
+Both management actions include full **Before restore** archives. The separate
+restore transaction checkpoints described above are retained. Credential and
+connection removal has a durable finalization phase, so interruption after
+disconnect does not require access to the previous destination to finish.
+
+Stop automatic backups on other Macs before either action. Copies in previous
+destinations, sync-provider trash/version history and exported or downloaded
+archives need separate removal. A downloaded archive cannot be revoked: the old
+code can still decrypt it. If an attacker may have obtained that archive and its
+code, replace the provider keys and other secrets it contained at their sources.
+Deleting a file does not promise physical erasure from SSDs or provider retention.
+Losing both the code and every Mac with a cached key makes existing encrypted
+archives unrecoverable; neither GitHub nor Whytap can reset their encryption.
+
 ## What is included
 
 - API & Models routes for every feature, registered server addresses, languages,
@@ -92,8 +145,9 @@ permission and machine-specific paths reviewed before re-enabling a source.
 
 ## Undo a settings mistake
 
-Local encrypted settings history works without cloud setup. In **Local Settings
-History**, choose a block and a saved version, then confirm **Restore block**.
+Local encrypted settings history works without cloud setup. Expand **Undo a
+settings change → Local Settings History**, choose a block and a saved version,
+then confirm **Restore block**.
 Provider keys have a separate history selection; restoring another settings
 block leaves them untouched. **Restore defaults** uses the application's
 source defaults for the selected settings block. Both apply at the next normal

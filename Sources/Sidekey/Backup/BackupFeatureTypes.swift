@@ -23,6 +23,12 @@ struct ArtifactBackupSummary: Codable, Equatable, Identifiable {
     var totalBytes: Int64
     var fileCount: Int
     var sections: Set<ArtifactBackupSection>
+
+    /// The wire date is rounded by the archive's ISO-8601 encoder.
+    func matchesArchive(_ other: Self) -> Bool {
+        id == other.id && totalBytes == other.totalBytes && fileCount == other.fileCount
+            && sections == other.sections && abs(createdAt.timeIntervalSince(other.createdAt)) < 1
+    }
 }
 
 struct ArtifactBackupPreview: Equatable {
