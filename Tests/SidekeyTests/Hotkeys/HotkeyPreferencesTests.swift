@@ -376,7 +376,7 @@ final class HotkeyPreferencesTests: XCTestCase {
         oldBuild.agentVoiceShortcut = .holdSpace
         oldBuild.agentCloseShortcut = .holdSpace
         oldBuild.usefulLinksNextShortcut = .holdSpace
-        oldBuild.hoverSlot2Shortcut = .holdSpace
+        oldBuild.toolShortcuts = [.vocab: .holdSpace]
         // Drop legitimately persists `.holdSpace`; pair it with the stale
         // `.tap` gesture an older build could have written.
         oldBuild.dropVoiceShortcut = .holdSpace
@@ -400,9 +400,9 @@ final class HotkeyPreferencesTests: XCTestCase {
             "stale holdSpace on links next must fall back to the default"
         )
         XCTAssertEqual(
-            preferences.hoverSlot2Shortcut,
-            HotkeyConfiguration.defaults.hoverSlot2Shortcut,
-            "stale holdSpace on hover slot 2 must fall back to the default"
+            preferences.toolShortcuts[.vocab],
+            nil,
+            "stale holdSpace on a tool must be rejected"
         )
         XCTAssertEqual(preferences.dropVoiceShortcut, .holdSpace, "Drop keeps holdSpace")
 

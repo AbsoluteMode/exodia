@@ -25,10 +25,13 @@ struct NotifyHoverPanel: View {
                 Button {
                     if showsSources { NSWorkspace.shared.open(NotifyPaths.root) }
                     else { confirmsClear = true }
-                } label: { Image(systemName: showsSources ? "folder" : "trash") }
+                } label: {
+                    if showsSources { Image(systemName: "folder") }
+                    else { Label("Clear All", systemImage: "trash") }
+                }
                 .buttonStyle(.plain).frame(width: 68, alignment: .trailing)
                 .disabled(!showsSources && hub.history.isEmpty)
-                .accessibilityLabel(showsSources ? "Open notification sources folder" : "Clear notification history")
+                .accessibilityLabel(showsSources ? "Open notification sources folder" : "Clear all notifications")
             }
             .font(.system(size: 11, weight: .medium)).frame(height: 24)
             HStack(spacing: 2) {
@@ -60,7 +63,7 @@ struct NotifyHoverPanel: View {
         .padding(10)
         .foregroundStyle(Color.white)
         .environment(\.colorScheme, .dark)
-        .onAppear { Task { await hub.markRead() } }
+        .task(id: hub.history.first?.id) { if !showsSources { await hub.markRead() } }
         .onChange(of: showsSources) { _, value in if !value { Task { await hub.markRead() } } }
         .confirmationDialog("Remove this notification source?", isPresented: Binding(
             get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }
@@ -68,10 +71,10 @@ struct NotifyHoverPanel: View {
             Button("Remove source", role: .destructive) { if let id = pendingRemoval { supervisor.remove(id: id) }; pendingRemoval = nil }
             Button("Cancel", role: .cancel) { pendingRemoval = nil }
         } message: { Text("Its script will stop. Notification history and script files will be kept.") }
-        .confirmationDialog("Clear notification history?", isPresented: $confirmsClear) {
-            Button("Clear history", role: .destructive) { Task { await hub.clear() } }
+        .confirmationDialog("Clear all notifications?", isPresented: $confirmsClear) {
+            Button("Clear All", role: .destructive) { Task { await hub.clear() } }
             Button("Cancel", role: .cancel) {}
-        }
+        } message: { Text("History and current notifications will be cleared. Connected sources stay enabled.") }
     }
     private func sectionButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {

@@ -194,11 +194,19 @@ final class NotifyScriptSupervisor: ObservableObject {
     func setEnabled(_ enabled: Bool, id: String) {
         guard var script = sources.first(where: { $0.id == id })?.script else { return }
         script.enabled = enabled
+        save(script)
+    }
+    func setPresentation(_ presentation: NotifyPresentation, id: String) {
+        guard var script = sources.first(where: { $0.id == id })?.script else { return }
+        script.presentation = presentation
+        save(script)
+    }
+    private func save(_ script: NotifyScript) {
         do {
-            let url = directory.appendingPathComponent("sources/\(id).json")
+            let url = directory.appendingPathComponent("sources/\(script.id).json")
             try JSONEncoder().encode(script).write(to: url, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-            reconcile(sources.map { $0.id == id ? script : $0.script })
+            reconcile(sources.map { $0.id == script.id ? script : $0.script })
         } catch { self.error = "Couldn’t save the source setting." }
     }
     func remove(id: String) {

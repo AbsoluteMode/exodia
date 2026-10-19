@@ -100,17 +100,9 @@ final class CarbonHotkeyMonitor {
     // WHY: docs/decisions/2026-07-02-escape-close-passive-monitor.md
     static let agentTextHotKeyID: UInt32 = 11
     static let agentVoiceHotKeyID: UInt32 = 12
-    /// Positional Hover-slot hotkeys (ROO-210), one per slot 1..5. Contiguous
-    /// block 13..17, immediately after `agentVoiceHotKeyID`. ⌥N (default)
-    /// activates `HoverLayoutStore.slots[N-1]`. Registered independently of the
-    /// Drop hotkey so a registration failure on one never disables the others.
-    static let hoverSlot1HotKeyID: UInt32 = 13
-    static let hoverSlot2HotKeyID: UInt32 = 14
-    static let hoverSlot3HotKeyID: UInt32 = 15
-    static let hoverSlot4HotKeyID: UInt32 = 16
-    static let hoverSlot5HotKeyID: UInt32 = 17
-    /// Manual Meeting-record toggle (default ⌥M): tap starts a recording
-    /// bypassing the detector nudge, tap again stops it.
+    /// Feature monitors use a separate ID range; legacy slot IDs 13...17 are retired.
+    static let toolHotKeyIDBase: UInt32 = 100
+
     static let meetingRecordHotKeyID: UInt32 = 18
 
     /// kVK_Escape from Carbon HIToolbox/Events.h. Consumed by

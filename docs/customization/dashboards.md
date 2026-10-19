@@ -7,7 +7,7 @@ install software or grant access to a server.
 
 ## Open Monitor in hover
 
-Select Monitor from the hover capsule, catalog search or its positional hotkey.
+Select Monitor from the hover capsule, catalog search or its feature hotkey.
 All three use `.openPanel(.monitor)` and show `MonitorHoverPanel` in the same
 compact-width drawer. The drawer follows the actual island width (310/312-point
 examples) and matches the normal controls height for the current saved tool

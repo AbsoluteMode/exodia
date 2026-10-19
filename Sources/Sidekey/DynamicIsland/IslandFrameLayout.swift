@@ -553,4 +553,14 @@ enum IslandFrameLayout {
             auxiliaryTopRightArea: screen.auxiliaryTopRightArea
         )
     }
+
+    static func notificationIconPanelFrame(on screen: IslandScreenDescriptor) -> NSRect {
+        let island = islandFrame(frame: screen.frame, visibleFrame: screen.visibleFrame,
+            safeAreaTopInset: screen.safeAreaTopInset, auxiliaryTopLeftArea: screen.auxiliaryTopLeftArea,
+            auxiliaryTopRightArea: screen.auxiliaryTopRightArea)
+        // The notification temporarily replaces the compact right wing. An
+        // independent higher panel keeps it above music, meetings and hints.
+        return NSRect(x: island.maxX - rightSideWidth, y: island.minY,
+                      width: rightSideWidth, height: island.height)
+    }
 }

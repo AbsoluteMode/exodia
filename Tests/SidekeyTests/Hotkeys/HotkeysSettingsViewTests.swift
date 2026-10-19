@@ -235,42 +235,13 @@ final class HotkeysSettingsViewTests: XCTestCase {
         XCTAssertTrue(source.contains("MacSettingsTheme"))
     }
 
-    func testSettingsExposesFiveEditableHoverRows() throws {
-        // Stage 4 (ROO-210): each of the five positional Hover slots gets an
-        // editable row. The `RecordingTarget` enum gains five cases (consumed by
-        // the `assignShortcut` / `shortcut(for:)` / `binding(for:)` switches) and
-        // the rows are driven positionally off `hoverSlotTargets`. (Behaviour of
-        // each branch is verified on live objects in `HoverHintsTests`.)
+    func testSettingsExposesCatalogToolsWithRecordingAndClear() throws {
         let source = try hotkeysSettingsViewSource()
-
-        for slot in 1...5 {
-            XCTAssertTrue(
-                source.contains("case hoverSlot\(slot)"),
-                "RecordingTarget missing hoverSlot\(slot)"
-            )
-        }
-        // Positional rows: a slot-indexed section maps each position to its
-        // `RecordingTarget` and starts the SAME recorder every other row uses.
-        XCTAssertTrue(source.contains("hoverSlotSection"))
-        XCTAssertTrue(source.contains("hoverSlotTargets"))
-        XCTAssertTrue(source.contains("startRecording(target)"))
-        // Rows read their title/icon from the LIVE layout store position, not a
-        // hardcoded label (D1 positional).
-        XCTAssertTrue(source.contains("hoverLayout.slots[offset]"))
-        XCTAssertTrue(source.contains("tool.map { HoverToolRegistry.info(for: $0) }"))
-    }
-
-    func testSettingsHotkeyEditableButToolPinned() throws {
-        // Positional keys remain editable. Settings is pinned in Toolbox,
-        // independently of which position it occupies in the current layout.
-        let source = try hotkeysSettingsViewSource()
-
-        // Key editable: slot 5 is a normal RecordingTarget branch.
-        XCTAssertTrue(source.contains("case .hoverSlot5"))
-        // The locked-slot fact is referenced so the row reflects the fixed tool
-        // rather than pretending it is changeable.
-        XCTAssertTrue(source.contains("tool == .settings"))
-        XCTAssertTrue(source.contains("isLocked"))
+        XCTAssertTrue(source.contains("ForEach(HoverTool.allCases"))
+        XCTAssertTrue(source.contains("case tool(HoverTool)"))
+        XCTAssertTrue(source.contains("draft.toolShortcuts[tool] = shortcut"))
+        XCTAssertTrue(source.contains("draft.toolShortcuts[tool] = nil"))
+        XCTAssertFalse(source.contains("hoverLayout.slots["))
     }
 
     func testHoverRowsHighlightConflictByConflictKey() throws {

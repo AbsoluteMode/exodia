@@ -270,7 +270,7 @@ Hover capsules and materials:
   stride, 8 pt row/column gaps, 12 pt horizontal and 8 pt vertical insets.
   Default six tools occupy two rows and a 243 pt host band. At most four rows
   are visible (312 pt grid viewport); 13 tools retain 388 pt of scroll content.
-  Settings stays last; persistence and the first five positional hotkeys remain.
+  Settings stays last; persistence remains. Feature hotkeys use stable tool IDs.
   Settings Toolbox draws editable tools, a permanent Add target, then Settings,
   using stable tool/Add identities. Add occupies the actual insertion position.
   Drop targeting highlights without moving targets or saving. Native hosted
@@ -302,7 +302,7 @@ Hover capsules and materials:
 
 Monitor inside hover:
   Monitor registry kind is inlinePanel and HoverSlotRouter resolves
-  .openPanel(.monitor). Capsule, catalog search and positional hotkeys all open
+  .openPanel(.monitor). Capsule, catalog search and feature hotkeys all open
   MonitorHoverPanel in the same compact-width drawer: dashboard picker -> Server
   status or custom dashboard -> Back to picker -> Tools. The 2026-10-18 user
   clarification keeps the Monitor heading and centers it precisely, using equal
@@ -537,10 +537,32 @@ quit. A perl stdin-EOF guard (NotifyProcess.parentWatchGuardScript) leads each
 group and ends it when the app is killed or crashes. WHY:
 .project-docs/decisions/2026-10-19-notify-parent-death-guard.md. No backend or built-in provider connectors are restored. The original
 IslandNotificationPill / nonactivating panel sits left of the island, using the
-selected screen and screenshot-protection preference. Hover pauses dismissal.
+selected screen and screenshot-protection preference. `presentation: "icon"`
+adds a text-free Small notification over the compact right wing, above hints,
+meetings and music. It shakes for up to 5 seconds, expires after 5 by default,
+grows slightly and reveals a close button on hover. Hover pauses dismissal and
+shake; Reduce Motion disables shake/scale. Consecutive Small events form a counted stack, newest first,
+with up to three visible icons that fan apart on hover for individual links.
+New arrivals restart the stack lifetime; expiry dismisses the entire stack.
+Large cards separate bursts and retain queue order; presentation is bounded to
+33 events. Notify retains 500 history events. Unseen events show a red dot only
+on Notify in hover/search until history is opened, including after a restart.
+Clear All confirms clearing history and current events, preserving sources.
+Card remains the backwards-compatible
+default (8 seconds). Settings -> Notifications offers Notification type (Large /
+Small) per source; events can override it. Icon titles may be omitted and use
+the source name for history/VoiceOver. Existing Codex chats support click-through
+via codex://threads/<thread-id>; no query/fragment or new-chat/action links.
+Claude Desktop local Code sessions accept
+claude://code/continue?session=local_<uuid>, restricted to that one parameter.
+Native sessionId is resolved from Desktop metadata by the hook's cliSessionId;
+it is not the hook ID with a prefix. Other Claude routes are rejected.
+Bundled logos include codex and claude-code. Actual agent event sources are
+configured separately. WHY:
+.project-docs/decisions/2026-10-19-icon-notifications.md. Hover pauses dismissal.
 LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
 presentation in history; unreadable history is never silently overwritten. Notify
-opens through hover search, Toolbox and existing positional hotkeys without
+opens through hover search, Toolbox and assigned feature hotkeys without
 changing saved layouts. Settings -> Notifications lists connected sources with
 their name, logo, runtime status and individual persistent enable switches.
 Disabling stops the source and keeps its setup/history for re-enabling.
@@ -777,5 +799,9 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    cancels), tap/toggle Drop through Carbon, modifier Drop through
    `ModifierOnlyHotkeyMonitor`. One physical key = one action, except the
    right modifiers' tap/hold split (Right Command = agent text / voice).
-   Hover buttons 1 to 5 have positional hotkeys Option 1 to Option 5 bound to
-   `HoverLayoutStore.slots`.
+   Every HoverTool can have an optional named shortcut in Settings -> Hotkeys ->
+   Tools, including unpinned tools. `toolShortcuts` binds stable tool IDs, so
+   reordering/removing tiles never reassigns keys. New installs reserve no digit
+   shortcuts; explicitly saved old slot keys migrate once to their current tools.
+   Hints and Help read the same config; clearing/reset persists an empty map.
+   WHY: docs/decisions/2026-10-19-feature-hotkeys.md

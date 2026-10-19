@@ -3,150 +3,104 @@ import AppKit
 import XCTest
 @testable import Sidekey
 
-/// Stage 3 of configurable hotkeys (ROO-234 + ROO-210): the five Hover slots
-/// gain positional keyboard shortcuts (default ⌥1..⌥5). Pressing ⌥N expands the
-/// Hover (when policy allows) and runs the action of the tool currently in slot
-/// `N` (`HoverLayoutStore.slots[N-1]`) — the SAME action a click on that tile
-/// would fire (D1). Programmatic expansion respects `IslandHoverPolicy`
-/// (`allowsExpansion`) so ⌥N never forces the drawer open during a meeting /
-/// agent flow (D4).
 @MainActor
 final class HoverHotkeyTests: XCTestCase {
-
-    // MARK: - Defaults are ⌥1..⌥5
-
-    func test_hover_shortcut_defaults_are_option_digits() {
-        let config = HotkeyConfiguration.defaults
-        XCTAssertEqual(config.hoverSlot1Shortcut, .combo(.optionOne))
-        XCTAssertEqual(config.hoverSlot2Shortcut, .combo(.optionTwo))
-        XCTAssertEqual(config.hoverSlot3Shortcut, .combo(.optionThree))
-        XCTAssertEqual(config.hoverSlot4Shortcut, .combo(.optionFour))
-        XCTAssertEqual(config.hoverSlot5Shortcut, .combo(.optionFive))
-    }
-
-    func test_option_digit_presets_carry_option_modifier_and_digit_titles() {
-        let presets: [(HotkeyTapCombo, UInt32, String)] = [
-            (.optionOne, UInt32(kVK_ANSI_1), "1"),
-            (.optionTwo, UInt32(kVK_ANSI_2), "2"),
-            (.optionThree, UInt32(kVK_ANSI_3), "3"),
-            (.optionFour, UInt32(kVK_ANSI_4), "4"),
-            (.optionFive, UInt32(kVK_ANSI_5), "5")
-        ]
-        for (combo, expectedKeyCode, expectedTitle) in presets {
-            XCTAssertEqual(combo.keyCode, expectedKeyCode)
-            XCTAssertEqual(combo.modifiers, UInt32(optionKey))
-            XCTAssertEqual(combo.keyTitle, expectedTitle)
-        }
-    }
-
-    // MARK: - Round-trip (rawValue + Codable) stays on the legacy preset form
-
-    func test_option_digit_presets_round_trip() throws {
-        let presets: [HotkeyTapCombo] = [.optionOne, .optionTwo, .optionThree, .optionFour, .optionFive]
-        for preset in presets {
-            // rawValue must round-trip through the legacy-preset path (a short
-            // token), NOT collapse into JSON — otherwise a stored ⌥1 reloads as
-            // an anonymous JSON combo and breaks preset identity.
-            let raw = preset.rawValue
-            XCTAssertFalse(raw.contains("{"), "preset rawValue must be a legacy token, got JSON: \(raw)")
-            let restored = try XCTUnwrap(HotkeyTapCombo(rawValue: raw))
-            XCTAssertEqual(restored, preset)
-
-            // Codable round-trip via HotkeyShortcut (the form persisted in prefs).
-            let shortcut = HotkeyShortcut.combo(preset)
-            let data = try JSONEncoder().encode(shortcut)
-            let decoded = try JSONDecoder().decode(HotkeyShortcut.self, from: data)
-            XCTAssertEqual(decoded, shortcut)
-        }
-    }
-
-    func test_option_digit_preset_round_trips_through_shortcut_raw_value() throws {
-        for preset in [HotkeyTapCombo.optionOne, .optionFive] {
-            let shortcut = HotkeyShortcut.combo(preset)
-            let restored = try XCTUnwrap(HotkeyShortcut(rawValue: shortcut.rawValue))
-            XCTAssertEqual(restored, shortcut)
-        }
-    }
-
-    // MARK: - Hover bindings participate in the conflict graph
-
-    func test_hover_shortcuts_in_assignments() {
-        let assignments = HotkeyConfiguration.defaults.assignments
-        let hoverTitles = (1...5).map { "Hover slot \($0)" }
-        for title in hoverTitles {
-            XCTAssertTrue(
-                assignments.contains { $0.actionTitle == title },
-                "assignments missing \(title)"
-            )
-        }
-        // Each hover binding is a `.tap` on its ⌥-digit combo.
-        let slot1 = assignments.first { $0.actionTitle == "Hover slot 1" }
-        XCTAssertEqual(slot1?.binding.gesture, .tap)
-        XCTAssertEqual(slot1?.binding.key, .combo(.optionOne))
-    }
-
-    func test_default_configuration_has_no_conflicts_with_hover_slots() {
-        // ⌥1..⌥5 are distinct physical keys and distinct from every other
-        // default binding, so the full default config is still conflict-free.
+    func test_fresh_install_does_not_claim_number_shortcuts() {
+        XCTAssertTrue(HotkeyConfiguration.defaults.toolShortcuts.isEmpty)
+        XCTAssertTrue(HotkeyPreferences(defaults: makeDefaults()).toolShortcuts.isEmpty)
         XCTAssertTrue(HotkeyConfiguration.defaults.conflicts.isEmpty)
     }
 
-    func test_two_slots_on_same_hover_shortcut_conflict() throws {
-        var config = HotkeyConfiguration.defaults
-        // Put ⌥1 on two hover slots → one combo conflict.
-        config.hoverSlot2Shortcut = .combo(.optionOne)
-        let conflict = try XCTUnwrap(config.conflicts.first { $0.actionTitles.contains("Hover slot 1") })
-        XCTAssertTrue(conflict.actionTitles.contains("Hover slot 1"))
-        XCTAssertTrue(conflict.actionTitles.contains("Hover slot 2"))
-    }
-
-    func test_hover_shortcut_conflicts_with_agent_close() throws {
-        var config = HotkeyConfiguration.defaults
-        // agentClose default is ⌥Q; move a hover slot onto ⌥Q → conflict.
-        config.hoverSlot1Shortcut = .combo(.optionQ)
-        let conflict = try XCTUnwrap(config.conflicts.first { $0.actionTitles.contains("Agent close") })
-        XCTAssertTrue(conflict.actionTitles.contains("Hover slot 1"))
-        XCTAssertTrue(conflict.actionTitles.contains("Agent close"))
-    }
-
-    // MARK: - Prefs round-trip through UserDefaults
-
-    func test_hover_prefs_round_trip_userdefaults() {
+    func test_bindings_round_trip_and_clear_without_resurrecting_legacy_slots() throws {
         let defaults = makeDefaults()
-        var config = HotkeyConfiguration.defaults
-        config.hoverSlot1Shortcut = .combo(.optionD)
-        config.hoverSlot3Shortcut = .combo(.optionPeriod)
-
+        defaults.set(HotkeyShortcut.combo(.optionOne).rawValue, forKey: "hotkeys.hoverSlot1Shortcut")
         let prefs = HotkeyPreferences(defaults: defaults)
-        try? prefs.apply(config)
-
-        XCTAssertEqual(prefs.hoverSlot1Shortcut, .combo(.optionD))
-        XCTAssertEqual(prefs.hoverSlot3Shortcut, .combo(.optionPeriod))
-
-        // Fresh load sees the same values.
-        let reloaded = HotkeyPreferences(defaults: defaults)
-        XCTAssertEqual(reloaded.hoverSlot1Shortcut, .combo(.optionD))
-        XCTAssertEqual(reloaded.hoverSlot3Shortcut, .combo(.optionPeriod))
-        XCTAssertEqual(reloaded.hoverSlot2Shortcut, .combo(.optionTwo))
+        var config = prefs.configuration
+        config.toolShortcuts = [.brightness: .combo(.optionD), .vocab: .combo(.optionPeriod)]
+        try prefs.apply(config)
+        XCTAssertEqual(HotkeyPreferences(defaults: defaults).toolShortcuts, config.toolShortcuts)
+        config.toolShortcuts = [:]
+        try prefs.apply(config)
+        XCTAssertTrue(HotkeyPreferences(defaults: defaults).toolShortcuts.isEmpty)
     }
 
-    func test_fresh_install_hover_defaults_are_option_digits() {
-        let prefs = HotkeyPreferences(defaults: makeDefaults())
-        XCTAssertEqual(prefs.hoverSlot1Shortcut, .combo(.optionOne))
-        XCTAssertEqual(prefs.hoverSlot5Shortcut, .combo(.optionFive))
+    func test_saved_legacy_slots_migrate_to_current_tools_only_once() {
+        let defaults = makeDefaults()
+        defaults.set(["vocab", "brightness", "settings"], forKey: HoverLayoutStore.defaultsKey)
+        defaults.set(HotkeyShortcut.combo(.optionD).rawValue, forKey: "hotkeys.hoverSlot1Shortcut")
+        defaults.set(HotkeyShortcut.combo(.optionTwo).rawValue, forKey: "hotkeys.hoverSlot2Shortcut")
+        defaults.set(HotkeyShortcut.combo(.optionFive).rawValue, forKey: "hotkeys.hoverSlot5Shortcut")
+        let prefs = HotkeyPreferences(defaults: defaults)
+        XCTAssertEqual(prefs.toolShortcuts, [.vocab: .combo(.optionD), .brightness: .combo(.optionTwo)])
+        defaults.set(["brightness", "vocab", "settings"], forKey: HoverLayoutStore.defaultsKey)
+        XCTAssertEqual(HotkeyPreferences(defaults: defaults).toolShortcuts, prefs.toolShortcuts)
     }
 
-    func test_reset_to_defaults_restores_hover_shortcuts() {
+    func test_invalid_or_drop_only_shortcuts_and_unknown_tools_are_ignored() {
+        let defaults = makeDefaults()
+        defaults.set(["vocab": HotkeyShortcut.holdSpace.rawValue, "brightness": "invalid",
+                      "unknown": HotkeyShortcut.combo(.optionD).rawValue,
+                      "settings": HotkeyShortcut.combo(.optionFive).rawValue],
+                     forKey: HotkeyPreferences.toolShortcutsDefaultsKey)
+        XCTAssertEqual(HotkeyPreferences(defaults: defaults).toolShortcuts, [.settings: .combo(.optionFive)])
+    }
+
+    func test_reorder_and_unpin_keep_registration_target_and_id() {
         let prefs = HotkeyPreferences(defaults: makeDefaults())
-        prefs.hoverSlot1Shortcut = .combo(.optionD)
+        prefs.toolShortcuts = [.brightness: .combo(.optionD), .vocab: .combo(.optionPeriod)]
+        let before = ToolHotkeyBinding.resolve(prefs.toolShortcuts)
+        let layout = makeLayoutStore()
+        layout.placeTool(.brightness, at: 0)
+        layout.placeTool(.vocab, at: 0)
+        layout.removeTool(.brightness)
+        XCTAssertEqual(ToolHotkeyBinding.resolve(prefs.toolShortcuts), before)
+        XCTAssertTrue(before.contains { $0.tool == .brightness && $0.shortcut == .combo(.optionD) })
+        prefs.toolShortcuts[.brightness] = nil
+        XCTAssertFalse(ToolHotkeyBinding.resolve(prefs.toolShortcuts).contains { $0.tool == .brightness })
+    }
+
+    func test_all_catalog_tools_can_register_beyond_five_tiles_with_unique_ids() {
+        let bindings = ToolHotkeyBinding.resolve(Dictionary(uniqueKeysWithValues:
+            HoverTool.allCases.map { ($0, HotkeyShortcut.combo(.optionD)) }))
+        XCTAssertEqual(bindings.count, HoverTool.allCases.count)
+        XCTAssertEqual(Set(bindings.map(\.hotKeyID)).count, bindings.count)
+        XCTAssertTrue(bindings.allSatisfy { $0.hotKeyID > CarbonHotkeyMonitor.meetingRecordHotKeyID })
+        XCTAssertTrue(ToolHotkeyBinding.resolve([.vocab: .holdSpace]).isEmpty)
+    }
+
+    func test_conflicts_block_save_between_tools_and_core_actions() throws {
+        var config = HotkeyConfiguration.defaults
+        config.toolShortcuts = [.vocab: .combo(.optionQ), .brightness: .combo(.optionQ)]
+        let conflict = try XCTUnwrap(config.conflicts.first)
+        XCTAssertEqual(Set(conflict.actionTitles), ["Agent close", "Vocab", "Display"])
+        let prefs = HotkeyPreferences(defaults: makeDefaults())
+        XCTAssertThrowsError(try prefs.apply(config))
+        XCTAssertTrue(prefs.toolShortcuts.isEmpty)
+        config.toolShortcuts = [.vocab: .combo(HotkeyTapCombo(keyCode: UInt32(kVK_ANSI_H),
+                            modifiers: UInt32(optionKey), keyTitle: "H"))]
+        XCTAssertTrue(config.conflicts.contains { $0.actionTitles.contains("Help") })
+    }
+
+    func test_reset_clears_feature_bindings() {
+        let defaults = makeDefaults()
+        let prefs = HotkeyPreferences(defaults: defaults)
+        prefs.toolShortcuts = [.brightness: .combo(.optionD)]
         prefs.resetToDefaults()
-        XCTAssertEqual(prefs.hoverSlot1Shortcut, .combo(.optionOne))
+        XCTAssertTrue(HotkeyPreferences(defaults: defaults).toolShortcuts.isEmpty)
+        XCTAssertTrue(prefs.toolShortcuts.isEmpty)
     }
 
-    func test_configuration_computed_reflects_hover_shortcuts() {
-        let prefs = HotkeyPreferences(defaults: makeDefaults())
-        prefs.hoverSlot2Shortcut = .combo(.optionD)
-        XCTAssertEqual(prefs.configuration.hoverSlot2Shortcut, .combo(.optionD))
+    func test_backup_preserves_feature_bindings_and_intentional_empty_map() throws {
+        let defaults = makeDefaults()
+        let prefs = HotkeyPreferences(defaults: defaults)
+        prefs.toolShortcuts = [.brightness: .combo(.optionD)]
+        let archive = try ConfigBackupRegistry.capture(defaults)
+        let restored = makeDefaults()
+        try ConfigBackupRegistry.apply(archive, sections: [.hotkeys], to: restored)
+        XCTAssertEqual(HotkeyPreferences(defaults: restored).toolShortcuts, prefs.toolShortcuts)
+        prefs.toolShortcuts = [:]
+        try ConfigBackupRegistry.apply(ConfigBackupRegistry.capture(defaults), sections: [.hotkeys], to: restored)
+        XCTAssertTrue(HotkeyPreferences(defaults: restored).toolShortcuts.isEmpty)
     }
 
     // MARK: - Router: slot effect maps to the same action a click fires (D1)
@@ -220,7 +174,7 @@ final class HoverHotkeyTests: XCTestCase {
         )
 
         // Slot 1 (default layout) = .dropMode → handled by
-        // `AppDelegate.onHoverSlotActivated` directly (the returned mode feeds
+        // `AppDelegate.onToolHotkeyActivated` directly (the returned mode feeds
         // `AppState.publishDropModeHotkeyToggle`), so `invoke` must be a no-op
         // — see test_toggle_drop_mode_effect_is_noop_in_invoke.
         HoverSlotRouter.effect(for: .dropMode).invoke(on: actions)
@@ -269,7 +223,7 @@ final class HoverHotkeyTests: XCTestCase {
     /// is covered by `test_router_maps_clipboard_slot_to_history_panel` instead.
     /// `.dropMode` is intentionally absent too — both activation paths call
     /// `actions.toggleDropMode()` themselves to consume the returned mode (tile
-    /// click in `IslandView`, hotkey in `AppDelegate.onHoverSlotActivated` +
+    /// click in `IslandView`, hotkey in `AppDelegate.onToolHotkeyActivated` +
     /// `AppState.publishDropModeHotkeyToggle`), so `invoke` is a no-op for it;
     /// covered by `test_toggle_drop_mode_effect_is_noop_in_invoke`.
     /// If either side drifts, this fails.
@@ -306,7 +260,7 @@ final class HoverHotkeyTests: XCTestCase {
         XCTAssertFalse(anyClosureFired)
     }
 
-    /// `.toggleDropMode` is handled by `AppDelegate.onHoverSlotActivated`
+    /// `.toggleDropMode` is handled by `AppDelegate.onToolHotkeyActivated`
     /// directly — the returned mode must be published via
     /// `AppState.publishDropModeHotkeyToggle` so `IslandView` can sync its tile
     /// and show the transient ON Smart/Fast right-band status. Routing it
@@ -326,28 +280,6 @@ final class HoverHotkeyTests: XCTestCase {
         )
         HoverSlotEffect.toggleDropMode.invoke(on: actions)
         XCTAssertFalse(anyClosureFired)
-    }
-
-    // MARK: - Positional binding follows layout reorder (D1)
-
-    func test_hover_slot_action_follows_layout_reorder() {
-        let store = makeLayoutStore()
-        // The active product profile defines the initial tool at position 1.
-        XCTAssertEqual(
-            HoverSlotRouter.effect(for: store.slots[0]),
-            HoverSlotRouter.effect(for: HoverLayoutStore.defaultSlots[0])
-        )
-
-        // Swap in a tool NOT already present in the default layout
-        // (`.vocab`); `setSlot` rejects duplicates, so a tool already on
-        // screen wouldn't move. Position 1 now holds `.vocab`.
-        store.setSlot(0, to: .vocab)
-        XCTAssertEqual(store.slots[0], .vocab)
-
-        // Activating position 1 now resolves to `.vocab`'s effect, not
-        // `.dropMode`'s — the shortcut is bound to the POSITION, not the tool.
-        let toolAtPosition1 = store.slots[0]
-        XCTAssertEqual(HoverSlotRouter.effect(for: toolAtPosition1), .openPanel(.vocabularyEditor))
     }
 
     // MARK: - Programmatic expansion respects hover policy (D4)
@@ -390,22 +322,6 @@ final class HoverHotkeyTests: XCTestCase {
 
     func test_appstate_programmatic_expansion_defaults_off() {
         XCTAssertFalse(AppState.shared.programmaticHoverExpansion)
-    }
-
-    // MARK: - Carbon hotKeyIDs are a distinct contiguous block
-
-    func test_hover_hotkey_ids_are_distinct_and_after_agent_voice() {
-        let ids = [
-            CarbonHotkeyMonitor.hoverSlot1HotKeyID,
-            CarbonHotkeyMonitor.hoverSlot2HotKeyID,
-            CarbonHotkeyMonitor.hoverSlot3HotKeyID,
-            CarbonHotkeyMonitor.hoverSlot4HotKeyID,
-            CarbonHotkeyMonitor.hoverSlot5HotKeyID
-        ]
-        // 13..17 — after agentVoiceHotKeyID (12), no collisions.
-        XCTAssertEqual(ids, [13, 14, 15, 16, 17])
-        XCTAssertEqual(Set(ids).count, 5)
-        XCTAssertGreaterThan(ids.min()!, CarbonHotkeyMonitor.agentVoiceHotKeyID)
     }
 
     // MARK: - Helpers
