@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 
 final class PackagingRebrandTests: XCTestCase {
@@ -154,6 +155,34 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertEqual(plan["signing_certificate_sha1"] as? String, identity.sha1)
         XCTAssertEqual(plan["signing_key_configured"] as? Bool, false)
         XCTAssertEqual(plan["requires_apple_developer"] as? Bool, false)
+    }
+
+    /// Every community build's designated requirement pins this certificate's
+    /// SHA-1 and macOS privacy grants follow that requirement. Another
+    /// certificate makes every install grant Microphone and System Audio
+    /// Recording again, so replacing it must be a deliberate rotation.
+    func test_communitySigningCertificateIsPinned() throws {
+        let pem = try readProjectFile("Resources/community-signing-certificate.pem")
+        let body = pem.split(separator: "\n").filter { !$0.hasPrefix("-----") }.joined()
+        let der = try XCTUnwrap(Data(base64Encoded: body))
+        let sha1 = Insecure.SHA1.hash(data: der).map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(sha1, "39da363652f6df4b52ac950998e16c98fd39bc6b",
+                       "A new community certificate makes every install grant its macOS permissions again; rotate only for a leaked key")
+    }
+
+    /// `.gitignore` excludes `*.pem` as signing material, and the provenance check
+    /// lists untracked but not ignored files. An ignored certificate would let a
+    /// build sign with a file outside the release commit while a fresh clone signs
+    /// ad hoc.
+    func test_communitySigningCertificateIsNotIgnored() throws {
+        let result = try runTool(URL(fileURLWithPath: "/usr/bin/git"),
+            arguments: ["-C", try projectRoot().path, "check-ignore", "--no-index", "-q",
+                        "Resources/community-signing-certificate.pem"],
+            environment: ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"])
+        if result.status == 128 {
+            throw XCTSkip("not a Git checkout")
+        }
+        XCTAssertEqual(result.status, 1, "Git ignores Resources/community-signing-certificate.pem: \(result.output)")
     }
 
     func test_publishingRunRefusesLocalSigningOverrides() throws {

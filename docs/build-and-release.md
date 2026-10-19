@@ -60,9 +60,12 @@ be clean. The normal commands are:
 
 ```bash
 FLAVOR=prod ./scripts/user-release.sh --dry-run
-FLAVOR=prod ./scripts/user-release.sh --build-only
-FLAVOR=prod ./scripts/user-release.sh
+doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh --build-only
+doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh
 ```
+
+Doppler supplies the community code-signing key for the build and the Sparkle key
+for publication; see below.
 
 `--dry-run` reads the live feed and installed build to calculate versions, but
 does not build or upload. It is not the offline preflight. `--build-only` creates
@@ -113,9 +116,12 @@ Apple-notarized. First-download Gatekeeper warnings remain; see
 
 ### Community code-signing identity
 
-When `Resources/community-signing-certificate.pem` is committed, `build-dmg.sh`
-signs the app, its nested code and the DMG with Exodia's self-signed
-code-signing certificate. Without that file it signs ad hoc.
+`build-dmg.sh` signs the app, its nested code and the DMG with Exodia's
+self-signed code-signing certificate, committed as
+`Resources/community-signing-certificate.pem` (CN "Exodia Community Code
+Signing", SHA-1 `39da363652f6df4b52ac950998e16c98fd39bc6b`, valid until
+2056-10-11). Without that file, for example in a fork that removed it, the build
+signs ad hoc.
 
 The certificate gives every build the same designated requirement:
 `identifier "com.rootwise.sidekey" and certificate leaf = H"<certificate SHA-1>"`
@@ -145,8 +151,10 @@ certificate, repeats the app check on the mounted DMG and seals
 `./scripts/community-signing-bootstrap.sh` creates the identity once. It refuses
 to replace an existing certificate or Doppler secret. A new certificate is a new
 identity: every install has to grant its permissions once more, so rotate only
-if the key leaks. Code signed with the key inherits the users' grants, which is
-why the key stays as private as the Sparkle key.
+if the key leaks. `PackagingRebrandTests` pins the certificate's SHA-1, so a
+replaced certificate fails the tests until the pin is changed on purpose. Code
+signed with the key inherits the users' grants, which is why the key stays as
+private as the Sparkle key.
 
 The first certificate-signed release changes the requirement of installs that
 came from an ad-hoc build, so they grant Microphone and System Audio Recording

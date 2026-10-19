@@ -35,6 +35,12 @@ sources:
   - type: trace
     reference: Two throwaway-certificate candidates (builds 90001 and 90002) with identical designated requirements and different cdhashes; full local swift test on df12312, 2,893 tests, 5 skipped, 0 failures in 55.562 seconds.
     confirmed_at: 2026-10-19
+  - type: trace
+    reference: Live TCC probe on 2026-10-19. A Microphone grant given to one certificate-signed build stayed authorized for a rebuild with a different cdhash, and an ad-hoc build of the same bundle ID did not match it.
+    confirmed_at: 2026-10-19
+  - type: repository
+    reference: Resources/community-signing-certificate.pem
+    confirmed_at: 2026-10-19
 related: [../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md]
 ---
 
@@ -64,7 +70,14 @@ does not depend on Apple Developer membership.
   committed as `Resources/community-signing-certificate.pem`. The private key
   lives in Doppler `sidekey/dev` as `EXODIA_COMMUNITY_SIGNING_KEY`, next to the
   Sparkle key. `scripts/community-signing-bootstrap.sh` creates both once and
-  refuses to replace an existing certificate or secret.
+  refuses to replace an existing certificate or secret. The identity was
+  created on 2026-10-19: SHA-1 `39da363652f6df4b52ac950998e16c98fd39bc6b`,
+  valid until 2056-10-11. `PackagingRebrandTests` pins that SHA-1.
+- `.gitignore` excludes `*.pem` as signing material, with one exception for
+  the public certificate. The provenance check lists untracked but not
+  ignored files, so an ignored certificate would let a build sign with a file
+  outside the release commit while a fresh clone signs ad hoc. A test keeps
+  the exception.
 - With the certificate committed, community `build-dmg.sh` signs the nested
   code, the app and the DMG with it. The key comes from the environment or
   `EXODIA_COMMUNITY_SIGNING_KEY_FILE`, is checked against the certificate
@@ -96,8 +109,8 @@ does not depend on Apple Developer membership.
 - No Apple Developer membership or cost, in line with the community
   distribution decisions.
 - Sparkle 2.9.1 accepts both the first switch from ad hoc and later updates:
-  - With `SUVerifyUpdateBeforeExtraction`, which community builds set (the
-    installed 2.2.12 has it), the archive is
+  - With `SUVerifyUpdateBeforeExtraction`, which community builds set since
+    2.2.0 (commit `21b8cc2`, in every 2.2.x tag), the archive is
     prevalidated with EdDSA; then the basic policy counts both ad-hoc and
     certificate signatures as code-signed (`SUUpdateValidator.m:191`), and
     the new app only has to have a valid signature, without a requirement
@@ -121,11 +134,12 @@ does not depend on Apple Developer membership.
 - The problem: tccd's log for the two days up to 2026-10-19 has 44 "Failed
   to match existing code requirement" entries for `com.rootwise.sidekey`
   (24 Microphone, 20 AudioCapture).
-- `PackagingRebrandTests`: 15 tests, 0 failures (12.796 s). Fixtures cover
+- `PackagingRebrandTests`: 17 tests, 0 failures (12.048 s). Fixtures cover
   the key check before compiling (missing or mismatched key stops the build,
   a matching key reaches the compiler), the preflight report, the refusal of
   local overrides in a publishing run, and upload refusing a manifest whose
-  code-signing value does not match the committed certificate.
+  code-signing value does not match the committed certificate. Two tests pin
+  the committed certificate's SHA-1 and check that Git does not ignore it.
 - Bootstrap in key-file mode: key file 0600, certificate 0644, printed
   requirements; it refuses to run when a certificate already exists.
 - Two consecutive universal candidates, both signed with a throwaway
@@ -153,11 +167,35 @@ does not depend on Apple Developer membership.
   signing does not match the release signing identity" (exit 1). With the
   matching identity it passes.
 - Full suite on `df12312`: 2,893 tests, 5 skipped, 0 failures (55.562 s).
-- Not tested: a real Sparkle install from the installed app to a
-  certificate-signed build; the production certificate (the throwaway one
-  stands in for it); Keychain behavior. Keychain items of apps without an
-  Apple-issued certificate are partitioned by cdhash, so the Keychain prompt
-  after an update is expected to stay as it is with ad hoc.
+- Live TCC grant on 2026-10-19. A probe app was built three times under its
+  own bundle ID, `com.rootwise.sidekey.signing-probe`, so the real app's grants
+  were not touched:
+  - v1 and v2 were signed with the throwaway certificate (cdhash `86cbe501…`
+    and `65158d86…`); v3 was signed ad hoc (`54058a90…`). None has a team ID.
+  - Before the request, all three reported Microphone as `notDetermined`.
+  - v1 requested Microphone and the maintainer allowed it. tccd logged the
+    prompt and the new record.
+  - v2 then reported `authorized` without a prompt, v3 `notDetermined`, and v2
+    `authorized` again.
+  - tccd logged one "Failed to match existing code requirement", for v3: the
+    stored `identifier "com.rootwise.sidekey.signing-probe" and certificate
+    leaf = H"4ef2cb47…"` against v3's `cdhash H"54058a90…"`. The real app logs
+    the same line after an ad-hoc update.
+- Production identity: `community-signing-bootstrap.sh` in Doppler mode
+  stored the key and read it back. It wrote the certificate only after the
+  key's public key matched the certificate's. The certificate:
+  - CN "Exodia Community Code Signing", self-issued;
+  - RSA-3072, sha256WithRSAEncryption;
+  - CA:false, critical code-signing extended key usage;
+  - valid 2026-10-19 to 2056-10-11, SHA-1 `39da3636…`.
+- Not tested:
+  - a real Sparkle install from the installed app to a certificate-signed
+    build;
+  - System Audio Recording live: it is stored and matched the same way, and
+    tccd logged the same ad-hoc failure for it;
+  - Keychain behavior. Keychain items of apps without an Apple-issued
+    certificate are partitioned by cdhash, so the Keychain prompt after an
+    update is expected to stay as it is with ad hoc.
 
 ## Rejected
 

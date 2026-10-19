@@ -426,8 +426,9 @@ SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 
 # Community binary: local universal build, no Apple Developer
 FLAVOR=prod ./scripts/user-release.sh --preflight-only
-# Commit relevant build inputs before the build; retain the adjacent DMG manifest
-FLAVOR=prod ./scripts/user-release.sh --build-only
+# Commit relevant build inputs before the build; retain the adjacent DMG manifest.
+# Doppler supplies the community certificate's private key.
+doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh --build-only
 # Publishing also needs the project's Sparkle signing key and GitHub access
 FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
