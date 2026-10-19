@@ -99,14 +99,14 @@ actor BackupLocalStore {
 
     /// No plaintext is involved; nevertheless verify the copied ciphertext
     /// before marking the folder destination complete.
-    static func copyArchive(_ source: URL, to destination: URL) throws {
+    static func copyArchive(_ source: URL, to destination: URL, replaceDamagedCopy: Bool = false) throws {
         try ConfigBackupFiles.checkDirectory(source.deletingLastPathComponent())
         try ConfigBackupFiles.ensurePrivateDirectory(destination.deletingLastPathComponent())
         let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true else { throw ConfigBackupError.unsafePath }
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
-            guard try digest(source) == digest(destination) else { throw ConfigBackupError.saveFailed }
-            return
+        if FileManager.default.fileExists(atPath: destination.path) {
+            if try digest(source) == digest(destination) { return }
+            guard replaceDamagedCopy else { throw ConfigBackupError.saveFailed }
         }
         let temporary = destination.deletingLastPathComponent().appendingPathComponent(".copy-" + UUID().uuidString)
         guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600]) else { throw ConfigBackupError.saveFailed }

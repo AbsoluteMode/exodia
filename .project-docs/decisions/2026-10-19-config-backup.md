@@ -32,7 +32,7 @@ sources:
   - type: url
     reference: https://docs.github.com/en/rest/releases/assets
     confirmed_at: 2026-10-19
-related: [../project.md]
+related: [../project.md, 2026-10-19-backup-management.md]
 ---
 
 # Encrypted user artifact backup and recovery

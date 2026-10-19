@@ -577,6 +577,15 @@ GitHub release assets receive ciphertext; a checked completion index is publishe
 last. Folder copies report verified local writes, not verified cloud upload.
 API & Models routes, server registrations and their provider keys are included.
 Reset leaves routes Not set; archives predating routing preserve current routes.
+The main Backup page has Back up / Restore backup; settings history and management
+are disclosures. Code replacement verifies a new standalone full copy before
+explicitly deleting old full copies locally and at the connected destination.
+Deletion without replacement leaves automatic backup off and retires the cloud
+code. Durable maintenance requests block backup/restore until cleanup finishes;
+secrets remain in Keychain. Settings history and restore checkpoints are retained.
+Downloaded copies cannot be revoked; other destinations, sync trash/version
+history and other Macs require separate cleanup. WHY:
+`.project-docs/decisions/2026-10-19-backup-management.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore
