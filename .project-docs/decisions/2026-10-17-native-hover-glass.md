@@ -2,12 +2,15 @@
 id: native-hover-glass-2026-10-17
 type: decision
 title: Native Apple Liquid Glass for hover surfaces
-summary: Match hover to the actual compact island width with three smaller capsules per row, real inline status and one independent Regular backdrop.
+summary: Match hover to the compact island width with three icon-and-title capsules per row and one independent Regular backdrop; recording lights the icon.
 status: confirmed
 tags: [macos, hover, liquid-glass, swiftui, accessibility]
 canonical_for: [hover-glass-material]
-verified_at: 2026-10-18
+verified_at: 2026-10-19
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-19 the user requested removing small tile captions and lighting the Record icon during recording, since the right wing already shows recording status.
+    confirmed_at: 2026-10-19
   - type: user-confirmed
     reference: On 2026-10-18 the user tested installed Exodia 2.2.7, opened Monitor, returned with Tools and confirmed the search loupe was fully visible.
     confirmed_at: 2026-10-18
@@ -192,7 +195,10 @@ foreground hierarchy: the lens gradient, rim and icon keep their independent
 colors, matching the user's separate-layer reference. The current controls are
 compact horizontal capsules in `IslandHoverPanelControl.swift`, defaulting to
 90x52 points with a 30-point left icon disk, 17-point blue standard glyph, normal-case
-11-point title and optional 10-point status inside. Each grid instance receives
+11-point title inside. The 2026-10-19 user correction removes the small status
+captions from every tile; actual current values remain in VoiceOver. Record
+uses a red icon and soft glow while recording, with no second text line; the
+existing right-wing recording indicator remains. Each grid instance receives
 the width calculated from the actual compact island width. They are foreground
 gradient/rim lenses without
 a child native glass effect. `HoverToolPresentation` derives actual mode,

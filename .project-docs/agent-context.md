@@ -232,8 +232,10 @@ Hover capsules and materials:
   exactly the same width, with three smaller capsules per row. Follow the actual
   notch-derived compactWidth (310/312 pt examples), not a fixed 457 pt drawer.
   IslandHoverPanelControl.swift defaults to a 90x52 foreground capsule with a
-  30 pt white icon disk with 17 pt blue symbols, normal-case 11 pt title and optional 10 pt
-  current status inside. The grid supplies each instance's exact width through
+  30 pt white icon disk with 17 pt blue symbols and a normal-case 11 pt title.
+  No small status captions are drawn; current values remain in VoiceOver.
+  Record lights its icon red with a soft glow while recording, alongside the
+  existing right-wing indicator. The grid supplies each instance's exact width through
   IslandHoverControlsLayout.tileWidth(panelWidth:): (panelWidth - 24 - 16) / 3.
   User feedback on 2026-10-18 called the 24 pt disks and 12 pt symbols too small;
   larger icons retain the same capsule and text sizes.
