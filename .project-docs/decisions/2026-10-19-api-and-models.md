@@ -26,7 +26,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Settings/APIAndModels/
     confirmed_at: 2026-10-19
-related: [2026-10-18-remove-local-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-19-deepgram-language-policy.md]
+related: [2026-10-18-remove-local-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-19-deepgram-language-policy.md, 2026-10-19-api-hints.md]
 ---
 
 # API & Models
