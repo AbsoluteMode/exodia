@@ -7,6 +7,7 @@ import Foundation
 enum HoverTool: String, CaseIterable, Hashable {
     case dropMode
     case clipboard
+    case notifs
     case vocab
     case caseVault
     case filler
@@ -51,6 +52,9 @@ enum HoverToolRegistry {
         case .dropMode:
             return HoverToolInfo(title: "Drop Mode", sfSymbol: "bolt", kind: .action,
                                  description: "Switch between Fast and Smart transcription")
+        case .notifs:
+            return HoverToolInfo(title: "Notify", sfSymbol: "bell.badge", kind: .inlinePanel,
+                                 description: "View notifications and manage script sources")
         case .clipboard:
             return HoverToolInfo(title: "History", sfSymbol: "clock.arrow.circlepath", kind: .inlinePanel,
                                  description: "Open unified history")

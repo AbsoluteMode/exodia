@@ -70,6 +70,7 @@ struct IslandIdleBlockers: Equatable {
     var rightModifierHeld: Bool
     /// B12 — Programmatic hover expansion via ⌥N (`programmaticHoverExpansion`).
     var programmaticHoverExpansion: Bool
+    var notificationActive: Bool = false
 
     /// The disjunction — `true` if any blocker is up.
     var isBusy: Bool {
@@ -83,5 +84,6 @@ struct IslandIdleBlockers: Equatable {
             || nowPlayingActive
             || rightModifierHeld
             || programmaticHoverExpansion
+            || notificationActive
     }
 }

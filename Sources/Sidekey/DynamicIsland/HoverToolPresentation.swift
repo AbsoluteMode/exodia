@@ -21,7 +21,7 @@ struct HoverToolPresentation: Equatable {
             status = mode == .fast ? "Smart only" : (outputLanguage?.displayName ?? "Off")
         case .meetingRecord:
             status = meetingRecordingActive ? "Recording" : "Not recording"
-        case .clipboard, .vocab, .caseVault, .filler, .hotkeys, .notes, .monitor, .quit, .settings:
+        case .clipboard, .notifs, .vocab, .caseVault, .filler, .hotkeys, .notes, .monitor, .quit, .settings:
             status = nil
         }
         return Self(title: HoverToolRegistry.info(for: tool).title, status: status)
