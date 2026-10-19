@@ -85,18 +85,7 @@ The connection check itself does not submit a paid model request.
 
 The agent can edit files and run tests by default. **Allow agent actions** can
 be turned off in Settings. Its model configuration, memory and conversation
-sessions stay local and are separated by active project.
-
-## Local project knowledge
-
-In **Settings, Projects**, add a project folder, index it and select the active
-project. Keep project notes there too. The local search returns code and document
-excerpts with file and line references for the agent's question; it does not
-send the entire folder to a provider. Reindex explicitly after source changes.
-There is no automatic live meeting copilot yet.
-
-The catalog and text index stay on your Mac. Selected excerpts and notes can be
-sent to the model provider you configure when you ask the agent a question.
+sessions stay local in the agent workspace.
 
 ## Hotkeys
 

@@ -44,7 +44,7 @@ sources:
   - type: trace
     reference: Production candidate build 90003 from 2040de9, signed with the committed certificate; its designated requirement pins SHA-1 39da3636 and provenance verification passed. Full local swift test on 2040de9, 2,895 tests, 5 skipped, 0 failures in 55.518 seconds.
     confirmed_at: 2026-10-19
-related: [../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md, 2026-10-19-one-running-copy.md]
+related: [../bugs/2026-10-19-permission-stability-audit.md, ../project.md, 2026-10-17-community-updates.md, 2026-10-17-source-first-distribution.md, 2026-10-19-one-running-copy.md]
 ---
 
 # Stable code-signing identity for community builds
