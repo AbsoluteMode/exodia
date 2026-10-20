@@ -38,8 +38,8 @@ fixed on the site.
   switches and no `default`. The enums are the registry; there is no list.
 - A link only shows a place. Inline tools open the same `HoverPanelRequest`
   as their tile and feature hotkey. Navigate tools and every tab open Settings
-  with `setHighlight`. To-do/Calendar/Translate/Subtitles open their windows
-  idle. Drop Mode, Record and Screenshot select their Toolbox pane, where the
+  with `setHighlight`. To-do opens its compact inline panel, matching the
+  tile and hotkey. Calendar/Translate/Subtitles open their windows idle. Drop Mode, Record and Screenshot select their Toolbox pane, where the
   action remains an explicit button. Quit highlights the Quit row.
 - A well-formed link with an unknown id or kind (a newer site, an older app)
   only wakes the island. Other schemes, credentials, ports, empty or extra path

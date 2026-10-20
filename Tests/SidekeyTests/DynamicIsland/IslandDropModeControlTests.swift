@@ -288,7 +288,7 @@ final class IslandDropModeControlTests: XCTestCase {
             (.meetingRecord, "Record", .toggleMeetingRecord),
             (.monitor, "Monitor", .openPanel(.monitor)),
             (.brightness, "Display", .openPanel(.brightness)),
-            (.tasks, "To-do", .openTasks),
+            (.tasks, "To-do", .openPanel(.tasks)),
             (.calendar, "Calendar", .openCalendar),
             (.translate, "Translate", .openTranslate),
             (.subtitles, "Subtitles", .openSubtitles),
@@ -309,12 +309,11 @@ final class IslandDropModeControlTests: XCTestCase {
         actions.toggleMeetingRecord = { invoked.append("record") }
         actions.quitApplication = { invoked.append("quit") }
         actions.openSettings = { invoked.append("settings") }
-        actions.openTasks = { invoked.append("tasks") }
         actions.openCalendar = { invoked.append("calendar") }
-        for tool in [HoverTool.hotkeys, .notes, .meetingRecord, .quit, .settings, .tasks, .calendar] {
+        for tool in [HoverTool.hotkeys, .notes, .meetingRecord, .quit, .settings, .calendar] {
             HoverSlotRouter.effect(for: tool).invoke(on: actions)
         }
-        XCTAssertEqual(invoked, ["hotkeys", "notes", "record", "quit", "settings", "tasks", "calendar"])
+        XCTAssertEqual(invoked, ["hotkeys", "notes", "record", "quit", "settings", "calendar"])
 
         let russian = AppLanguage(code: "ru", displayName: "Русский", englishName: "Russian")
         func capsule(_ tool: HoverTool, mode: TranscriptionMode = .smart,

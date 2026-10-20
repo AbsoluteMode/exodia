@@ -10,6 +10,7 @@ enum HoverInlinePanel: Equatable {
     /// became this inline hover panel, so its feature hotkey opens History in-place
     /// rather than firing the old bottom-strip action.
     case history
+    case tasks
     case notifications
     case vocabularyEditor
     case caseVault
@@ -51,7 +52,6 @@ enum HoverSlotEffect: Equatable {
     case openNotes
     case toggleMeetingRecord
     case openMonitor
-    case openTasks
     case openCalendar
     case openTranslate
     case openSubtitles
@@ -67,7 +67,7 @@ enum HoverSlotEffect: Equatable {
         case .openPanel:
             return true
         case .toggleDropMode, .openSettings, .openHotkeys, .openNotes,
-             .toggleMeetingRecord, .openMonitor, .openTasks, .openCalendar, .openTranslate, .openSubtitles, .openScreenshot, .quit:
+             .toggleMeetingRecord, .openMonitor, .openCalendar, .openTranslate, .openSubtitles, .openScreenshot, .quit:
             return false
         }
     }
@@ -95,8 +95,6 @@ enum HoverSlotEffect: Equatable {
             actions.toggleMeetingRecord()
         case .openMonitor:
             actions.openMonitor()
-        case .openTasks:
-            actions.openTasks()
         case .openCalendar:
             actions.openCalendar()
         case .openTranslate:
@@ -142,7 +140,7 @@ enum HoverSlotRouter {
         case .brightness:
             return .openPanel(.brightness)
         case .tasks:
-            return .openTasks
+            return .openPanel(.tasks)
         case .calendar:
             return .openCalendar
         case .translate:

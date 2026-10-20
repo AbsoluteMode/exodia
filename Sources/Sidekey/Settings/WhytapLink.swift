@@ -68,7 +68,7 @@ enum WhytapLink {
         // Highlights the Quit row; quitting needs the user's click.
         case .quit: return .settings(.quitRow)
         case .settings: return .settings(.tab(.apiAndModels))
-        case .tasks: return .planner(.tasks)
+        case .tasks: return .hoverPanel(.tasks)
         case .calendar: return .planner(.calendar)
         case .translate: return .translation(.text)
         // The window opens idle; subtitles start from its own button.

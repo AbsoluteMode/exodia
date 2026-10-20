@@ -1166,8 +1166,8 @@ final class BackupViewModel: ObservableObject {
 
     private func canStartRestore() -> Bool {
         guard idle() else { fail(ConfigBackupError.busy); return false }
-        guard !AppState.shared.plannerActive else {
-            errorMessage = "Finish your Planner changes and close its window before restoring a backup."
+        guard !AppState.shared.plannerActive && !AppState.shared.todoActive else {
+            errorMessage = "Finish or clear your To-do draft and close To-do and Planner before restoring a backup."
             return false
         }
         return true

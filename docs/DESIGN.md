@@ -431,12 +431,13 @@ surface; a new light-theme system is outside this change.
 
 The person comes to write down a task or find the next appointment. First they
 see the task list or selected day, then they can add/edit local content or join
-a connected meeting. This is a native working surface; its existing sidebar
-and detail pane remain the selected direction.
+a connected meeting. Calendar retains its native sidebar and detail pane.
+The user subsequently selected a compact inline To-do list; that supersedes
+the original window entry for the To-do catalog action (details below).
 
-- One 980×680 window, minimum 820×560, contains To-do and Calendar. Each catalog
-  action opens its matching section. Why: the month grid and agenda need desktop
-  space, and saved Toolbox layouts must remain unchanged.
+- Calendar opens a 980×680 window, minimum 820×560, with extended task management
+  still available in its sidebar. To-do opens in hover. Why: the month grid needs
+  desktop space; quick task capture needs a small surface. Saved slots stay intact.
 - Use the system font, native controls and semantic surfaces. Titles are 28pt
   bold, object names 13pt, metadata 11–13pt. MacSettingsTheme.text2 keeps metadata
   readable in both appearances; the selected date uses the shared #0064D2 fill
@@ -460,7 +461,7 @@ and detail pane remain the selected direction.
   client settings are advanced setup; an unregistered build exposes that setup
   honestly. Why: owner registration is a packaging responsibility, not a repeated
   task for every account holder.
-- Window visibility or a retained new-task draft defers update restart and restore.
+- Planner/To-do visibility or a retained new-task draft defers update restart and restore.
   Backups continue to capture saved data. Why: protecting edits must not pause all
   backup synchronization while someone keeps their calendar open.
 - No additional motion is introduced; native focus, keyboard shortcuts, sheets
@@ -548,3 +549,47 @@ key-only matches remain filtered. Search results expose + Key so the found
 project can be used without clearing the query manually. Adding explicitly
 expands that project before leaving search; existing cached metadata and
 lazy rendering remain.
+
+
+## Compact To-do in hover — 2026-10-20
+
+The user chose one small list, with immediate capture and completion. First see
+active tasks and the input; History is secondary. This replaces only the To-do
+catalog entry's former large-window direction.
+
+- Use the existing island width (including 310pt) and a 290pt content band inside
+  the shared glass drawer. A 26pt header contains Back, To-do and History. Rows
+  scroll within the panel; titles use 12pt, history dates 10pt. Why: the list stays
+  compact and its native pointer band matches visible content.
+- Input has a stable 32pt height and a visible focus outline. Return adds; empty
+  input does nothing; invalid input or failed persistence keeps the draft.
+  A successful Return scrolls the new row into view, including in a long list.
+  Opening the tool explicitly acquires keyboard focus, ordinary hover does not.
+  Why: capture takes one action without stealing focus from the user's editor.
+- Clicking the entire task row toggles completion. Completed rows stay at the
+  bottom during this opening, with a checkmark and strikethrough; the next opening
+  shows active tasks only. History sorts completed tasks by completion time and
+  supports reopening. Why: accidental completion is reversible before closing.
+- History shows completion date and local time. The optional persisted timestamp
+  decodes old archives without migration; legacy unknown times stay explicitly
+  unknown. Reopening clears the timestamp, and a later completion writes a new
+  one. Why: history must describe an actual action rather than an invented date.
+- Rows keep fixed geometry on hover. A native help tooltip exposes the full title;
+  accessibility labels retain the full title and completion state/date. Native
+  buttons and text input provide keyboard access. Why: long titles remain readable
+  without shifting the next target. Native keyboard navigation to buttons follows
+  the macOS Keyboard Navigation / Full Keyboard Access preference.
+- Back returns to tools; Escape/outside click closes through the existing menu
+  observer. Pointer exit keeps an explicitly opened panel available. The input
+  draft survives dismissal and defers restore/update restart until saved or
+  cleared. Ordinary backups still capture saved tasks. Why: closing must not
+  silently discard text or allow a restore to replace it.
+- No task movement animation; Reduce Motion also disables panel-mode animation.
+  White text at 76% or above is used for secondary text on the dark hover surface.
+  Why: completion remains precise and text retains a readable contrast.
+
+Validation uses temporary archives and synthetic offscreen fixtures at 310, 360
+and 500pt. Native text-field Return dispatch was exercised in an invisible window,
+without activating the app. The history-date fixture measures 9.67:1 against its
+row background (RGB 211/41). Physical keyboard/VoiceOver, native tooltip timing and compositor glass
+appearance require acceptance on the one installed application.

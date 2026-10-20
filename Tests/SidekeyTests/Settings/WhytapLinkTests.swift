@@ -39,13 +39,13 @@ final class WhytapLinkTests: XCTestCase {
         }
     }
 
-    func test_action_tools_show_their_place_without_running() {
+    func test_known_tool_destinations_do_not_run_actions() {
         XCTAssertEqual(destination("whytap://tool/meetingRecord"), .toolboxTool(.meetingRecord))
         XCTAssertEqual(destination("whytap://tool/screenshot"), .toolboxTool(.screenshot))
         XCTAssertEqual(destination("whytap://tool/dropMode"), .toolboxTool(.dropMode))
         XCTAssertEqual(destination("whytap://tool/quit"), .settings(.quitRow))
         XCTAssertEqual(destination("whytap://tool/settings"), .settings(.tab(.apiAndModels)))
-        XCTAssertEqual(destination("whytap://tool/tasks"), .planner(.tasks))
+        XCTAssertEqual(destination("whytap://tool/tasks"), .hoverPanel(.tasks))
         XCTAssertEqual(destination("whytap://tool/calendar"), .planner(.calendar))
         XCTAssertEqual(destination("whytap://tool/translate"), .translation(.text))
         XCTAssertEqual(destination("whytap://tool/subtitles"), .translation(.subtitles))

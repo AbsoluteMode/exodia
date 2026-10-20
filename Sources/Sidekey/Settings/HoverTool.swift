@@ -97,8 +97,8 @@ enum HoverToolRegistry {
             return HoverToolInfo(title: "Display", sfSymbol: "sun.max", kind: .inlinePanel,
                                  description: "Screen brightness, Extra boost and battery time")
         case .tasks:
-            return HoverToolInfo(title: "To-do", sfSymbol: "checklist", kind: .action,
-                                 description: "Manage your local tasks in Whytap Planner")
+            return HoverToolInfo(title: "To-do", sfSymbol: "checklist", kind: .inlinePanel,
+                                 description: "Quick local tasks and completion history")
         case .calendar:
             return HoverToolInfo(title: "Calendar", sfSymbol: "calendar", kind: .action,
                                  description: "Your schedule from Whytap, Apple, Google, Outlook and Zoom")

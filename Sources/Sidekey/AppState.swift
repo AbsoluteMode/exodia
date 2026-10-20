@@ -41,6 +41,8 @@ final class AppState: ObservableObject {
     @Published var screenshotActive = false
     /// Visible Planner work or a retained unsent task draft.
     @Published var plannerActive = false
+    /// Inline To-do visibility or a retained unsent draft.
+    @Published var todoActive = false
 
     /// Dynamic Island idle-hide visibility, mirrored from `IslandIdleController`
     /// by `AppDelegate` (controller-owns-logic / AppState-mirrors-for-view).
