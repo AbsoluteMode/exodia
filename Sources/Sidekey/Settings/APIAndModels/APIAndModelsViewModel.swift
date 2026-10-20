@@ -199,6 +199,9 @@ final class APIAndModelsViewModel: ObservableObject {
                 keyStatuses.set(status, for: account, at: now())
             }
         }
+        // A picker opened during this refresh can share its in-flight request.
+        // Publish catalog-only changes even when all saved rows stay equal.
+        objectWillChange.send()
         recompute()
     }
 

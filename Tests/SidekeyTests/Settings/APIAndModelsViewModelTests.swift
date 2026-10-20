@@ -182,6 +182,24 @@ final class APIAndModelsViewModelTests: XCTestCase {
         XCTAssertTrue(env.probe.probedModels.isEmpty)
     }
 
+    func test_settings_catalog_load_notifies_an_already_open_picker_with_unchanged_routes() async throws {
+        let fetcher = SequencedFetcher([.success([CatalogModel(id: "new-model", uses: [.chat])])])
+        let env = try makeEnv(snapshots: [.openAI: CatalogSnapshot(models: [], fetchedAt: .distantPast)],
+                              keyed: [.openAI], fetcher: fetcher)
+        env.keyStatuses.set(.valid, for: .openAI, at: env.now)
+        let vm = env.makeViewModel()
+        let rows = vm.rows
+        var notifications = 0
+        let subscription = vm.objectWillChange.sink { notifications += 1 }
+        await vm.onAppear()
+        XCTAssertGreaterThan(notifications, 0, "Settings owns an in-flight catalog request if the picker opens early")
+        XCTAssertEqual(vm.rows, rows)
+        XCTAssertTrue(vm.sections(for: .translation).flatMap(\.options).contains { $0.model == "new-model" })
+        XCTAssertTrue(env.checker.calls.isEmpty)
+        XCTAssertTrue(env.probe.probedModels.isEmpty)
+        withExtendedLifetime(subscription) {}
+    }
+
     func test_opening_picker_retries_failed_catalog_and_exposes_recovered_models() async throws {
         let old = CatalogModel(id: "old-model", uses: [.chat])
         let recovered = CatalogModel(id: "new-model", uses: [.chat])
