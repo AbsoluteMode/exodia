@@ -11,6 +11,11 @@ final class CalendarProviderTests: XCTestCase {
             let items = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
             XCTAssertEqual(items.first { $0.name == "state" }?.value, first)
             XCTAssertEqual(items.first { $0.name == "code_challenge_method" }?.value, "S256")
+            if provider == .google {
+                let scopes = Set((items.first { $0.name == "scope" }?.value ?? "").split(separator: " ").map(String.init))
+                XCTAssertEqual(scopes, ["https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+                                        "https://www.googleapis.com/auth/calendar.events.readonly"])
+            }
             XCTAssertFalse(url.absoluteString.contains("client_secret"))
         }
     }

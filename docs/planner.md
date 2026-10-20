@@ -53,7 +53,10 @@ feed checkboxes to select the desired source. UID-based collapse cannot identify
 copies for which the providers return unrelated identifiers.
 
 **Google:** connects directly to Google Calendar API using a Desktop OAuth
-client and `https://www.googleapis.com/auth/calendar.readonly`.
+client, `https://www.googleapis.com/auth/calendar.calendarlist.readonly` and
+`https://www.googleapis.com/auth/calendar.events.readonly`. These only allow
+listing subscribed calendars and reading events; calendar settings and sharing
+permissions are not requested.
 
 **Outlook and Teams:** connects directly to Microsoft Graph calendars using
 delegated `Calendars.Read` and `offline_access`. Teams meeting links come from
@@ -80,12 +83,23 @@ Live consent, organizational restrictions and provider-account compatibility
 require acceptance with real accounts. Fixture tests do not prove live sign-in.
 Provider registration and public verification remain separate external steps.
 
+Public integration information is available at
+[whytap.ai/planner](https://whytap.ai/planner/), with a separate
+[calendar privacy notice](https://whytap.ai/calendar-privacy/) linked from the
+connection sheet. The pages describe the feature as being prepared and do not
+claim provider approval or a generally available release.
+
 1. **Google Cloud:** enable Calendar API, configure the consent screen and create
    a **Desktop app** OAuth client. Add the account as a test user while the app is
    in testing. Enter the client ID and generated desktop client secret when
    required by Google. The desktop client uses a dynamically assigned
    `http://127.0.0.1:<port>/callback` redirect. Public distribution may require
-   Google's OAuth verification.
+   Google's OAuth verification. The shared Whytap registration is intended for
+   public use: testing is a preparation stage, not a personal-only integration.
+   Before submitting for verification, publish an accurate app homepage and
+   calendar privacy notice on a verified domain, declare the two read scopes,
+   and record the real browser-consent and in-app calendar flow for reviewers.
+   A client ID alone does not mean that public access has been approved.
 2. **Microsoft Entra:** register a public native app with the appropriate account
    audience, permit public client flows and delegated Calendars.Read. Register
    **Mobile and desktop applications → http://localhost/callback**. Whytap uses
@@ -154,3 +168,34 @@ Closing Planner stops calendar polling. Reopening refreshes the visible range.
 An open editor keeps its draft when another tool hotkey brings Planner forward.
 The visible window or a retained new-task draft defers Sparkle restart and backup
 restore. Ordinary backups continue to capture saved content while Planner is open.
+
+## Public verification preparation
+
+As checked on 2026-10-20, the shared Google Desktop registration exists, Calendar
+API is enabled, and the two narrow read scopes are declared. Its public native
+configuration is saved privately for packaging. The Whytap logo, homepage and
+calendar privacy URL have been prepared in Google Auth Platform. Domain ownership
+verification and the public review submission are still separate pending steps.
+Microsoft and Zoom owner-account registration is also pending. The working app
+has not been updated by registration or website changes.
+
+For Google's verification form, justify each requested scope from the actual UI:
+
+| Scope | Required behavior |
+| --- | --- |
+| `calendar.calendarlist.readonly` | List subscribed calendars by name so the user can choose the feeds to display. |
+| `calendar.events.readonly` | Read events for the displayed six-week range, show the selected day's agenda and open its meeting/original link. |
+
+The review video must show the real app and browser flow in English: open the
+calendar, choose Google, show the consent screen and requested permissions,
+finish sign-in, display a calendar containing synthetic example events, change
+visible feeds, and disconnect. Use a dedicated test calendar/account without
+private events. Offscreen fixtures and a client-creation screenshot do not replace
+this evidence. Submit the real unlisted video and only confirm statements that
+have been verified. A public registration does not imply organizational admin
+approval or Zoom Calendar Service availability for every account.
+
+Provider review requirements:
+[Google sensitive-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification),
+[Google domain verification](https://support.google.com/cloud/answer/13804266?hl=en),
+[Zoom distribution](https://developers.zoom.us/docs/distribute/).

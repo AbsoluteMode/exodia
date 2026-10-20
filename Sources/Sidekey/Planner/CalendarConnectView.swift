@@ -119,6 +119,8 @@ struct CalendarConnectView: View {
             if working { HStack { ProgressView().controlSize(.small); Text("Finish sign-in in your browser…").font(.callout) } }
             if let error { Text(error).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             HStack {
+                Link("Calendar privacy", destination: URL(string: "https://whytap.ai/calendar-privacy/")!)
+                    .font(.caption)
                 Spacer()
                 Button("Cancel") { signInTask?.cancel(); browser.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Button(provider == .apple ? "Allow calendar access" : "Sign in") { connect() }

@@ -29,7 +29,7 @@ enum CalendarProvider: String, Codable, CaseIterable, Identifiable {
     }
     var scopes: String {
         switch self {
-        case .google: return "https://www.googleapis.com/auth/calendar.readonly"
+        case .google: return "https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly"
         case .microsoft: return "offline_access Calendars.Read"
         case .zoom: return "calendar:read:list_calendar_lists calendar:read:list_events"
         case .apple: return ""
