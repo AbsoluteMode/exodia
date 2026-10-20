@@ -60,8 +60,8 @@ and its current value, then changes that value without losing context.
 - Use iOS inset groups within the existing macOS sidebar window. Groups describe
   related settings. In API & Models, independently configured functions have
   separate contours and a 10 pt gap, so their setup states do not run together.
-- Keep the current tabs and navigation. A small colored SF Symbol tile makes
-  sections recognizable without changing their names or order.
+- Keep the current tabs and navigation. Sidebar rows use text alone, following
+  the user's 2026-10-20 request to remove the colored icon tiles.
 - Use 14 pt group corners, 14 pt row insets and 12 pt vertical row padding.
   Shared dividers are one point, inset on both sides, with 2 pt breathing room
   above/below. Long descriptions wrap instead of shrinking the control.
@@ -142,6 +142,31 @@ installed app. Older-macOS fallback needs device acceptance.
 - 2026-10-20 — Replace unconfigured model alarms with a warm contour and soft
   glow: the user requested a calm setup cue, plus clearer separation of rows.
   Each model function gets its own contour because its routes form one setting.
+
+## Text-only Settings sidebar — 2026-10-20
+
+The user requested removal of the sidebar icons and animation on hover.
+Keep section names, order, 220 pt sidebar width and 38 pt row hit targets.
+Removing the icon and gap gives labels 180 pt instead of 144 pt, without
+changing text size or moving any row during interaction.
+
+- Hover fades the rounded background in/out over 140 ms with ease-out. It
+  signals which row is clickable, accepts reversals immediately, and affects
+  only background opacity. Text and hit geometry stay fixed.
+- Unselected rows use the existing adaptive hover color at 85% opacity; the
+  selected blue row gets a 10% white overlay (white-label contrast 4.67:1).
+  Selection remains recognizable during hover.
+  FAQ and Quit use the same feedback. Existing navigation highlights remain.
+- Reduce Motion makes the hover response immediate. Native Button actions,
+  keyboard access and focus are preserved. No function requires hovering.
+
+Offscreen native Settings fixtures cover the minimum 960 × 560 pt and larger
+1280 × 760 pt window in both appearances. Physical hover, focus/VoiceOver and
+system Reduce Motion acceptance remain on the shared installed app after
+builder promotion; the feature session does not launch another app instance.
+Offscreen cacheDisplay captures intermittently omit sidebar glyphs, including
+the selected label on the unmodified base. These images establish layout only;
+check every label in both appearances on the installed app.
 
 ## Case and persistent hover menus — 2026-10-20
 
