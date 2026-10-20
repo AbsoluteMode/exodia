@@ -8,6 +8,9 @@ import LocalAuthentication
 final class BackupViewModel: ObservableObject {
     static let shared = BackupViewModel()
     nonisolated static let keyAccount = "backup.archive-key.v1"
+    enum GitHubConnectionState { case disconnected, checking, connected, needsAttention }
+    @Published var githubConnectionState: GitHubConnectionState = .disconnected
+    @Published var githubConnectionError: String?
     @Published var isBusy = false
     @Published var isEnabled = false
     @Published var destinationName = "Not connected"
@@ -42,10 +45,12 @@ final class BackupViewModel: ObservableObject {
     private let archivedKeyStore: (String) -> TokenStore
     private let pendingKeyStore: TokenStore
     private var github: GitHubBackupTransport?
+    private let githubSession: URLSession
     private let delta = BackupDeltaArchive()
     private var subscriptions = Set<AnyCancellable>()
     private var timer: Timer?
     private var started = false
+    private var codePresentationID = UUID()
     private var keyCache: Data?
     private var needsFullBackup = true
     private var lastAttempt = Date.distantPast
@@ -75,11 +80,13 @@ final class BackupViewModel: ObservableObject {
          providerStore: @escaping (String) -> TokenStore = { KeychainStore(account: $0) },
          previousRestoreOutcome: @escaping @MainActor () -> ArtifactRestoreOutcome? = { ArtifactBackupEngine.lastRestoreOutcome() },
          archivedKeyStore: @escaping (String) -> TokenStore = { KeychainStore(account: "backup.archived-key." + $0) },
-         pendingKeyStore: TokenStore = KeychainStore(account: "backup.pending-key.v1")) {
+         pendingKeyStore: TokenStore = KeychainStore(account: "backup.pending-key.v1"),
+         githubSession: URLSession = GitHubBackupNetwork.session) {
         self.defaults = defaults; self.keyStore = keyStore
         self.githubTokenStore = githubTokenStore; self.local = local; self.settingsFiles = settingsFiles
         self.engine = engine; self.changeProbe = changeProbe; self.idle = idle; self.providerStore = providerStore; self.previousRestoreOutcome = previousRestoreOutcome; self.archivedKeyStore = archivedKeyStore
         self.pendingKeyStore = pendingKeyStore
+        self.githubSession = githubSession
     }
 
     /// Runtime wiring is explicit. Merely opening a settings preview or
@@ -140,8 +147,9 @@ final class BackupViewModel: ObservableObject {
                 guard let token = try githubTokenStore.read(), let owner = defaults.string(forKey: "backup.github-owner.v1") else {
                     throw GitHubBackupTransport.Failure.authentication
                 }
-                github = try GitHubBackupTransport(token: token, owner: owner)
-            } catch { fail(error) }
+                github = try GitHubBackupTransport(token: token, owner: owner, session: githubSession)
+                await updateGitHubConnection()
+            } catch { githubConnectionState = .needsAttention; githubConnectionError = error.localizedDescription }
         }
         do { versions = try await local.versions(destinationID: defaults.string(forKey: "backup.destination-id.v1")) }
         catch { fail(error) }
@@ -168,7 +176,7 @@ final class BackupViewModel: ObservableObject {
         return key
     }
 
-    func hideRecoveryCode() { recoveryCode = "" }
+    func hideRecoveryCode() { codePresentationID = UUID(); recoveryCode = "" }
 
     func beginSetup() {
         guard !isBusy, !needsRestart, !hasPendingMaintenance else { return }
@@ -414,7 +422,7 @@ final class BackupViewModel: ObservableObject {
                 try await local.saveMaintenance(plan)
             }
             if plan.kind == .deleteBackups {
-                try githubTokenStore.delete(); github = nil
+                try githubTokenStore.delete(); github = nil; githubConnectionState = .disconnected
                 for field in ["destination-kind", "destination-id", "destination-name", "github-owner", "folder-bookmark", "last-local", "last-copied", "source-stamp"] {
                     defaults.removeObject(forKey: "backup.\(field).v1")
                 }
@@ -443,12 +451,16 @@ final class BackupViewModel: ObservableObject {
 
     private func performConnectExistingGitHub() async {
         guard !isBusy, !needsRestart else { return }
-        isBusy = true; errorMessage = nil; statusText = "Checking your GitHub CLI login…"
+        isBusy = true; errorMessage = nil; githubConnectionState = .checking; githubConnectionError = nil
+        statusText = "Checking your GitHub CLI login…"
         do {
             let token = try await BackupGitHubLogin.existingToken()
             isBusy = false
             await performConnectGitHub(token: token)
-        } catch { isBusy = false; fail(error) }
+        } catch {
+            isBusy = false; githubConnectionState = .needsAttention
+            githubConnectionError = error.localizedDescription; fail(error)
+        }
     }
 
     func connectGitHub(token: String) async {
@@ -457,35 +469,120 @@ final class BackupViewModel: ObservableObject {
 
     private func performConnectGitHub(token: String) async {
         guard !isBusy, !needsRestart else { return }
-        isBusy = true; errorMessage = nil; statusText = "Connecting your private backup repository…"
+        isBusy = true; errorMessage = nil; githubConnectionState = .checking; githubConnectionError = nil
+        statusText = "Connecting your private backup repository…"
         do {
             if hasPendingMaintenance {
                 guard destinationKind == "github", let owner = defaults.string(forKey: "backup.github-owner.v1") else {
-                    isBusy = false; errorMessage = "Reconnect the same backup folder to continue this request."
+                    isBusy = false; githubConnectionState = .disconnected
+                    errorMessage = "Reconnect the same backup folder to continue this request."
                     return
                 }
-                let transport = try GitHubBackupTransport(token: token.trimmingCharacters(in: .whitespacesAndNewlines), owner: owner)
+                let transport = try GitHubBackupTransport(token: token.trimmingCharacters(in: .whitespacesAndNewlines), owner: owner, session: githubSession)
                 _ = try await transport.versions()
                 try githubTokenStore.save(token.trimmingCharacters(in: .whitespacesAndNewlines))
-                github = transport; isBusy = false
+                github = transport; githubConnectionState = .connected; githubConnectionError = nil; isBusy = false
                 statusText = "Reconnected. Choose Finish backup management to continue."
                 return
             }
-            let transport = try await GitHubBackupTransport.connect(token: token.trimmingCharacters(in: .whitespacesAndNewlines))
+            let transport = try await GitHubBackupTransport.connect(token: token.trimmingCharacters(in: .whitespacesAndNewlines), session: githubSession)
             try Task.checkCancellation()
             let name = await transport.destinationName
             try githubTokenStore.save(token.trimmingCharacters(in: .whitespacesAndNewlines))
-            github = transport; destinationName = "GitHub · " + name
+            github = transport; githubConnectionState = .connected; githubConnectionError = nil
+            destinationName = "GitHub · " + name
             selectDestination(id: "github:" + name.lowercased())
             defaults.set("github", forKey: "backup.destination-kind.v1")
             defaults.set(name.components(separatedBy: "/").first, forKey: "backup.github-owner.v1")
             defaults.set(destinationName, forKey: "backup.destination-name.v1")
-            setEnabled(recoverySaved)
             await refreshVersionsQuietly()
-            statusText = recoverySaved ? "Connected. Preparing your first encrypted backup…" : "Connected. Choose a backup to restore, or save a recovery code to start new backups."
+            statusText = "GitHub connected."
             isBusy = false
-            if isEnabled { await performBackupNow() }
-        } catch { isBusy = false; fail(error) }
+        } catch {
+            isBusy = false; githubConnectionState = .needsAttention
+            githubConnectionError = error.localizedDescription; fail(error)
+        }
+    }
+
+    var canUseGitHubBackup: Bool { githubConnectionState == .connected && github != nil && destinationKind == "github" }
+
+    func checkGitHubConnection() async {
+        await retainOperation(.connection) {
+            self.isBusy = true
+            await self.updateGitHubConnection()
+            self.isBusy = false
+        }
+    }
+
+    private func updateGitHubConnection() async {
+        guard let github, destinationKind == "github" else {
+            githubConnectionState = .disconnected; githubConnectionError = nil; return
+        }
+        githubConnectionState = .checking; githubConnectionError = nil
+        do {
+            try await github.checkConnection()
+            try Task.checkCancellation()
+            githubConnectionState = .connected
+        } catch {
+            githubConnectionState = .needsAttention
+            if !(error is CancellationError) { githubConnectionError = error.localizedDescription }
+        }
+    }
+
+    func disconnectGitHub() {
+        guard !isBusy, !needsRestart, !hasPendingMaintenance else { return }
+        do {
+            try githubTokenStore.delete()
+            github = nil; githubConnectionState = .disconnected; githubConnectionError = nil
+            if destinationKind == "github" {
+                setEnabled(false)
+                for field in ["destination-kind", "destination-id", "destination-name", "github-owner"] {
+                    defaults.removeObject(forKey: "backup.\(field).v1")
+                }
+                destinationRevision += 1; destinationName = "Not connected"
+            }
+            errorMessage = nil
+        } catch { githubConnectionError = "GitHub could not be disconnected. Try again." }
+    }
+
+    /// One action covers the entire workspace, including every stored provider key.
+    /// WHY: .project-docs/decisions/2026-10-20-simple-github-backup.md
+    func backupEverything() async {
+        await retainOperation(.backup) {
+            guard self.canUseGitHubBackup, !self.needsRestart, !self.hasPendingMaintenance else { return }
+            guard self.idle() else { self.fail(ConfigBackupError.busy); return }
+            self.hideRecoveryCode()
+            let presentationID = self.codePresentationID
+            do {
+                let code = try ConfigBackupArchive.recoveryCode(for: self.key())
+                // The user receives the code as the result; no paste-back ceremony.
+                self.recoverySaved = true
+                self.defaults.set(true, forKey: "backup.recovery-verified.v1")
+                await self.performBackupNow()
+                if self.errorMessage == nil, !Task.isCancelled, self.codePresentationID == presentationID { self.recoveryCode = code }
+            } catch { self.fail(error) }
+        }
+    }
+
+    func restoreEverything(code: String) async {
+        await retainOperation(.restore) {
+            guard self.canUseGitHubBackup, let github = self.github,
+                  !self.needsRestart, !self.hasPendingMaintenance else { return }
+            guard self.idle() else { self.fail(ConfigBackupError.busy); return }
+            self.hideRecoveryCode(); self.clearPreview(); self.errorMessage = nil
+            self.isBusy = true
+            do {
+                _ = try ConfigBackupArchive.key(from: code)
+                guard let version = try await github.versions().sorted(by: { $0.createdAt > $1.createdAt }).first else {
+                    self.errorMessage = "No backups found in GitHub."; self.isBusy = false; return
+                }
+                self.isBusy = false
+                await self.performPrepareRestore(version: version, code: code)
+                if let preview = self.restorePreview {
+                    await self.performRestore(sections: preview.summary.sections)
+                }
+            } catch { self.isBusy = false; self.fail(error) }
+        }
     }
 
     func chooseFolder() async {
@@ -570,6 +667,7 @@ final class BackupViewModel: ObservableObject {
             await refreshVersionsQuietly()
             try await copyPending(current: (summary.id, stored), key: key)
             await refreshVersionsQuietly()
+            errorMessage = nil
             statusText = destinationKind == "github" ? "Encrypted backup uploaded to GitHub and checked." : "Encrypted backup saved and checked in your folder. Cloud sync is managed by your sync service."
             isBusy = false
         } catch {
@@ -997,10 +1095,16 @@ final class BackupViewModel: ObservableObject {
     }
     private func fail(_ error: Error) {
         if error is CancellationError || Task.isCancelled { return }
+        statusText = "Backup needs attention."
         if let error = error as? ConfigBackupError { errorMessage = error.localizedDescription }
         else if let error = error as? BackupManagementError { errorMessage = error.localizedDescription }
         else if let error = error as? ArtifactBackupError { errorMessage = error.localizedDescription }
-        else if let error = error as? GitHubBackupTransport.Failure { errorMessage = error.localizedDescription }
+        else if let error = error as? GitHubBackupTransport.Failure {
+            errorMessage = error.localizedDescription
+            if [.authentication, .permission, .publicRepository].contains(error) {
+                githubConnectionState = .needsAttention; githubConnectionError = error.localizedDescription
+            }
+        }
         else if (error as NSError).domain == NSURLErrorDomain {
             errorMessage = "The backup destination could not be reached. Your local copy is kept; Whytap will retry when connected."
         } else if (error as NSError).code == NSFileWriteOutOfSpaceError {

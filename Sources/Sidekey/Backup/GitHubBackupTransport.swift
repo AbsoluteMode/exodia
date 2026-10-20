@@ -90,6 +90,8 @@ actor GitHubBackupTransport {
         }
     }
 
+    func checkConnection() async throws { try await requirePrivateRepository() }
+
     private func requirePrivateRepository() async throws {
         try validateRepository(try await json(path: repoPath))
     }
