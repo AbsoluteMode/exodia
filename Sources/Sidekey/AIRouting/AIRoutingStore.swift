@@ -19,7 +19,8 @@ struct AIRoutingState: Codable, Equatable {
     /// to run on.
     var migratedRoutes: [String: FeatureRoute]
     var servers: [ServerEndpoint]
-    /// 0 — the migration has not run.
+    /// 0 — legacy migration pending; 1 — legacy routes carried over;
+    /// 2 — subtitle translation detached from text Translation.
     var migrationVersion: Int
 }
 
@@ -75,7 +76,8 @@ final class AIRoutingStore: ObservableObject {
 
     /// `nil` un-sets the feature.
     func setRoute(_ route: FeatureRoute?, for feature: AIFeature) {
-        var updated = state
+        var updated = stateForEditing
+        guard state.routes[feature.rawValue] != route || updated.routes[feature.rawValue] != route else { return }
         updated.routes[feature.rawValue] = route
         commit(updated)
     }
@@ -93,8 +95,9 @@ final class AIRoutingStore: ObservableObject {
     /// features were left without a model. The migration snapshot stays.
     @discardableResult
     func clearRoutes(using account: ProviderAccount) -> [AIFeature] {
-        let cleared = AIFeature.allCases.filter { state.routes[$0.rawValue]?.account == account }
-        var updated = state
+        var updated = stateForEditing
+        let cleared = AIFeature.allCases.filter { updated.routes[$0.rawValue]?.account == account }
+        guard !cleared.isEmpty else { return [] }
         for feature in cleared {
             updated.routes[feature.rawValue] = nil
         }
@@ -117,7 +120,7 @@ final class AIRoutingStore: ObservableObject {
             id: id, name: name, baseURL: baseURL,
             keyAccount: "byok.server.\(id.uuidString.lowercased()).api_key"
         )
-        var updated = state
+        var updated = stateForEditing
         updated.servers.append(server)
         commit(updated)
         return server
@@ -126,7 +129,9 @@ final class AIRoutingStore: ObservableObject {
     /// Removes the server and un-sets every feature that ran on it. Those
     /// features become Not set; none moves to another provider.
     func removeServer(_ id: UUID) {
-        var updated = state
+        var updated = stateForEditing
+        guard updated.servers.contains(where: { $0.id == id })
+                || updated.routes.values.contains(where: { $0.account == .server(id) }) else { return }
         updated.servers.removeAll { $0.id == id }
         updated.routes = updated.routes.filter { $0.value.account != .server(id) }
         commit(updated)
@@ -142,6 +147,30 @@ final class AIRoutingStore: ObservableObject {
         commit(AIRoutingState(
             routes: byFeature, migratedRoutes: byFeature, servers: servers, migrationVersion: 1
         ))
+    }
+
+    /// Preserve the route already used by configured subtitles once, then
+    /// keep it independent. An unset/deleted subtitle LLM never borrows the
+    /// text translator's route on later launches.
+    // WHY: .project-docs/decisions/2026-10-20-translation-tools.md
+    func separateSubtitleTranslationIfNeeded() {
+        guard pendingBackup == nil else { return }
+        commit(stateForEditing)
+    }
+
+    /// An explicit edit already replaces a partial document (after retaining
+    /// its raw backup). Split before applying that edit so a later clear,
+    /// provider change or server removal cannot be undone on relaunch.
+    private var stateForEditing: AIRoutingState {
+        guard state.migrationVersion == 1 else { return state }
+        var updated = state
+        if updated.routes[AIFeature.subtitlesTranslation.rawValue] == nil,
+           updated.routes[AIFeature.subtitlesAudio.rawValue] != nil,
+           let previous = updated.routes[AIFeature.translation.rawValue] {
+            updated.routes[AIFeature.subtitlesTranslation.rawValue] = previous
+        }
+        updated.migrationVersion = 2
+        return updated
     }
 
     // MARK: - Persistence

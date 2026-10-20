@@ -31,10 +31,10 @@ struct TranslationIssue: Equatable {
         if let llm = error as? OpenRouterLLMError {
             switch llm {
             case .notConfigured, .missingKey, .missingBaseURL, .invalidBaseURL, .missingModel:
-                return Self(message: "Choose a provider and model for Translation in API & Models.", feature: .translation)
+                return Self(message: "Choose a provider and model for \(feature.title) in API & Models.", feature: feature)
             case .unexpectedStatus(let status, _):
                 if status == 401 || status == 403 {
-                    return Self(message: "The translation provider refused the API key. Check it in API & Models.", feature: .translation)
+                    return Self(message: "The translation provider refused the API key. Check it in API & Models.", feature: feature)
                 }
                 if status == 429 { return Self(message: "The translation provider is busy or its limit was reached. Try again shortly.") }
             default: break
@@ -58,8 +58,13 @@ struct TranslationService: TextTranslating {
     let route: DirectLLMRoute
     let client: OpenRouterLLMClienting
 
-    @MainActor static func live() async throws -> TranslationService {
-        guard let route = try await DirectLLMRouteResolver.live(.translation).routeIfEnabled() else {
+    @MainActor static func live(
+        for feature: AIFeature = .translation,
+        routing: AIRoutingStore? = nil,
+        keys: ProviderKeyStore = ProviderKeyStore()
+    ) async throws -> TranslationService {
+        let resolver = DirectLLMRouteResolver(feature: feature, routing: routing ?? .shared, keys: keys)
+        guard let route = try await resolver.routeIfEnabled() else {
             throw OpenRouterLLMError.notConfigured
         }
         let configuration = URLSessionConfiguration.ephemeral

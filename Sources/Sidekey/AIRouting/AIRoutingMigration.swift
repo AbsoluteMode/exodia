@@ -41,13 +41,15 @@ struct AIRoutingMigration {
     /// Does nothing once the migration is recorded, so a later change to the
     /// old settings never moves a route.
     func run() {
-        guard !routing.isMigrated else { return }
-        let servers = carriedOverServers()
-        var routes = speechRoutes(on: servers.speech)
-        // The three groups name different features, so nothing is overwritten.
-        routes.merge(llmRoutes(on: servers.llm)) { current, _ in current }
-        routes.merge(agentRoutes()) { current, _ in current }
-        routing.completeMigration(routes: routes, servers: servers.stored)
+        if !routing.isMigrated {
+            let servers = carriedOverServers()
+            var routes = speechRoutes(on: servers.speech)
+            // The three groups name different features, so nothing is overwritten.
+            routes.merge(llmRoutes(on: servers.llm)) { current, _ in current }
+            routes.merge(agentRoutes()) { current, _ in current }
+            routing.completeMigration(routes: routes, servers: servers.stored)
+        }
+        routing.separateSubtitleTranslationIfNeeded()
     }
 
     // MARK: - Routes

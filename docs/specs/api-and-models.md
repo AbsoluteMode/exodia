@@ -81,8 +81,19 @@ Whytap сам узнаёт у провайдера актуальный спис
 | `agent` | Agent | LLM with tools | `OpenCodeProvider` (`--model openrouter/<id>`) |
 | `agentVoice` | Agent voice | real-time | `makeStreamingSession(resilient: false)` для голоса агента |
 | `voiceSearch` | Voice search | real-time | `makeStreamingSession(resilient: false)` для поиска Google |
-| `translation` | Translation | LLM | `TranslationService`: текст и финальные фразы субтитров |
+| `translation` | Translation | LLM | `TranslationService`: только текстовый перевод |
 | `subtitlesAudio` | Subtitles audio | real-time | `LiveSubtitleModel`: только системный звук |
+| `subtitlesTranslation` | Subtitles translation | LLM | `LiveSubtitleModel`: перевод финальных фраз; в UI вместе с Speech в группе Subtitles |
+
+У Subtitles два независимых выбора: Speech и LLM. При обновлении конфигурации
+версии 1 с настроенным `subtitlesAudio` текущий `translation` один раз копируется
+в `subtitlesTranslation`, включая выбранного провайдера; версия миграции становится
+2. Уже заданный маршрут сохраняется. Если субтитры не настроены или общего LLM
+нет, новый выбор остаётся пустым. Последующие изменения Translation и очистка
+Subtitles LLM независимы; восстановления через другой маршрут в runtime нет.
+Частично нечитаемые документы не переписываются при запуске. Их первое явное
+редактирование сохраняет исходную копию и разделяет маршруты до применения
+изменения, поэтому очистка модели или удаление сервера не отменяются при запуске.
 
 Запасные пути отдельных строк не получают:
 

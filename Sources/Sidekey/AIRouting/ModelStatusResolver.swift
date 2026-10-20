@@ -308,7 +308,7 @@ struct ModelStatusResolver {
         switch feature {
         case .agent: minimum = ModelRegistry.agentMinContext
         case .meetingNotes: minimum = ModelRegistry.meetingNotesMinContext
-        case .dropFast, .dropSmart, .dropSmartCleanup, .meetings, .agentVoice, .voiceSearch, .translation, .subtitlesAudio: minimum = nil
+        case .dropFast, .dropSmart, .dropSmartCleanup, .meetings, .agentVoice, .voiceSearch, .translation, .subtitlesTranslation, .subtitlesAudio: minimum = nil
         }
         if let minimum, let context = entry.contextLength, context < minimum {
             return "context under 64K tokens"
@@ -326,7 +326,7 @@ struct ModelStatusResolver {
                 $0.kind == account.kind && $0.id == model && $0.uses.contains(use)
             }
             return registered?.diarization == true ? "with speakers" : nil
-        case .dropFast, .dropSmart, .meetingNotes, .agent, .agentVoice, .voiceSearch, .translation, .subtitlesAudio:
+        case .dropFast, .dropSmart, .meetingNotes, .agent, .agentVoice, .voiceSearch, .translation, .subtitlesTranslation, .subtitlesAudio:
             return nil
         }
     }

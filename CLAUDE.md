@@ -195,8 +195,11 @@ Translation tools:
   is RU to EN for Cyrillic input and EN to RU otherwise. Explicit targets use
   AppLanguage. LiveSubtitleModel captures only CoreAudio system audio, never
   the microphone, on the subtitlesAudio real-time route; final-only phrases
-  go to the translation LLM route shared with typed text. Both routes start
-  unset; never borrow Drop/Agent routes or migrate standalone credentials.
+  go to its independent subtitlesTranslation LLM route. API & Models groups
+  Subtitles Speech/LLM selectors; typed text uses only translation. New routes
+  start unset. Migration v2 copies the previous shared text route once only
+  for configured subtitles; later edits, clears and launches stay independent.
+  Never borrow other routes at runtime or migrate standalone credentials.
   Eight queued phrases, forty retained lines and a bounded audio relay stop
   visibly on backlog. Stop uses opt-in CoreAudio terminal EOF after capture
   quiescence and an IO queue barrier, then naturally drains the relay before
