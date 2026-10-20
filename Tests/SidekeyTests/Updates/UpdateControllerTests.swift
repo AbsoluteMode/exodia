@@ -35,6 +35,7 @@ final class UpdateControllerTests: XCTestCase {
         AppState.shared.agentPhase = .idle
         AppState.shared.translationActive = false
         AppState.shared.screenshotActive = false
+        AppState.shared.plannerActive = false
         AppState.shared.clearMeetingRecordingState()
     }
 
@@ -45,6 +46,7 @@ final class UpdateControllerTests: XCTestCase {
         AppState.shared.agentPhase = .idle
         AppState.shared.translationActive = false
         AppState.shared.screenshotActive = false
+        AppState.shared.plannerActive = false
         AppState.shared.clearMeetingRecordingState()
         super.tearDown()
     }
@@ -261,6 +263,23 @@ final class UpdateControllerTests: XCTestCase {
         AppState.shared.phase = .idle
         AppState.shared.agentPhase = .textInputActive
         XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
+    }
+
+    func test_plannerDefersUpdateAndIdleStillRequiresExplicitRestart() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        AppState.shared.updateAvailable?.startDownload()
+        AppState.shared.plannerActive = true
+        controller.applyDriverStage(.readyToInstall)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 0)
+        XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
+        XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("Planner") == true)
+        AppState.shared.plannerActive = false
+        XCTAssertEqual(installs, 0)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 1)
     }
 
     func test_screenshotDefersUpdateUntilExplicitRestart() {

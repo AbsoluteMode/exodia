@@ -280,6 +280,8 @@ enum ArtifactRestoreDestination: Hashable {
             return .file(try inside(locations.notifyRoot, Array(parts.dropFirst(2))))
         case ("workspace", 3) where parts[1] == "agent" && parts[2] == "AGENTS.md":
             return .file(try inside(locations.agentWorkspace, ["AGENTS.md"]))
+        case ("planner", 2) where parts[1] == "planner-v1.json":
+            return .file(locations.plannerArchive)
         default:
             throw ArtifactBackupError.unsafeContent
         }
@@ -864,6 +866,7 @@ struct ArtifactRestoreTransaction {
             targets.append(locations.notifyRoot)
             targets.append(locations.agentMemory)
         }
+        if sections.contains(.planner) { targets.append(locations.plannerArchive) }
         return targets
     }
 
@@ -1146,7 +1149,8 @@ struct ArtifactRestoreTransaction {
         try payload.validate()
         // Only the blocks this payload restores are rewritten; everything else
         // the user changed meanwhile stays as it is.
-        let preserve: Set<String> = payload.schema < 3 ? [ConfigBackupRegistry.aiRoutingKey, ConfigBackupRegistry.aiRoutingPreservedKey] : []
+        var preserve: Set<String> = payload.schema < 3 ? [ConfigBackupRegistry.aiRoutingKey, ConfigBackupRegistry.aiRoutingPreservedKey] : []
+        if payload.schema < 4 { preserve.formUnion(CalendarAccountSettings.keys) }
         try ConfigBackupRegistry.apply(payload.values, sections: payload.appliedSections,
                                        preservingMissingKeys: preserve, to: defaults)
     }
@@ -1348,7 +1352,7 @@ struct ArtifactRestoreTransaction {
 /// Schema 3 includes API & Models' binary routing document. Older snapshots
 /// cannot clear current routes simply because their format predated that key.
 struct ArtifactSettingsPayload: Codable, Equatable {
-    static let currentSchema = 3
+    static let currentSchema = 4
     var schema: Int = ArtifactSettingsPayload.currentSchema
     var values: [String: ConfigBackupValue]
     var selectedSections: [ConfigBackupSection]?

@@ -37,6 +37,7 @@ struct IslandCaseVaultPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var valueDraft = ""
+    @State private var nameDraft = ""
     @State private var editSecretID: UUID?
     @State private var editName = ""
     @State private var editValue = ""
@@ -49,7 +50,9 @@ struct IslandCaseVaultPanel: View {
     @State private var dragState = CaseDragState()
     @State private var lastError: String?
     @State private var showingAccess = false
-    @FocusState private var inputFocused: Bool
+    @State private var accessAppID: UUID?
+    private enum InputFocus: Hashable { case search, newKey }
+    @FocusState private var inputFocused: InputFocus?
 
     private let topScrollID = "case-list-top"
     private let bottomScrollID = "case-list-bottom"
@@ -63,7 +66,7 @@ struct IslandCaseVaultPanel: View {
                     IslandCaseAccessPanel(viewModel: viewModel, onBack: {
                         viewModel.dismissClientSetupProblems()
                         showingAccess = false
-                    })
+                    }, appID: accessAppID)
                 } else {
                     unlockedPanel
                 }
@@ -76,7 +79,7 @@ struct IslandCaseVaultPanel: View {
         }
         .onAppear {
             DispatchQueue.main.async {
-                inputFocused = true
+                inputFocused = .search
             }
             // Clear any stale armed-reset state from a previous panel open so
             // the user always starts the two-step confirm fresh.
@@ -166,6 +169,11 @@ struct IslandCaseVaultPanel: View {
                 .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
                 .padding(.top, IslandCaseVaultStyle.topPadding)
 
+            if addingProjectID != nil {
+                keyCreationBar
+                    .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
+            }
+
             if projectEditor == .create {
                 projectEditorControls(isGeneral: false)
                     .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
@@ -196,8 +204,8 @@ struct IslandCaseVaultPanel: View {
     private var inputBar: some View {
         HStack(spacing: 6) {
             ZStack(alignment: .leading) {
-                if activeInputText.isEmpty {
-                    Text(inputPlaceholder)
+                if viewModel.query.isEmpty {
+                    Text("Поиск ключей")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.70))
                         .lineLimit(1)
@@ -206,26 +214,18 @@ struct IslandCaseVaultPanel: View {
                         .allowsHitTesting(false)
                 }
 
-                inputField
+                TextField("", text: $viewModel.query)
+                    .accessibilityLabel("Поиск ключей")
+                    .accessibilityIdentifier("case.search")
                     .font(.system(size: IslandCaseVaultStyle.inputFontSize, weight: .medium))
                     .textFieldStyle(.plain)
                     .foregroundStyle(.white.opacity(0.92))
                     .padding(.horizontal, 10)
-                    .focused($inputFocused)
-                    .onSubmit(submitInput)
+                    .focused($inputFocused, equals: .search)
             }
             .frame(height: IslandCaseVaultStyle.inputHeight)
             .background(Capsule().fill(Color.white.opacity(0.13)))
             .overlay(Capsule().stroke(inputBorderColor, lineWidth: 0.8))
-
-            if viewModel.inputMode != .name || addingProjectID != nil {
-                IslandCaseIconButton(action: Self.cancelInputAction) {
-                    valueDraft = ""
-                    addingProjectID = nil
-                    viewModel.cancelInput()
-                    lastError = nil
-                }
-            }
 
             Button(action: startCreatingProject) {
                 Text("+ Проект")
@@ -243,44 +243,49 @@ struct IslandCaseVaultPanel: View {
         }
     }
 
+    private var keyCreationBar: some View {
+        HStack(spacing: 6) {
+            Group {
+                switch viewModel.inputMode {
+                case .name:
+                    TextField("Имя нового ключа", text: $nameDraft)
+                        .accessibilityLabel("Имя нового ключа")
+                case .value:
+                    SecureField("Значение ключа", text: $valueDraft)
+                        .accessibilityLabel("Значение ключа")
+                }
+            }
+            .textFieldStyle(.plain)
+            .font(.system(size: IslandCaseVaultStyle.inputFontSize, weight: .medium))
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 10)
+            .frame(height: IslandCaseVaultStyle.inputHeight)
+            .background(Capsule().fill(.white.opacity(0.10)))
+            .focused($inputFocused, equals: .newKey)
+            .onSubmit(submitInput)
+            Button(action: submitInput) {
+                Image(systemName: "arrow.right.circle")
+                    .frame(width: 24, height: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.92))
+            .accessibilityLabel(viewModel.inputMode == .name ? "Далее: значение ключа" : "Добавить ключ")
+            IslandCaseIconButton(action: Self.cancelInputAction) {
+                valueDraft = ""
+                nameDraft = ""
+                addingProjectID = nil
+                viewModel.cancelInput()
+                lastError = nil
+                inputFocused = .search
+            }
+        }
+    }
+
     private static let cancelInputAction = IslandCaseRowAction(
         systemImage: "xmark",
         accessibilityIdentifier: "case.input.cancel",
         accessibilityLabel: "Отменить ввод ключа"
     )
-
-    @ViewBuilder
-    private var inputField: some View {
-        switch viewModel.inputMode {
-        case .name:
-            TextField("", text: $viewModel.query)
-        case .value:
-            SecureField("", text: $valueDraft)
-        }
-    }
-
-    private var activeInputText: String {
-        switch viewModel.inputMode {
-        case .name:
-            return viewModel.query
-        case .value:
-            return valueDraft
-        }
-    }
-
-    private var inputPlaceholder: String {
-        switch viewModel.inputMode {
-        case .name:
-            if let addingProjectID {
-                let name = viewModel.projectSections.first { $0.id == addingProjectID }?.name
-                    ?? CaseProject.generalName
-                return "Новый ключ в \(name)"
-            }
-            return "Имя ключа или поиск"
-        case .value:
-            return "Введите значение"
-        }
-    }
 
     private var inputBorderColor: Color {
         lastError == nil ? Color.white.opacity(0.18) : Color.red.opacity(0.60)
@@ -292,8 +297,14 @@ struct IslandCaseVaultPanel: View {
         return ScrollViewReader { proxy in
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 4) {
+                    LazyVStack(spacing: 4) {
                         Color.clear.frame(height: 1).id(topScrollID)
+                        if sections.isEmpty, searching {
+                            Text("Ключи не найдены")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white.opacity(0.78))
+                                .padding(.vertical, 12)
+                        }
 
                         ForEach(sections) { section in
                             projectSection(
@@ -381,10 +392,12 @@ struct IslandCaseVaultPanel: View {
                 .padding(.leading, IslandCaseVaultStyle.childIndent)
             }
 
-            IslandCaseAddKeyRow(projectName: section.name) {
-                startAddingKey(to: section.id)
+            if !viewModel.isSearching {
+                IslandCaseAddKeyRow(projectName: section.name) {
+                    startAddingKey(to: section.id)
+                }
+                .padding(.leading, IslandCaseVaultStyle.childIndent)
             }
-            .padding(.leading, IslandCaseVaultStyle.childIndent)
         }
     }
 
@@ -470,10 +483,15 @@ struct IslandCaseVaultPanel: View {
     )
 
     private var accessRow: some View {
-        IslandCaseConnectedApps(registrations: viewModel.registrations) {
+        IslandCaseConnectedApps(registrations: viewModel.registrations, onOpenAccess: { appID in
+            accessAppID = appID
             showingAccess = true
             onOpenAccessScreen?()
-        }
+        }, onConnect: {
+            accessAppID = nil
+            showingAccess = true
+            onOpenAccessScreen?()
+        })
         .padding(.top, 6)
         .overlay(alignment: .top) {
             Rectangle().fill(Color.white.opacity(0.10)).frame(height: 0.5)
@@ -489,7 +507,7 @@ struct IslandCaseVaultPanel: View {
             do {
                 try await viewModel.unlock()
                 lastError = nil
-                inputFocused = true
+                inputFocused = .search
             } catch {
                 lastError = nil
             }
@@ -527,16 +545,20 @@ struct IslandCaseVaultPanel: View {
         do {
             switch viewModel.inputMode {
             case .name:
-                try viewModel.submitName(viewModel.query, projectID: addingProjectID ?? CaseProject.generalID)
+                // Return in search only searches; adding requires the explicit + Key action.
+                guard let addingProjectID else { return }
+                try viewModel.submitName(nameDraft, projectID: addingProjectID)
                 valueDraft = ""
                 // Name accepted -> inputMode flips to .value and the field
                 // rebuilds as a SecureField. Re-assert focus on the next runloop
                 // tick so the cursor lands in the value field without a click.
-                DispatchQueue.main.async { inputFocused = true }
+                DispatchQueue.main.async { inputFocused = .newKey }
             case .value:
                 try viewModel.submitValue(valueDraft)
                 valueDraft = ""
                 addingProjectID = nil
+                nameDraft = ""
+                inputFocused = .search
             }
             lastError = nil
         } catch {
@@ -546,10 +568,11 @@ struct IslandCaseVaultPanel: View {
 
     private func startAddingKey(to projectID: UUID) {
         addingProjectID = projectID
+        nameDraft = ""
         valueDraft = ""
         viewModel.cancelInput()
         lastError = nil
-        inputFocused = true
+        inputFocused = .newKey
     }
 
     private func startEditingSecret(_ row: CaseDisplayRow) {

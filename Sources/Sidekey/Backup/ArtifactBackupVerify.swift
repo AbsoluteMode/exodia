@@ -32,6 +32,7 @@ enum ArtifactArchiveVerifier {
         case .meetings: return [meetingsDatabasePath]
         case .history: return [historyDatabasePath]
         case .workspace: return []
+        case .planner: return ["planner/planner-v1.json"]
         }
     }
 
@@ -69,6 +70,7 @@ enum ArtifactArchiveVerifier {
 
         var inline: [ArtifactRestoreDestination.Inline: Data] = [:]
         var databases: [String: URL] = [:]
+        var planner: URL?
         for entry in manifest.entries {
             let isDatabase = entry.path == meetingsDatabasePath || entry.path == historyDatabasePath
             var inlineKind: ArtifactRestoreDestination.Inline?
@@ -89,6 +91,13 @@ enum ArtifactArchiveVerifier {
                     throw ArtifactBackupError.damaged
                 }
                 inline[kind] = buffer
+                continue
+            }
+            if entry.path == "planner/planner-v1.json", wanted.contains(.planner) {
+                guard entry.bytes <= ArtifactBackupManifest.maxInlineBytes else { throw ArtifactBackupError.tooLarge }
+                let file = scratch.appendingPathComponent("planner-v1.json")
+                try write(entry: entry, from: reader, to: file)
+                planner = file
                 continue
             }
             if isDatabase, wanted.contains(entry.section) {
@@ -127,6 +136,10 @@ enum ArtifactArchiveVerifier {
         }
         if wanted.contains(.history), let database = databases[historyDatabasePath] {
             try validateHistory(database, paths: paths)
+        }
+        if wanted.contains(.planner), let planner {
+            do { _ = try PlannerStore.decodeArchive(Data(contentsOf: planner)) }
+            catch { throw ArtifactBackupError.invalidContent("Planner") }
         }
         return ArtifactArchiveVerification(manifest: manifest, warnings: Array(warnings.prefix(64)),
                                            inline: inline, unreadableNotifySources: unreadableNotify)

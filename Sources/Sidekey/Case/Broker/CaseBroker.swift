@@ -1,4 +1,5 @@
 import Darwin
+import Combine
 import Foundation
 import WhytapCaseKit
 
@@ -28,7 +29,7 @@ struct CaseApprovalRequest: Equatable {
 }
 
 enum CaseApprovalOutcome: Equatable {
-    case allow, allowTimed, deny, timedOut
+    case allow, allowTimed(minutes: Int), deny, timedOut
 }
 
 @MainActor
@@ -103,6 +104,7 @@ final class CaseBroker {
     private let authenticator: CaseAuthenticating
     private let now: () -> Date
     private(set) var grants = CaseTimedGrants()
+    private var accessSubscription: AnyCancellable?
 
     init(
         service: CaseVaultService,
@@ -116,6 +118,15 @@ final class CaseBroker {
         self.approvals = approvals
         self.authenticator = authenticator
         self.now = now
+        accessSubscription = service.$payload.dropFirst().sink { [weak self, weak service] incoming in
+            // willSet: compare the old access configuration to the incoming one.
+            // A narrowed scope or changed mode revokes existing temporary grants.
+            for app in service?.payload?.apps ?? [] {
+                if incoming?.apps.first(where: { $0.id == app.id }) != app {
+                    self?.grants.remove(appID: app.id)
+                }
+            }
+        }
     }
 
     func handle(_ request: CaseBrokerRequest, peerPID: pid_t) async -> CaseBrokerResponse {
@@ -130,15 +141,17 @@ final class CaseBroker {
             if let denial = await authorizeListing(caller) { return denial }
             if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }
             guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
-            return .projects(Self.projectInfos(current.projects, in: current))
+            let visible = Self.scopedPayload(current, caller: caller)
+            return .projects(Self.projectInfos(visible.projects, in: visible))
 
         case .listKeys(let projectName):
             if let denial = await authorizeListing(caller) { return denial }
             if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }
             guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
-            var secrets = current.secrets
+            let visible = Self.scopedPayload(current, caller: caller)
+            var secrets = visible.secrets
             if let projectName {
-                guard let project = Self.findProject(projectName, in: current) else {
+                guard let project = Self.findProject(projectName, in: visible) else {
                     return .denied(reason: .unknownProject)
                 }
                 secrets = secrets.filter { $0.projectID == project.id }
@@ -174,7 +187,7 @@ final class CaseBroker {
         if case .knownUnregisteredAI = caller { return .denied(reason: .unknownAIApp) }
 
         let target: (project: CaseProject, secretIDs: [UUID])
-        switch Self.target(projectName: projectName, only: only, in: payload) {
+        switch Self.target(projectName: projectName, only: only, in: Self.scopedPayload(payload, caller: caller)) {
         case .resolved(let project, let ids):
             target = (project, ids)
         case .failure(let response):
@@ -219,10 +232,11 @@ final class CaseBroker {
             switch outcome {
             case .allow:
                 break
-            case .allowTimed:
-                if minutes > 0 {
-                    timedGrant = (app.id, minutes)
+            case .allowTimed(let selectedMinutes):
+                guard CaseViewModel.timedApprovalRange.contains(selectedMinutes) else {
+                    return .denied(reason: .userDeclined)
                 }
+                timedGrant = (app.id, selectedMinutes)
             case .deny:
                 return .denied(reason: .userDeclined)
             case .timedOut:
@@ -235,7 +249,7 @@ final class CaseBroker {
         // Approval is for this principal, not a registration snapshot. No await
         // may separate this check, the grant and value release on the main actor.
         // WHY: docs/decisions/2026-10-19-case-secrets-broker.md
-        if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }
+        if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID, projectID: target.project.id) { return denial }
         // The vault may have changed while the prompt was up: read values now,
         // and only for the secrets that were approved.
         guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
@@ -310,7 +324,7 @@ final class CaseBroker {
     /// Re-resolve after suspension, preserving the authenticated principal.
     /// A removed custom-path registration must not fall back to a human run;
     /// re-registering the same app also requires a new request and approval.
-    private func currentAuthorityDenial(for caller: CaseCaller, peerPID: pid_t) -> CaseBrokerResponse? {
+    private func currentAuthorityDenial(for caller: CaseCaller, peerPID: pid_t, projectID: UUID? = nil) -> CaseBrokerResponse? {
         guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
         let resolved = resolver.resolve(peerPID: peerPID, registrations: current.apps)
         switch (caller, resolved) {
@@ -318,8 +332,9 @@ final class CaseBroker {
             return nil
         case let (.registered(original), .registered(fresh)):
             guard original.id == fresh.id, original.identity == fresh.identity,
-                  current.apps.contains(where: { $0.id == original.id && $0.identity == original.identity })
+                  let app = current.apps.first(where: { $0.id == original.id && $0.identity == original.identity })
             else { return .denied(reason: .notRegistered) }
+            if let projectID, !app.allows(projectID: projectID) { return .denied(reason: .unknownProject) }
             return nil
         default:
             return .denied(reason: .notRegistered)
@@ -335,6 +350,18 @@ final class CaseBroker {
         case .askTouchID:
             return await authenticate(reason: Self.touchIDListReason) ? nil : .denied(reason: .touchIDFailed)
         }
+    }
+
+    /// Filter before resolving names, so ambiguity replies cannot reveal projects
+    /// outside this registration's current scope. Human runs keep Touch ID.
+    private static func scopedPayload(_ payload: CaseVaultPayload, caller: CaseCaller) -> CaseVaultPayload {
+        guard case .registered(let original) = caller,
+              let app = payload.apps.first(where: { $0.id == original.id }),
+              let allowed = app.allowedProjectIDs else { return payload }
+        var visible = payload
+        visible.projects = payload.projects.filter { allowed.contains($0.id) }
+        visible.secrets = payload.secrets.filter { allowed.contains($0.projectID) }
+        return visible
     }
 
     private func authenticate(reason: String) async -> Bool {

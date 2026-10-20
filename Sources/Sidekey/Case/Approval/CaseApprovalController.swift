@@ -29,6 +29,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     @Published private(set) var keysAvailable = true
     /// Changes with every prompt shown, so the view starts each one fresh.
     @Published private(set) var promptSerial = 0
+    @Published private(set) var selectedTimedMinutes = CaseVaultPayload.defaultTimedApprovalMinutes
 
     private struct Entry {
         let id: UUID
@@ -88,8 +89,15 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     /// A click on one of the prompt's buttons. Ignored until the prompt is armed.
     func choose(_ outcome: CaseApprovalOutcome) {
         guard acceptsAnswer else { return }
-        if outcome == .allowTimed, !offersTimed { return }
+        if case .allowTimed(let minutes) = outcome {
+            guard offersTimed, CaseViewModel.timedApprovalRange.contains(minutes) else { return }
+        }
         resolve(outcome)
+    }
+
+    func setTimedMinutes(_ minutes: Int) {
+        guard active != nil, CaseViewModel.timedApprovalRange.contains(minutes) else { return }
+        selectedTimedMinutes = minutes
     }
 
     /// Answers the visible prompt and shows the next one.
@@ -98,7 +106,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         clearTimers()
         active = nil
         entry.continuation.resume(returning: outcome)
-        if outcome == .allowTimed, entry.request.timedMinutes > 0 {
+        if case .allowTimed(let minutes) = outcome, CaseViewModel.timedApprovalRange.contains(minutes) {
             allowWaiting(coveredBy: entry.request)
         }
         if queue.isEmpty {
@@ -158,7 +166,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         switch key {
         case .yes: choose(.allow)
         case .no, .escape: choose(.deny)
-        case .timed: choose(.allowTimed)
+        case .timed: choose(.allowTimed(minutes: selectedTimedMinutes))
         }
     }
 
@@ -172,6 +180,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         deadline = shown.addingTimeInterval(Self.timeout)
         promptSerial += 1
         current = entry.request
+        selectedTimedMinutes = entry.request.timedMinutes
         startTapIfNeeded()
         keyTap.setArmed(false)
         // Timers carry their prompt's serial, so a late one never touches the next prompt.

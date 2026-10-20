@@ -628,7 +628,7 @@ final class BackupViewModel: ObservableObject {
         await retainOperation(.restore) {
             guard self.canUseGitHubBackup, let github = self.github,
                   !self.needsRestart, !self.hasPendingMaintenance else { return }
-            guard self.idle() else { self.fail(ConfigBackupError.busy); return }
+            guard self.canStartRestore() else { return }
             self.hideRecoveryCode(); self.clearPreview(); self.errorMessage = nil
             self.isBusy = true
             do {
@@ -924,7 +924,7 @@ final class BackupViewModel: ObservableObject {
 
     private func performRestore(sections: Set<ArtifactBackupSection>) async {
         guard !isBusy, !needsRestart, !hasPendingMaintenance, !sections.isEmpty, let file = restoreFile, let key = restoreKey else { return }
-        guard idle() else { fail(ConfigBackupError.busy); return }
+        guard canStartRestore() else { return }
         isBusy = true; errorMessage = nil; statusText = "Preparing a safe restore…"
         defer { isBusy = false }
         do {
@@ -981,7 +981,7 @@ final class BackupViewModel: ObservableObject {
 
     func restoreSettingsBlock(_ section: ConfigBackupSection, version: ConfigBackupSnapshot) async {
         guard !isBusy, !needsRestart, !hasPendingMaintenance else { return }
-        guard idle() else { fail(ConfigBackupError.busy); return }
+        guard canStartRestore() else { return }
         isBusy = true; defer { isBusy = false }
         do {
             // Capture healthy current values for the selectable local history;
@@ -1122,7 +1122,9 @@ final class BackupViewModel: ObservableObject {
             } catch { throw ConfigBackupError.keyUnavailable }
             let previous = try await settingsFiles.load(keys: localHistoryKeys(current: key))
             localSettingsVersions = previous
-            if previous.first?.preferences == values && previous.first?.credentials == credentials { return }
+            if let latest = previous.first, latest.preferences == values,
+               let previousCredentials = latest.credentials,
+               (previousCredentials == credentials || ConfigBackupRegistry.settingsCredentialsMatch(previousCredentials, credentials)) { return }
             let reason = warnings.isEmpty ? "Saved on this Mac" : "Saved on this Mac · API & Models needs review"
             let snapshot = ConfigBackupSnapshot(reason: reason, preferences: values, credentials: credentials)
             _ = try await settingsFiles.save(ConfigBackupArchive.seal(snapshot, key: key), id: snapshot.id)
@@ -1162,6 +1164,15 @@ final class BackupViewModel: ObservableObject {
             isBusy = false
     }
 
+    private func canStartRestore() -> Bool {
+        guard idle() else { fail(ConfigBackupError.busy); return false }
+        guard !AppState.shared.plannerActive else {
+            errorMessage = "Finish your Planner changes and close its window before restoring a backup."
+            return false
+        }
+        return true
+    }
+
     static var isIdle: Bool {
         let state = AppState.shared
         return !state.meetingRecordingActive && !state.isMeetingRecording && state.phase == .idle && state.agentPhase == .idle
@@ -1198,7 +1209,7 @@ enum BackupChangeProbe {
         let roots = [paths.caseVault, paths.historyDatabase,
                      paths.historyDatabase.deletingLastPathComponent().appendingPathComponent("history.sqlite-wal"),
                      paths.historyAssets, paths.monitorRoot, paths.notifyRoot, paths.meetingsCatalog,
-                     paths.meetingsStaging, paths.agentMemory]
+                     paths.meetingsStaging, paths.agentMemory, paths.plannerArchive]
         var values: [String] = []
         func add(_ file: URL) {
             var information = stat()

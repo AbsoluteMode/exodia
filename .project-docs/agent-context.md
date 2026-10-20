@@ -295,16 +295,24 @@ Meeting Notes:
 Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
-  appear as app icons; clicking one opens access settings. With no connected
-  clients a link icon opens setup. Navigation is white and explanations are
+  appear as app icons; clicking one opens that client's policy. An always-visible
+  Connect button opens the agent picker, then project scope and Accept/Bypass
+  before registration. Codex highlights blue, Claude orange and Cursor white
+  on hover/keyboard focus. Search matches key names/descriptions only; + Key
+  opens a separate creation field. Navigation is white and explanations are
   short. Case has no Doppler integration or import screen.
   All explicitly opened hover submenus survive pointer exit until Back, an
   outside click or bare Escape. The root tools grid follows ordinary hover;
   hardware brightness glances still expire. System authentication and native
   menu/file-picker interaction suspend outside dismissal. Activity/preemption
   policy remains authoritative. UI design: docs/DESIGN.md.
-  The encrypted schema-2 vault has projects, descriptions and registered AI
-  clients with Approve/Bypass per app and project. `Contents/Helpers/whytap`
+  The encrypted schema-3 vault has projects, descriptions and registered AI
+  clients with Accept (stored as approve)/Bypass per app and project. A client's
+  allowedProjectIDs is nil for all current/future projects or an explicit set
+  (empty denies all). The broker filters listings/ambiguity and enforces scope
+  again before value/grant release. Scope/mode changes revoke timed grants.
+  Schema 2 migrates without changing existing access; older apps refuse schema 3.
+  WHY: docs/decisions/2026-10-20-case-connect-and-scope.md. `Contents/Helpers/whytap`
   exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
   names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). The app's local Unix
   socket broker accepts only its bundled helper by audit-token cdhash and
@@ -318,7 +326,8 @@ Case secrets manager:
   invalidates its pending requests, including queued approvals.
   Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
-  grants. Registration configures the client's names-only MCP entry. The
+  grants. The prompt's Stepper selects 1–240 minutes (default 15); physical A
+  uses the displayed duration. Each new prompt resets its duration. Registration configures the client's names-only MCP entry. The
   helper injects authorized values into the child command's environment and
   applies best-effort masking to stdout/stderr. Deliberately transformed
   output, files and values shorter than four bytes can expose values; this is
@@ -748,6 +757,29 @@ Agents get a resolved setup-guide path on every turn.
 Guide: docs/customization/notifications.md. WHY:
 .project-docs/decisions/2026-10-19-script-notifications.md
 
+Planner: catalog/search actions To-do and Calendar open one native planner window
+without changing saved layouts. PlannerStore atomically saves private local tasks
+and Whytap events; unreadable archives block writes. CalendarConnections combines
+selected EventKit calendars with direct Google Calendar, Microsoft Graph (including
+Teams links) and Zoom Calendar Service connections. Remote events are read-only;
+visible-range recurrence is provider-expanded, refresh runs only while the calendar
+view is visible, and matching UID/occurrence bounds collapse duplicate sources.
+OAuth uses browser S256 PKCE/state, a numeric loopback listener (Microsoft redirects
+to localhost), and Keychain credentials with durable refresh-token rotation.
+Short-lived access tokens stay in memory and are excluded from backup; only a
+refresh-token/client change updates the saved authorization. Token rotation alone
+does not create a settings version or full backup; subsequent backups capture the
+latest token, and restored sign-in can require reconnecting. No
+shared OAuth registrations are created by the app itself; the owner supplies
+registered native clients during packaging through configure-calendar-clients.py.
+Live accounts require provider setup and separate acceptance. Encrypted backups
+include local Planner content, calendar metadata and saved credentials. Old backups
+preserve current calendar settings. A visible Planner or retained task draft
+defers update restart and restore; ordinary backups still run. Closing the window
+stops calendar polling; another tool hotkey preserves an attached editor. Tests
+use fake providers and temporary stores. Guide:
+docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md
+
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change
 contracts and source entry points; `doctor --json` checks build prerequisites.
@@ -830,11 +862,18 @@ Guide: `docs/backup.md`. WHY:
 
 Screenshot is an action tool in hover search/Toolbox with an optional named
 hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
-then shows a frozen selection canvas and compact native toolbar. Arrow, Shape,
+then shows a frozen selection canvas and one horizontal native toolbar with
+inline contextual settings, Copy and Download. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
+PNG files into Downloads and shows the actual filename without closing. Arrow,
+Shape,
 Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
 system sharing live in More. Blur defaults to Text and numbers, including
-standalone digits, using system Vision without language correction and with
-additional text detection; Entire area is the alternative. Detection is
+standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
+without language correction; accurate OCR belongs to Copy text. Dark crops are
+normalized only for detection; output keeps original colors. Each text region
+gets its own blur strength, with stronger masks applied last. Crop-first compositing, Blur and PNG export run off the UI
+thread; a shared hardware Core Image context avoids per-gesture setup.
+Entire area is the alternative. Detection is
 best-effort and the visible result must be checked. Exports flatten edited
 pixels; Copy text analyzes those pixels too. No capture is persisted before an
 explicit export. Active editing/processing/dialogs block app-initiated update
@@ -975,7 +1014,8 @@ input layout, including live recording and previously saved non-English titles.
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
    and monitoring sources the user configured (including their credential store),
-   notification sources accessed by user-configured local scripts, OpenCode's own provider
+   notification sources accessed by user-configured local scripts, calendar providers
+   explicitly connected by the user (Google, Microsoft and Zoom), OpenCode's own provider
    traffic, the model catalogs and free key checks of providers the user added
    a key for, OpenRouter's provider list (latency, throughput) for a model
    selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user

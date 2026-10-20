@@ -38,6 +38,10 @@ struct CaseTimedGrants: Equatable {
     }
 
     mutating func removeAll() { expiry.removeAll() }
+
+    mutating func remove(appID: UUID) {
+        expiry = expiry.filter { $0.key.appID != appID }
+    }
 }
 
 /// Pure access rules. No I/O, no clock of its own.
@@ -65,6 +69,7 @@ enum CaseAccessPolicy {
         case .knownUnregisteredAI:
             return .deny(.unknownAIApp)
         case .registered(let app):
+            guard app.allows(projectID: projectID) else { return .deny(.unknownProject) }
             let mode = app.projectModes[projectID] ?? app.defaultMode
             switch mode {
             case .bypass:

@@ -1,6 +1,5 @@
 import AppKit
 import ScreenCaptureKit
-import UniformTypeIdentifiers
 
 @MainActor
 final class ScreenshotCapturePanel: NSPanel {
@@ -15,7 +14,7 @@ final class ScreenshotCapturePanel: NSPanel {
     override func cancelOperation(_ sender: Any?) { keyboardCanvas?.cancelOperation(sender) }
 }
 
-/// One in-memory capture session. No screenshot files are written until Save.
+/// One in-memory capture session. Files are written only on explicit Download.
 @MainActor
 final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var windows: [ScreenshotCapturePanel] = []
@@ -29,6 +28,8 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var sharePicker: NSSharingServicePicker?
     private var observers: [NSObjectProtocol] = []
     private var outputWidth: Int?
+    private var copyWaitReason: String?
+    private var copyAfterProcessing = false
     private let activityChanged: (Bool) -> Void
     private let excludedWindowIDs: () -> Set<CGWindowID>
     var isActive: Bool { generation != nil }
@@ -147,13 +148,15 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         guard let canvas = selectedCanvas, let parent = canvas.window, let panel = toolbarPanel, let toolbar else { return }
         guard !canvas.selection.isEmpty else { panel.orderOut(nil); return }
         let size = toolbar.fittingSize
-        panel.setFrame(ScreenshotGeometry.toolbarFrame(selection: parent.convertToScreen(canvas.selection), screen: parent.frame,
-                                                        size: CGSize(width: max(430, size.width), height: max(43, size.height))), display: true)
-        panel.orderFrontRegardless()
+        let frame = ScreenshotGeometry.toolbarFrame(selection: parent.convertToScreen(canvas.selection), screen: parent.frame,
+                                                     size: CGSize(width: max(430, size.width), height: max(43, size.height)))
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
+        if !panel.isVisible { panel.orderFrontRegardless() }
     }
 
     func cancel(restoreFocus: Bool = true) {
         generation = nil; task?.cancel(); task = nil
+        copyWaitReason = nil; copyAfterProcessing = false
         toolbar?.closeAuxiliaryWindows()
         if let toolbarPanel { toolbarPanel.parent?.removeChildWindow(toolbarPanel); toolbarPanel.orderOut(nil); toolbarPanel.close() }
         toolbarPanel = nil; toolbar = nil; selectedCanvas = nil
@@ -174,47 +177,52 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
 
     private func blur(_ rect: CGRect, mode: ScreenshotBlurMode, canvas: ScreenshotCanvas) {
         guard !canvas.busy, let token = generation else { return }
-        do {
-            let image = try ScreenshotRenderer.image(source: canvas.source, size: canvas.documentSize,
-                                                      annotations: canvas.annotations, crop: rect)
-            canvas.busy = true
-            task = Task { [weak self, weak canvas] in
-                do {
-                    let worker = Task.detached(priority: .userInitiated) { () throws -> CGImage in
-                        let boxes: [CGRect]
-                        if mode == .textAndNumbers {
-                            boxes = try ScreenshotTextDetector.analyze(image).boxes
-                            guard !boxes.isEmpty else { throw ScreenshotImageError.noText }
-                        } else { boxes = [CGRect(x: 0, y: 0, width: 1, height: 1)] }
-                        try Task.checkCancellation()
-                        return try ScreenshotRenderer.blurred(image, boxes: boxes)
-                    }
-                    let patch = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
-                    guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
-                    canvas.busy = false
-                    canvas.commit(ScreenshotAnnotation(tool: .blur, points: [rect.origin, CGPoint(x: rect.maxX, y: rect.maxY)], patch: patch))
-                    self.report(mode == .textAndNumbers ? "Text and numbers blurred · Check the result · ⌘Z Undo" : "Area blurred · ⌘Z Undo", canvas: canvas)
-                } catch {
-                    guard let self, let canvas, self.generation == token else { return }
-                    canvas.busy = false
-                    self.report(error is ScreenshotImageError ? error.localizedDescription : "Text detection failed. Try Entire area, or try again.", canvas: canvas)
+        let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations
+        canvas.busyMessage = "Blurring on this Mac… · Return: copy when ready · Esc: cancel capture"
+        canvas.busy = true; copyWaitReason = "Blur"
+        task = Task { [weak self, weak canvas] in
+            do {
+                let worker = Task.detached(priority: .userInitiated) { () throws -> CGImage in
+                    try Task.checkCancellation()
+                    let image = try ScreenshotRenderer.image(source: source, size: size, annotations: annotations, crop: rect)
+                    let boxes: [CGRect]
+                    if mode == .textAndNumbers {
+                        boxes = try ScreenshotTextDetector.boxes(image)
+                        guard !boxes.isEmpty else { throw ScreenshotImageError.noText }
+                    } else { boxes = [CGRect(x: 0, y: 0, width: 1, height: 1)] }
+                    try Task.checkCancellation()
+                    return try ScreenshotRenderer.blurred(image, boxes: boxes)
                 }
+                let patch = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+                guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
+                canvas.commit(ScreenshotAnnotation(tool: .blur, points: [rect.origin, CGPoint(x: rect.maxX, y: rect.maxY)], patch: patch))
+                canvas.busy = false; self.copyWaitReason = nil
+                self.report(mode == .textAndNumbers ? "Text and numbers blurred · Check the result · ⌘Z Undo" : "Area blurred · ⌘Z Undo", canvas: canvas)
+                if self.copyAfterProcessing { self.copyAfterProcessing = false; self.perform(.copy) }
+            } catch {
+                guard let self, let canvas, self.generation == token else { return }
+                canvas.busy = false; self.copyWaitReason = nil; self.copyAfterProcessing = false
+                self.report(error is ScreenshotImageError ? error.localizedDescription : "Text detection failed. Try Entire area, or try again.", canvas: canvas)
             }
-        } catch { report(error.localizedDescription, canvas: canvas) }
+        }
     }
 
     func perform(_ command: ScreenshotCommand) {
         if case .cancel = command { cancel(); return }
-        guard let canvas = selectedCanvas, !canvas.busy, !canvas.selection.isEmpty else { return }
+        guard let canvas = selectedCanvas, !canvas.selection.isEmpty else { return }
+        if canvas.busy {
+            if case .copy = command, let reason = copyWaitReason {
+                copyAfterProcessing = true
+                canvas.busyMessage = "Copying when \(reason) finishes… · Esc: cancel capture"
+                report(canvas.busyMessage, canvas: canvas)
+            }
+            return
+        }
         do {
             switch command {
             case .copy:
-                let data = NSBitmapImageRep(cgImage: try output(canvas)).representation(using: .png, properties: [:])
-                guard let data else { throw ScreenshotImageError.rendering }
-                let board = NSPasteboard.general; board.clearContents()
-                guard board.setData(data, forType: .png) else { throw ScreenshotImageError.rendering }
-                cancel()
-            case .save: try save(canvas)
+                export(canvas, download: false)
+            case .download: export(canvas, download: true)
             case .copyText: try copyText(canvas)
             case .pin:
                 let image = try output(canvas)
@@ -230,28 +238,50 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         } catch { report(error.localizedDescription, canvas: canvas) }
     }
 
-    private func save(_ canvas: ScreenshotCanvas) throws {
-        let image = try output(canvas), panel = NSSavePanel()
-        panel.allowedContentTypes = [.png, .jpeg]; panel.canCreateDirectories = true
-        panel.nameFieldStringValue = "Screenshot-\(ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-" )).png"
-        guard let window = canvas.window else { return }
+    private func export(_ canvas: ScreenshotCanvas, download: Bool) {
+        guard let token = generation else { return }
+        let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations, crop = canvas.selection
+        let width = outputWidth
+        canvas.busyMessage = download ? "Downloading to Downloads…" : "Preparing clipboard…"
+        copyWaitReason = download ? "Download" : nil
         canvas.busy = true
-        panel.beginSheetModal(for: window) { [weak self, weak canvas] result in
-            guard let self, let canvas else { return }
-            canvas.busy = false
-            guard self.isActive, result == .OK, let url = panel.url else { return }
+        task = Task { [weak self, weak canvas] in
             do {
-                let jpeg = ["jpg", "jpeg"].contains(url.pathExtension.lowercased())
-                guard let bytes = NSBitmapImageRep(cgImage: image).representation(using: jpeg ? .jpeg : .png,
-                                                                                properties: jpeg ? [.compressionFactor: 0.9] : [:]) else { throw ScreenshotImageError.rendering }
-                try bytes.write(to: url, options: .atomic); self.cancel()
-            } catch { self.report("Couldn’t save the screenshot. Choose another location and try again.", canvas: canvas) }
+                let worker = Task.detached(priority: .userInitiated) { () throws -> (Data, URL?) in
+                    try Task.checkCancellation()
+                    let raw = try ScreenshotRenderer.image(source: source, size: size, annotations: annotations, crop: crop)
+                    let image = try width.map { try ScreenshotRenderer.resized(raw, width: $0) } ?? raw
+                    let bytes = try ScreenshotDownload.png(image)
+                    try Task.checkCancellation()
+                    let url = try download ? ScreenshotDownload.write(bytes, directory: FileManager.default.url(for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)) : nil
+                    return (bytes, url)
+                }
+                let (bytes, url) = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+                guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
+                canvas.busy = false; self.copyWaitReason = nil
+                if let url {
+                    self.report("Downloaded to Downloads as “\(url.lastPathComponent)”", canvas: canvas)
+                    NSAccessibility.post(element: canvas, notification: .announcementRequested,
+                                         userInfo: [.announcement: canvas.message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+                    if self.copyAfterProcessing { self.copyAfterProcessing = false; self.perform(.copy) }
+                } else {
+                    let board = NSPasteboard.general; board.clearContents()
+                    guard board.setData(bytes, forType: .png) else { throw ScreenshotImageError.rendering }
+                    self.cancel()
+                }
+            } catch {
+                guard let self, let canvas, self.generation == token else { return }
+                canvas.busy = false
+                self.copyWaitReason = nil; self.copyAfterProcessing = false
+                self.report(download ? "Couldn’t download to Downloads. Check folder access and free space, then try again." : error.localizedDescription, canvas: canvas)
+            }
         }
     }
 
     private func copyText(_ canvas: ScreenshotCanvas) throws {
         let image = try rawOutput(canvas)
         guard let token = generation else { return }
+        canvas.busyMessage = "Reading text on this Mac… · Esc to cancel"
         canvas.busy = true
         task = Task { [weak self, weak canvas] in
             do {
@@ -273,7 +303,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private func resize(_ canvas: ScreenshotCanvas) throws {
         let image = try rawOutput(canvas)
         let alert = NSAlert(); alert.messageText = "Output width in pixels"
-        alert.informativeText = "Height follows the original proportions. Save supports PNG and JPEG."
+        alert.informativeText = "Height follows the original proportions. Copy and Download use PNG."
         let input = NSTextField(string: String(outputWidth ?? image.width)); input.frame.size = CGSize(width: 220, height: 24)
         alert.accessoryView = input; alert.addButton(withTitle: "Apply"); alert.addButton(withTitle: "Cancel")
         guard let window = canvas.window else { return }

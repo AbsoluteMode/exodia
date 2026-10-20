@@ -1,5 +1,46 @@
 # Interface decisions
 
+## Screenshot editor polish — 2026-10-20
+
+The person comes to mark a screenshot and copy or download it quickly. First
+they see their crop and a single toolbar row. Next they choose a tool, adjust
+its settings beside it, and finish with Copy/Return or Download.
+
+- Tools, contextual controls and export actions share a 42 pt horizontal row.
+  Why: the user explicitly rejected settings on a second row. Keep system
+  typography, adaptive popover material and semantic accent/label colors.
+  Selected tools retain label-color text on an accent wash; accent-blue text
+  on that wash had insufficient contrast in the native dark snapshot.
+- Show only settings relevant to the active tool. Color/width use existing
+  per-tool preferences; the label field is 160 pt. Why: the screenshot is the
+  workspace, and tool configuration should stay nearby without a permanent form.
+- Copy remains the accented primary action. Download has a downward arrow and
+  explicit text, writes directly to Downloads and keeps the editor open with
+  its actual filename. Why: file destination and success must be visible without
+  a Save dialog or interpreting a Share symbol. Name collisions never overwrite.
+- Return/keypad Enter copies and closes after selection; during Blur the command
+  waits for the completed patch; during Download it waits for the file. Without a crop it copies the whole display and closes in one action.
+  Return in the label field also copies/closes. Typing is preparation;
+  click the screenshot to place the label first. The placeholder/help explicitly
+  say that an unplaced label is discarded, keeping the requested one-Return finish. Failed processing stays open.
+- No entrance, resize or tool-switch animation delays input; reduced motion uses
+  the same immediate behavior. Busy state disables mutating/export controls and
+  reports processing; Escape stays available. Copy and Download encode off the
+  main thread. Fast Vision regions plus a bounded isolated-glyph atlas avoid accurate
+  OCR’s per-build cold start; dark crops are normalized for detection only.
+  Copy text retains accurate OCR as a separate action.
+- Text masks have 3 px padded, subtly rounded edges; strength follows each text region’s height,
+  rather than the selected area's dimensions or the median of other labels.
+  Overlapping masks apply stronger blur last. Entire area covers every pixel.
+  Why: avoid oversized smears while preserving the existing text/number contract.
+
+Native offscreen fixtures cover the real AppKit toolbar in both appearances,
+all main tool states and 640/768/1024 pt available widths; generated images cover region detection, crop/annotation
+alignment, flattened pixels, unique downloads and keyboard commands. These
+checks do not establish live capture permission, real clipboard delivery, physical
+keyboard focus or perceived smoothness in the installed application. Those remain
+acceptance after the designated builder promotes the reviewed source.
+
 ## Searchable model selection — 2026-10-20
 
 The user comes to choose a model without scrolling a long catalog. First they
@@ -372,6 +413,56 @@ The screenshot matrix was inspected after successful render tests. Live pointer/
 the one installed app after builder promotion. Existing Settings is a dark
 surface; a new light-theme system is outside this change.
 
+## Planner: tasks and calendar — 2026-10-20
+
+The person comes to write down a task or find the next appointment. First they
+see the task list or selected day, then they can add/edit local content or join
+a connected meeting. This is a native working surface; its existing sidebar
+and detail pane remain the selected direction.
+
+- One 980×680 window, minimum 820×560, contains To-do and Calendar. Each catalog
+  action opens its matching section. Why: the month grid and agenda need desktop
+  space, and saved Toolbox layouts must remain unchanged.
+- Use the system font, native controls and semantic surfaces. Titles are 28pt
+  bold, object names 13pt, metadata 11–13pt. MacSettingsTheme.text2 keeps metadata
+  readable in both appearances; the selected date uses the shared #0064D2 fill
+  with white labels. Why: both Russian text and calendar counts remain legible.
+- Task entry stays above the active/completed list; Return adds it. Search, edit,
+  complete/reopen and delete actions are visible without hover. Delete asks first.
+  Why: this is a short repeated workflow, so secondary actions cannot shift rows.
+- Calendar retains a month grid and a scrolling day agenda. Minimum height leaves
+  at least one agenda row; remaining events scroll in place. Local event editing
+  uses a sheet, external event details offer Join/Open original. Why: the source
+  calendar remains authoritative for connected events in the first version.
+- A sheet remains attached when another tool hotkey opens Planner. Account sign-in
+  shows browser progress, cancellation and actionable error text. Closing the main
+  window ends polling. Why: navigation and closing must not lose drafts or leave
+  hidden network work running.
+- Validation errors belong to their editor and disappear with it. Moving Start
+  keeps the event duration, and All day preserves its prior times of day. Notes
+  and day counts have explicit accessibility labels. Why: correction and date
+  changes must not contaminate another editor or silently discard entered times.
+- A registered build asks the user to select a calendar provider and sign in. Native
+  client settings are advanced setup; an unregistered build exposes that setup
+  honestly. Why: owner registration is a packaging responsibility, not a repeated
+  task for every account holder.
+- Window visibility or a retained new-task draft defers update restart and restore.
+  Backups continue to capture saved data. Why: protecting edits must not pause all
+  backup synchronization while someone keeps their calendar open.
+- No additional motion is introduced; native focus, keyboard shortcuts, sheets
+  and accessibility labels remain. Why: repeated editing should stay immediate
+  under Reduce Motion as well as ordinary settings.
+
+Offscreen synthetic fixtures cover empty/populated tasks, the month/day calendar,
+connect and event editors, at 820 and 980pt in both appearances, plus calendar
+visibility-limit feedback in both appearances. Measured metadata contrast is 6.62:1 on the light surface; white selected-date
+labels on the shared blue fill are 5.59:1. Separate Codex and Claude Opus 5.5 reviews
+inspected layouts and data/backup contracts. The Claude review led to repairs in
+token backup behavior, editor errors, date editing, accessibility and packaging
+configuration discovery. Real OAuth, system permissions, VoiceOver, physical keyboard/focus and
+compositor appearance require acceptance on the one installed application. The
+priority of a unified calendar over separate provider windows remains a product
+hypothesis to revisit after ordinary use.
 
 # Notification cards — 2026-10-20
 
@@ -400,3 +491,35 @@ and 5.44:1 for secondary text on the sampled dark backdrop. This does not claim
 live pointer, VoiceOver or audio-output acceptance before installed promotion.
 
 Combined integration also renders notification Settings in both system appearances using the shared adaptive tokens; island cards retain their dark appearance. The earlier Backup fixture measurements above describe that original dark fixture, while current shared Settings follows the Settings appearance section.
+
+
+## Case Connect, project scope and search — 2026-10-20
+
+The person comes to find a key or give an agent access to it. First they see
+key search, their projects and the connected app icons. Then they can use a
+key, add one explicitly, or choose Connect and review an agent's rights.
+
+Keep the existing native SwiftUI/AppKit surface and 320 pt viewport. The user's
+chosen flow is Connect → agent → rights, and an existing icon → that agent's
+rights. No alternative composition or decorative screen is needed.
+
+| Component | Behavior and reason |
+| --- | --- |
+| Search | Always searches key names/descriptions; Return cannot create a key. New key name/value fields appear separately after + Key, so a search cannot become a write. Empty results say Keys not found; projects are contextual headings, never search hits. |
+| Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
+| Client picker | Discovers installed clients only after Connect. Shows loading, an explicit empty message and Choose program. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. |
+| Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
+| Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
+| Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
+| Approval | The request shows the command, app, project and key names. A Stepper changes temporary Bypass to 1–240 minutes; the button and physical A use that value. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
+
+Display metadata and project sections are rebuilt when the vault changes and
+reused for renders. Search only filters/ranks metadata; values never enter its
+index. The list is lazy so closed projects and offscreen rows do not create a
+full hierarchy on every keystroke. Touch ID remains the opening gate.
+
+Validation uses offscreen native fixtures, synthetic names and values, and fake
+authentication. The installed application is reserved for acceptance through the
+shared builder. These fixtures do not prove live keyboard focus or glass
+contrast on every desktop; those remain runtime acceptance checks. The user's
+reported lag may have been concurrent build load, not a confirmed app fault.
