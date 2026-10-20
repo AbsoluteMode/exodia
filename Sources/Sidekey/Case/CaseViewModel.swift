@@ -934,14 +934,18 @@ final class CaseViewModel: ObservableObject {
 
     private func filterRows() {
         guard unlockState == .unlocked else { return }
-        rows = CaseRanker.sortedEntries(secrets: indexedSecrets, projects: isSearching ? [] : indexedProjects,
+        rows = CaseRanker.sortedEntries(secrets: indexedSecrets, projects: indexedProjects,
                                        query: query, now: now()).map { entry in
             indexedRows[entry.id] ?? CaseDisplayRow(id: entry.id, kind: .project, displayName: entry.displayName,
                                                   description: entry.description, projectID: entry.projectID)
         }
         if isSearching {
-            let matches = Dictionary(grouping: rows, by: \.projectID)
+            let projectMatches = Set(rows.filter { $0.kind == .project }.map(\.id))
+            let matches = Dictionary(grouping: rows.filter { $0.kind == .secret }, by: \.projectID)
             projectSections = allSections.compactMap { section in
+                // A matching project is useful even before its first key.
+                // Keep all its keys; key-only matches show just matching keys.
+                if projectMatches.contains(section.id) { return section }
                 guard let keys = matches[section.id], !keys.isEmpty else { return nil }
                 return CaseProjectSection(id: section.id, name: section.name, description: section.description,
                                           keyCount: section.keyCount, secrets: keys)
