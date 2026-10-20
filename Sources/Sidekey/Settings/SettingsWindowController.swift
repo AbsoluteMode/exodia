@@ -109,6 +109,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         Task { await loadIfNeeded(tab: selection.selectedTab) }
     }
 
+    func windowWillClose(_ notification: Notification) {
+        toolboxDeps.endToolSessions()
+    }
+
     func configure(toolboxDeps: ToolboxDeps) {
         self.toolboxDeps = toolboxDeps
         refreshRootView()

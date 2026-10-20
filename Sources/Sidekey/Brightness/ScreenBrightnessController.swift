@@ -74,8 +74,9 @@ protocol ScreenBrightnessDevice {
 
 /// Hover Display: the island display's backlight plus an Extra switch.
 /// Extra is a fixed EDR boost of the display's transfer table on top of whatever the
-/// backlight is, and it never writes the backlight itself. Any decrease in backlight ends
-/// Extra, including outside changes while the strip is closed. Increasing the backlight
+/// backlight is, and it never writes the backlight itself. The first manual decrease only
+/// ends Extra; the next adjustment lowers the backlight. Outside decreases also end Extra,
+/// including while the strip is closed. Increasing the backlight
 /// does not enable Extra. The switch, heat, a display change or lost EDR support, another
 /// app adjusting the display's table, a boost failure and quit also end it.
 // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
@@ -111,6 +112,8 @@ final class ScreenBrightnessController: ObservableObject {
     private var lastWrite: (display: CGDirectDisplayID, date: Date)?
     private var timer: Timer?
     private var viewers = 0
+    private var isDraggingLevel = false
+    private var ignoresLevelDrag = false
     /// True while a visible strip or active Extra follows outside changes.
     var isPolling: Bool { timer != nil }
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -150,7 +153,18 @@ final class ScreenBrightnessController: ObservableObject {
 
     func endInteraction() {
         viewers = max(0, viewers - 1)
+        if viewers == 0 { endLevelDrag() }
         updatePolling()
+    }
+
+    func beginLevelDrag() {
+        isDraggingLevel = true
+        ignoresLevelDrag = false
+    }
+
+    func endLevelDrag() {
+        isDraggingLevel = false
+        ignoresLevelDrag = false
     }
 
     /// Assigns only changed values: `@Published` announces every assignment and
@@ -187,16 +201,22 @@ final class ScreenBrightnessController: ObservableObject {
         updatePolling()
     }
 
-    /// The slider and intercepted brightness keys. A successful decrease also ends Extra.
+    /// The first manual decrease consumes Extra without writing the backlight. Keep the
+    /// rest of that drag at the same level; another drag or accessibility action can lower it.
     func setLevel(_ requested: Double) {
-        guard isAvailable, let display else { return }
+        guard isAvailable, let display, !ignoresLevelDrag else { return }
         let next = ScreenBrightnessScale.clampedLevel(requested)
+        if isExtraOn, requested.isFinite, requested < level - Self.levelReadbackTolerance {
+            endExtra()
+            notice = nil
+            ignoresLevelDrag = isDraggingLevel
+            return
+        }
         guard write(next, to: display.id) else {
             refresh()
             notice = Self.writeFailedNotice
             return
         }
-        if next < level - Self.levelReadbackTolerance { endExtra() }
         notice = nil
         level = next
     }
