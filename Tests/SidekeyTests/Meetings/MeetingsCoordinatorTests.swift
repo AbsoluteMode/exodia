@@ -718,6 +718,31 @@ final class MeetingsCoordinatorTests: XCTestCase {
         XCTAssertLessThan(gapSeconds, MeetingsConfig.reconnectGracePeriodSeconds)
     }
 
+    func test_rejoin_during_finalize_cleanup_keeps_the_reconnect_prompt_visible() async {
+        let buffer = GatedFinalizeCleanupBuffer()
+        let pill = MeetingPillController(buffer: buffer)
+        let coordinator = MeetingsCoordinator(config: MeetingsConfig(defaults: testDefaults),
+            detector: StubMeetingDetector(), pill: pill, buffer: buffer, meetingsEnabled: { true })
+        let id = UUID()
+        let cleanup = Task {
+            await coordinator.handleFinalizedEvent(.init(meetingId: id, chunkURLs: [],
+                totalDurationSeconds: 42, reason: .autoEnd))
+        }
+        for _ in 0..<100 {
+            if await buffer.enteredGC { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let entered = await buffer.enteredGC
+        XCTAssertTrue(entered)
+        await coordinator.handleDetectorEvent(.triggered(meetingId: UUID()))
+        await buffer.releaseGC()
+        await cleanup.value
+        guard case .suggestingReconnect(_, let previous, _, _) = pill.state else {
+            return XCTFail("Finalize cleanup must not hide a newer Reconnect prompt: \(pill.state)")
+        }
+        XCTAssertEqual(previous, id)
+    }
+
     func test_rejoin_at_179_seconds_offers_reconnect_but_181_starts_a_new_note() async {
         XCTAssertEqual(MeetingsConfig.reconnectGracePeriodSeconds, 180)
         for gap in [179.0, 181.0] {
@@ -2420,4 +2445,16 @@ private final class TestMicInUse: MicInUseProbing, @unchecked Sendable {
     nonisolated func feed(_ inUse: Bool) {
         continuation.yield(inUse)
     }
+}
+
+private actor GatedFinalizeCleanupBuffer: MeetingPillBufferAttaching {
+    private(set) var enteredGC = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    func start() async {}
+    func snapshot() async -> Data { Data() }
+    func gc() async {
+        enteredGC = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func releaseGC() { continuation?.resume(); continuation = nil }
 }

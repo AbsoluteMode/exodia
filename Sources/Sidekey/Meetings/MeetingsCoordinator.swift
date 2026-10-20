@@ -1025,7 +1025,6 @@ final class MeetingsCoordinator {
         // recorder finalizes for good its `finalizedStream` completes and
         // the loop exits on its own. No leak — the recorder owns the
         // stream lifecycle.
-        if let buffer { await buffer.gc() }
         pill?.hide()
 
         if combinedEvent.reason == .autoEnd {
@@ -1041,6 +1040,10 @@ final class MeetingsCoordinator {
             _ = enqueueFinalizedRecording(event: combinedEvent, startedAt: startedAt, endedAt: endedAt,
                 reconnectMarkers: [], language: language, continuation: continuation)
         }
+        // Publish the completed part and reconnect candidate before yielding.
+        // Cleanup may suspend while the detector already reports a new call;
+        // it must never hide that call's newer suggestion afterward.
+        if let buffer { await buffer.gc() }
     }
 
     private func stagePendingReconnect(_ pending: PendingReconnect) {

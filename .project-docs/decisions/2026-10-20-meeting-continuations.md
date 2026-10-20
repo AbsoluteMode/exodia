@@ -55,7 +55,9 @@ both problems and keep the prior note available when a later part fails.
 ## Ordering, recovery and edits
 
 The coordinator registers and serializes processing per logical meeting before
-returning from Stop. Each physical recording has a durable manifest, including
+returning from Stop. The candidate and pill state are published before buffer
+cleanup can suspend, so an overlapping detector event keeps its newer prompt.
+Each physical recording has a durable manifest, including
 its parent and preceding recording. A continuation waits for its preceding part
 to be committed; failure leaves the audio staged for recovery. Launch recovery
 processes parts in chronological order and never skips an unfinished continuation
@@ -105,5 +107,5 @@ and manual Stop semantics remain in force.
 
 Synthetic provider, temporary-store and fake-recorder tests cover immediate
 processing, the three-minute boundary, ordering, append/replay recovery, partial
-manifests, scoped speakers, silence, readable Updating state, and concurrent
+manifests, cleanup/rejoin races, scoped speakers, silence, readable Updating state, and concurrent
 note edits. These checks do not claim live-device or installed-app acceptance.
