@@ -62,17 +62,12 @@ struct AIUsageDateCalendar: View {
         VStack(spacing: 10) {
             HStack(spacing: 6) {
                 navigation("chevron.left", label: "Previous month", offset: -1)
-                MacMenu(title: formatter.standaloneMonthSymbols[visible.month - 1], minWidth: 114, maxWidth: 114) {
-                    ForEach(visible.months, id: \.self) { month in
-                        Button { visible.show(year: visible.year, month: month) } label: {
-                            if month == visible.month { Label(formatter.standaloneMonthSymbols[month - 1], systemImage: "checkmark") }
-                            else { Text(formatter.standaloneMonthSymbols[month - 1]) }
-                        }
-                        .disabled(visible.year == visible.lastYear && month > visible.calendar.component(.month, from: visible.latest))
-                    }
-                }
-                .accessibilityLabel("Month")
-                .modifier(CalendarHoverFeedback())
+                AIUsageCalendarMonthSelector(items: visible.months.map { month in
+                    .init(value: month, title: formatter.standaloneMonthSymbols[month - 1],
+                          enabled: visible.year < visible.lastYear || month <= visible.calendar.component(.month, from: visible.latest))
+                }, selection: visible.month) { visible.show(year: visible.year, month: $0) }
+                    .frame(width: 114, height: 30)
+                    .modifier(CalendarHoverFeedback())
                 AIUsageCalendarYear(year: visible.year, latest: visible.lastYear) { visible.show(year: $0, month: visible.month) }
                     .frame(width: 80, height: 30)
                     .modifier(CalendarHoverFeedback())
@@ -208,5 +203,68 @@ struct AIUsageCalendarYear: NSViewRepresentable {
         func controlTextDidEndEditing(_ notification: Notification) {
             if let field = notification.object as? NSComboBox { commit(field) }
         }
+    }
+}
+
+/// A native popup exposes its real highlight state, unlike the shared plain
+/// SwiftUI Menu path. Keep this change local to the Costs calendar.
+@MainActor
+struct AIUsageCalendarMonthSelector: NSViewRepresentable {
+    struct Item {
+        let value: Int
+        let title: String
+        let enabled: Bool
+    }
+    let items: [Item]
+    let selection: Int
+    let select: (Int) -> Void
+    @Environment(\.isEnabled) private var enabled
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeNSView(context: Context) -> AIUsageCalendarMonthButton {
+        let button = AIUsageCalendarMonthButton(frame: .zero, pullsDown: false)
+        configure(button, coordinator: context.coordinator)
+        return button
+    }
+    func updateNSView(_ button: AIUsageCalendarMonthButton, context: Context) {
+        context.coordinator.parent = self
+        configure(button, coordinator: context.coordinator)
+    }
+    func configure(_ button: AIUsageCalendarMonthButton, coordinator: Coordinator) {
+        button.font = .systemFont(ofSize: 12, weight: .medium)
+        button.bezelStyle = .rounded
+        button.autoenablesItems = false
+        button.isEnabled = enabled
+        if button.itemTitles != items.map(\.title) {
+            button.removeAllItems()
+            button.addItems(withTitles: items.map(\.title))
+        }
+        for (index, item) in items.enumerated() {
+            button.item(at: index)?.tag = item.value
+            button.item(at: index)?.isEnabled = item.enabled
+        }
+        button.selectItem(withTag: selection)
+        button.target = coordinator; button.action = #selector(Coordinator.choose(_:))
+        button.setAccessibilityLabel("Month")
+    }
+    @MainActor
+    final class Coordinator: NSObject {
+        var parent: AIUsageCalendarMonthSelector
+        init(_ parent: AIUsageCalendarMonthSelector) { self.parent = parent }
+        @objc func choose(_ button: NSPopUpButton) {
+            guard button.isEnabled, let item = button.selectedItem, item.isEnabled else { return }
+            parent.select(item.tag)
+        }
+    }
+}
+
+@MainActor
+final class AIUsageCalendarMonthButton: NSPopUpButton {
+    override func highlight(_ flag: Bool) { super.highlight(flag && isEnabled) }
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isEnabled, isHighlighted else { return }
+        NSColor.labelColor.withAlphaComponent(0.08).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: MacPopupMetrics.radius, yRadius: MacPopupMetrics.radius).fill()
     }
 }

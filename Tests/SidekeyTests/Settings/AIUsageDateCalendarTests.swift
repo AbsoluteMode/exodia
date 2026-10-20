@@ -129,3 +129,59 @@ final class AIUsageCalendarYearTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class AIUsageCalendarMonthFeedbackTests: XCTestCase {
+    private func selector(selected: @escaping (Int) -> Void = { _ in }) -> AIUsageCalendarMonthSelector {
+        AIUsageCalendarMonthSelector(items: [
+            .init(value: 9, title: "September", enabled: true),
+            .init(value: 10, title: "October", enabled: true),
+            .init(value: 11, title: "November", enabled: false)
+        ], selection: 10, select: selected)
+    }
+    func testNativeMonthSelectionPreservesTagsAndRejectsDisabledChoices() {
+        var selected: [Int] = []
+        let control = selector { selected.append($0) }
+        let coordinator = control.makeCoordinator()
+        let button = AIUsageCalendarMonthButton(frame: .zero, pullsDown: false)
+        control.configure(button, coordinator: coordinator)
+        XCTAssertFalse(button.autoenablesItems)
+        XCTAssertEqual(button.selectedItem?.tag, 10)
+        button.selectItem(withTag: 9); button.sendAction(button.action, to: button.target)
+        button.selectItem(withTag: 11); button.sendAction(button.action, to: button.target)
+        button.isEnabled = false
+        button.selectItem(withTag: 10); button.sendAction(button.action, to: button.target)
+        XCTAssertEqual(selected, [9])
+    }
+    func testNativeMonthHighlightChangesPixelsAndDisabledSuppressesItInBothAppearances() throws {
+        let output = ProcessInfo.processInfo.environment["EXODIA_COST_CALENDAR_RENDER_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        if let output { try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true) }
+        for dark in [false, true] {
+            let button = AIUsageCalendarMonthButton(frame: NSRect(x: 4, y: 4, width: 114, height: 30), pullsDown: false)
+            let control = selector(), coordinator = control.makeCoordinator()
+            control.configure(button, coordinator: coordinator)
+            let host = NSView(frame: NSRect(x: 0, y: 0, width: 122, height: 38))
+            host.addSubview(button)
+            let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 122, height: 38), styleMask: .borderless, backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false; window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.contentView = host
+            defer { window.contentView = nil; window.close() }
+            var pictures: [String: Data] = [:]
+            for (name, pressed, enabled) in [("rest", false, true), ("pressed", true, true), ("disabled", false, false), ("disabled-pressed", true, false)] {
+                button.isEnabled = enabled
+                button.highlight(pressed)
+                button.needsDisplay = true
+                XCTAssertEqual(button.isHighlighted, pressed && enabled)
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let picture = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                pictures[name] = picture
+                if let output { try picture.write(to: output.appendingPathComponent("month-\(name)-\(dark ? "dark" : "light").png")) }
+            }
+            XCTAssertNotEqual(pictures["rest"], pictures["pressed"])
+            XCTAssertEqual(pictures["disabled"], pictures["disabled-pressed"])
+            XCTAssertFalse(window.isVisible); XCTAssertFalse(window.isKeyWindow)
+        }
+    }
+}

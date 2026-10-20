@@ -59,7 +59,10 @@ the visible month; choosing a day or Today commits and closes. Done/Return and
 Escape close without applying a browsed month. Future days and navigation past
 the current month are unavailable. Individual controls and days retain visible
 keyboard focus, hover and pressed feedback, replacing the native calendar’s
-large focus ring. Disabled days never react to hover. No selected text segment
+large focus ring. The local native month popup draws from its actual enabled/
+highlighted state; its pressed proof does not rely on the shared plain SwiftUI
+menu. Disabled controls suppress highlight and disabled future month actions
+are rejected. Disabled days never react to hover. No selected text segment
 remains on the closed control. Feature-row fill follows actual
 pointer hover rather than the lifetime of its detail popover. Dates
 use the local calendar and include the selected end day. Only feature groups
