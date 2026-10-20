@@ -53,8 +53,10 @@ final class NativeSettingsRenderTests: XCTestCase {
         let routing = AIRoutingStore(defaults: defaults)
         routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropFast)
         let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        try keys.save("fixture-key", account: XCTUnwrap(ProviderAccount.soniox.keychainAccount(in: routing)))
         let models = APIAndModelsViewModel(routing: routing,
-            keys: ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) }),
+            keys: keys,
             catalogs: ModelCatalogStore(fileURL: catalogURL, fetcher: offline),
             checks: ModelCheckStore(defaults: defaults), keyStatuses: KeyStatusStore(defaults: defaults),
             keyChecker: offline, probe: offline, endpoints: offline, inputLanguage: { "ru" })

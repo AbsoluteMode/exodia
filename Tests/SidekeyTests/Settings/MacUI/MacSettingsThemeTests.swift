@@ -30,6 +30,9 @@ final class MacSettingsThemeTests: XCTestCase {
                 }
             }
             let card = try resolve(NSColor(MacSettingsTheme.bgCard), in: appearance)
+            let setup = try resolve(NSColor(MacSettingsTheme.setupOutline), in: appearance)
+            XCTAssertGreaterThanOrEqual(contrast(setup, card), 3)
+            XCTAssertGreaterThanOrEqual(contrast(setup, try resolve(NSColor(MacSettingsTheme.bgContent), in: appearance)), 3)
             XCTAssertGreaterThanOrEqual(contrast(try resolve(NSColor(MacSettingsTheme.text), in: appearance),
                                                 try resolve(NSColor(MacSettingsTheme.selection), in: appearance)), 4.5)
             XCTAssertGreaterThanOrEqual(contrast(try resolve(NSColor(MacSettingsTheme.text), in: appearance),

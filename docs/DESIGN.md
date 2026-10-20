@@ -11,11 +11,13 @@ and its current value, then changes that value without losing context.
 ### Direction and layout
 
 - Use iOS inset groups within the existing macOS sidebar window. Groups describe
-  related settings; individual rows do not get separate cards.
+  related settings. In API & Models, independently configured functions have
+  separate contours and a 10 pt gap, so their setup states do not run together.
 - Keep the current tabs and navigation. A small colored SF Symbol tile makes
   sections recognizable without changing their names or order.
-- Use 14 pt group corners, 14 pt row insets, 9 pt vertical row padding and inset
-  hairlines. Long descriptions wrap instead of shrinking the control.
+- Use 14 pt group corners, 14 pt row insets and 12 pt vertical row padding.
+  Shared dividers are one point, inset on both sides, with 2 pt breathing room
+  above/below. Long descriptions wrap instead of shrinking the control.
 - The window keeps its 960 pt minimum width; verify the minimum and a larger
   1280 pt window. This desktop window does not have a phone-width layout.
 
@@ -34,6 +36,16 @@ Blue labels indicate navigation/actions; filled blue actions keep white-label
 contrast. Green/red/amber status text has separate light and dark values.
 `MacSettingsThemeTests` measures normal text and status labels at 4.5:1 or better
 against their intended surfaces. Disabled controls are explicitly dimmed.
+
+An unconfigured model function uses a static orange outline and a soft 5 pt
+outer glow (12% light, 18% dark). The outline has at least 3:1 contrast on both
+the row and page surface; the glow is decoration, never the only boundary.
+The normal `Choose a model` action stays visible. `Not set` and warning triangles
+are removed from these rows; actual error explanations and recovery actions
+remain text. Native accessibility exposes `Needs setup`; the picker group also
+explains that a model and its provider key are required. Reduce Transparency
+removes the glow while preserving the solid contour. There is no pulse or
+attention animation; Reduce Motion also disables programmatic row scrolling.
 
 ### Switch reference and behavior
 
@@ -80,6 +92,9 @@ installed app. Older-macOS fallback needs device acceptance.
   native, and retaining native focus, bindings and accessibility matters here.
 - 2026-10-20 — Group rows with consistent insets: this brings the requested iOS
   settings rhythm while preserving the established macOS navigation.
+- 2026-10-20 — Replace unconfigured model alarms with a warm contour and soft
+  glow: the user requested a calm setup cue, plus clearer separation of rows.
+  Each model function gets its own contour because its routes form one setting.
 
 ## Case: drawer refinements
 

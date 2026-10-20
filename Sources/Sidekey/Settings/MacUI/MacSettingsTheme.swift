@@ -43,6 +43,10 @@ enum MacSettingsTheme {
     // separators / hover
     static let sep = Color(nsColor: NS.sep)
     static let sepStrong = adaptive("border", light: 0xC5C5CC, dark: 0x545458)
+    static let rowSeparator = adaptive("rowSeparator", light: 0xC9C9D1, dark: 0x505056)
+    /// A setup invitation, distinct from destructive/error text.
+    static let setupOutline = adaptive("setupOutline", light: 0xB8640E, dark: 0xEAA253)
+    static let setupGlow = adaptive("setupGlow", light: 0xEE9639, dark: 0xFFA84F)
     static let hover = Color(nsColor: NS.hover)
     /// Neutral grey fill for list-row selection (calm, not accent-blue).
     /// SwiftUI mirror of `MacSettingsTheme.NS.selection`.
