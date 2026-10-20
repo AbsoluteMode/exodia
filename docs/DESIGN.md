@@ -20,7 +20,9 @@ its settings beside it, and finish with Copy/Return or Download.
   a Save dialog or interpreting a Share symbol. Name collisions never overwrite.
 - Return/keypad Enter copies and closes after selection; during Blur the command
   waits for the completed patch; during Download it waits for the file. Without a crop it copies the whole display and closes in one action.
-  Return in the label field commits it and also copies/closes. Failed processing stays open.
+  Return in the label field also copies/closes. Typing is preparation;
+  click the screenshot to place the label first. The placeholder/help explicitly
+  say that an unplaced label is discarded, keeping the requested one-Return finish. Failed processing stays open.
 - No entrance, resize or tool-switch animation delays input; reduced motion uses
   the same immediate behavior. Busy state disables mutating/export controls and
   reports processing; Escape stays available. Copy and Download encode off the

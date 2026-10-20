@@ -85,10 +85,13 @@ the orb and meeting audio retain the no-screen-capture/no-prompt contract.
 The user rejected the second settings row and slow/rough Blur. Keep tool settings
 inline in one row. Download replaces Save, uses a downward arrow and writes PNG
 directly into Downloads under a readable local timestamp, with exclusive creation
-and numbered collision suffixes. Success names the actual file and retains the
+and numbered collision suffixes. Download writes into an owned temporary
+directory first, then publishes the completed PNG using exclusive atomic rename;
+failures remove staging instead of leaving a truncated final file. Success names the actual file and retains the
 editor. Return copies and closes after selection; if Blur is pending it waits for
-the patch, and a failed Blur remains open. Return in the label field commits it
-and also copies/closes; native clipboard editing remains local to the field.
+the patch, and a failed Blur remains open. Return in the label field also copies/closes, as requested. Typing only prepares
+the label; click the screenshot to place it. The placeholder/help explicitly say
+that an unplaced label is discarded; native clipboard editing stays in the field.
 
 Fresh-executable checks reproduced a 30-second first accurate-OCR call even
 with CPU compute devices. Blur therefore combines fast Vision recognition and

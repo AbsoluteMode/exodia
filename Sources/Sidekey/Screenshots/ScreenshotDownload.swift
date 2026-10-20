@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 
 enum ScreenshotDownload {
     static func png(_ image: CGImage) throws -> Data {
@@ -15,16 +16,26 @@ enum ScreenshotDownload {
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let name = "Screenshot \(formatter.string(from: date))"
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let staging = directory.appendingPathComponent(".Screenshot-\(UUID().uuidString).tmp", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let temporary = staging.appendingPathComponent("image.png")
+        try data.write(to: temporary, options: .atomic)
         for index in 1...10_000 {
             try Task.checkCancellation()
             let suffix = index == 1 ? "" : " (\(index))"
             let url = directory.appendingPathComponent("\(name)\(suffix).png")
-            do {
-                try data.write(to: url, options: .withoutOverwriting)
-                return url
-            } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError {
-                continue
+            var failure: Int32 = 0
+            let published = temporary.withUnsafeFileSystemRepresentation { source in
+                url.withUnsafeFileSystemRepresentation { destination in
+                    guard let source, let destination else { failure = EINVAL; return false }
+                    if renamex_np(source, destination, UInt32(RENAME_EXCL)) == 0 { return true }
+                    failure = errno; return false
+                }
             }
+            if published { return url }
+            if failure == EEXIST { continue }
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
         }
         throw CocoaError(.fileWriteFileExists)
     }

@@ -164,6 +164,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(second.deletingPathExtension().lastPathComponent, first.deletingPathExtension().lastPathComponent + " (2)")
         XCTAssertEqual(try Data(contentsOf: first), data)
         XCTAssertEqual(try Data(contentsOf: second), Data([1, 2, 3]))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).count, 2, "Publishing leaves no staging files")
         XCTAssertThrowsError(try ScreenshotDownload.write(data, directory: first, date: date))
     }
 
@@ -341,7 +342,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(toolbar.convert(download.bounds, from: download).midY, toolbar.convert(copy.bounds, from: copy).midY, accuracy: 1)
         var copyRequests = 0
         toolbar.onCommand = { if case .copy = $0 { copyRequests += 1 } }
-        let label = try XCTUnwrap(views.compactMap { $0 as? NSTextField }.first { $0.placeholderString == "Enter label…" })
+        let label = try XCTUnwrap(views.compactMap { $0 as? NSTextField }.first { $0.placeholderString == "Label · click to place" })
         label.stringValue = "Test label"
         _ = label.sendAction(label.action, to: label.target)
         XCTAssertEqual(canvas.labelText, "Test label")

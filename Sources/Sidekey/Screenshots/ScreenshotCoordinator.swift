@@ -178,7 +178,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private func blur(_ rect: CGRect, mode: ScreenshotBlurMode, canvas: ScreenshotCanvas) {
         guard !canvas.busy, let token = generation else { return }
         let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations
-        canvas.busyMessage = "Blurring on this Mac… · Return to copy when ready · Esc to cancel"
+        canvas.busyMessage = "Blurring on this Mac… · Return: copy when ready · Esc: cancel capture"
         canvas.busy = true; copyWaitReason = "Blur"
         task = Task { [weak self, weak canvas] in
             do {
@@ -213,7 +213,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         if canvas.busy {
             if case .copy = command, let reason = copyWaitReason {
                 copyAfterProcessing = true
-                canvas.busyMessage = "Copying when \(reason) finishes… · Esc to cancel"
+                canvas.busyMessage = "Copying when \(reason) finishes… · Esc: cancel capture"
                 report(canvas.busyMessage, canvas: canvas)
             }
             return

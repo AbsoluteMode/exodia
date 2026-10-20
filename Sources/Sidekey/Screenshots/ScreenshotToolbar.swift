@@ -88,8 +88,10 @@ final class ScreenshotToolbar: NSView {
         mode.addItems(withTitles: ScreenshotBlurMode.allCases.map(\.rawValue))
         mode.target = self; mode.action = #selector(updateSettings(_:)); mode.setAccessibilityLabel("What to blur")
         settings.addArrangedSubview(mode)
-        text.placeholderString = "Enter label…"; text.target = self; text.action = #selector(finishText(_:))
+        text.placeholderString = "Label · click to place"; text.target = self; text.action = #selector(finishText(_:))
         text.setAccessibilityLabel("Annotation text"); text.widthAnchor.constraint(equalToConstant: 160).isActive = true
+        text.toolTip = "Type a label, then click the screenshot to place it. Return copies placed annotations and closes; unplaced text is discarded."
+        text.setAccessibilityHelp(text.toolTip)
         NotificationCenter.default.addObserver(self, selector: #selector(updateSettings(_:)), name: NSControl.textDidChangeNotification, object: text)
         settings.addArrangedSubview(text)
         refresh()

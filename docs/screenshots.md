@@ -22,8 +22,9 @@ never included in the image.
 One horizontal row offers Arrow, Shape, Pen, Text, **Blur**, contextual settings,
 Undo, **Download** and **Copy**. There is no second settings row.
 Color, width, shape and text controls appear for the current tool; color/width
-are remembered per tool. Enter a text label in the toolbar, then click to place
-it. Select & crop (More or V) moves annotations, deletes a selected annotation,
+are remembered per tool. Typing a label only prepares it: click the screenshot
+to place it before finishing. Return copies only placed annotations and discards
+an unplaced label; the field placeholder and help make that ordering explicit. Select & crop (More or V) moves annotations, deletes a selected annotation,
 moves the crop and resizes its corners. Blur patches can be deleted or undone,
 but cannot be moved because moving them would expose original information.
 Selecting or dragging an existing Blur keeps both its pixels and the crop in
@@ -56,10 +57,11 @@ Copy writes flattened PNG pixels to the clipboard and finishes. **Return /
 numeric Enter** does the same after selection; during Blur it waits for the
 completed patch before copying. Return during Download likewise waits for the file
 and then copies/closes. A failed Blur keeps the editor open. In the
-annotation text field, Return commits the field and also copies/closes.
+annotation text field, Return also copies/closes; it does not place a label.
 **Download** (or ⌘S) writes PNG directly into Downloads, using a readable local
 timestamp such as `Screenshot 2026-10-20 at 20.30.15.png`. Existing files are never
-overwritten; a collision adds `(2)`, `(3)`, and so on. The editor stays open and
+overwritten; a fully written temporary file is published by an exclusive atomic
+rename, with staging removed on success or failure. A collision adds `(2)`, `(3)`, and so on. The editor stays open and
 shows “Downloaded to Downloads as …” with the actual filename, also announced to
 accessibility. Folder/write failures leave the editor open for retry.
 Output size preserves aspect ratio. Captures/history stay in memory until an
