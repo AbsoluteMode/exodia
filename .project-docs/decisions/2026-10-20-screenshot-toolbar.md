@@ -60,6 +60,9 @@ OCR and blur do not guarantee finding every glyph or irreversible anonymization.
 
 Keep the result visible, both modes explicit, and analysis errors non-destructive.
 Export waits for local processing; cancellation invalidates late results.
+The old ScreenRecordingRemoval guards predate explicit screenshots. Their
+exception is restricted to ScreenshotCoordinator's still-frame entry; launch,
+the orb and meeting audio retain the no-screen-capture/no-prompt contract.
 
 # Consequences
 
