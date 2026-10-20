@@ -585,9 +585,10 @@ whytap:// links:
   are exhaustive, so a new tile or tab needs a destination to compile. The enums
   are the public registry of linkable places: never rename raw values. A link
   only shows a place: inline tools open their HoverPanelRequest, navigate tools
-  and tabs open Settings with setHighlight, Planner/Translate/Subtitles windows
-  open idle, Drop Mode/Record/Screenshot select their Toolbox pane
-  (SettingsWindowSelection.focus) and Quit highlights the Quit row. Unknown ids
+  and tabs open Settings with setHighlight, Calendar/Translate/Subtitles
+  windows open idle, Drop Mode/Record/Screenshot select their Toolbox pane
+  (SettingsWindowSelection.focus), Case opens Toolbox without selecting its
+  Touch ID pane and Quit highlights the Quit row (Invariant 7). Unknown ids
   or kinds only wake the island; other schemes, credentials, ports, empty or
   extra segments and non-alphanumeric ids are rejected and not logged. WHY:
   .project-docs/decisions/2026-10-20-whytap-links.md
@@ -1119,3 +1120,11 @@ input layout, including live recording and previously saved non-English titles.
    deliberate extraction by an approved command. Revalidate current caller
    authority after approval/authentication before granting or releasing
    values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+7. **whytap:// links only show.** Any web page can open a link, so a link
+   never records, captures, toggles, changes settings, copies, pastes,
+   authenticates (no Touch ID: Case links stop at Toolbox) or quits, and
+   reports nothing back. Every `WhytapLinkDestination` is classified
+   show-only in `WhytapLinkTests`; the handler is source-checked for action
+   calls. A link that changes anything needs its own decision first, with
+   in-app confirmation and an allowlist that excludes reading data and
+   network destinations. WHY: .project-docs/decisions/2026-10-20-whytap-links.md
