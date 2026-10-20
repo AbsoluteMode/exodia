@@ -28,10 +28,16 @@ struct MeetingListSectionItem: Identifiable, Equatable {
 /// native SwiftUI rendering.
 @MainActor
 final class MeetingListModel: ObservableObject {
+    enum Page: Equatable { case overview, history }
+    enum LoadState: Equatable { case loading, loaded, failed }
 
     private static let log = OSLog(subsystem: "com.sidekey.meetings", category: "list")
 
     @Published private(set) var sections: [MeetingListSectionItem] = []
+    @Published private(set) var recentRows: [MeetingListRowItem] = []
+    @Published private(set) var page: Page = .overview
+    @Published private(set) var loadState: LoadState = .loading
+    @Published private(set) var focusRequest: UInt64 = 0
     @Published var selectedId: UUID?
 
     /// Flat newest-first list, exposed for callers that need the raw metas
@@ -71,19 +77,22 @@ final class MeetingListModel: ObservableObject {
 
     func refresh() {
         loadTask?.cancel()
+        loadState = .loading
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let fetched = try await self.source.loadList()
                 if Task.isCancelled { return }
                 self.apply(fetched)
+                self.loadState = .loaded
             } catch {
+                guard !Task.isCancelled else { return }
                 os_log(
-                    "meeting list load failed: %{public}@",
-                    log: Self.log, type: .error,
-                    String(describing: error)
+                    "meeting list load failed",
+                    log: Self.log, type: .error
                 )
-                self.apply([])
+                // Keep the last readable list on a transient failure.
+                self.loadState = .failed
             }
         }
     }
@@ -97,8 +106,26 @@ final class MeetingListModel: ObservableObject {
         selectedId = id
     }
 
+    func showOverview() { page = .overview }
+    func showHistory() { page = .history }
+    func restoreFocus() { focusRequest &+= 1 }
+
     private func apply(_ fetched: [MeetingMetaWithLocalState]) {
-        meetings = fetched
+        meetings = fetched.sorted {
+            if $0.startedAt == $1.startedAt { return $0.id.uuidString < $1.id.uuidString }
+            return $0.startedAt > $1.startedAt
+        }
+        let now = nowProvider()
+        // WHY: docs/DESIGN.md — the overview is a bounded entry point; History
+        // retains the complete list and the existing date groups.
+        recentRows = meetings.prefix(5).map { meta in
+            MeetingListRowItem(
+                id: meta.id,
+                title: (meta.title?.isEmpty == false) ? meta.title! : "Untitled",
+                dateLabel: recentLabel(for: meta.startedAt, now: now),
+                progressStatus: meta.progressStatus
+            )
+        }
         // Diagnostic: proves the refresh actually reached the @Published
         // mutation (vs. a cancelled/abandoned load Task). Pairs with the
         // store's "store list returned (count:)" line so a future
@@ -108,7 +135,7 @@ final class MeetingListModel: ObservableObject {
             log: Self.log, type: .info,
             fetched.count
         )
-        let grouped = MeetingsDateGrouping.groupAndSort(fetched, now: nowProvider())
+        let grouped = MeetingsDateGrouping.groupAndSort(meetings, now: now)
         sections = grouped.map { section in
             let header = MeetingsDateGrouping.headerLabel(for: section.bucket)
             let rows = section.meetings.map { meta -> MeetingListRowItem in
@@ -124,6 +151,23 @@ final class MeetingListModel: ObservableObject {
         }
     }
 
+    private func recentLabel(for date: Date, now: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) {
+            return "Today · \(timeFormatter.string(from: date))"
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday · \(timeFormatter.string(from: date))"
+        }
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate(
+            calendar.component(.year, from: date) == calendar.component(.year, from: now)
+                ? "MMMd" : "yMMMd"
+        )
+        return formatter.string(from: date)
+    }
+
     private func label(for date: Date, bucket: MeetingsDateBucket) -> String {
         switch bucket {
         case .today, .yesterday:
@@ -134,78 +178,184 @@ final class MeetingListModel: ObservableObject {
     }
 }
 
-// MARK: - View
 
-/// Native meeting list for the Notes surface. Grouped by date, with a calm
-/// macOS-Settings look: uppercase section headers, rounded hover/selection
-/// fills, title + secondary date. Replaces the old `NSTableView` sidebar.
+// MARK: - Overview and history
+
+/// One shared source and selection for the overview and the full archive.
+/// Future Meeting Assistant content belongs below the recent-meetings section;
+/// no placeholder or inactive preset controls are shown before it exists.
 @MainActor
 struct MeetingListView: View {
     @ObservedObject var model: MeetingListModel
     let onSelect: (UUID) -> Void
-    /// Offered in a row's context menu for meetings that can be deleted.
-    /// `nil` hides the menu in surfaces that cannot delete.
     var onDelete: ((UUID) -> Void)? = nil
 
+    private enum Focus: Hashable { case navigation, meeting(UUID) }
+    @FocusState private var focus: Focus?
+
     var body: some View {
-        Group {
-            if model.sections.isEmpty {
-                emptyState
-            } else {
-                list
+        VStack(alignment: .leading, spacing: 24) {
+            header
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if model.loadState == .failed {
+                        loadFailure
+                    }
+                    if model.meetings.isEmpty {
+                        emptyState
+                    } else if model.page == .overview {
+                        recentMeetings
+                    } else {
+                        history
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var list: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 1, pinnedViews: [.sectionHeaders]) {
-                ForEach(model.sections) { section in
-                    Section {
-                        ForEach(section.rows) { row in
-                            MeetingListRow(
-                                item: row,
-                                isSelected: row.id == model.selectedId,
-                                onTap: { onSelect(row.id) }
-                            )
-                            .contextMenu {
-                                if let onDelete, row.progressStatus.canBeDeleted {
-                                    Button("Delete…", role: .destructive) { onDelete(row.id) }
-                                }
-                            }
-                        }
-                    } header: {
-                        sectionHeader(section.header)
-                    }
-                }
+        .onChange(of: model.focusRequest) { _, _ in
+            if let id = model.selectedId,
+               model.page == .history || model.recentRows.contains(where: { $0.id == id }) {
+                focus = .meeting(id)
+            } else {
+                focus = .navigation
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
         }
     }
 
-    private func sectionHeader(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(MacSettingsTheme.text2)
-            .padding(.horizontal, 10)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial)
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if model.page == .history {
+                Button {
+                    model.showOverview()
+                    focus = .navigation
+                } label: {
+                    Label("Meetings", systemImage: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(MacSettingsTheme.text)
+                .focused($focus, equals: .navigation)
+                .accessibilityIdentifier("meetings.history.back")
+            }
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(model.page == .overview ? "Meetings" : "History")
+                        .font(.system(size: 23, weight: .semibold))
+                        .foregroundStyle(MacSettingsTheme.text)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(model.page == .overview ? "Your latest meeting notes" : "All meeting notes")
+                        .font(.system(size: 12))
+                        .foregroundStyle(MacSettingsTheme.text2)
+                }
+                Spacer(minLength: 0)
+                if model.page == .overview {
+                    Button {
+                        model.showHistory()
+                        focus = .navigation
+                    } label: {
+                        Label("History", systemImage: "clock.arrow.circlepath")
+                            .font(.system(size: 13, weight: .medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .foregroundStyle(MacSettingsTheme.text)
+                            .background(MacSettingsTheme.controlBg,
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .focused($focus, equals: .navigation)
+                    .accessibilityIdentifier("meetings.overview.history")
+                }
+            }
+        }
+    }
+
+    private var recentMeetings: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Recent meetings")
+            rows(model.recentRows)
+        }
+    }
+
+    private var history: some View {
+        LazyVStack(alignment: .leading, spacing: 22) {
+            ForEach(model.sections) { section in
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader(section.header)
+                    rows(section.rows)
+                }
+            }
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(MacSettingsTheme.text)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func rows(_ items: [MeetingListRowItem]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(items) { row in
+                MeetingListRow(
+                    item: row,
+                    isSelected: row.id == model.selectedId,
+                    onTap: { onSelect(row.id) }
+                )
+                .focused($focus, equals: .meeting(row.id))
+                .contextMenu {
+                    if let onDelete, row.progressStatus.canBeDeleted {
+                        Button("Delete…", role: .destructive) { onDelete(row.id) }
+                    }
+                }
+                if row.id != items.last?.id {
+                    Rectangle()
+                        .fill(MacSettingsTheme.sep)
+                        .frame(height: 1)
+                        .padding(.leading, 40)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .background(MacSettingsTheme.bgCard,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var loadFailure: some View {
+        HStack(spacing: 12) {
+            Label("Meetings couldn’t be loaded.", systemImage: "exclamationmark.triangle")
+                .font(.system(size: 12))
+                .foregroundStyle(MacSettingsTheme.text)
+            Spacer(minLength: 0)
+            MacButton(title: "Retry") { model.refresh() }
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "note.text")
-                .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(MacSettingsTheme.text2)
-            Text("No meetings yet")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(MacSettingsTheme.text2)
+        VStack(spacing: 10) {
+            if model.loadState == .loading {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading meetings…")
+            } else if model.loadState == .loaded {
+                Image(systemName: "note.text")
+                    .font(.system(size: 24))
+                    .accessibilityHidden(true)
+                Text("No meetings yet")
+                    .font(.system(size: 13, weight: .medium))
+                Text("Your notes will appear here after your first recording.")
+                    .font(.system(size: 12))
+                    .multilineTextAlignment(.center)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .foregroundStyle(MacSettingsTheme.text2)
+        .frame(maxWidth: .infinity, minHeight: 220)
     }
 }
 
@@ -214,44 +364,51 @@ private struct MeetingListRow: View {
     let isSelected: Bool
     let onTap: () -> Void
     @State private var hovering = false
+    private var secondaryText: Color {
+        isSelected || hovering ? MacSettingsTheme.text : MacSettingsTheme.text2
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "note.text")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isSelected ? Color.white : MacSettingsTheme.text2)
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.white : MacSettingsTheme.text)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if item.progressStatus != .ready {
-                    Text(item.progressStatus.displayLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(
-                            isSelected
-                                ? Color.white.opacity(0.78)
-                                : (item.progressStatus == .failed ? Color.red : MacSettingsTheme.text2)
-                        )
-                        .lineLimit(1)
+        Button(action: onTap) {
+            HStack(spacing: 11) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 13))
+                    .foregroundStyle(secondaryText)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(MacSettingsTheme.text)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if item.progressStatus != .ready {
+                        Text(item.progressStatus.displayLabel)
+                            .font(.system(size: 12))
+                            .foregroundStyle(item.progressStatus == .failed && !isSelected && !hovering
+                                ? MacSettingsTheme.red : secondaryText)
+                    }
                 }
+                Spacer(minLength: 8)
+                Text(item.dateLabel)
+                    .font(.system(size: 12))
+                    .monospacedDigit()
+                    .foregroundStyle(secondaryText)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            Spacer(minLength: 8)
-            Text(item.dateLabel)
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(isSelected ? Color.white.opacity(0.8) : MacSettingsTheme.text3)
-                .lineLimit(1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? MacSettingsTheme.selection : (hovering ? MacSettingsTheme.hover : .clear))
+            )
         }
-        .padding(.horizontal, 10)
-        .frame(height: item.progressStatus == .ready ? 36 : 44)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? MacSettingsTheme.selection : (hovering ? MacSettingsTheme.hover : Color.clear))
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .onTapGesture(perform: onTap)
+        .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(item.title)
+        .accessibilityIdentifier("meetings.row.\(item.id.uuidString)")
     }
 }

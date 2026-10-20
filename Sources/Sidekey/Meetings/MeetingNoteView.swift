@@ -11,8 +11,8 @@ struct MeetingNoteView: View {
 
     // Local palette derived from the shared theme.
     private let headingColor = MacSettingsTheme.text
-    private let bodyColor = Color.white.opacity(0.82)
-    private let markerColor = Color.white.opacity(0.40)
+    private let bodyColor = MacSettingsTheme.text
+    private let markerColor = MacSettingsTheme.text2
 
     private static let columnWidth: CGFloat = 680
 

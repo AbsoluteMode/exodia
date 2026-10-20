@@ -205,6 +205,13 @@ Translation tools:
   .project-docs/decisions/2026-10-20-translation-tools.md
 
 Meeting Notes:
+  Meetings opens an overview of the five newest notes with a History button.
+  History keeps the full date-grouped list. Back from a note preserves its list
+  origin; the Settings Meetings entry and direct note links return to overview.
+  Both use MeetingListModel and retain refresh, status and confirmed deletion.
+  Load failures preserve existing rows and offer Retry. The vertical overview
+  layout leaves room for future Meeting Assistant presets without showing
+  unfinished controls. UI rationale and behavior: docs/DESIGN.md.
   Always-on detector (mic activity + CoreAudio system audio + FluidAudio
   Silero VAD, the only remaining Core ML model, downloaded from Hugging Face
   on the first speech check; fires only when a recognised meeting app writes
@@ -639,6 +646,16 @@ centers the menu and enable switch, moving Notification type into the adjacent
 question-mark tooltip/popover. Bindings and saved selections are unchanged.
 WHY: .project-docs/decisions/2026-10-20-compact-selection-menus.md
 
+Settings follows macOS light/dark appearance while open. MacSettingsTheme owns
+dynamic SwiftUI/AppKit colors; the shell uses inset groups and SF Symbol sidebar
+tiles. MacSwitch adapts the supplied glass switch in SwiftUI with click/drag,
+keyboard and native Toggle accessibility, respecting Reduce Motion/Transparency.
+The island keeps its compact blue switch and explicitly dark Toolbox previews.
+UI decisions and verification limits: docs/DESIGN.md.
+API & Models separates function rows; missing setup uses a static orange contour
+and soft glow instead of Not set/triangle status lines. Actual problem text and
+recovery actions remain. Shared settings rows use spaced, full-point dividers.
+
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
 Settings -> API & Models (the agent's model is chosen there too; Settings ->
@@ -746,7 +763,7 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 ## User artifact backup
 
 Settings → Integrations connects GitHub using an existing CLI login or an access
-token. Settings → Backup shows its checked connection state and Back up /
+token. Settings → Backup shows its synchronization status, a GitHub Releases link and Back up /
 Restore backup. Back up always includes all supported user data and stored keys,
 uploads and verifies ciphertext, then displays the recovery code without a
 paste-back step. Restore takes only that code and stages every included section
@@ -755,6 +772,13 @@ A normal quit and relaunch applies it; the running stores are never replaced.
 There are no normal-page backup settings, management/history disclosures or
 folder picker. Existing automatic schedules, folder destinations, local encrypted
 history and unfinished maintenance recovery remain compatible internally.
+A successfully created GitHub backup enables automatic sync. Existing verified
+GitHub copies adopt it once; later explicit cancellation pauses it across restart.
+The 60-second poll detects settings/credential and artifact changes, waits for idle
+and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
+pauses and maintenance never show Backup synced. Background sync keeps the same
+recovery credential without revealing it. WHY:
+`.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.

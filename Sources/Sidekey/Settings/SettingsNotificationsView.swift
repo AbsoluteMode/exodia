@@ -39,7 +39,7 @@ struct SettingsNotificationsView: View {
                                                    tint: Color(hexCSS: "#785EFF"), size: 28, imageLoader: imageLoader)
                                 .accessibilityHidden(true)
                         } trailing: {
-                            MacSwitch(isOn: $meetingNotifications.enabled)
+                            MacSwitch(isOn: $meetingNotifications.enabled, label: "Meeting-ready notifications")
                                 .accessibilityLabel("Enable meeting notes notifications")
                         }
                         MacRowSeparator()

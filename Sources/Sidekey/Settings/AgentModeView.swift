@@ -41,7 +41,7 @@ struct AgentModeView: View {
                         MacRow(title: "Use Agent shortcuts", subtitle: "Right Command: tap for text, hold for voice.") {
                             MacSwitch(isOn: Binding(get: { agentEnabled }, set: {
                                 agentEnabled = $0; onAgentToggle($0)
-                            }))
+                            }), label: "Use Agent shortcuts")
                         }
                     }
                 }
@@ -50,7 +50,7 @@ struct AgentModeView: View {
                 MacCard {
                     MacRow(title: "Allow agent actions",
                            subtitle: "The agent can edit files and run commands, including tests, with your Mac user’s permissions.") {
-                        MacSwitch(isOn: $settings.openCodeAllowActions)
+                        MacSwitch(isOn: $settings.openCodeAllowActions, label: "Allow agent actions")
                     }
                 }
                 HStack(spacing: 12) {

@@ -121,21 +121,35 @@ final class NotifyRenderTests: XCTestCase {
     }
 
     private func settings(_ supervisor: NotifyScriptSupervisor) -> some View {
-        SettingsNotificationsView(supervisor: supervisor)
-            .background(Color(white: 0.12)).environment(\.colorScheme, .dark)
+        let suite = "NotifyRender." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let meetings = MeetingReadyNotifications(defaults: defaults, hub: LocalNotificationHub(directory: directory))
+        let sounds = NotificationSoundSettings(defaults: defaults)
+        return SettingsNotificationsView(supervisor: supervisor, meetingNotifications: meetings, soundSettings: sounds)
+            .background(MacSettingsTheme.bgContent)
     }
     private func render<V: View>(_ view: V, size: NSSize, to url: URL) throws {
-        let host = NSHostingView(rootView: view)
-        host.appearance = NSAppearance(named: .darkAqua)
-        host.frame = NSRect(origin: .zero, size: size)
-        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        defer { window.close() }
-        host.layoutSubtreeIfNeeded()
-        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
-        XCTAssertFalse(window.isVisible)
+        let isSettings = url.lastPathComponent.hasPrefix("settings-")
+        let schemes = isSettings ? [ColorScheme.light, .dark] : [.dark]
+        let sizes = isSettings ? [NSSize(width: 560, height: size.height), size] : [size]
+        for frameSize in sizes {
+            for scheme in schemes {
+                let targetURL = isSettings ? url.deletingLastPathComponent().appendingPathComponent(
+                    url.deletingPathExtension().lastPathComponent + "-\(Int(frameSize.width))" + (scheme == .light ? "-light.png" : "-dark.png")) : url
+                let host = NSHostingView(rootView: view.environment(\.colorScheme, scheme))
+                host.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
+                host.frame = NSRect(origin: .zero, size: frameSize)
+                let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
+                window.isReleasedWhenClosed = false
+                window.contentView = host
+                defer { window.close() }
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: targetURL)
+                XCTAssertFalse(window.isVisible)
+            }
+        }
     }
 }

@@ -107,16 +107,20 @@ Case открывается в панели высотой 320 pt. Touch ID вр
 
 Settings → Integrations: подключение GitHub через существующий CLI login или
 access token; проверка приватного Exodia-Backup. Само подключение не отправляет
-пользовательские данные. Settings → Backup показывает проверенное подключение
-и две кнопки; если подключения нет, ведёт в Integrations.
+пользовательские данные. Settings → Backup показывает короткий статус синхронизации,
+ссылку на копии в GitHub Releases и две кнопки; если подключения нет, ведёт в Integrations.
 
 **Back up** сохраняет все поддерживаемые данные и ключи, шифрует их, проверяет
 загрузку и выдаёт код. **Restore backup** принимает код и готовит полное
 восстановление последней завершённой копии. Нет выбора разделов, настроек,
 обратной вставки кода и подтверждений. Применение — после обычного перезапуска,
 с сохранением предыдущих данных. Восстановленные jobs и подключения остаются
-на паузе до явного включения. Существующие автобэкапы и локальная история
-сохраняются внутри механизма. [Инструкция](backup.md).
+на паузе до явного включения. Созданный GitHub-бекап автоматически синхронизируется
+после изменений, включая ранее созданные копии. Проверка — раз в минуту,
+загрузка — не чаще раза в две минуты и при отсутствии активной работы.
+«Backup synced» означает проверенную загрузку без обнаруженных изменений
+или ожидающих копий; ожидание, загрузка, пауза и ошибка показаны отдельно.
+Существующие папки назначения и локальная история сохраняются внутри механизма. [Инструкция](backup.md).
 
 ## Roadmap
 
@@ -316,7 +320,15 @@ correction & learning loop
 смена режима относится к следующей записи. Правило действует и для batch
 recovery, и для восстановления по частичному транскрипту.
 
+Окно Settings автоматически следует светлой и тёмной теме macOS, включая смену
+темы при открытом окне. Связанные настройки собраны в группы в стиле iOS;
+переключатели со стеклянным бегунком поддерживают нажатие, перетаскивание и
+клавиатуру, учитывают Reduce Motion и Reduce Transparency. Решения: [DESIGN.md](DESIGN.md).
+
 **Настройки API & Models (Settings → API & Models):** вкладка из двух блоков.
+Функции визуально разделены. Ненастроенная функция отмечена оранжевым контуром
+с мягким статичным свечением вместо `Not set` и предупреждающего значка;
+конкретные ошибки и действия для их исправления остаются текстом.
 *API keys* — прямоугольные чипы провайдеров без цветных индикаторов (статус
 ключа — «Key works», «Limited key», «Key not accepted» и т. п. — во всплывающем
 окне чипа) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
@@ -419,6 +431,13 @@ speech-to-text (`scribe_v2`), self-hosted `/v1/audio/transcriptions` на хос
 ---
 
 ## Meeting Notes
+
+The Meetings entry opens an overview with the five newest meetings and History.
+History retains the complete date-grouped list. Opening a note preserves its
+origin for Back; choosing Meetings again or following a direct note link uses
+the overview. Both lists retain processing states and confirmed deletion.
+Load failures offer Retry without discarding the last loaded list. The overview
+can grow with future Meeting Assistant sections; no preset controls ship yet.
 
 **Current continuation behavior (2026-10-20):** Each completed call starts BYOK
 processing immediately. After auto-end, Reconnect is available for three minutes;

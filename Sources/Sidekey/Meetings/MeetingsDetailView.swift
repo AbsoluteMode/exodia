@@ -415,7 +415,7 @@ private struct MeetingDetailContentView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(Capsule().fill(MacSettingsTheme.accent))
+                        .background(Capsule().fill(MacSettingsTheme.accentFill))
                 }
                 .buttonStyle(.plain)
             }
