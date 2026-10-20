@@ -251,7 +251,7 @@ final class TranslationTests: XCTestCase {
         XCTAssertFalse(model.issue?.message.contains("secret") ?? true)
     }
 
-    func testMissingTranslationRouteDoesNotCaptureOrOpenSpeechSocket() async {
+    func testMissingSubtitleLLMRouteDoesNotCaptureOrOpenSpeechSocket() async {
         let audio = FixtureSubtitleAudio()
         var opened = false
         let model = LiveSubtitleModel(makeAudio: { audio }, open: { _ in opened = true; return FixtureSubtitleUpstream() },
@@ -260,7 +260,8 @@ final class TranslationTests: XCTestCase {
         await waitUntil { model.phase == .failed }
         XCTAssertEqual(audio.started, 0)
         XCTAssertFalse(opened)
-        XCTAssertEqual(model.issue?.feature, .translation)
+        XCTAssertEqual(model.issue?.feature, .subtitlesTranslation)
+        XCTAssertTrue(model.issue?.message.contains("Subtitles translation") == true)
     }
 
     func testBacklogStopsCaptureWhileTranslatorIsStillSuspended() async throws {

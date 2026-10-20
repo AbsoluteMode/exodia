@@ -16,13 +16,18 @@ apps. Escape or the close button closes it and cancels translation/capture.
 In **Settings → API & Models**, choose:
 
 - **Translation**: an OpenRouter text model or your own OpenAI-compatible text
-  endpoint. This model translates both typed text and subtitle phrases.
-- **Subtitles audio**: a Soniox, Deepgram, ElevenLabs or your own compatible
-  realtime speech endpoint. This model transcribes system audio for subtitles.
+  endpoint for typed text.
+- **Subtitles** opens two independent selectors: **Speech** uses Soniox,
+  Deepgram, ElevenLabs or a compatible realtime speech endpoint to transcribe
+  system audio; **LLM** uses OpenRouter or a compatible text endpoint to
+  translate the recognized phrases. Both model names remain in its summary.
 
-Keys stay in Whytap's existing Keychain store. These new routes start **Not
-set**, including on an upgraded installation. The app never borrows another
-feature's model or chooses a replacement provider after a failure.
+Keys stay in Whytap's existing Keychain store. New routes start **Not set**.
+When upgrading already configured subtitles, their previous shared Translation
+model (including provider selection) is copied once into the separate LLM
+setting. Later changes to Translation do not affect subtitles; clearing their
+LLM stays cleared across relaunches. The app never borrows another feature's
+model or chooses a replacement provider after a failure.
 
 ## Text
 
@@ -53,7 +58,7 @@ check that permission in **System Settings → Privacy & Security**. Silence and
 a denied grant cannot be reliably distinguished by the capture API.
 
 The selected speech provider receives system audio. Its committed phrases go
-to the selected Translation model. Interim speech is shown but never translated
+to the selected Subtitles LLM model. Interim speech is shown but never translated
 or billed as an LLM request. This is a speech-to-text → LLM pipeline; latency
 depends on phrase finalization, the network and the chosen model. It does not
 use the standalone app's OpenAI translation endpoint or its credential files.

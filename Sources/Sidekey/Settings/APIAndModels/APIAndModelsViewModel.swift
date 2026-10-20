@@ -27,6 +27,7 @@ struct FeatureRow: Equatable, Identifiable {
     var modelSummary: String = "Choose a model"
 
     var fieldLabel: String {
+        if feature == .subtitlesTranslation { return "LLM" }
         switch feature.mode {
         case .realtime, .recorded: return "Speech"
         case .llm, .llmWithTools: return "Text"
@@ -44,8 +45,8 @@ struct FeatureGroup: Equatable, Identifiable {
 
     var summary: String { rows.map(\.modelSummary).joined(separator: " · ") }
 
-    /// Every feature exactly once. Drop Smart and Meetings each pair their
-    /// speech route with the LLM route that processes its text.
+    /// Every feature exactly once. Paired functions keep their speech route
+    /// beside the LLM route that processes its text.
     static let layout: [(title: String, features: [AIFeature])] = [
         ("Drop Fast", [.dropFast]),
         ("Drop Smart", [.dropSmart, .dropSmartCleanup]),
@@ -54,7 +55,7 @@ struct FeatureGroup: Equatable, Identifiable {
         ("Agent voice", [.agentVoice]),
         ("Voice search", [.voiceSearch]),
         ("Translation", [.translation]),
-        ("Subtitles audio", [.subtitlesAudio]),
+        ("Subtitles", [.subtitlesAudio, .subtitlesTranslation]),
     ]
 }
 

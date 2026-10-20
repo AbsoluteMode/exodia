@@ -38,6 +38,22 @@ and open paired rows, using temporary stores, synthetic keys and offline
 providers. They do not establish physical keyboard focus, VoiceOver or native
 menu operation on the installed app; those remain promotion acceptance.
 
+## Independent subtitle models — 2026-10-20
+
+The user requested both subtitle model roles in Settings and explicitly chose
+an independent subtitle LLM. The existing compact disclosure stays: one
+Subtitles header summarizes both model IDs and opens Speech then LLM selectors.
+Text Translation retains its own row and route. Why: changing the text
+translator must not change the model used by live subtitles.
+
+Keep 48 pt headers, existing equal-width model controls, theme colors, keyboard
+disclosure and visible errors. Both subtitle error links open this same group;
+Speech and LLM prefixes identify the required repair. No new animation is added.
+Existing subtitles keep their prior model/provider once at migration; clearing
+the new LLM never reconnects it to Translation. Offscreen fixtures cover closed
+and expanded Subtitles at 600/900 pt in both appearances. Native menu/focus and
+real provider output remain acceptance in the shared app after promotion.
+
 ## Screenshot permission — 2026-10-20
 
 The user requested a screenshot access entry in Settings -> Permissions.

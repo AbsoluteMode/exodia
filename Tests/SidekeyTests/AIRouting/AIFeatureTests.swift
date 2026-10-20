@@ -12,9 +12,9 @@ final class AIFeatureTests: XCTestCase {
     // MARK: - Registry
 
     func test_features_follow_the_spec_table() {
-        XCTAssertEqual(AIFeature.allCases, [.dropFast, .dropSmart, .dropSmartCleanup, .meetings, .meetingNotes, .agent, .agentVoice, .voiceSearch, .translation, .subtitlesAudio])
-        XCTAssertEqual(AIFeature.allCases.map(\.title), ["Drop Fast", "Drop Smart", "Drop Smart cleanup", "Meetings", "Meeting notes", "Agent", "Agent voice", "Voice search", "Translation", "Subtitles audio"])
-        XCTAssertEqual(AIFeature.allCases.map(\.mode.label), ["real-time", "real-time", "LLM", "recorded", "LLM", "LLM with tools", "real-time", "real-time", "LLM", "real-time"])
+        XCTAssertEqual(AIFeature.allCases, [.dropFast, .dropSmart, .dropSmartCleanup, .meetings, .meetingNotes, .agent, .agentVoice, .voiceSearch, .translation, .subtitlesAudio, .subtitlesTranslation])
+        XCTAssertEqual(AIFeature.allCases.map(\.title), ["Drop Fast", "Drop Smart", "Drop Smart cleanup", "Meetings", "Meeting notes", "Agent", "Agent voice", "Voice search", "Translation", "Subtitles audio", "Subtitles translation"])
+        XCTAssertEqual(AIFeature.allCases.map(\.mode.label), ["real-time", "real-time", "LLM", "recorded", "LLM", "LLM with tools", "real-time", "real-time", "LLM", "real-time", "LLM"])
         XCTAssertEqual(AIFeature.drop(.fast), .dropFast)
         XCTAssertEqual(AIFeature.drop(.smart), .dropSmart)
     }
@@ -22,7 +22,7 @@ final class AIFeatureTests: XCTestCase {
     func test_feature_raw_values_are_the_persisted_route_keys() {
         XCTAssertEqual(
             AIFeature.allCases.map(\.rawValue),
-            ["dropFast", "dropSmart", "dropSmartCleanup", "meetings", "meetingNotes", "agent", "agentVoice", "voiceSearch", "translation", "subtitlesAudio"]
+            ["dropFast", "dropSmart", "dropSmartCleanup", "meetings", "meetingNotes", "agent", "agentVoice", "voiceSearch", "translation", "subtitlesAudio", "subtitlesTranslation"]
         )
     }
 
@@ -67,7 +67,7 @@ final class AIFeatureTests: XCTestCase {
                 openRouter: nil, anthropic: nil, openAICompatible: .realtimeSTT
             ),
             TableRow(
-                features: [.dropSmartCleanup, .meetingNotes, .translation],
+                features: [.dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation],
                 soniox: nil, deepgram: nil, elevenLabs: nil,
                 openRouter: .chat, anthropic: nil, openAICompatible: .chat
             ),
@@ -78,7 +78,7 @@ final class AIFeatureTests: XCTestCase {
             ),
         ]
         // Every feature sits in exactly one row, so the loop below visits all
-        // 10 features x 6 providers = 60 cells.
+        // 11 features x 6 providers = 66 cells.
         XCTAssertEqual(
             rows.flatMap(\.features).map(\.rawValue).sorted(),
             AIFeature.allCases.map(\.rawValue).sorted()
@@ -96,7 +96,7 @@ final class AIFeatureTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(visited, 60)
+        XCTAssertEqual(visited, 66)
     }
 
     /// Decision of 19.10: Anthropic credits are spent through the agent only;

@@ -50,6 +50,8 @@ final class APIAndModelsRenderTests: XCTestCase {
         routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .dropSmartCleanup)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .meetingNotes)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "anthropic/claude-sonnet-5.5", provider: "anthropic"), for: .agent)
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .subtitlesAudio)
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .subtitlesTranslation)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "qwen/qwen3.8-27b"), for: .translation)
         routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .agentVoice)
 
@@ -59,12 +61,12 @@ final class APIAndModelsRenderTests: XCTestCase {
             keyStatuses: KeyStatusStore(defaults: defaults), keyChecker: stub, probe: stub, endpoints: stub,
             inputLanguage: { "ru" }
         )
-        for feature in [AIFeature.agent, .meetingNotes, .dropSmartCleanup] { await vm.loadProviders(for: feature) }
+        for feature in [AIFeature.agent, .meetingNotes, .dropSmartCleanup, .translation, .subtitlesTranslation] { await vm.loadProviders(for: feature) }
 
         for dark in [false, true] {
             for width in [600.0, 900.0] {
-                for expanded in [nil, "Drop Smart"] as [String?] {
-                    let state = expanded == nil ? "collapsed" : "expanded"
+                for expanded in [nil, "Drop Smart", "Subtitles"] as [String?] {
+                    let state = expanded == "Subtitles" ? "subtitles-expanded" : (expanded == nil ? "collapsed" : "expanded")
                     try render(
                         APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
                                          initiallyExpandedGroup: expanded),

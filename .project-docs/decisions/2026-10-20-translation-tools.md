@@ -11,6 +11,9 @@ sources:
   - type: user-confirmed
     reference: On 2026-10-20 the user requested integration of Realtime Translator system-audio translation and its LLM translator into Whytap, with polished and reliable feature behavior.
     confirmed_at: 2026-10-20
+  - type: user-confirmed
+    reference: On 2026-10-20 the user requested both subtitle model roles in API and Models and chose a separate LLM for Subtitles instead of sharing text Translation.
+    confirmed_at: 2026-10-20
   - type: repository
     reference: Sources/Sidekey/Translation/LiveSubtitleModel.swift
     confirmed_at: 2026-10-20
@@ -42,9 +45,18 @@ Use two catalog tools, Translate and Subtitles, opening one native floating
 window. Preserve the standalone RU/EN automatic text direction and offer
 explicit targets. Keep original speech optional beside subtitles.
 
-The implementation uses two new routes: Translation (LLM, shared by typed text
-and subtitle phrases) and Subtitles audio (real-time speech). Both start unset;
-existing routes and layouts are preserved. This provider pipeline is an
+The implementation uses three routes: Translation (typed-text LLM),
+Subtitles audio (real-time speech) and Subtitles translation (its independent
+LLM). API & Models presents the latter two together as Subtitles, with Speech
+and LLM controls. New routes start unset. Migration v2 preserves the exact
+previous shared LLM/provider once for already configured subtitles; an existing
+independent route wins, and later clears/changes never copy again. Partially
+unreadable routing documents stay untouched at launch. Their first explicit edit
+retains the raw backup and splits routes before applying the user's change, so
+an unset LLM or removed server cannot be repopulated at the next launch.
+Backup repair preserves the version
+marker so restoring cannot refill an intentionally unset subtitle LLM.
+Existing routes and layouts are preserved. This provider pipeline is an
 implementation choice, not a user-selected provider or model.
 
 ## Rationale
