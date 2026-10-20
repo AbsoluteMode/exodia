@@ -129,6 +129,23 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
         }
     }
 
+    func test_interaction_feedback_states_render_without_geometry_changes() throws {
+        let states = [("normal", false, false, false, true), ("hover", true, false, false, true),
+                      ("pressed", true, true, false, true), ("focus", false, false, true, true),
+                      ("disabled", true, true, true, false)]
+        let panel = VStack(spacing: 8) {
+            ForEach(Array(states.enumerated()), id: \.offset) { _, state in
+                Text(state.0).font(.system(size: 12)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 35)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(.white.opacity(0.08)))
+                    .overlay(CaseAccessInteractionOverlay(hovering: state.1, pressed: state.2,
+                                                          focused: state.3, enabled: state.4))
+                    .opacity(state.4 ? 1 : 0.4)
+            }
+        }.padding(12)
+        try renderPanel(panel, width: 310, name: "case-interaction-states-310")
+    }
+
     private func withBrandAssets(_ body: () throws -> Void) throws {
         var root = URL(fileURLWithPath: #filePath)
         while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("Package.swift").path) {

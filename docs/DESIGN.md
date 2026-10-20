@@ -652,3 +652,13 @@ Physical focus/VoiceOver, real Cursor
 reconnection and live glass contrast remain shared-app acceptance after the
 builder promotes the reviewed source. Grouping and logo recognition follow the
 user's chosen direction; they have not been tested with other people.
+
+
+Case control feedback follow-up — 2026-10-21: every custom/plain access control,
+including Back, retry, mode, scope, project rows, disconnect and Save/Connect,
+uses a shared full-target hover overlay, stronger pressed fill and keyboard-focus
+outline. Disabled controls are dimmed and ignore hover/pressed/focus highlights.
+Why: the user requires visible evidence of interactivity, beyond a button shape
+or tooltip. Picker rows use the same feedback family. Offscreen state fixtures
+cover normal/hover/pressed/focus/disabled at 310 pt; physical focus remains
+shared-app acceptance. No authorization or registration behavior changes.

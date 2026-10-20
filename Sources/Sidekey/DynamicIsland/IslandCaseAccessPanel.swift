@@ -34,7 +34,7 @@ struct IslandCaseAccessPanel: View {
                 Button("Повторить настройку агента") {
                     perform { _ = try await viewModel.retryClientSetup(for: id) }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle())
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.92))
                 .disabled(isBusy)
@@ -71,7 +71,7 @@ struct IslandCaseAccessPanel: View {
                     .frame(width: 24, height: 26)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle())
             .disabled(isBusy)
             .accessibilityLabel(draft?.appID == nil && draft != nil ? "Назад к агентам" : "Назад к ключам")
             .accessibilityIdentifier("case.access.back")
@@ -162,7 +162,7 @@ struct IslandCaseAccessPanel: View {
                             onBack()
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CaseAccessButtonStyle())
                     .foregroundStyle(.white.opacity(0.85))
                     .accessibilityIdentifier("case.access.unregister")
                 }
@@ -178,7 +178,7 @@ struct IslandCaseAccessPanel: View {
                     .background(Capsule().fill(Color(red: 0.18, green: 0.43, blue: 0.96)))
                     .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle(cornerRadius: 14))
                 .help("Подключение, расширение доступа и Bypass подтверждаются через Touch ID")
                 .accessibilityHint("Подключение, расширение доступа и Bypass подтверждаются через Touch ID")
                 .accessibilityIdentifier("case.access.save")
@@ -203,7 +203,7 @@ struct IslandCaseAccessPanel: View {
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selected ? tint.opacity(0.55) : .clear, lineWidth: 1))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle())
         .accessibilityLabel("\(title), \(detail)")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("case.access.mode.\(mode.rawValue)")
@@ -220,7 +220,7 @@ struct IslandCaseAccessPanel: View {
                 .background(RoundedRectangle(cornerRadius: 7).fill(.white.opacity(selected ? 0.17 : 0.06)))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(all ? "case.access.scope.all" : "case.access.scope.selected")
     }
@@ -243,7 +243,7 @@ struct IslandCaseAccessPanel: View {
             .frame(height: 28)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("case.access.scope.project.\(project.id)")
     }
@@ -363,8 +363,8 @@ struct IslandCaseClientPicker: View {
 private struct CaseClientChoice: View {
     let client: CaseKnownClient
     let onChoose: () -> Void
-    @State private var hovering = false
     @FocusState private var focused: Bool
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: onChoose) {
@@ -378,13 +378,12 @@ private struct CaseClientChoice: View {
             .font(.system(size: 12, weight: .medium))
             .padding(.horizontal, 11)
             .frame(height: 44)
-            .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(hovering ? 0.13 : 0.07)))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(focused ? .white.opacity(0.8) : .clear, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.07)))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(focused && isEnabled ? .white.opacity(0.8) : .clear, lineWidth: 1))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle())
         .focused($focused)
-        .onHover { hovering = $0 }
         .help("Выбрать проекты и режим доступа для \(client.displayName)")
         .accessibilityLabel("\(client.displayName), настроить доступ к ключам")
         .accessibilityIdentifier("case.connect.\(client.rawValue)")
@@ -419,5 +418,40 @@ private struct CaseAccessDraft {
     var registration: CaseAppRegistration {
         CaseAppRegistration(id: appID ?? UUID(), displayName: name, identity: identity, defaultMode: mode,
                             projectModes: projectModes, createdAt: .distantPast, allowedProjectIDs: scope)
+    }
+}
+
+/// All custom/plain Case controls share feedback over their entire hit target.
+struct CaseAccessButtonStyle: ButtonStyle {
+    var cornerRadius: CGFloat = 7
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.isFocused) private var isFocused
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .overlay {
+                CaseAccessInteractionOverlay(hovering: hovering, pressed: configuration.isPressed,
+                                             focused: isFocused, enabled: isEnabled, cornerRadius: cornerRadius)
+                    .allowsHitTesting(false)
+            }
+            .opacity(isEnabled ? 1 : 0.4)
+            .onHover { hovering = $0 }
+    }
+}
+
+/// Explicit states also support deterministic offscreen fixtures.
+struct CaseAccessInteractionOverlay: View {
+    let hovering: Bool
+    let pressed: Bool
+    let focused: Bool
+    let enabled: Bool
+    var cornerRadius: CGFloat = 7
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(.white.opacity(enabled ? (pressed ? 0.16 : (hovering ? 0.09 : 0)) : 0))
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius)
+                .strokeBorder(enabled && focused ? .white.opacity(0.9) : .clear, lineWidth: 1))
     }
 }
