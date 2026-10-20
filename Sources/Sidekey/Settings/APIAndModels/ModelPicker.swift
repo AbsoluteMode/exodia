@@ -15,6 +15,7 @@ struct ModelPicker: View {
     @State private var activeID: ModelPickerSearch.ID?
     @State private var hoveredID: ModelPickerSearch.ID?
     @State private var refreshing = false
+    @FocusState private var focusedResult: ModelPickerSearch.ID?
     @State private var serverModelNames: [ProviderAccount: String] = [:]
 
     init(sections: [PickerSection], missingProviderHint: String?,
@@ -118,15 +119,13 @@ struct ModelPicker: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(MacSettingsTheme.text)
             if sections.isEmpty {
-                Button(missingProviderHint ?? "Add API key", action: onAddKey)
-                    .buttonStyle(.link)
+                APIModelAction(title: missingProviderHint ?? "Add API key", style: .ghost, action: onAddKey)
             } else {
                 Text("Try a name and size, like qwen 27.")
                     .font(.system(size: 12))
                     .foregroundStyle(MacSettingsTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Clear search") { query = "" }
-                    .buttonStyle(.link)
+                APIModelAction(title: "Clear search", style: .ghost) { query = "" }
             }
         }
         .padding(12)
@@ -147,8 +146,7 @@ struct ModelPicker: View {
                 TextField("Model name on this server", text: name)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { if !trimmed.isEmpty { onSelect(section.account, trimmed) } }
-                Button("Choose") { onSelect(section.account, trimmed) }
-                    .disabled(trimmed.isEmpty)
+                APIModelAction(title: "Choose", isEnabled: !trimmed.isEmpty) { onSelect(section.account, trimmed) }
             }
         }
         .padding(12)
@@ -179,15 +177,15 @@ struct ModelPicker: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(activeID == result.id ? MacSettingsTheme.accent.opacity(0.15)
-                        : (hoveredID == result.id ? MacSettingsTheme.hover : Color.clear),
+                        : (result.isEnabled && hoveredID == result.id ? MacSettingsTheme.hover : Color.clear),
                         in: RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(APIModelFeedbackStyle(focused: focusedResult == result.id))
         .disabled(!result.isEnabled)
-        .opacity(result.isEnabled ? 1 : 0.5)
+        .focused($focusedResult, equals: result.id)
         .help(result.option.model)
-        .onHover { hovering in hoveredID = hovering ? result.id : nil }
+        .onHover { hovering in hoveredID = hovering && result.isEnabled ? result.id : nil }
         .accessibilityValue(result.option.isSelected ? "Current model" : "")
         .onKeyPress(.return) { choose(result); return .handled }
     }

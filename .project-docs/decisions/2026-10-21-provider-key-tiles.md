@@ -107,3 +107,9 @@ Supersedes the chip layout and Anthropic-agent-only restriction in
 [API & Models](2026-10-19-api-and-models.md), and the footer actions in
 [model search](2026-10-20-model-search.md). Their route-isolation, search and
 verification contracts remain in force.
+
+The 2026-10-21 interaction-feedback requirement applies to provider squares,
+form actions and model-picker rows/actions. A local style covers each full hit
+target with hover/pressed feedback and preserves keyboard focus. Inherited
+disabled state suppresses feedback and dims controls, including busy forms and
+unsupported model rows. Shared settings buttons outside this surface are unchanged.

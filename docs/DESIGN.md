@@ -43,6 +43,11 @@ acceptance after the designated builder promotes the reviewed source.
 
 ## Provider key tiles — 2026-10-21
 
+Tiles, form actions and picker rows show full-target hover and pressed feedback,
+with distinct keyboard focus. Disabled controls are dimmed and ignore hover.
+Feedback is local to API & Models; shared MacButton behavior stays unchanged.
+Dark pressed overlays are capped at 8% to preserve small blue/white text contrast.
+
 The person comes to connect a provider. First they see every available provider,
 including OpenAI and Anthropic, then open its square to enter and check a key.
 The chosen direction is the user's tile-to-inline-form request.

@@ -80,7 +80,7 @@ struct ProviderKeyTiles: View {
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(APIModelFeedbackStyle(cornerRadius: 12))
         .disabled(busy)
         .focused($focused, equals: target)
         .accessibilityLabel(chip?.title ?? provider.displayName)
@@ -213,7 +213,7 @@ struct ProviderKeyForm: View {
             }
             HStack(spacing: 10) {
                 if let account, chip != nil {
-                    MacButton(title: "Check now", style: .default) {
+                    APIModelAction(title: "Check now", style: .default) {
                         checking = true
                         onBusyChanged(true)
                         Task {
@@ -222,15 +222,15 @@ struct ProviderKeyForm: View {
                             onBusyChanged(false)
                         }
                     }
-                    MacButton(title: "Remove", style: .danger) { confirmingRemoval = true }
+                    APIModelAction(title: "Remove", style: .danger) { confirmingRemoval = true }
                 }
                 Spacer(minLength: 0)
                 if busy {
                     ProgressView().controlSize(.small)
                     Text("Checking…").font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
                 }
-                MacButton(title: "Cancel", style: .default, action: onClose)
-                MacButton(title: "Check & save", style: .primary, isEnabled: canSave, action: save)
+                APIModelAction(title: "Cancel", style: .default, action: onClose)
+                APIModelAction(title: "Check & save", style: .primary, isEnabled: canSave, action: save)
             }
             if confirmingRemoval, let account {
                 let features = viewModel.featuresUsing(account)
@@ -239,8 +239,8 @@ struct ProviderKeyForm: View {
                     .font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
                 HStack {
                     Spacer()
-                    MacButton(title: "Keep key", style: .default) { confirmingRemoval = false }
-                    MacButton(title: "Remove key", style: .danger) {
+                    APIModelAction(title: "Keep key", style: .default) { confirmingRemoval = false }
+                    APIModelAction(title: "Remove key", style: .danger) {
                         viewModel.remove(account)
                         onClose()
                     }
