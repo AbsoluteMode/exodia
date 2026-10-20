@@ -56,7 +56,7 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
                                          defaultMode: .bypass, projectModes: [:], createdAt: date)
         XCTAssertTrue(IslandCaseAccessPanel.showsSharedTerminalHint(app: custom, known: nil))
 
-        let height: CGFloat = 480
+        let height: CGFloat = IslandCaseVaultStyle.panelHeight
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width, height: height),
                               styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false

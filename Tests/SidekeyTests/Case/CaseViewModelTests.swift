@@ -5,6 +5,38 @@ import XCTest
 
 @MainActor
 final class CaseViewModelTests: XCTestCase {
+    func test_returning_directly_to_held_case_drawer_hands_control_back_to_hover() {
+        var expanded = false // Touch ID interrupted the original hover.
+        expanded = IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: true,
+            wasExpanded: expanded, glance: false, interactionHeld: true)
+        XCTAssertTrue(expanded, "The visible held drawer accepts re-entry without visiting the pill")
+        expanded = IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false,
+            wasExpanded: expanded, glance: false, interactionHeld: false)
+        XCTAssertFalse(expanded, "After pointer return releases the hold, mouse exit collapses normally")
+        XCTAssertFalse(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: true,
+            wasExpanded: false, glance: false), "Fading panels must still be unable to reopen themselves")
+    }
+
+    func test_system_authentication_holds_panel_through_success_or_cancel_until_return() async throws {
+        for denied in [false, true] {
+            let env = TestCaseEnvironment(payload: CaseVaultPayload())
+            let vm = env.makeViewModel()
+            env.authenticator.duringAuthentication = {
+                XCTAssertTrue(vm.isSystemInteractionActive)
+                XCTAssertTrue(vm.holdsPanelOpen)
+                vm.releasePanelHold()
+                XCTAssertTrue(vm.holdsPanelOpen, "Hover loss cannot dismiss a system prompt")
+                await Task.yield()
+            }
+            if denied { env.authenticator.error = CaseAuthenticationError.denied }
+            do { try await vm.unlock() } catch { XCTAssertTrue(denied) }
+            XCTAssertFalse(vm.isSystemInteractionActive)
+            XCTAssertTrue(vm.holdsPanelOpen, "Keep the result until the pointer returns or outside click")
+            vm.releasePanelHold()
+            XCTAssertFalse(vm.holdsPanelOpen)
+        }
+    }
+
     func test_unlock_loads_payload_and_exposes_rows_without_values() async throws {
         let secretID = UUID()
         let payload = CaseVaultPayload(
@@ -791,6 +823,7 @@ private final class StubCaseVaultKeyProvider: CaseVaultKeyProviding {
 
 @MainActor
 private final class StubCaseAuthenticator: CaseAuthenticating {
+    var duringAuthentication: (() async -> Void)?
     var error: Error?
     private(set) var authenticateCallCount = 0
 
@@ -801,6 +834,7 @@ private final class StubCaseAuthenticator: CaseAuthenticating {
     func authenticate(reason: String) async throws {
         authenticateCallCount += 1
         XCTAssertEqual(reason, "Открыть Case")
+        await duringAuthentication?()
         if let error {
             throw error
         }

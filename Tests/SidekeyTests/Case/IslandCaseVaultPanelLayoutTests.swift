@@ -11,6 +11,28 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
     private let serversID = UUID()
     private let terraID = UUID()
 
+    func test_actual_case_height_exposes_several_keys_without_overflow() async throws {
+        let height = IslandCaseVaultStyle.panelHeight
+        XCTAssertEqual(IslandView.hoverPanelHeight(for: .caseVault, musicActive: false),
+                       IslandDropModeControl.detachedPanelGap + height)
+        for width in [CGFloat(310), CGFloat(390)] {
+            let fixture = try await PanelFixture(payload: samplePayload(), width: width, height: height)
+            defer { fixture.close() }
+            fixture.viewModel.expandedProjectIDs.insert(serversID)
+            fixture.settle()
+            try fixture.saveImage("case-panel-\(Int(width))-320")
+            XCTAssertFalse(fixture.isWindowVisible)
+        }
+    }
+
+    func test_import_screen_at_actual_case_size() async throws {
+        let fixture = try await PanelFixture(payload: samplePayload(), width: 310,
+                                            height: IslandCaseVaultStyle.panelHeight, showImport: true)
+        defer { fixture.close() }
+        try fixture.saveImage("case-import-310-320")
+        XCTAssertFalse(fixture.isWindowVisible)
+    }
+
     func test_general_section_first_and_expanded() async throws {
         let fixture = try await PanelFixture(payload: samplePayload())
         defer { fixture.close() }
@@ -88,7 +110,7 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
     func test_access_row_opens_the_access_screen() throws {
         XCTAssertTrue(IslandCaseVaultPanel.isAccessScreenAvailable)
         let sources = try panelSources()
-        XCTAssertTrue(sources.contains("Подключить ›"))
+        XCTAssertTrue(sources.contains("Доступ к ключам ›"))
     }
 
     func test_renders_at_310pt_without_horizontal_overflow() async throws {
@@ -193,7 +215,7 @@ private final class PanelFixture {
     let host: NSHostingView<AnyView>
     private let service: CaseVaultService
 
-    init(payload: CaseVaultPayload, width: CGFloat = 310, height: CGFloat = 480) async throws {
+    init(payload: CaseVaultPayload, width: CGFloat = 310, height: CGFloat = 480, showImport: Bool = false) async throws {
         _ = NSApplication.shared
         service = CaseVaultService(store: LayoutStubStore(payload: payload), keyProvider: LayoutStubKeys())
         viewModel = CaseViewModel(
@@ -209,8 +231,15 @@ private final class PanelFixture {
             styleMask: [.borderless], backing: .buffered, defer: true
         )
         window.isReleasedWhenClosed = false
+        let modelForRendering = viewModel
         host = NSHostingView(rootView: AnyView(
-            IslandCaseVaultPanel(viewModel: viewModel)
+            Group {
+                if showImport {
+                    IslandCaseDopplerImportPanel(viewModel: modelForRendering, onBack: {})
+                } else {
+                    IslandCaseVaultPanel(viewModel: modelForRendering)
+                }
+            }
                 .frame(width: width, height: height)
                 .background(Color(white: 0.08))
                 .environment(\.colorScheme, .dark)

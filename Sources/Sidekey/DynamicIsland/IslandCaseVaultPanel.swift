@@ -3,15 +3,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum IslandCaseVaultStyle {
+    // WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+    static let panelHeight: CGFloat = 320
     static let horizontalPadding: CGFloat = 10
     static let topPadding: CGFloat = 8
     static let rowSpacing: CGFloat = 5
-    static let inputHeight: CGFloat = 28
-    static let rowHeight: CGFloat = 26
-    static let childRowHeight: CGFloat = 24
-    static let iconButtonSize: CGFloat = 18
-    static let inputFontSize: CGFloat = 11
-    static let nameFontSize: CGFloat = 10
+    static let inputHeight: CGFloat = 32
+    static let rowHeight: CGFloat = 30
+    static let childRowHeight: CGFloat = 28
+    static let iconButtonSize: CGFloat = 22
+    static let inputFontSize: CGFloat = 12
+    static let nameFontSize: CGFloat = 11
     static let errorFontSize: CGFloat = 9
     static let descriptionFontSize: CGFloat = 9
     static let rowCornerRadius: CGFloat = 9
@@ -29,6 +31,7 @@ struct IslandCaseVaultPanel: View {
         isSearching || expandedIDs.contains(section.id)
     }
 
+    var onDismiss: () -> Void = {}
     var onOpenAccessScreen: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -46,6 +49,7 @@ struct IslandCaseVaultPanel: View {
     @State private var dragState = CaseDragState()
     @State private var lastError: String?
     @State private var showingAccess = false
+    @State private var showingImport = false
     @FocusState private var inputFocused: Bool
 
     private let topScrollID = "case-list-top"
@@ -56,7 +60,9 @@ struct IslandCaseVaultPanel: View {
     var body: some View {
         Group {
             if viewModel.isUnlocked {
-                if showingAccess {
+                if showingImport {
+                    IslandCaseDopplerImportPanel(viewModel: viewModel, onBack: { showingImport = false })
+                } else if showingAccess {
                     IslandCaseAccessPanel(viewModel: viewModel, onBack: {
                         viewModel.dismissClientSetupProblems()
                         showingAccess = false
@@ -67,6 +73,11 @@ struct IslandCaseVaultPanel: View {
             } else {
                 lockedPanel
             }
+        }
+        .background(CasePanelDismissObserver(enabled: viewModel.holdsPanelOpen && !viewModel.isSystemInteractionActive,
+                                             onDismiss: onDismiss))
+        .onExitCommand {
+            if !viewModel.isSystemInteractionActive { onDismiss() }
         }
         .onAppear {
             DispatchQueue.main.async {
@@ -175,6 +186,15 @@ struct IslandCaseVaultPanel: View {
                     .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding + 2)
             }
 
+            Button("Импорт из Doppler") { showingImport = true }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding + 2)
+                .accessibilityIdentifier("case.doppler.open")
+
             caseList
                 .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
 
@@ -193,7 +213,7 @@ struct IslandCaseVaultPanel: View {
                 if activeInputText.isEmpty {
                     Text(inputPlaceholder)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.40))
+                        .foregroundStyle(.white.opacity(0.70))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .padding(.horizontal, 10)
@@ -469,7 +489,7 @@ struct IslandCaseVaultPanel: View {
             Circle()
                 .fill(names.isEmpty ? Color.white.opacity(0.30) : Color.green.opacity(0.85))
                 .frame(width: 6, height: 6)
-            Text(names.isEmpty ? "ИИ: нет" : "ИИ: \(names.joined(separator: ", "))")
+            Text(names.isEmpty ? "Нет приложений" : names.joined(separator: ", "))
                 .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .medium))
                 .foregroundStyle(.white.opacity(0.70))
                 .lineLimit(1)
@@ -480,7 +500,7 @@ struct IslandCaseVaultPanel: View {
                 showingAccess = true
                 onOpenAccessScreen?()
             } label: {
-                Text("Подключить ›")
+                Text("Доступ к ключам ›")
                     .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.88))
                     .fixedSize()
