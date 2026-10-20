@@ -1,13 +1,19 @@
 # Whytap Planner
 
-Open **Search all tools → To-do** or **Calendar**. Both open the same native
-Planner window. The tools can also be added from Settings → Toolbox; adding this
+Open **Search all tools → To-do** for a compact list inside hover.
+**Calendar** opens the native Planner window. The tools can also be added from Settings → Toolbox; adding this
 feature does not change existing saved tool layouts or positional shortcuts.
 
 ## Tasks and Whytap events
 
-Tasks support add/Return, search, edit, complete/reopen and confirmed deletion.
-The Active and Completed lists keep finished work available. Whytap events support
+In hover, type a task and press Return. Click a row to complete or reopen it.
+Completed rows move below active tasks for this opening; reopening To-do hides
+them from the active list. **History** shows completed tasks with their local
+completion date and time; click one to reopen it. Older completed tasks show
+“Completion time unknown”. Hover a truncated row to read its full native tooltip.
+The draft survives closing the panel. Escape or a click outside dismisses it;
+Back returns to tools. Tasks remain local and also stay available in the Planner
+window for search, editing and confirmed deletion. Whytap events support
 titles, start/end times, all-day spans, locations, notes, https meeting links and
 confirmed deletion. All-day end dates in the editor are inclusive; storage uses
 an exclusive boundary. Civil all-day dates survive a time-zone change. Incoming

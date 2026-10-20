@@ -182,4 +182,19 @@ final class PlannerBackupTests: XCTestCase {
         XCTAssertTrue(model.errorMessage?.contains("Planner") == true)
         await model.stopAndWait()
     }
+
+    func testTodoDraftBlocksRestoreWithoutPausingOrdinaryBackups() async throws {
+        let target = try ArtifactBackupTestProfile()
+        defer { target.tearDown(); AppState.shared.todoActive = false }
+        let model = BackupViewModel(defaults: target.defaults, keyStore: MemoryTokenStore(),
+            githubTokenStore: MemoryTokenStore(), local: BackupLocalStore(root: target.root),
+            settingsFiles: ConfigBackupFiles(root: target.root.appendingPathComponent("settings")),
+            previousRestoreOutcome: { nil }, pendingKeyStore: MemoryTokenStore())
+        AppState.shared.todoActive = true
+        XCTAssertTrue(BackupViewModel.isIdle, "Reading saved Planner content must not prevent ordinary backup")
+        await model.restoreSettingsDefaults(.other)
+        XCTAssertFalse(model.needsRestart)
+        XCTAssertTrue(model.errorMessage?.contains("To-do") == true)
+        await model.stopAndWait()
+    }
 }
