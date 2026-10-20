@@ -23,7 +23,7 @@ sources:
   - type: trace
     reference: Claude Code consultation f5197223-847c-4567-8918-e8b07c33ab93 and reconciliation 72df1dc1-548c-4438-90ff-97b4192103e2; Gemini conversation 2cc05a31-563b-4135-96b7-3705be1e405e, explicit agreement recovered despite interrupted-stream job status.
     confirmed_at: 2026-10-19
-related: [2026-10-19-one-running-copy.md, ../project.md, ../processes/shared-app-development.md, 2026-10-19-build-queue.md]
+related: [2026-10-19-one-running-copy.md, ../project.md, ../processes/shared-app-development.md, 2026-10-19-build-queue.md, 2026-10-20-meeting-aware-builder-refresh.md]
 ---
 
 # One shared working application
@@ -104,3 +104,8 @@ release provenance/signature/acceptance gates keep their existing contracts.
 The later [build queue decision](2026-10-19-build-queue.md) replaces permission
 for every feature session to become integrator with one designated builder and
 automatic FIFO submissions. The remaining shared-app safeguards still apply.
+
+The [2026-10-20 meeting-aware refresh decision](2026-10-20-meeting-aware-builder-refresh.md)
+replaces per-build saved/idle confirmation with standing permission for normal
+restarts outside meetings. All signature, backup, provenance and one-writer
+requirements remain.
