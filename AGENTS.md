@@ -316,7 +316,9 @@ Case secrets manager:
   Schema 2 migrates without changing existing access; older apps refuse schema 3.
   WHY: docs/decisions/2026-10-20-case-connect-and-scope.md. `Contents/Helpers/whytap`
   exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
-  names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). The app's local Unix
+  names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). `case_list_keys(query:)`
+  searches authorized key names/descriptions and project names directly; a known
+  key uses `case run --only KEY` without listing projects first. The app's local Unix
   socket broker accepts only its bundled helper by audit-token cdhash and
   dynamic validity. It validates every bundled architecture and compares the
   running peer with a valid signed slice, including x86_64 under Rosetta. It
@@ -328,8 +330,14 @@ Case secrets manager:
   invalidates its pending requests, including queued approvals.
   Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
-  grants. The prompt's Stepper selects 1–240 minutes (default 15); physical A
-  uses the displayed duration. Each new prompt resets its duration. Registration configures the client's names-only MCP entry. The
+  grants. Temporary Bypass is a separate button beside a native editable
+  1–240 minute field (default 15), without stepper arrows; the bottom row has
+  Deny/Allow only. The command's native hover help contains its full original
+  text. While editing minutes the approval keys are suspended; Return commits
+  the edit and Escape restores its starting value. Invalid drafts disable timed
+  approval and revert to the last valid value on blur. Explicit field focus is
+  released on prompt replacement/hide. Buttons expose hover/pressed/focus and
+  disabled states. Each new prompt resets its duration. Registration configures the client's names-only MCP entry. The
   helper injects authorized values into the child command's environment and
   applies best-effort masking to stdout/stderr. Deliberately transformed
   output, files and values shorter than four bytes can expose values; this is

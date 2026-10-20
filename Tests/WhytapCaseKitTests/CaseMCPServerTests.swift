@@ -24,7 +24,7 @@ final class CaseMCPServerTests: XCTestCase {
         XCTAssertEqual(res["protocolVersion"] as? String, "2024-11-05")
         XCTAssertEqual((res["serverInfo"] as? [String: Any])?["name"] as? String, "whytap-case")
         let ins = try XCTUnwrap(res["instructions"] as? String)
-        XCTAssertTrue(ins.contains("/Applications/Whytap.app/Contents/MacOS/whytap case run -p <project> '<command using $KEY_NAME>'"))
+        XCTAssertTrue(ins.contains("/Applications/Whytap.app/Contents/MacOS/whytap case run --only KEY_NAME '<command using $KEY_NAME>'"))
         XCTAssertTrue(ins.hasPrefix("Whytap Case keeps secrets on this Mac."))
     }
 
@@ -50,6 +50,24 @@ final class CaseMCPServerTests: XCTestCase {
         let out2 = try XCTUnwrap(server(evil).handle(line: line))
         XCTAssertFalse(out2.contains("sk-secret-123"))
         XCTAssertEqual(try json(out2)["result"].flatMap { ($0 as? [String: Any])?["isError"] as? Bool }, true)
+    }
+
+    func test_query_finds_keys_directly_across_authorized_metadata_without_requesting_values() throws {
+        let b = FakeBroker(.success(.keys([
+            CaseKeyInfo(name: "SONIOX_API_KEY", description: "Speech", project: "App"),
+            CaseKeyInfo(name: "TOKEN", description: "déploiement", project: "Backend"),
+            CaseKeyInfo(name: "OTHER", description: "unrelated", project: "App"),
+        ])))
+        let call = #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"case_list_keys","arguments":{"query":"backend deploiement"}}}"#
+        let out = try XCTUnwrap(server(b).handle(line: call))
+        XCTAssertTrue(out.contains("TOKEN — déploiement [Backend]"))
+        XCTAssertFalse(out.contains("SONIOX_API_KEY"))
+        XCTAssertFalse(out.contains("OTHER"))
+        XCTAssertEqual(b.requests, [.listKeys(project: nil)])
+        let nameCall = call.replacingOccurrences(of: "backend deploiement", with: "soniox")
+        XCTAssertTrue(try XCTUnwrap(server(b).handle(line: nameCall)).contains("SONIOX_API_KEY"))
+        let emptyCall = call.replacingOccurrences(of: "backend deploiement", with: "absent")
+        XCTAssertTrue(try XCTUnwrap(server(b).handle(line: emptyCall)).contains("No matching keys."))
     }
 
     func test_list_projects_includes_key_count() throws {
