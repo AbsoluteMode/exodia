@@ -45,6 +45,12 @@ without ever receiving its value.
   (`LOCAL_PEERTOKEN`) resolves to the bundled `Contents/Helpers/whytap` by
   **cdhash**, which works for ad-hoc community signing as well. An untrusted
   peer gets `.untrustedHelper` before one byte of its request is read.
+  The entire bundled universal file must validate. Its default native slice
+  and explicit arm64/x86_64 slices are queried with the public Security
+  architecture selector, so an x86_64 helper running under Rosetta matches
+  its signed slice rather than the broker's preferred native slice. A missing
+  slice never authorizes a peer. Audit-token lookup and live-code validity
+  remain mandatory; matching an identifier alone is insufficient.
 - **Caller identity by process chain.** The broker walks the helper's parent
   chain and takes the nearest registered or known AI app. Claude Code and Codex
   are matched by Developer ID team ID plus signing identifier, but a team ID is
@@ -152,6 +158,13 @@ Masking is best effort and bytes-based; it is not a security boundary.
 
 ## What we tested
 
+- Real signed universal socket-client fixtures (2026-10-20), using actual
+  `LOCAL_PEERTOKEN` and the production inspector: native and Rosetta accepted;
+  a different validly signed binary with the same identifier, a tampered
+  universal file and an invalid audit identity denied. These use disposable
+  local sockets and synthetic binaries without a vault, client configuration,
+  app launch or Touch ID. Before the fix the Rosetta positive failed, and a
+  native peer could pass when only the inactive bundled slice was corrupted.
 - Revocation regressions (2026-10-20): removal during Allow and timed Allow,
   identity replacement, a changed peer, and real approval-controller queued
   requests all deny values without creating a grant. Deleted projects/keys

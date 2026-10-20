@@ -21,7 +21,7 @@ protocol CaseProcessInspecting {
     /// The connected peer of a Unix socket, with its audit token.
     func peer(of socket: Int32) -> (pid: pid_t, auditToken: audit_token_t)?
     /// True when the peer's running code is valid and its cdhash equals the
-    /// cdhash of the helper file bundled with this build (works with ad-hoc).
+    /// cdhash of a valid slice of this build's bundled helper (works with ad-hoc).
     func isTrustedHelper(auditToken: audit_token_t, helperURL: URL) -> Bool
 }
 
@@ -79,18 +79,35 @@ struct CaseSystemProcessInspector: CaseProcessInspecting {
         var helper: SecStaticCode?
         guard SecStaticCodeCreateWithPath(helperURL as CFURL, [], &helper) == errSecSuccess,
               let helper,
-              SecStaticCodeCheckValidity(helper, [], nil) == errSecSuccess,
+              SecStaticCodeCheckValidity(helper, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), nil) == errSecSuccess,
               let helperHash = Self.cdhash(of: helper)
         else { return false }
 
-        return !peerHash.isEmpty && peerHash == helperHash
+        guard !peerHash.isEmpty else { return false }
+        if peerHash == helperHash { return true }
+
+        // Static code defaults to the host's preferred slice; a Rosetta peer
+        // executes the other signed slice. Keep audit-token/dynamic validity
+        // above and compare only with validated slices of the bundled file.
+        // WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+        for architecture in ["arm64", "x86_64"] {
+            let attributes = [kSecCodeAttributeArchitecture: architecture] as CFDictionary
+            var slice: SecStaticCode?
+            guard SecStaticCodeCreateWithPathAndAttributes(helperURL as CFURL, [], attributes, &slice) == errSecSuccess,
+                  let slice,
+                  SecStaticCodeCheckValidity(slice, [], nil) == errSecSuccess,
+                  let hash = Self.cdhash(of: slice), !hash.isEmpty
+            else { continue }
+            if peerHash == hash { return true }
+        }
+        return false
     }
 
     // MARK: Private
 
-    /// A SecCode is a SecStaticCode for signing-information queries; passing
-    /// the dynamic object makes Security report what the kernel has loaded,
-    /// not what is on disk at the path now.
+    /// Security accepts dynamic code for signing-information queries through
+    /// its static-code translation. The preceding dynamic validity check binds
+    /// that signing information to the live process, including its loaded slice.
     private static func asStatic(_ code: SecCode) -> SecStaticCode {
         unsafeBitCast(code, to: SecStaticCode.self)
     }

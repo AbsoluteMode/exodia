@@ -275,6 +275,8 @@ Case secrets manager:
   exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
   names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). The app's local Unix
   socket broker accepts only its bundled helper by audit-token cdhash and
+  dynamic validity. It validates every bundled architecture and compares the
+  running peer with a valid signed slice, including x86_64 under Rosetta. It
   resolves the caller from its process ancestry; Developer ID identities
   require an Apple anchor. Unregistered known AI clients are refused; human
   requests require Touch ID. Before releasing values or creating a timed
