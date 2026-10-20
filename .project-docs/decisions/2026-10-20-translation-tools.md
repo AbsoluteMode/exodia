@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Translation/TranslationService.swift
     confirmed_at: 2026-10-20
-related: [../project.md]
+related: [../project.md, 2026-10-20-toolbox-mini-apps.md]
 ---
 
 # Translation tools

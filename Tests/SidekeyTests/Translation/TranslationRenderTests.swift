@@ -19,14 +19,27 @@ final class TranslationRenderTests: XCTestCase {
         let view = TranslationView(text: text, subtitles: subtitles, presentation: presentation, openSettings: { _ in })
             .environment(\.colorScheme, .dark)
         try render(view, size: NSSize(width: 620, height: 610), to: directory.appendingPathComponent("text-empty.png"))
+        try render(TranslationView(text: text, subtitles: subtitles, presentation: presentation, openSettings: { _ in }, embedded: true)
+            .padding(16).background(Color(white: 0.13)), size: NSSize(width: 320, height: 330),
+            to: directory.appendingPathComponent("toolbox-text-empty.png"))
         text.input = "Could you send me the latest version?\nI would like to review the changes before our call."
         await text.translate()?.value
         try render(view, size: NSSize(width: 620, height: 610), to: directory.appendingPathComponent("text-result.png"))
+        try renderWorkspace(text: text, subtitles: subtitles, presentation: presentation, directory: directory)
         try render(view, size: NSSize(width: 480, height: 540), to: directory.appendingPathComponent("text-narrow.png"))
+        try render(TranslationView(text: text, subtitles: subtitles, presentation: presentation, openSettings: { _ in }, embedded: true)
+            .padding(16).background(Color(white: 0.13)), size: NSSize(width: 320, height: 330),
+            to: directory.appendingPathComponent("toolbox-text-result.png"))
         presentation.mode = .subtitles
         try render(view, size: NSSize(width: 620, height: 400), to: directory.appendingPathComponent("subtitles-empty.png"))
+        try render(TranslationView(text: text, subtitles: subtitles, presentation: presentation, openSettings: { _ in }, embedded: true)
+            .padding(16).background(Color(white: 0.13)), size: NSSize(width: 320, height: 330),
+            to: directory.appendingPathComponent("toolbox-subtitles.png"))
         let task = subtitles.start()
         for _ in 0..<100 where subtitles.phase != .listening { try await Task.sleep(for: .milliseconds(5)) }
+        try render(TranslationView(text: text, subtitles: subtitles, presentation: presentation, openSettings: { _ in }, embedded: true)
+            .padding(16).background(Color(white: 0.13)), size: NSSize(width: 320, height: 330),
+            to: directory.appendingPathComponent("toolbox-subtitles-listening.png"))
         upstream.pair.continuation.yield(.final("Let’s go through the changes together. Everything is ready for the next release."))
         for _ in 0..<100 where subtitles.lines.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
         subtitles.stop()
@@ -37,9 +50,69 @@ final class TranslationRenderTests: XCTestCase {
         failed.input = "hello"
         await failed.translate()?.value
         presentation.mode = .text
+        try render(TranslationView(text: failed, subtitles: subtitles, presentation: presentation, openSettings: { _ in }, embedded: true)
+            .padding(16).background(Color(white: 0.13)), size: NSSize(width: 320, height: 330),
+            to: directory.appendingPathComponent("toolbox-text-setup.png"))
         try render(TranslationView(text: failed, subtitles: subtitles, presentation: presentation, openSettings: { _ in })
             .environment(\.colorScheme, .dark), size: NSSize(width: 480, height: 540),
             to: directory.appendingPathComponent("text-setup.png"))
+    }
+
+    private func renderWorkspace(text: TextTranslationModel, subtitles: LiveSubtitleModel,
+                                 presentation: TranslationWindowController.Presentation, directory: URL) throws {
+        let suite = "toolbox-workspace-render-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = HoverLayoutStore(defaults: defaults)
+        store.replaceEditableSlots(with: HoverTool.allCases.filter { $0 != .settings })
+        let workspace = ToolboxWorkspace {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("YOUR HOVER").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.secondary)
+                ToolboxHoverEditor(hoverStore: store, reduceMotion: true) { item in
+                    Group {
+                        switch item {
+                        case .tool(let tool):
+                            let info = HoverToolRegistry.info(for: tool)
+                            ToolboxTileView(title: info.title, sfSymbol: info.sfSymbol,
+                                            isSelected: false, isLocked: tool == .settings,
+                                            isAdded: false, onTap: {})
+                        case .add: ToolboxAddTile()
+                        }
+                    }
+                }.padding(16).background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+                Text("Drag tools to Add, or click Add to choose. Drag saved tools to reorder.")
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+            }
+        } catalog: {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("TOOLBOX").font(.caption).foregroundStyle(.secondary)
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 70, maximum: 90))], spacing: 12) {
+                        ForEach(HoverTool.allCases.filter { $0 != .settings }, id: \.self) { tool in
+                            let info = HoverToolRegistry.info(for: tool)
+                            ToolboxTileView(title: info.title, sfSymbol: info.sfSymbol,
+                                            isSelected: tool == .translate, isLocked: false,
+                                            isAdded: true, onTap: {})
+                        }
+                    }
+                }.padding(16).background(.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 14))
+            }
+        } tool: {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("ACTION").font(.caption).foregroundStyle(.secondary)
+                ToolboxToolViewport {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Translate", systemImage: "character.bubble").font(.headline)
+                        Divider()
+                        TranslationView(text: text, subtitles: subtitles, presentation: presentation,
+                                        openSettings: { _ in }, embedded: true)
+                    }
+                }.padding(16).background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .background(Color(white: 0.12)).environment(\.colorScheme, .dark)
+        try render(workspace, size: NSSize(width: 820, height: 600), to: directory.appendingPathComponent("toolbox-workspace.png"))
+        try render(workspace, size: NSSize(width: 740, height: 500), to: directory.appendingPathComponent("toolbox-workspace-minimum.png"))
     }
 
     private func render<V: View>(_ view: V, size: NSSize, to url: URL) throws {

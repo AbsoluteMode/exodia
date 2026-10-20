@@ -47,7 +47,7 @@ sources:
   - type: trace
     reference: /tmp/exodia-toolbox-drag-proof/manifest.json, 14 actual editor/card/Add PNGs and source hash, unordered non-key windows with isolated preferences.
     confirmed_at: 2026-10-18
-related: [../project.md, 2026-10-18-clipboard-retention.md]
+related: [../project.md, 2026-10-18-clipboard-retention.md, 2026-10-20-toolbox-mini-apps.md]
 ---
 
 # Toolbox drag feedback

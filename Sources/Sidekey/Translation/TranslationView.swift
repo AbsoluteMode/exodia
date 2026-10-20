@@ -6,6 +6,7 @@ struct TranslationView: View {
     @ObservedObject var subtitles: LiveSubtitleModel
     @ObservedObject var presentation: TranslationWindowController.Presentation
     let openSettings: (AIFeature) -> Void
+    var embedded = false
     @FocusState private var inputFocused: Bool
     @State private var copied = false
     @State private var followsLatest = true
@@ -13,28 +14,31 @@ struct TranslationView: View {
     private var isText: Bool { presentation.mode == .text }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "character.bubble.fill")
-                    .font(.system(size: 22)).foregroundStyle(.blue)
-                    .accessibilityHidden(true)
-                Text("Translate").font(.system(size: 22, weight: .semibold))
-                Spacer()
-                Picker("Mode", selection: $presentation.mode) {
-                    ForEach(TranslationWindowController.Mode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }.pickerStyle(.segmented).labelsHidden().frame(width: 190)
+        VStack(alignment: .leading, spacing: embedded ? 8 : 16) {
+            if !embedded {
+                HStack {
+                    Image(systemName: "character.bubble.fill")
+                        .font(.system(size: 22)).foregroundStyle(.blue)
+                        .accessibilityHidden(true)
+                    Text("Translate").font(.system(size: 22, weight: .semibold))
+                    Spacer()
+                    Picker("Mode", selection: $presentation.mode) {
+                        ForEach(TranslationWindowController.Mode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }.pickerStyle(.segmented).labelsHidden().frame(width: 190)
+                }
             }
             if isText { textControls } else { audioControls }
             if let issue = isText ? text.issue : subtitles.issue { errorCard(issue) }
             if isText { textContent } else { subtitleContent }
             footer
         }
-        .padding(22)
-        .padding(.top, 24)
-        .frame(minWidth: 440, maxWidth: .infinity, minHeight: isText ? 490 : 270, maxHeight: .infinity)
-        .background(.regularMaterial)
+        .padding(embedded ? 0 : 22)
+        .padding(.top, embedded ? 0 : 24)
+        .frame(minWidth: embedded ? 0 : 440, maxWidth: .infinity,
+               minHeight: embedded ? 0 : (isText ? 490 : 270), maxHeight: .infinity)
+        .background { if !embedded { Rectangle().fill(.regularMaterial) } }
         .onAppear { if isText { inputFocused = true } }
         .onChange(of: presentation.mode) { _, mode in if mode == .text { inputFocused = true } }
         .onChange(of: text.result) { _, _ in copied = false }
@@ -43,8 +47,10 @@ struct TranslationView: View {
 
     private var textControls: some View {
         HStack(spacing: 10) {
-            Label("Detect language", systemImage: "globe").foregroundStyle(.secondary)
-            Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+            if !embedded {
+                Label("Detect language", systemImage: "globe").foregroundStyle(.secondary)
+                Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+            }
             Picker("Translate to", selection: Binding(
                 get: { if case .language(let code) = text.target { return code }; return "auto" },
                 set: { text.target = $0 == "auto" ? .automatic : .language($0) }
@@ -61,24 +67,56 @@ struct TranslationView: View {
     }
 
     private var audioControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Picker("Speech", selection: $subtitles.sourceCode) {
-                    Text("Auto-detect").tag("auto")
-                    languageOptions
-                }.disabled(subtitles.phase.isActive)
-                Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                Picker("Translate to", selection: $subtitles.targetCode) { languageOptions }
-                    .disabled(subtitles.phase.isActive)
-            }.font(.system(size: 12))
-            HStack {
-                Label(status, systemImage: subtitles.phase.isActive ? "waveform" : "speaker.wave.2")
-                    .foregroundStyle(subtitles.phase.isActive ? Color.blue : Color.secondary)
-                Spacer()
-                Toggle("Original", isOn: $subtitles.showsOriginal).toggleStyle(.checkbox)
-                Toggle("Follow", isOn: $followsLatest).toggleStyle(.checkbox)
-            }.font(.system(size: 12))
+        VStack(alignment: .leading, spacing: embedded ? 6 : 10) {
+            if embedded {
+                HStack {
+                    Text("Speech").frame(width: 78, alignment: .leading)
+                    sourcePicker.labelsHidden().frame(maxWidth: .infinity)
+                }
+                HStack {
+                    Text("Translate to").frame(width: 78, alignment: .leading)
+                    targetPicker.labelsHidden().frame(maxWidth: .infinity)
+                }
+                .font(.system(size: 12))
+                audioStatus
+                    .font(.system(size: 11))
+                HStack {
+                    Toggle("Original", isOn: $subtitles.showsOriginal).toggleStyle(.checkbox)
+                    Toggle("Follow", isOn: $followsLatest).toggleStyle(.checkbox)
+                    Spacer(minLength: 0)
+                }
+                .font(.system(size: 11))
+            } else {
+                HStack(spacing: 8) {
+                    sourcePicker
+                    Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                    targetPicker
+                }.font(.system(size: 12))
+                HStack {
+                    audioStatus
+                    Spacer()
+                    Toggle("Original", isOn: $subtitles.showsOriginal).toggleStyle(.checkbox)
+                    Toggle("Follow", isOn: $followsLatest).toggleStyle(.checkbox)
+                }.font(.system(size: 12))
+            }
         }
+    }
+
+    private var sourcePicker: some View {
+        Picker("Speech", selection: $subtitles.sourceCode) {
+            Text("Auto-detect").tag("auto")
+            languageOptions
+        }.disabled(subtitles.phase.isActive)
+    }
+
+    private var targetPicker: some View {
+        Picker("Translate to", selection: $subtitles.targetCode) { languageOptions }
+            .disabled(subtitles.phase.isActive)
+    }
+
+    private var audioStatus: some View {
+        Label(status, systemImage: subtitles.phase.isActive ? "waveform" : "speaker.wave.2")
+            .foregroundStyle(subtitles.phase.isActive ? Color.blue : Color.secondary)
     }
 
     @ViewBuilder private var languageOptions: some View {
@@ -88,7 +126,7 @@ struct TranslationView: View {
     }
 
     private var textContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: embedded ? 8 : 12) {
             HStack {
                 Text("YOUR TEXT").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer()
@@ -103,12 +141,12 @@ struct TranslationView: View {
                 }
                 TextEditor(text: $text.input)
                     .scrollContentBackground(.hidden)
-                    .font(.system(size: 16))
+                    .font(.system(size: embedded ? 13 : 16))
                     .focused($inputFocused)
                     .accessibilityLabel("Text to translate")
             }
-            .padding(10)
-            .frame(minHeight: 110, maxHeight: 180)
+            .padding(embedded ? 6 : 10)
+            .frame(minHeight: embedded ? 50 : 110, maxHeight: embedded ? 80 : 180)
             .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.primary.opacity(0.08)))
             HStack {
@@ -118,13 +156,13 @@ struct TranslationView: View {
             }
             ScrollView {
                 Text(text.result.isEmpty ? (text.isTranslating ? "Translating…" : "Your translation will appear here.") : text.result)
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: embedded ? 15 : 20, weight: .medium))
                     .foregroundStyle(text.result.isEmpty ? .secondary : .primary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, minHeight: embedded ? 50 : 0, maxHeight: .infinity)
             .background(Color.blue.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
             if text.input.count > TextTranslationModel.inputLimit {
                 Text("Keep each translation under 12,000 characters.").font(.caption).foregroundStyle(.orange)
@@ -145,7 +183,7 @@ struct TranslationView: View {
                                  ? "Play audio on your Mac. If nothing arrives, check System Audio Recording in macOS Privacy & Security."
                                  : "Translate videos and calls into live subtitles. Only your Mac’s system audio is captured.")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center).frame(maxWidth: 360)
+                                .multilineTextAlignment(.center).frame(maxWidth: embedded ? 260 : 360)
                             if subtitles.phase.isActive, !subtitles.hasAudio {
                                 Button("Open audio permissions") {
                                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") {
@@ -153,7 +191,7 @@ struct TranslationView: View {
                                     }
                                 }.font(.caption)
                             }
-                        }.frame(maxWidth: .infinity).padding(.vertical, 40)
+                        }.frame(maxWidth: .infinity).padding(.vertical, embedded ? 12 : 40)
                     }
                     ForEach(subtitles.lines) { line in
                         VStack(alignment: .leading, spacing: 6) {
@@ -173,7 +211,7 @@ struct TranslationView: View {
                     Color.clear.frame(height: 1).id("latest")
                 }.padding(18)
             }
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(subtitles.lines.isEmpty ? .top : .bottom)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
             .onChange(of: subtitles.lines) { _, _ in if followsLatest { proxy.scrollTo("latest", anchor: .bottom) } }
             .onChange(of: subtitles.partial) { _, _ in if followsLatest { proxy.scrollTo("latest", anchor: .bottom) } }
