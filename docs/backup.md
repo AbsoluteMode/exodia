@@ -38,6 +38,20 @@ No Whytap account, backup server or GitHub Actions is used.
 - App-owned Monitor dashboards, notification configuration and working files,
   and the neutral agent workspace's persistent instructions.
 
+Case items are merged with the target Mac's vault and encrypted using that
+Mac's own local vault key. Unrelated existing Case items are retained. When a
+project or key name from the backup is already used by a different item on
+this Mac, the restored one is renamed (`alpha (2)`, `DB_URL_2`); this Mac's
+names stay as they are. Restoring also brings back the backup's Case app
+registrations (which AI apps may ask for keys, Approve or Bypass) and adds
+them without asking for Touch ID, including Bypass: an app registered with
+Bypass in the backup can receive keys without a prompt after the restore.
+Registrations this Mac already has keep their own settings. Review them in
+Case -> access after restoring a backup you did not make yourself. Imported
+notification sources and monitoring connections stay disabled until reviewed.
+Unprocessed recordings are recovered without automatically resuming another
+Mac's remote provider jobs.
+
 Clipboard file entries refer to external originals. Those original documents
 are not owned by Whytap and are not copied by this feature. The same applies
 to external scripts, SSH keys, model-provider accounts and credentials managed

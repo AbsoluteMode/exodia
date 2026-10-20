@@ -87,6 +87,30 @@ enum HelpWindowContent {
                 prefix: nil,
                 contents: [.text("Esc")]
             ),
+            // Case Approve prompt: fixed physical keys (any layout), taken only
+            // while a prompt is on screen, after 300 ms without key presses. One row
+            // per answer so the caps never read as a chord.
+            HelpHotkeyRowSpec(
+                title: "Case — allow",
+                detail: "While a Case request is on screen, allow the command once. Works on any keyboard layout.",
+                iconName: "checkmark.circle",
+                prefix: nil,
+                contents: [.text("Y")]
+            ),
+            HelpHotkeyRowSpec(
+                title: "Case — deny",
+                detail: "While a Case request is on screen, deny it. Escape denies too.",
+                iconName: "xmark.octagon",
+                prefix: nil,
+                contents: [.text("N")]
+            ),
+            HelpHotkeyRowSpec(
+                title: "Case — allow for minutes",
+                detail: "While a Case request is on screen, let this app use this project without asking for the set minutes.",
+                iconName: "timer",
+                prefix: nil,
+                contents: [.text("A")]
+            ),
             // ROO-208: the three per-mode rows (`⌥1` Agent / `⌥2` Drop /
             // `⌥3` Clipboard) collapse into a single unified-strip row.
             // Filter selection lives inside the strip's left sidebar.

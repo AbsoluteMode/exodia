@@ -48,26 +48,25 @@ struct CaseVaultStore {
         fileURL.deletingLastPathComponent().appendingPathComponent(fileURL.lastPathComponent + ".bak")
     }
 
+    /// One-time copy of a schema-1 vault, made the first time it is saved as
+    /// schema 2 and never overwritten: `.bak` only keeps the v1 bytes until the
+    /// second save.
+    var schema1CopyURL: URL {
+        fileURL.deletingLastPathComponent().appendingPathComponent(fileURL.lastPathComponent + ".v1")
+    }
+
     func load(using key: SymmetricKey) throws -> CaseVaultPayload {
         guard fileManager.fileExists(atPath: fileURL.path) else {
             throw CaseVaultStoreError.missingFile
         }
 
         let envelopeData = try Data(contentsOf: fileURL)
-        let payload = try Self.decode(envelope: envelopeData, using: key)
-        if payload.schemaVersion > CaseVaultPayload.currentSchemaVersion {
-            // The vault was written by a newer build of the app. Decryption
-            // succeeded — the data is intact — but this version can't interpret
-            // the newer schema. Surface needsNewerApp so the UI directs the user
-            // to update; crucially, this must NOT be treated as undecryptable or
-            // offer a destructive Reset.
-            throw CaseVaultStoreError.needsNewerApp
-        }
-        guard payload.schemaVersion == CaseVaultPayload.currentSchemaVersion else {
-            // schemaVersion < current: an older format we no longer understand.
-            throw CaseVaultStoreError.unsupportedEnvelope
-        }
-        return payload
+        // decode migrates schema 1 to 2 in memory; the file is rewritten as
+        // schema 2 on the next save, which keeps the schema-1 bytes in `.bak`.
+        // A newer schema throws needsNewerApp (decryption succeeded, data is
+        // intact; must NOT be treated as undecryptable or offer Reset). An
+        // older, unknown schema throws unsupportedEnvelope.
+        return try Self.decode(envelope: envelopeData, using: key)
     }
 
     /// Decrypts a vault envelope that is already in memory.
@@ -105,7 +104,7 @@ struct CaseVaultStore {
             throw CaseVaultStoreError.invalidEnvelope
         }
         let data = try AES.GCM.open(sealedBox, using: key, authenticating: Self.staticAssociatedData())
-        return try JSONDecoder.caseVault.decode(CaseVaultPayload.self, from: data)
+        return try CaseVaultMigration.decodePayload(data)
     }
 
     func save(_ payload: CaseVaultPayload, using key: SymmetricKey) throws {
@@ -124,6 +123,7 @@ struct CaseVaultStore {
         )
         let envelopeData = try JSONEncoder.caseVault.encode(envelope)
         // A failed backup must not block the save itself.
+        try? keepSchema1CopyIfNeeded(using: key)
         try? keepBackupOfCurrentVault()
         try envelopeData.write(to: fileURL, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: fileURL.path)
@@ -140,6 +140,40 @@ struct CaseVaultStore {
         let aside = fileURL.deletingLastPathComponent()
             .appendingPathComponent("\(fileURL.lastPathComponent).unreadable-\(stamp)-\(suffix)")
         try fileManager.moveItem(at: fileURL, to: aside)
+    }
+
+    private func keepSchema1CopyIfNeeded(using key: SymmetricKey) throws {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              !fileManager.fileExists(atPath: schema1CopyURL.path)
+        else { return }
+        let current = try Data(contentsOf: fileURL)
+        guard try Self.schemaVersion(ofEnvelope: current, using: key) == 1 else { return }
+        // Created 0600 from the start; an existing copy is never replaced.
+        let fd = open(schema1CopyURL.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { return }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        do {
+            try handle.write(contentsOf: current)
+            try handle.synchronize()
+        } catch {
+            try? handle.close()
+            try? fileManager.removeItem(at: schema1CopyURL)
+            throw error
+        }
+        try handle.close()
+    }
+
+    /// The payload schema of an envelope, decrypted in memory only.
+    private static func schemaVersion(ofEnvelope data: Data, using key: SymmetricKey) throws -> Int {
+        struct Probe: Decodable { let schemaVersion: Int }
+        let envelope = try JSONDecoder.caseVault.decode(CaseVaultEnvelope.self, from: data)
+        guard let nonce = Data(base64Encoded: envelope.nonce),
+              let ciphertext = Data(base64Encoded: envelope.ciphertext),
+              let tag = Data(base64Encoded: envelope.tag)
+        else { throw CaseVaultStoreError.invalidEnvelope }
+        let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: ciphertext, tag: tag)
+        let plaintext = try AES.GCM.open(box, using: key, authenticating: staticAssociatedData())
+        return try JSONDecoder.caseVault.decode(Probe.self, from: plaintext).schemaVersion
     }
 
     private func keepBackupOfCurrentVault() throws {
@@ -163,7 +197,7 @@ struct CaseVaultStore {
     }
 }
 
-private extension JSONEncoder {
+extension JSONEncoder {
     static var caseVault: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .custom { date, encoder in
@@ -175,7 +209,7 @@ private extension JSONEncoder {
     }
 }
 
-private extension JSONDecoder {
+extension JSONDecoder {
     static var caseVault: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in

@@ -3,12 +3,15 @@ import Foundation
 struct CaseListEntry: Equatable, Identifiable {
     enum Kind: Equatable {
         case secret
-        case group
+        case project
     }
 
     let id: UUID
     let kind: Kind
     let displayName: String
+    let description: String
+    /// For a secret, its project; for a project, its own ID.
+    let projectID: UUID
     let score: Double
 }
 
@@ -19,7 +22,7 @@ enum CaseRanker {
 
     static func sortedEntries(
         secrets: [CaseSecret],
-        groups: [CaseGroup],
+        projects: [CaseProject],
         query: String,
         now: Date = Date()
     ) -> [CaseListEntry] {
@@ -27,47 +30,47 @@ enum CaseRanker {
         let normalizedQuery = try? CaseNameNormalizer.normalizedName(trimmedQuery)
         let searchText = normalizedQuery ?? trimmedQuery.uppercased()
 
-        let groupIDs = Set(groups.map(\.id))
-        let groupedSecretIDs = Set(groups.flatMap(\.keyIDs))
+        // Every key is an entry of its own, and every project except General
+        // is one too, so a query finds keys (any project) by name and
+        // description and projects by name and description. The island draws
+        // projects itself and reads these entries only while searching.
+        let groupProjects = projects.filter { $0.id != CaseProject.generalID }
         let individualEntries = secrets
-            .filter { secret in
-                let belongsToExistingGroup = secret.groupID.map { groupIDs.contains($0) } ?? false
-                return !belongsToExistingGroup && !groupedSecretIDs.contains(secret.id)
-            }
             .map { secret in
                 CaseListEntry(
                     id: secret.id,
                     kind: .secret,
                     displayName: secret.name,
+                    description: secret.description,
+                    projectID: secret.projectID,
                     score: score(copyCount: secret.copyCount, lastCopiedAt: secret.lastCopiedAt, createdAt: secret.createdAt, now: now)
                 )
             }
 
-        let groupEntries = groups.map { group in
-            let groupKeyIDs = Set(group.keyIDs)
-            let children = secrets.filter { secret in
-                secret.groupID == group.id || groupKeyIDs.contains(secret.id)
-            }
-            let childScore = children
+        let groupEntries = groupProjects.map { project in
+            let childScore = secrets
+                .filter { $0.projectID == project.id }
                 .map { score(copyCount: $0.copyCount, lastCopiedAt: $0.lastCopiedAt, createdAt: $0.createdAt, now: now) }
                 .max() ?? 0
-            let ownScore = score(copyCount: group.copyCount, lastCopiedAt: group.lastCopiedAt, createdAt: group.createdAt, now: now)
+            let ownScore = score(copyCount: 0, lastCopiedAt: nil, createdAt: project.createdAt, now: now)
             return CaseListEntry(
-                id: group.id,
-                kind: .group,
-                displayName: group.name,
+                id: project.id,
+                kind: .project,
+                displayName: project.name,
+                description: project.description,
+                projectID: project.id,
                 score: max(ownScore, childScore)
             )
         }
 
         let entries = groupEntries + individualEntries
         let filtered = searchText.isEmpty ? entries : entries.filter {
-            matchBucket(name: $0.displayName, query: searchText) != .none
+            matchBucket(entry: $0, query: searchText, rawQuery: trimmedQuery) != .none
         }
 
         return filtered.sorted { lhs, rhs in
-            let lhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(name: lhs.displayName, query: searchText)
-            let rhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(name: rhs.displayName, query: searchText)
+            let lhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: lhs, query: searchText, rawQuery: trimmedQuery)
+            let rhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: rhs, query: searchText, rawQuery: trimmedQuery)
             if lhsBucket.sortOrder != rhsBucket.sortOrder {
                 return lhsBucket.sortOrder < rhsBucket.sortOrder
             }
@@ -101,6 +104,7 @@ enum CaseRanker {
         case prefix
         case contains
         case firstTokenPrefix
+        case description
         case none
 
         var sortOrder: Int {
@@ -109,9 +113,20 @@ enum CaseRanker {
             case .prefix: return 1
             case .contains: return 2
             case .firstTokenPrefix: return 3
-            case .none: return 4
+            case .description: return 4
+            case .none: return 5
             }
         }
+    }
+
+    private static func matchBucket(entry: CaseListEntry, query: String, rawQuery: String) -> MatchBucket {
+        let byName = matchBucket(name: entry.displayName, query: query)
+        if byName != .none { return byName }
+        if !rawQuery.isEmpty,
+           entry.description.range(of: rawQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+            return .description
+        }
+        return .none
     }
 
     private static func matchBucket(name: String, query: String) -> MatchBucket {

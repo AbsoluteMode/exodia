@@ -107,6 +107,18 @@ key and Escape. The Brightness keys tap receives only system-defined events,
 such as the brightness, volume and media keys, and acts only on the
 brightness keys. Key contents are never logged or stored.
 
+## Case and AI assistants
+
+Case adds no network traffic. AI clients you register talk to Whytap through a
+local Unix socket in Application Support (owner-only); only the bundled
+`whytap` helper, verified by its code hash, is served. An AI sees project names,
+key names and your descriptions, never values: `whytap case run` puts values
+only in the environment of the command it starts and masks them in its output.
+Values never appear in command arguments, MCP responses, client config files or
+logs. Masking is best effort: an AI that deliberately transforms a value can
+still read it, so register only assistants you trust. Approve mode asks you
+before each run; Bypass does not.
+
 ## Encrypted recovery copies
 
 Backup is optional. Whytap encrypts the portable workspace before copying or

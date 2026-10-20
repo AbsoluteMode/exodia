@@ -49,13 +49,14 @@ final class ArtifactBackupEngineTests: XCTestCase {
 
         // Case: one secret, its value and a group.
         let secretID = UUID()
+        let serversID = UUID()
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let payload = CaseVaultPayload(
-            secrets: [CaseSecret(id: secretID, name: "Netcup root", groupID: nil, copyCount: 2,
-                                 lastCopiedAt: now, createdAt: now, updatedAt: now)],
-            values: [CaseSecretValue(secretID: secretID, value: "synthetic-case-secret")],
-            groups: [CaseGroup(id: UUID(), name: "Servers", keyIDs: [secretID], copyCount: 0,
-                               lastCopiedAt: nil, createdAt: now, updatedAt: now)])
+            projects: [.general(now: now),
+                       CaseProject(id: serversID, name: "Servers", description: "", createdAt: now, updatedAt: now)],
+            secrets: [CaseSecret(id: secretID, name: "Netcup root", projectID: serversID, description: "",
+                                 copyCount: 2, lastCopiedAt: now, createdAt: now, updatedAt: now)],
+            values: [CaseSecretValue(secretID: secretID, value: "synthetic-case-secret")])
         try CaseVaultStore(fileURL: profile.locations.caseVault).save(payload, using: caseKey)
 
         // Meetings: a row with a note and a transcript sidecar.
@@ -230,7 +231,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
         let restoredCase = try CaseVaultStore(fileURL: target.locations.caseVault).load(using: localKey)
         XCTAssertEqual(restoredCase.secrets.map(\.name), ["Netcup root"])
         XCTAssertEqual(restoredCase.values.first?.value, "synthetic-case-secret")
-        XCTAssertEqual(restoredCase.groups.first?.name, "Servers")
+        XCTAssertEqual(restoredCase.projects.first { $0.id != CaseProject.generalID }?.name, "Servers")
 
         // Meetings: row, note, transcript and the staged recording.
         let restoredMeetings = try MeetingsStore(rootDirectory: target.locations.meetingsCatalog)
@@ -309,6 +310,56 @@ final class ArtifactBackupEngineTests: XCTestCase {
 
     // MARK: - Case merge
 
+    func test_v1_case_archive_restores_into_v2_vault() async throws {
+        let source = try await makeSource()
+        // Replace the source vault with a schema-1 file: a group, a grouped
+        // key, an ungrouped key and a key whose name starts with a digit.
+        let groupID = UUID(), groupedID = UUID(), looseID = UUID(), digitID = UUID()
+        let stamp = Date(timeIntervalSince1970: 1_500_000_000)
+        let v1 = try CaseVaultMigrationTests.v1Plaintext(
+            secrets: [(groupedID, "SSH_PASS", groupID), (looseID, "LOOSE_KEY", nil), (digitID, "1PASSWORD", nil)],
+            groups: [(groupID, "servers", [groupedID])], at: stamp)
+        try CaseVaultMigrationTests.writeSealedVault(v1, key: source.caseKey, to: source.profile.locations.caseVault)
+
+        let key = ArtifactBackupTestKeys.make()
+        let archive = archiveURL(in: source.profile)
+        _ = try await ArtifactBackupEngine(environment: source.environment).createArchive(at: archive, key: key)
+
+        let localKey = SymmetricKey(size: .bits256)
+        var target = try ArtifactBackupTestProfile(caseKey: localKey)
+        profiles.append(target)
+        target.addCredential(sonioxAccount, nil)
+        let localID = UUID()
+        let localProject = CaseProject(id: UUID(), name: "Local project", description: "mine",
+                                       createdAt: stamp, updatedAt: stamp)
+        try CaseVaultStore(fileURL: target.locations.caseVault).save(
+            CaseVaultPayload(
+                projects: [.general(now: stamp), localProject],
+                secrets: [CaseSecret(id: localID, name: "LOCAL_ONLY", projectID: localProject.id, description: "",
+                                     copyCount: 0, lastCopiedAt: nil, createdAt: stamp, updatedAt: stamp)],
+                values: [CaseSecretValue(secretID: localID, value: "local-secret-value")],
+                timedApprovalMinutes: 45),
+            using: localKey)
+
+        let environment = target.environment()
+        try await ArtifactBackupEngine(environment: environment)
+            .stageRestore(from: archive, key: key, sections: [.caseVault])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
+
+        let merged = try CaseVaultStore(fileURL: target.locations.caseVault).load(using: localKey)
+        XCTAssertEqual(merged.schemaVersion, 2)
+        XCTAssertTrue(Set(merged.secrets.map(\.name)).isSuperset(of: ["LOCAL_ONLY", "SSH_PASS", "LOOSE_KEY", "_1PASSWORD"]))
+        let projectIDs = Set(merged.projects.map(\.id))
+        XCTAssertTrue(merged.secrets.allSatisfy { projectIDs.contains($0.projectID) })
+        XCTAssertEqual(merged.projects.first?.id, CaseProject.generalID)
+        XCTAssertEqual(merged.secrets.first { $0.id == groupedID }?.projectID, groupID)
+        XCTAssertEqual(merged.secrets.first { $0.id == looseID }?.projectID, CaseProject.generalID)
+        XCTAssertEqual(merged.secrets.first { $0.id == localID }?.projectID, localProject.id)
+        XCTAssertEqual(merged.value(for: digitID), "value-of-1PASSWORD")
+        XCTAssertEqual(merged.value(for: localID), "local-secret-value")
+        XCTAssertEqual(merged.timedApprovalMinutes, 45)
+    }
+
     func testCaseRestoreMergesAndKeepsThisMacsOtherSecrets() async throws {
         let source = try await makeSource()
         let key = ArtifactBackupTestKeys.make()
@@ -324,10 +375,10 @@ final class ArtifactBackupEngineTests: XCTestCase {
         let stamp = Date(timeIntervalSince1970: 1_600_000_000)
         try CaseVaultStore(fileURL: target.locations.caseVault).save(
             CaseVaultPayload(
-                secrets: [CaseSecret(id: localID, name: "Local only", groupID: nil, copyCount: 0,
+                secrets: [CaseSecret(id: localID, name: "Local only", projectID: CaseProject.generalID,
+                                     description: "", copyCount: 0,
                                      lastCopiedAt: nil, createdAt: stamp, updatedAt: stamp)],
-                values: [CaseSecretValue(secretID: localID, value: "local-secret-value")],
-                groups: []),
+                values: [CaseSecretValue(secretID: localID, value: "local-secret-value")]),
             using: localKey)
 
         let environment = target.environment()

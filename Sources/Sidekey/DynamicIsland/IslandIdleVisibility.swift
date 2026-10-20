@@ -71,6 +71,8 @@ struct IslandIdleBlockers: Equatable {
     /// B12 — Programmatic hover expansion via ⌥N (`programmaticHoverExpansion`).
     var programmaticHoverExpansion: Bool
     var notificationActive: Bool = false
+    /// B14 — Case Approve prompt on screen (`caseApprovalActive`).
+    var caseApprovalActive: Bool = false
 
     /// The disjunction — `true` if any blocker is up.
     var isBusy: Bool {
@@ -85,5 +87,6 @@ struct IslandIdleBlockers: Equatable {
             || rightModifierHeld
             || programmaticHoverExpansion
             || notificationActive
+            || caseApprovalActive
     }
 }

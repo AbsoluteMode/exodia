@@ -14,6 +14,13 @@ final class CaseNameNormalizerTests: XCTestCase {
         XCTAssertThrowsError(try CaseNameNormalizer.normalizedName(" - _ "))
     }
 
+    func test_leading_digit_is_rejected_for_new_names() {
+        XCTAssertThrowsError(try CaseNameNormalizer.normalizedName("2fa key")) {
+            XCTAssertEqual($0 as? CaseNameValidationError, .leadingDigit)
+        }
+        XCTAssertEqual(try CaseNameNormalizer.normalizedName("fa2 key"), "FA2_KEY")
+    }
+
     func test_rejects_non_ascii_names_for_env_predictability() {
         XCTAssertThrowsError(try CaseNameNormalizer.normalizedName("опен аи ключ"))
         XCTAssertThrowsError(try CaseNameNormalizer.normalizedName("clé api"))

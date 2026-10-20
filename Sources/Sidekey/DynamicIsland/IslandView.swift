@@ -240,7 +240,7 @@ struct IslandView: View {
             wrappedValue: IslandFillerViewModel()
         )
         self._caseViewModel = StateObject(
-            wrappedValue: CaseViewModel()
+            wrappedValue: CaseViewModel(service: .shared)
         )
     }
 
@@ -564,7 +564,8 @@ struct IslandView: View {
             && IslandHoverPolicy.allowsExpansion(
                 meetingSuggestionActive: appState.meetingSuggestionActive,
                 meetingRecordingActive: appState.meetingRecordingActive,
-                agentFlowActive: agentFlow.isActive
+                agentFlowActive: agentFlow.isActive,
+                caseApprovalActive: appState.caseApprovalActive
             )
     }
 
@@ -969,7 +970,10 @@ struct IslandView: View {
                     IslandCameraSurface(
                         compactWidth: compactWidth,
                         compactHeight: compactHeight,
-                        meetingSuggestionActive: appState.meetingSuggestionActive,
+                        // A card attached below (meeting nudge or Case Approve
+                        // prompt) squares the bottom so both read as one surface.
+                        meetingSuggestionActive: appState.meetingSuggestionActive
+                            || appState.caseApprovalActive,
                         trailingExtension: activeWingExtension,
                         // Snap the surface for acting and per-keystroke composer
                         // growth (see `wingSnapsWidth`) so the black wing never
@@ -999,7 +1003,8 @@ struct IslandView: View {
                 .onHover { hovering in
                     let next = hovering && IslandHoverPolicy.allowsExpansion(
                         meetingSuggestionActive: appState.meetingSuggestionActive,
-                        meetingRecordingActive: appState.meetingRecordingActive
+                        meetingRecordingActive: appState.meetingRecordingActive,
+                        caseApprovalActive: appState.caseApprovalActive
                     )
                     if next {
                         dropMode = actions.currentDropMode()

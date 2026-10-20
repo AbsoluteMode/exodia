@@ -159,6 +159,7 @@ enum ArtifactArchiveVerifier {
         guard let key, key.count == 32 else { throw ArtifactBackupError.incompleteArchive("case/vault.key") }
         let payload: CaseVaultPayload
         do { payload = try CaseVaultStore.decode(envelope: vault, using: SymmetricKey(data: key)) }
+        catch CaseVaultStoreError.needsNewerApp { throw ArtifactBackupError.needsNewerApp }
         catch { throw ArtifactBackupError.invalidContent("Case") }
         guard payload.schemaVersion <= CaseVaultPayload.currentSchemaVersion else {
             throw ArtifactBackupError.needsNewerApp

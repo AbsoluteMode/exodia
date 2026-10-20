@@ -1282,10 +1282,11 @@ enum IslandHoverPolicy {
     static func allowsExpansion(
         meetingSuggestionActive: Bool,
         meetingRecordingActive: Bool = false,
-        agentFlowActive: Bool = false
+        agentFlowActive: Bool = false,
+        caseApprovalActive: Bool = false
     ) -> Bool {
         _ = meetingRecordingActive
-        return !meetingSuggestionActive && !agentFlowActive
+        return !meetingSuggestionActive && !agentFlowActive && !caseApprovalActive
     }
 }
 

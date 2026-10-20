@@ -1,0 +1,139 @@
+import Foundation
+
+/// Minimal MCP server (JSON-RPC 2.0, newline-delimited) exposing only key and
+/// project NAMES. It has no code path that requests or returns values.
+/// Stdout carries JSON-RPC only; nothing here logs.
+public final class CaseMCPServer {
+    private let client: CaseBrokerCalling?
+    private let executablePath: String
+
+    /// `client == nil`: the app could not be located; tools answer with an error result.
+    public init(client: CaseBrokerCalling?, executablePath: String) {
+        self.client = client
+        self.executablePath = executablePath
+    }
+
+    static func quoted(_ path: String) -> String {
+        guard path.contains(where: { " \t'\"\\$`&;|<>()*?[]{}#~!".contains($0) }) else { return path }
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    public var instructions: String {
+        """
+        Whytap Case keeps secrets on this Mac. You can see project and key names, never values.
+        To use keys, run in your terminal: \(Self.quoted(executablePath)) case run -p <project> '<command using $KEY_NAME>'
+        Use single quotes so your shell does not expand $KEY_NAME; Case injects values and hides them in output.
+        Without -p, pass --only KEY_NAME; if several projects have it, Case lists them: pick by description, or ask the user.
+        """
+    }
+
+    /// Reads lines until EOF. Never throws on a bad request.
+    public func run(readLine: () -> String?, write: (String) -> Void) {
+        while let line = readLine() {
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+            if let reply = handle(line: line) { write(reply) }
+        }
+    }
+
+    /// One request line -> optional reply line (no trailing newline).
+    public func handle(line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let any = try? JSONSerialization.jsonObject(with: data) else {
+            return encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "Parse error"]])
+        }
+        guard let obj = any as? [String: Any], let method = obj["method"] as? String else {
+            return encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32600, "message": "Invalid Request"]])
+        }
+        let id = obj["id"]
+        guard let id else { return nil } // notification: never reply
+        let params = obj["params"] as? [String: Any] ?? [:]
+
+        func ok(_ result: [String: Any]) -> String? { encode(["jsonrpc": "2.0", "id": id, "result": result]) }
+        switch method {
+        case "initialize":
+            let version = params["protocolVersion"] as? String ?? "2025-06-18"
+            return ok([
+                "protocolVersion": version,
+                "capabilities": ["tools": [String: Any]()],
+                "serverInfo": ["name": "whytap-case", "version": "1.0"],
+                "instructions": instructions
+            ])
+        case "ping":
+            return ok([:])
+        case "tools/list":
+            return ok(["tools": Self.tools])
+        case "tools/call":
+            guard let name = params["name"] as? String else {
+                return encode(["jsonrpc": "2.0", "id": id,
+                               "error": ["code": -32602, "message": "Invalid params"]])
+            }
+            let args = params["arguments"] as? [String: Any] ?? [:]
+            return ok(callTool(name: name, arguments: args))
+        default:
+            return encode(["jsonrpc": "2.0", "id": id,
+                           "error": ["code": -32601, "message": "Method not found"]])
+        }
+    }
+
+    static let tools: [[String: Any]] = [
+        [
+            "name": "case_list_projects",
+            "description": "List Case projects (names, descriptions, key counts). Never returns values.",
+            "inputSchema": ["type": "object", "properties": [String: Any]()]
+        ],
+        [
+            "name": "case_list_keys",
+            "description": "List key names and descriptions, optionally for one project. Never returns values.",
+            "inputSchema": ["type": "object",
+                            "properties": ["project": ["type": "string", "description": "Project name (optional)"]]]
+        ]
+    ]
+
+    private func callTool(name: String, arguments: [String: Any]) -> [String: Any] {
+        let request: CaseBrokerRequest
+        switch name {
+        case "case_list_projects": request = .listProjects
+        case "case_list_keys": request = .listKeys(project: arguments["project"] as? String)
+        default: return textResult("Unknown tool.", isError: true)
+        }
+        guard let client else {
+            return textResult("Whytap is not available. Open the Whytap app and try again.", isError: true)
+        }
+        let response: CaseBrokerResponse
+        do { response = try client.send(request) } catch {
+            return textResult("Whytap Case is unavailable. Open the Whytap app, unlock Case and try again.", isError: true)
+        }
+        switch response {
+        case .projects(let projects):
+            if projects.isEmpty { return textResult("No projects.", isError: false) }
+            return textResult(projects.map {
+                "\(Self.oneLine($0.name)) — \(Self.oneLine($0.description)) (\($0.keyCount) keys)"
+            }.joined(separator: "\n"), isError: false)
+        case .keys(let keys):
+            if keys.isEmpty { return textResult("No keys.", isError: false) }
+            return textResult(keys.map {
+                "\(Self.oneLine($0.name)) — \(Self.oneLine($0.description))"
+                    + (arguments["project"] is String ? "" : " [\(Self.oneLine($0.project))]")
+            }.joined(separator: "\n"), isError: false)
+        case .denied(let reason):
+            return textResult("Access denied: \(CaseCommand.describe(reason)). "
+                + "Register this app in Whytap -> Case -> Connect.", isError: true)
+        default:
+            return textResult("Unexpected answer from the Whytap Case broker.", isError: true)
+        }
+    }
+
+    private static func oneLine(_ s: String) -> String {
+        s.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+    }
+
+    private func textResult(_ text: String, isError: Bool) -> [String: Any] {
+        ["content": [["type": "text", "text": text]], "isError": isError]
+    }
+
+    private func encode(_ object: [String: Any]) -> String? {
+        guard let d = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]),
+              let s = String(data: d, encoding: .utf8) else { return nil }
+        return s
+    }
+}

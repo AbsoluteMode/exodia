@@ -96,7 +96,7 @@ final class BackupRecoverySafetyTests: XCTestCase {
         let account = "byok.soniox.api_key"
         source.addCredential(account, "synthetic-source-key"); target.addCredential(account, "synthetic-original-key")
         let caseKey = try source.caseKeys.vaultKeyForRestore()
-        try CaseVaultStore(fileURL: source.locations.caseVault).save(CaseVaultPayload(secrets: [], values: [], groups: []), using: caseKey)
+        try CaseVaultStore(fileURL: source.locations.caseVault).save(CaseVaultPayload(), using: caseKey)
         let file = source.root.appendingPathComponent("archive.exodiabackup"), key = ArtifactBackupTestKeys.make()
         _ = try await ArtifactBackupEngine(environment: source.environment()).createArchive(at: file, key: key, sections: [.credentials, .caseVault])
         var environment = target.environment(); environment.caseVaultKeys = RefusingCaseKeys()
