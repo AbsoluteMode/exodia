@@ -76,19 +76,28 @@ final class SonioxMeetingTranscriberTests: XCTestCase {
             else { polls += 1; body = ["status": polls == 1 ? "processing" : "completed"] }
             return (200, [:], try JSONSerialization.data(withJSONObject: body))
         }
-        let client = SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session, pollInterval: .zero)
+        var usage: [AIUsageEvent] = []
+        let client = SonioxMeetingTranscriber(apiKey: "test-key", model: "stt-async-v5", session: session, pollInterval: .zero,
+                                              audioSeconds: 60, usageSink: { usage.append($0) })
         let result = try await client.transcribe(chunkURLs: [url], language: "ru", terms: ["Whytap"])
         XCTAssertEqual(result.text, "Recovered meeting transcript")
         XCTAssertEqual(result.segments, [TranscriptSegment(speaker: "Speaker 1", start: 0.1, end: 0.5, text: result.text)])
         let createIndex = try XCTUnwrap(StubURLProtocol.capturedRequests.firstIndex { $0.url?.path == "/v1/transcriptions" })
         let createBody = try XCTUnwrap(JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies[createIndex]) as? [String: Any])
         XCTAssertEqual(createBody["enable_speaker_diarization"] as? Bool, true)
+        let reference = try XCTUnwrap(createBody["client_reference_id"] as? String)
+        XCTAssertNotNil(UUID(uuidString: reference))
+        let checkpoint = try JSONDecoder().decode(SonioxMeetingTranscriber.Checkpoint.self,
+            from: Data(contentsOf: directory.appendingPathComponent("soniox-transcription.json")))
+        XCTAssertEqual(checkpoint.usageReference, reference)
+        XCTAssertEqual(usage.first?.id, "soniox:" + reference)
         XCTAssertEqual(StubURLProtocol.capturedRequests.filter { $0.httpMethod == "POST" }.count, 2)
         XCTAssertEqual(StubURLProtocol.capturedRequests.filter { $0.httpMethod == "DELETE" }.count, 2)
         let count = StubURLProtocol.capturedRequests.count
         let resumed = try await client.transcribe(chunkURLs: [url], language: "ru", terms: [])
         XCTAssertEqual(resumed, result)
         XCTAssertEqual(StubURLProtocol.capturedRequests.count, count)
+        XCTAssertEqual(usage.count, 1, "reopening cached transcript does not add another charge")
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 

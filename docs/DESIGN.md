@@ -151,17 +151,16 @@ feature expenses without a permanent model-level grid or scattered period contro
   help and model details explain these marks. ElevenLabs credits are never
   combined with dollars or inferred from a plan.
 
-Update 2026-10-21: ElevenLabs feature rows estimate credits using their
-recorded audio time and the matching model's reported credits/minute. The ≈
-mark remains on values; model details show recorded minutes. A separate
-ElevenLabs Reported usage section lists actual workspace charges by API key and
-model for the selected period, with scope visible beside its heading. It includes
-other apps and is never added to feature Total. Refresh retries history/billing;
-permission, key and network errors have useful text. Refresh, period/date and
-calendar actions visibly highlight their full hit area on hover and press,
-outline keyboard focus, and dim while disabled without active hover feedback.
-Feature disclosures retain row hover and explicit press/focus feedback. This preserves the chosen
-table while making its available evidence useful and its scope explicit.
+Update 2026-10-21: one feature table remains the cost surface. Soniox exact
+request prices replace estimates when available; API delay/failure retains ≈
+values. ElevenLabs uses recorded minutes and cached model credit/minute rates;
+the separate workspace usage block is removed to follow the user's chosen
+calculation policy. Rates are learned from credit/minute statistics, retained
+across outages and never converted from USD. A new model without a rate stays
+unavailable. Price checking leaves history visible, shows a small header spinner
+and disables Refresh; failures show concise text near the period. Refresh,
+period/date and calendar actions retain full-area hover/press, focus outlines
+and inactive disabled states. Existing feature disclosures and layout stay intact.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
 long model histories, custom dates, empty/error states and synthetic temporary-store

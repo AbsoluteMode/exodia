@@ -95,38 +95,40 @@ final class AIUsageCostsViewModel: ObservableObject {
     @Published private(set) var loading = true
     @Published private(set) var failed = false
     @Published private(set) var loadedInterval: DateInterval?
-    @Published private(set) var billing: ElevenLabsBillingUsage?
-    @Published private(set) var billingLoading = false
-    @Published private(set) var billingError: String?
+    @Published private(set) var pricingLoading = false
+    @Published private(set) var pricingMessage: String?
     let store: AIUsageStore
-    private let loadBilling: (DateInterval) async throws -> ElevenLabsBillingUsage?
+    private let loadPrices: ([AIUsageEvent]) async -> AIUsageRecorder.Prices
     private var generation = UUID()
+    private var pricingTask: Task<AIUsageRecorder.Prices, Never>?
     init(store: AIUsageStore,
-         loadBilling: @escaping (DateInterval) async throws -> ElevenLabsBillingUsage? = AIUsageRecorder.billingUsage) {
-        self.store = store; self.loadBilling = loadBilling
+         loadPrices: @escaping ([AIUsageEvent]) async -> AIUsageRecorder.Prices = AIUsageRecorder.speechPrices) {
+        self.store = store; self.loadPrices = loadPrices
     }
-    var pricedEvents: [AIUsageEvent] { events.map { billing?.estimating($0) ?? $0 } }
+    var pricedEvents: [AIUsageEvent] { events }
     func beginVisit() { period = .month }
     func load(_ interval: DateInterval) async {
         let token = UUID(); generation = token
-        if loadedInterval != interval { billing = nil }
-        loading = true; billingError = nil; billingLoading = true
+        pricingTask?.cancel()
+        loading = true; pricingMessage = nil; pricingLoading = false
         do {
             let result = try await store.events(from: interval.start, to: interval.end)
             guard generation == token, !Task.isCancelled else { return }
             events = result; loadedInterval = interval; failed = false; loading = false
+            pricingLoading = true
+            let task = Task { await loadPrices(result) }; pricingTask = task
+            let prices = await task.value
+            guard generation == token, !Task.isCancelled else { return }
+            for event in prices.events where event.amount != nil { try await store.insert(event) }
+            guard generation == token, !Task.isCancelled else { return }
+            events = prices.events; pricingLoading = false
+            if prices.sonioxUnavailable { pricingMessage = "Soniox API prices unavailable. Showing estimates where available." }
+            if prices.elevenLabsRateUnavailable {
+                pricingMessage = [pricingMessage, "ElevenLabs credit rate unavailable for some models."].compactMap { $0 }.joined(separator: " ")
+            }
         } catch {
             guard generation == token, !Task.isCancelled else { return }
-            failed = true; loading = false
-        }
-        do {
-            let result = try await loadBilling(interval)
-            guard generation == token, !Task.isCancelled else { return }
-            billing = result; billingLoading = false
-        } catch {
-            guard generation == token, !Task.isCancelled else { return }
-            billingError = (error as? ElevenLabsBillingError)?.message ?? "Couldn’t reach ElevenLabs. Try again."
-            billingLoading = false
+            failed = true; loading = false; pricingLoading = false
         }
     }
 }
@@ -166,7 +168,8 @@ struct AIUsageCostsView: View {
                             .accessibilityLabel("Cost period")
                             .accessibilityValue(model.period.title)
                         Spacer(minLength: 0)
-                        AIUsageRefreshButton(isEnabled: !model.loading && !model.billingLoading) {
+                        if model.pricingLoading { ProgressView().controlSize(.small).accessibilityLabel("Checking prices") }
+                        AIUsageRefreshButton(isEnabled: !model.loading && !model.pricingLoading) {
                             Task { await refresh() }
                         }
                     }
@@ -182,12 +185,15 @@ struct AIUsageCostsView: View {
                     if interval == nil {
                         Text("Choose an end date on or after the start date.").foregroundStyle(MacSettingsTheme.red)
                     }
+                    if let message = model.pricingMessage {
+                        Text(message).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
+                    }
                 }.padding(18)
 
                 if model.failed {
                     VStack(alignment: .leading, spacing: 9) {
                         Text("Couldn’t load cost history.")
-                        AIUsageRefreshButton(title: "Retry", isEnabled: !model.loading && !model.billingLoading) {
+                        AIUsageRefreshButton(title: "Retry", isEnabled: !model.loading && !model.pricingLoading) {
                             Task { await refresh() }
                         }
                     }.padding(18)
@@ -204,7 +210,6 @@ struct AIUsageCostsView: View {
                         table
                     }
                 }
-                if interval != nil { billingSection }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -236,41 +241,6 @@ struct AIUsageCostsView: View {
                 AIUsagePriceLabel(events: model.pricedEvents)
             }.font(.system(size: 13, weight: .semibold)).monospacedDigit().padding(18)
         }
-    }
-    private var billingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if model.billingLoading {
-                ProgressView("Checking ElevenLabs usage…").controlSize(.small)
-            } else if let error = model.billingError {
-                Text("ElevenLabs usage").font(.system(size: 13, weight: .semibold))
-                Text(error).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-            } else if let billing = model.billing {
-                divider
-                Text("ElevenLabs · Reported usage").font(.system(size: 13, weight: .semibold))
-                Text("Workspace usage by API key for this period. Includes other apps; separate from feature estimates.")
-                    .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-                if billing.rows.isEmpty {
-                    Text("No reported usage in this period.").font(.system(size: 12))
-                } else {
-                    ForEach(billing.rows) { row in
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(row.keyName).font(.system(size: 12, weight: .medium))
-                                Text(row.model).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-                                    .textSelection(.enabled)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                            Text(row.credits.formatted(.number.precision(.fractionLength(0...1))) + " credits")
-                                .font(.system(size: 13)).monospacedDigit()
-                        }.padding(.vertical, 4)
-                    }
-                    HStack {
-                        Text("ElevenLabs total")
-                        Spacer()
-                        Text(billing.credits.formatted(.number.precision(.fractionLength(0...1))) + " credits")
-                    }.font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                }
-            }
-        }.padding(18)
     }
     private var divider: some View { Rectangle().fill(MacSettingsTheme.rowSeparator).frame(height: 0.5) }
     private func refresh() async { if let interval { await model.load(interval) } }

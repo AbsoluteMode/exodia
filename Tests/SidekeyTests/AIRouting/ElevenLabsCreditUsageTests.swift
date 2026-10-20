@@ -103,25 +103,61 @@ final class ElevenLabsCreditUsageTests: XCTestCase {
         XCTAssertNil(absent); XCTAssertTrue(StubURLProtocol.capturedBodies.isEmpty)
     }
 
-    @MainActor func test_costs_preserves_raw_history_and_keeps_reported_total_separate() async throws {
+    func test_cached_model_rate_survives_restart_and_api_outage_without_saving_workspace_usage() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory); StubURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let data = try table([row(180, minutes: 10)])
+        StubURLProtocol.handler = { _ in (200, [:], data) }
+        let url = directory.appendingPathComponent("rates.json")
+        let event = AIUsageEvent.speech(.init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), seconds: 120)
+        let now = Date(timeIntervalSince1970: 1_792_512_000)
+        let client = ElevenLabsCreditUsage(session: session, cacheURL: url, readKey: { "fixture-secret" })
+        let first = await client.estimates(for: [event], now: now)
+        XCTAssertEqual(first.first?.amount, 36); XCTAssertEqual(first.first?.basis, .estimated)
+        let bytes = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(bytes.contains("fixture-secret")); XCTAssertFalse(bytes.contains("My key"))
+        XCTAssertFalse(bytes.contains("fixture-key-id")); XCTAssertFalse(bytes.contains("credits"))
+        StubURLProtocol.handler = { _ in (403, [:], Data()) }
+        let reopened = ElevenLabsCreditUsage(session: session, cacheURL: url, readKey: { "fixture-secret" })
+        let offline = await reopened.estimates(for: [event], now: now.addingTimeInterval(172800))
+        XCTAssertEqual(offline.first?.amount, 36)
+        let changed = try table([row(240, minutes: 10)])
+        StubURLProtocol.handler = { _ in (200, [:], changed) }
+        let historical = await reopened.estimates(for: first, now: now.addingTimeInterval(172800))
+        XCTAssertEqual(historical.first?.amount, 36, "rate refresh does not reprice a saved estimate")
+        let next = await reopened.estimates(for: [event], refresh: false)
+        XCTAssertEqual(next.first?.amount, 48, "a new take uses the refreshed rate even if history was already priced")
+        let noNetwork = ElevenLabsCreditUsage(session: session, cacheURL: url, readKey: { XCTFail("local recording read an API key"); return nil })
+        let local = await noNetwork.estimates(for: [event], refresh: false)
+        XCTAssertEqual(local.first?.amount, 48)
+        let unknown = AIUsageEvent.speech(.init(feature: .agentVoice, account: .elevenLabs, model: "unpriced-model"), seconds: 60)
+        let result = await noNetwork.estimates(for: [unknown], refresh: false)
+        XCTAssertNil(result.first?.amount)
+    }
+
+    @MainActor func test_costs_saves_local_estimates_without_importing_workspace_total() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = AIUsageStore(url: dir.appendingPathComponent("usage.sqlite"))
         let event = AIUsageEvent.speech(.init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), seconds: 60)
         try await store.insert(event)
         let billing = try ElevenLabsCreditUsage.parse(table([row(1800, minutes: 100)]))
-        let model = AIUsageCostsViewModel(store: store, loadBilling: { _ in billing })
+        let model = AIUsageCostsViewModel(store: store, loadPrices: { events in
+            AIUsageRecorder.Prices(events: events.map { billing.estimating($0) })
+        })
         let interval = DateInterval(start: event.createdAt.addingTimeInterval(-1), duration: 86400)
         await model.load(interval)
-        XCTAssertNil(model.events.first?.amount)
+        XCTAssertEqual(model.events.first?.amount, 18)
         XCTAssertEqual(model.pricedEvents.first?.amount, 18)
-        XCTAssertEqual(model.billing?.credits, 1800)
         XCTAssertTrue(AIUsagePrice(events: model.pricedEvents).text.hasPrefix("≈ "))
         let saved = try await store.events(from: interval.start, to: interval.end)
         XCTAssertEqual(saved.count, 1)
         XCTAssertEqual(saved.first?.id, event.id)
-        XCTAssertNil(saved.first?.amount)
-        XCTAssertEqual(saved.first?.basis, .unavailable)
+        XCTAssertEqual(saved.first?.amount, 18)
+        XCTAssertEqual(saved.first?.basis, .estimated)
         XCTAssertEqual(saved.first?.audioSeconds, 60)
         XCTAssertEqual(try XCTUnwrap(saved.first).createdAt.timeIntervalSince1970, event.createdAt.timeIntervalSince1970, accuracy: 0.00001)
     }

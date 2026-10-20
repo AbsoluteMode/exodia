@@ -55,11 +55,26 @@ enum AIUsageRecorder {
     static func enable() { lock.withLock { enabled = true } }
     static func record(_ event: AIUsageEvent) {
         guard lock.withLock({ enabled }) else { return }
-        Task { await AIUsageStore.shared.record(event) }
+        Task {
+            let priced = await ElevenLabsCreditUsage.shared.estimates(for: [event], refresh: false)
+            await AIUsageStore.shared.record(priced[0])
+        }
     }
-    static func billingUsage(in interval: DateInterval) async throws -> ElevenLabsBillingUsage? {
-        guard lock.withLock({ enabled }) else { return nil }
-        return try await ElevenLabsCreditUsage.shared.usage(in: interval)
+    struct Prices {
+        var events: [AIUsageEvent]
+        var sonioxUnavailable = false
+        var elevenLabsRateUnavailable = false
+    }
+    static func speechPrices(_ events: [AIUsageEvent]) async -> Prices {
+        guard lock.withLock({ enabled }) else { return Prices(events: events) }
+        var result = Prices(events: await ElevenLabsCreditUsage.shared.estimates(for: events))
+        result.elevenLabsRateUnavailable = result.events.contains { $0.context.account == .elevenLabs && $0.amount == nil }
+        do {
+            let reported = try await SonioxUsagePrices.shared.prices(for: result.events)
+            let byID = Dictionary(uniqueKeysWithValues: reported.map { ($0.id, $0) })
+            result.events = result.events.map { byID[$0.id] ?? $0 }
+        } catch { result.sonioxUnavailable = true }
+        return result
     }
 }
 
@@ -125,7 +140,8 @@ actor AIUsageStore {
         guard sqlite3_prepare_v2(db, """
             INSERT INTO usage_events VALUES (?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, basis=excluded.basis
-            WHERE usage_events.amount IS NULL AND excluded.amount IS NOT NULL
+            WHERE ((usage_events.amount IS NULL AND excluded.amount IS NOT NULL)
+                   OR (usage_events.basis='estimated' AND excluded.basis='reported'))
               AND usage_events.feature=excluded.feature AND usage_events.account=excluded.account
               AND usage_events.model=excluded.model AND usage_events.currency=excluded.currency
             """, -1, &statement, nil) == SQLITE_OK else {

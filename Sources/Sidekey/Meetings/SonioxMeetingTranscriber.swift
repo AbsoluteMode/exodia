@@ -18,6 +18,7 @@ actor SonioxMeetingTranscriber {
         var usageModel: String?
         var usageStartedAt: Date?
         var usageSeconds: Double?
+        var usageReference: String?
     }
 
     private let apiKey: String
@@ -81,11 +82,12 @@ actor SonioxMeetingTranscriber {
             try save(checkpoint, to: checkpointURL)
         }
         if checkpoint.transcriptionID == nil {
+            let reference = UUID().uuidString
             var body: [String: Any] = [
                 "model": model, "file_id": checkpoint.fileID!,
                 "enable_language_identification": true,
                 "enable_speaker_diarization": true,
-                "client_reference_id": directory.lastPathComponent,
+                "client_reference_id": reference,
             ]
             if let language, !language.isEmpty { body["language_hints"] = [language] }
             if !terms.isEmpty { body["context"] = ["terms": terms] }
@@ -95,12 +97,13 @@ actor SonioxMeetingTranscriber {
             checkpoint.usageModel = model
             checkpoint.usageStartedAt = Date()
             checkpoint.usageSeconds = audioSeconds
+            checkpoint.usageReference = reference
             try save(checkpoint, to: checkpointURL)
         }
         if let id = checkpoint.transcriptionID, let model = checkpoint.usageModel,
            let date = checkpoint.usageStartedAt, let seconds = checkpoint.usageSeconds {
             usageSink(.speech(.init(feature: .meetings, account: .soniox, model: model),
-                              seconds: seconds, id: "soniox-job:\(id)", at: date))
+                              seconds: seconds, id: checkpoint.usageReference.map { "soniox:\($0)" } ?? "soniox-job:\(id)", at: date))
         }
         let jobPath = "transcriptions/\(checkpoint.transcriptionID!)"
         let deadline = Date().addingTimeInterval(timeout)
