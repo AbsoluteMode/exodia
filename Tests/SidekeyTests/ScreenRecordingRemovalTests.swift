@@ -38,13 +38,16 @@ final class ScreenRecordingRemovalTests: XCTestCase {
         XCTAssertFalse(settings.contains("requestScreenRecording"))
     }
 
-    func testNoScreenRecordingPromptCodeRemainsInAppSources() throws {
+    func testOnlyExplicitScreenshotEntryMayRequestScreenRecording() throws {
         let forbidden = [
             "CGRequestScreenCaptureAccess",
             "ScreenCapture.hasPermission",
             "/usr/sbin/screencapture"
         ]
         let offenders = try appSourceFiles().compactMap { url -> String? in
+            // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+            // The user explicitly added screenshots; launch/orb/meetings still must not prompt.
+            if url.path.hasSuffix("/Screenshots/ScreenshotCoordinator.swift") { return nil }
             guard let source = try? String(contentsOf: url, encoding: .utf8) else { return nil }
             let hits = forbidden.filter { source.contains($0) }
             guard !hits.isEmpty else { return nil }
@@ -53,11 +56,11 @@ final class ScreenRecordingRemovalTests: XCTestCase {
 
         XCTAssertTrue(
             offenders.isEmpty,
-            "Screen Recording prompt/screenshot code should not remain in app sources: \(offenders.joined(separator: "; "))"
+            "Only explicit Screenshot invocation may request Screen Recording: \(offenders.joined(separator: "; "))"
         )
     }
 
-    func testNoScreenCaptureKitTransportRemainsInAppSources() throws {
+    func testOnlyExplicitScreenshotEntryMayUseScreenCaptureKit() throws {
         let forbidden = [
             "import ScreenCaptureKit",
             "SCStream",
@@ -66,6 +69,7 @@ final class ScreenRecordingRemovalTests: XCTestCase {
             "SCStreamConfiguration"
         ]
         let offenders = try appSourceFiles().compactMap { url -> String? in
+            if url.path.hasSuffix("/Screenshots/ScreenshotCoordinator.swift") { return nil }
             guard let source = try? String(contentsOf: url, encoding: .utf8) else { return nil }
             let hits = forbidden.filter { source.contains($0) }
             guard !hits.isEmpty else { return nil }
@@ -76,6 +80,16 @@ final class ScreenRecordingRemovalTests: XCTestCase {
             offenders.isEmpty,
             "Meeting audio must not rely on ScreenCaptureKit/SCStream: \(offenders.joined(separator: "; "))"
         )
+    }
+
+    func testScreenshotEntryUsesStillImagesAndDoesNotStartARecordingStream() throws {
+        let file = try XCTUnwrap(try appSourceFiles().first { $0.path.hasSuffix("/Screenshots/ScreenshotCoordinator.swift") })
+        let source = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(source.contains("SCScreenshotManager.captureImage("))
+        XCTAssertTrue(source.contains("func start()"))
+        XCTAssertFalse(source.contains("SCStream("))
+        XCTAssertFalse(source.contains(".startCapture("))
+        XCTAssertFalse(source.contains("SCStreamOutput"))
     }
 
     private func loadSource(named filename: String) throws -> String {

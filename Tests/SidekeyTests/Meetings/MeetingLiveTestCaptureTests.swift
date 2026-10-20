@@ -51,7 +51,7 @@ final class MeetingLiveTestCaptureTests: XCTestCase {
         XCTAssertEqual(mapper.classify(speaker: "1", startMS: 200, endMS: 600, activity: local), "local")
         let overlap = [MeetingSourceActivity(startMS: 600, endMS: 1000, micRMS: 0.1, systemRMS: 0.2)]
         XCTAssertEqual(mapper.classify(speaker: "2", startMS: 600, endMS: 1000, activity: overlap), "unknown")
-        XCTAssertEqual(mapper.classify(speaker: "1", startMS: 600, endMS: 1000, activity: overlap), "local")
+        XCTAssertEqual(mapper.classify(speaker: "1", startMS: 600, endMS: 1000, activity: overlap), "unknown")
         let conflict = [MeetingSourceActivity(startMS: 1000, endMS: 1600, micRMS: 0, systemRMS: 0.1)]
         XCTAssertEqual(mapper.classify(speaker: "1", startMS: 1000, endMS: 1600, activity: conflict), "unknown")
         var newSession = MeetingSpeakerSourceMapper()

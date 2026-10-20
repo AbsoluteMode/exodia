@@ -113,6 +113,7 @@ final class MicCaptureSource: MicSourcing, @unchecked Sendable {
 
     private var converter: AVAudioConverter?
     private var converterInputSignature: MicInputFormatSignature?
+    private var gainProcessor = MicSampleGainProcessor()
     private var isCaptureRequested = false
     private var isRunning = false
     /// True while `start()` is awaiting off-main engine work. Closes the
@@ -367,6 +368,7 @@ final class MicCaptureSource: MicSourcing, @unchecked Sendable {
         let inputFormat = inputBuffer.format
         let inputSignature = MicInputFormatSignature(format: inputFormat)
         if converter == nil || converterInputSignature != inputSignature {
+            gainProcessor = MicSampleGainProcessor()
             converter = AVAudioConverter(from: inputFormat, to: targetFormat)
             converterInputSignature = converter == nil ? nil : inputSignature
             os_log(
@@ -406,13 +408,14 @@ final class MicCaptureSource: MicSourcing, @unchecked Sendable {
             return []
         }
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
-        return MicSampleGain.applyDefault(to: samples)
+        return gainProcessor.process(samples)
     }
 
     private func resetConverter() {
         processingQueue.sync {
             converter = nil
             converterInputSignature = nil
+            gainProcessor = MicSampleGainProcessor()
         }
     }
 }
