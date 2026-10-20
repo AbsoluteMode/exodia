@@ -93,9 +93,15 @@ feature expenses without a permanent model-level grid or scattered period contro
   MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
   so meaning does not rely on color.
 - From/To controls share the period menu's 30 pt geometry, neutral fill and
-  typography. They open a native calendar, closing on a changed date or Done/
-  Return/Escape. Why: the user rejected mismatched black date fields and their
-  persistent blue text selection. The control retains a keyboard focus outline.
+  typography. They open a 310 pt calendar with separate month menu and editable year combo.
+  Selecting a day or Today applies and closes; month/year browsing never changes
+  the filter, and Done/Return/Escape close without applying the browsed month.
+  Year offers the recent 100 years and accepts any earlier positive year; future
+  days and next-month navigation after today are disabled. Why: the user found
+  the native whole-calendar focus ring distracting and year navigation unclear
+  (2026-10-21). Focus stays visible on individual controls/day buttons, with
+  full-area hover and pressed feedback; disabled days never respond to hover.
+  The neutral closed controls retain their keyboard focus outline.
 - Hover opens model details; click pins, keyboard focus opens, Escape closes.
   Row fill follows actual pointer hover, so an open popover does not leave a
   selected-looking row after the pointer moves away.
@@ -107,6 +113,13 @@ feature expenses without a permanent model-level grid or scattered period contro
   costs. The permanent bottom explanation is removed at the user's request;
   help and model details explain these marks. ElevenLabs credits are never
   combined with dollars or inferred from a plan.
+
+The revised date popover has 310 pt offscreen fixtures in English/Russian and
+both appearances. Calendar arithmetic covers leap days, DST, previous years
+and future bounds; native year-editor Return is tested without selecting a day
+or closing the popover. Physical day-grid keyboard navigation and VoiceOver
+remain acceptance on the shared installed application. White selected-day text
+on the shared #0064D2 fill has 5.59:1 contrast.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
 long model histories, custom dates, empty/error states and synthetic temporary-store

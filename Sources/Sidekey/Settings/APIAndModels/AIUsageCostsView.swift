@@ -287,7 +287,7 @@ struct AIUsageDateControl: View {
             Button { presented.toggle() } label: {
                 MacPopupLabel(title: date.formatted(date: .numeric, time: .omitted), minWidth: 116, maxWidth: 136)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AIUsageCalendarButtonStyle(selected: false, inMonth: true))
             .focused($focused)
             .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? MacSettingsTheme.accent : .clear, lineWidth: 1.5) }
             .accessibilityLabel("\(title) date")
@@ -297,24 +297,6 @@ struct AIUsageDateControl: View {
             }
         }
         .onExitCommand { presented = false }
-    }
-}
-
-@MainActor
-struct AIUsageDateCalendar: View {
-    let title: String
-    @Binding var date: Date
-    let latest: Date
-    let close: () -> Void
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            DatePicker(title, selection: $date, in: ...latest, displayedComponents: .date)
-                .datePickerStyle(.graphical).labelsHidden()
-            Button("Done", action: close).keyboardShortcut(.defaultAction)
-        }
-        .padding(12)
-        .onChange(of: date) { _, _ in close() }
-        .onExitCommand(perform: close)
     }
 }
 
