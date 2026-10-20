@@ -27,7 +27,8 @@ struct IslandCaseAccessPanel: View {
         _shownProjects = State(initialValue: initiallyShownProjects)
     }
 
-    static let title = "Доступ приложений"
+    static let title = "Доступ к ключам"
+    static let explanation = "Подключите Claude Code, Codex или Cursor, чтобы они использовали ключи в командах. Case сам подставляет значения в команды. Новое приложение спрашивает разрешение перед использованием."
     static let footer = "Регистрация и включение Bypass — Touch ID. Approve и удаление — сразу, без Touch ID. Незарегистрированным приложениям — отказ."
     static let sharedTerminalHint = "В Bypass команды человека в общем терминале этого приложения тоже идут без вопросов."
     static let builtInSubtitle = "встроенный агент Whytap"
@@ -44,6 +45,12 @@ struct IslandCaseAccessPanel: View {
             }
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 6) {
+                    Text(Self.explanation)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 5)
                     ForEach(viewModel.registrations) { app in
                         appCard(app)
                     }

@@ -279,6 +279,16 @@ Meeting Notes:
   .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
 
 Case secrets manager:
+  The Case drawer has a 320 pt content viewport (the outer hit band includes
+  its gap/music strip) and retains the notch-derived width. UI authentication
+  and Doppler import hold it across interrupted hover; pointer return, outside
+  click or Escape releases the hold after the system interaction finishes.
+  The key-access action explains client command access. Doppler import uses the
+  existing local CLI login, reads every available project/config into memory,
+  and merges once into the encrypted vault as separate project/config groups.
+  It never overwrites differing local values or writes plaintext exports;
+  cancellation/read/validation/conflict errors leave the vault unchanged.
+  Reimport of unchanged values is idempotent. UI design: docs/DESIGN.md.
   The encrypted schema-2 vault has projects, descriptions and registered AI
   clients with Approve/Bypass per app and project. `Contents/Helpers/whytap`
   exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
@@ -916,6 +926,7 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
    and monitoring sources the user configured (including their credential store),
+   the user's Doppler workspace during an explicitly started local CLI import,
    notification sources accessed by user-configured local scripts, OpenCode's own provider
    traffic, the model catalogs and free key checks of providers the user added
    a key for, OpenRouter's provider list (latency, throughput) for a model

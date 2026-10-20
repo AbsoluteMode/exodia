@@ -280,6 +280,7 @@ struct IslandView: View {
     // NSTextView can hide the cursor during typing and end SwiftUI hover tracking.
     // Hold Vocab open until its actual responder/window focus ends.
     @State private var hoverVocabularyFocused = false
+    @State private var casePanelFocusRestoration = CasePanelFocusRestoration()
     /// Invalidation token for the programmatic-expansion auto-collapse timer:
     /// each change to `programmaticHoverExpansion` AND each ⌥N panel request
     /// bumps it (`armProgrammaticExpansionCollapse`), so a stale deferred
@@ -306,6 +307,8 @@ struct IslandView: View {
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .history:
             base = IslandDropModeControl.historyHoverPanelHeight
+        case .caseVault:
+            base = IslandDropModeControl.detachedPanelGap + IslandCaseVaultStyle.panelHeight
         case .brightness:
             base = IslandDropModeControl.detachedPanelGap + IslandBrightnessStrip.contentHeight
         default:
@@ -409,7 +412,8 @@ struct IslandView: View {
             pillHovering: pillHovering,
             panelHovering: panelHovering,
             wasExpanded: mouseExpanded,
-            glance: hoverPanelGlance
+            glance: hoverPanelGlance,
+            interactionHeld: holdsCasePanel
         )
         if mouseExpanded != next {
             mouseExpanded = next
@@ -454,9 +458,10 @@ struct IslandView: View {
 
     /// A glance opened without the pointer crossing the pill, so reaching its strip from below
     /// counts as entering the drawer rather than as the drawer's fading band.
-    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool, glance: Bool) -> Bool {
+    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool,
+                                 glance: Bool, interactionHeld: Bool = false) -> Bool {
         IslandHoverGate.mouseExpanded(
-            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance
+            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance || interactionHeld
         )
     }
 
@@ -555,12 +560,16 @@ struct IslandView: View {
         islandState == .listening ? appState.audioLevels : []
     }
 
+    private var holdsCasePanel: Bool {
+        hoverPanelMode == .caseVault && caseViewModel.holdsPanelOpen
+    }
+
     private var isHoverExpanded: Bool {
         // Union the mouse-hover signal with programmatic expansion (a Hover-slot
         // ⌥N press — D4), then gate the result on the policy so neither path
         // forces the drawer open during a meeting suggestion / agent flow.
         !displayPreferences.hideIslandHoverWidgets
-            && (isHovering || hoverSearchFocused || hoverVocabularyFocused || appState.programmaticHoverExpansion)
+            && (isHovering || hoverSearchFocused || hoverVocabularyFocused || holdsCasePanel || appState.programmaticHoverExpansion)
             && IslandHoverPolicy.allowsExpansion(
                 meetingSuggestionActive: appState.meetingSuggestionActive,
                 meetingRecordingActive: appState.meetingRecordingActive,
@@ -919,7 +928,7 @@ struct IslandView: View {
 
     /// The island proper (camera body + compact row + hover panel). Extracted
     /// from `body` so the left morph slot can sit beside it in an `HStack`.
-    private var islandStack: some View {
+    private var islandStackContent: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
                 IslandCompactRow(
@@ -1235,7 +1244,15 @@ struct IslandView: View {
                         // The pointer reached the shorter strip: the held zone below it can go.
                         .onContinuousHover { phase in
                             // Local space: the drawer's top stays put while it shrinks.
-                            guard case .active(let location) = phase, hoverPanelHeightHold != nil,
+                            guard case .active(let location) = phase else { return }
+                            if holdsCasePanel && !caseViewModel.isSystemInteractionActive {
+                                // A fresh pointer event, not stale hover flags left by
+                                // Touch ID, hands the visible drawer back to the mouse.
+                                panelHovering = true
+                                mouseExpanded = true
+                                caseViewModel.releasePanelHold()
+                            }
+                            guard hoverPanelHeightHold != nil,
                                   Self.releasesHeldHoverZone(pointerY: location.y, drawerHeight: hoverDrawerHeight)
                             else { return }
                             hoverPanelHeightHold = nil
@@ -1310,6 +1327,12 @@ struct IslandView: View {
             Self.hoverExpansionAnimation(programmatic: appState.programmaticHoverExpansion),
             value: hoverPanelMode
         )
+    }
+
+    // Keep view construction and its observers separate: the composed island
+    // otherwise exceeds the compiler's SwiftUI expression complexity budget.
+    private var islandStackWithPointerState: some View {
+        islandStackContent
         // Re-resolve the gated `mouseExpanded` latch on every raw-hover edge.
         // The gate (ROO-259 bug B) requires the visible pill to OPEN but either
         // region to STAY open, so the drawer's fading hover band can't re-open a
@@ -1319,6 +1342,7 @@ struct IslandView: View {
         .onChange(of: isHovering) { _, newValue in
             onHoverChange(isHoverExpanded)
             if newValue {
+                caseViewModel.releasePanelHold()
                 // Mouse takes over the drawer: drop the programmatic latch in both
                 // directions. On exit it collapses the keyboard-opened drawer (D4);
                 // on enter it hands animation control back to the hover path.
@@ -1328,7 +1352,7 @@ struct IslandView: View {
                     hoverPanelGlance = false
                     requestPanelKeyboardFocus(hoverPanelMode, glance: false)
                 }
-            } else if !hoverSearchFocused && !hoverVocabularyFocused {
+            } else if !hoverSearchFocused && !hoverVocabularyFocused && !holdsCasePanel {
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
                 // The mouse left the island: drop any programmatic (⌥N)
@@ -1337,10 +1361,24 @@ struct IslandView: View {
                 appState.programmaticHoverExpansion = false
             }
         }
+        .onChange(of: caseViewModel.isSystemInteractionActive) { _, active in
+            let restoresFocus = casePanelFocusRestoration.interactionChanged(
+                active: active, isImporting: caseViewModel.isImporting
+            )
+            guard !active else { return }
+            if hoverPanelMode != .caseVault {
+                caseViewModel.releasePanelHold()
+            }
+            if restoresFocus && hoverPanelMode == .caseVault && isHoverExpanded {
+                // Restore keyboard use only after the system sheet has finished.
+                requestPanelKeyboardFocus(.caseVault, glance: false)
+            }
+        }
         .onChange(of: hoverStore.slots.count) { _, _ in
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: hoverPanelMode) { oldValue, newValue in
+            if newValue != .caseVault { caseViewModel.releasePanelHold() }
             if newValue != .vocabularyEditor { hoverVocabularyFocused = false }
             hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
             let height = { (mode: IslandHoverPanelMode) in
@@ -1367,6 +1405,10 @@ struct IslandView: View {
                 historyPreviewAnchor = nil
             }
         }
+    }
+
+    private var islandStack: some View {
+        islandStackWithPointerState
         // A track starting / stopping while the island is hover-expanded
         // inserts / removes the player strip at the top of the drawer, so the
         // hover band must grow / shrink by the strip's height — report it the
@@ -2555,7 +2597,11 @@ private struct IslandDropModeHoverPanel: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if panelMode == .caseVault {
                 IslandCaseVaultPanel(
-                    viewModel: caseViewModel
+                    viewModel: caseViewModel,
+                    onDismiss: {
+                        caseViewModel.releasePanelHold()
+                        panelMode = .controls
+                    }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {

@@ -7,8 +7,8 @@ enum MonitorProcessError: Error, Equatable { case failed, timedOut, outputLimit 
 /// errors can contain private hosts and authentication details).
 struct MonitorProcessRunner {
     func run(executable: URL, arguments: [String], environment: [String: String]? = nil,
-             timeout: Double = 12) async throws -> Data {
-        let operation = MonitorProcessOperation()
+             timeout: Double = 12, maxOutputBytes: Int = 256_000) async throws -> Data {
+        let operation = MonitorProcessOperation(maxOutputBytes: maxOutputBytes)
         return try await withTaskCancellationHandler(operation: {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
@@ -36,7 +36,9 @@ private final class MonitorProcessOperation: @unchecked Sendable {
     private var failure: Error?
     private var cancelled = false
     private var timer: DispatchWorkItem?
-    private let maxOutputBytes = 256_000
+    private let maxOutputBytes: Int
+
+    init(maxOutputBytes: Int) { self.maxOutputBytes = max(0, maxOutputBytes) }
 
     func start(executable: URL, arguments: [String], environment: [String: String]?,
                timeout: Double, continuation: CheckedContinuation<Data, Error>) {
