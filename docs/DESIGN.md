@@ -1,5 +1,43 @@
 # Interface decisions
 
+## Model disclosure — 2026-10-20
+
+The user chose compact function rows that open their settings on click. The
+person comes to see which models each function uses; first they see the function
+and selected model IDs, then they can open that function to change its routes.
+
+- Closed headers are 48 pt high, with a 116 pt name column, a single-line model
+  summary and a reserved 12 pt disclosure arrow. Paired speech/text routes show
+  their model IDs together, separated by a dot, truncating in the middle.
+  Full provider/model labels remain available through native help; accessibility
+  announces both model IDs and expansion/setup state. Why: model names must not
+  move other rows or cause uneven header heights.
+- A click anywhere on the header, Space or Return opens settings directly below
+  it. One function is open at a time; another click or Escape closes it. Escape
+  returns focus to that header. No expansion or entrance animation is added.
+  Why: configuration should stay compact and connected to the chosen function.
+- The summary stays visible while open. The expanded controls use Speech/Text
+  labels for paired routes and Model for a single route. Transport labels such
+  as real-time, recorded and LLM with tools are removed from the main list.
+  Model filtering still follows the unchanged internal feature modes.
+- Selected model IDs are derived directly from the saved routes. Changing or
+  removing a route updates the summary; opening/closing rows writes no route.
+  Unselected routes show Choose a model and retain the existing warm contour.
+- Actual errors, language warnings and recovery actions stay visible even when
+  collapsed. Configuration-error links and Show expand the target function
+  before scrolling to its stable group ID. Why: disclosure must not hide a
+  required repair or break runtime links into Settings.
+- Existing system typography, adaptive colors, card contours and 10 pt gaps
+  remain. Expanded model fields have equal widths, with reserved space for the
+  optional provider menu. Checking… and its progress indicator remain visible
+  below the header even when closed; repeated checks are ignored until the
+  pending check completes. Native menu behavior is retained.
+
+Offscreen fixtures cover 600/900 pt content panes, both appearances and closed
+and open paired rows, using temporary stores, synthetic keys and offline
+providers. They do not establish physical keyboard focus, VoiceOver or native
+menu operation on the installed app; those remain promotion acceptance.
+
 ## Screenshot permission — 2026-10-20
 
 The user requested a screenshot access entry in Settings -> Permissions.

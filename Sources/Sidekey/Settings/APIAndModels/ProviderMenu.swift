@@ -7,9 +7,10 @@ struct ProviderMenu: View {
     @ObservedObject var viewModel: APIAndModelsViewModel
     let feature: AIFeature
     let choice: ProviderChoice
+    var width: CGFloat? = nil
 
     var body: some View {
-        MacMenu(title: choice.label, maxWidth: 160) {
+        MacMenu(title: choice.label, minWidth: width ?? 90, maxWidth: width ?? 160) {
             Button {
                 viewModel.selectProvider(nil, for: feature)
             } label: {
