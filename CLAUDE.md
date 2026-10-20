@@ -295,8 +295,10 @@ Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
   appear as app icons; clicking one opens that client's policy. An always-visible
-  Connect button opens the agent picker, then project scope and Accept/Bypass
-  before registration. Codex highlights blue, Claude orange and Cursor white
+  Connect button offers only installed OpenCode and Cursor with bundled logos,
+  then grouped project scope and Accept/Bypass before registration. There is no
+  arbitrary program picker; existing legacy registrations stay editable. Mode
+  explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
   on hover/keyboard focus. Search matches project and key names/descriptions,
   including empty projects and General. A matching project shows all its keys;
   key-only matches show only those keys. + Key opens a separate creation field,
