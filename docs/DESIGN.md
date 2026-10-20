@@ -114,7 +114,9 @@ mark remains on values; model details show recorded minutes. A separate
 ElevenLabs Reported usage section lists actual workspace charges by API key and
 model for the selected period, with scope visible beside its heading. It includes
 other apps and is never added to feature Total. Refresh retries history/billing;
-permission, key and network errors have useful text. This preserves the chosen
+permission, key and network errors have useful text. Refresh visibly highlights
+its full hit area on hover and press, outlines keyboard focus, and dims while
+disabled without active hover feedback. This preserves the chosen
 table while making its available evidence useful and its scope explicit.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,

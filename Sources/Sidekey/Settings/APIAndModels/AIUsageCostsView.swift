@@ -150,8 +150,9 @@ struct AIUsageCostsView: View {
                                  selection: $model.period, minWidth: 140, maxWidth: 180)
                             .accessibilityLabel("Cost period")
                         Spacer(minLength: 0)
-                        Button("Refresh") { Task { await refresh() } }
-                            .disabled(model.loading || model.billingLoading)
+                        AIUsageRefreshButton(isEnabled: !model.loading && !model.billingLoading) {
+                            Task { await refresh() }
+                        }
                     }
                     if let interval {
                         Text(dateLabel(interval)).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
@@ -259,6 +260,49 @@ struct AIUsageCostsView: View {
         let last = Calendar.current.date(byAdding: .day, value: -1, to: interval.end)!
         let format = Date.FormatStyle(date: .abbreviated, time: .omitted)
         return interval.start.formatted(format) + " – " + last.formatted(format)
+    }
+}
+
+@MainActor
+private struct AIUsageRefreshButton: View {
+    let isEnabled: Bool
+    let action: () -> Void
+    @State private var hovered = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Button("Refresh", action: action)
+            .buttonStyle(AIUsageRefreshStyle(hovered: hovered, focused: focused))
+            .focused($focused)
+            .disabled(!isEnabled)
+            .onHover { hovered = isEnabled && $0 }
+            .onChange(of: isEnabled) { _, enabled in if !enabled { hovered = false } }
+    }
+}
+
+struct AIUsageRefreshStyle: ButtonStyle {
+    let hovered: Bool
+    let focused: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            .foregroundStyle(MacSettingsTheme.text)
+            .background(MacSettingsTheme.controlBg, in: RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(MacSettingsTheme.text.opacity(isEnabled ? (configuration.isPressed ? 0.16 : (hovered ? 0.08 : 0)) : 0))
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(isEnabled && focused ? MacSettingsTheme.accent : .clear, lineWidth: 1.5)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .opacity(isEnabled ? 1 : 0.42)
     }
 }
 
