@@ -134,7 +134,8 @@ struct APIAndModelsView: View {
                 .accessibilityValue(section == item ? "Selected" : "")
                 .onMoveCommand { direction in
                     let items = APIAndModelsSection.allCases
-                    guard let index = items.firstIndex(of: section) else { return }
+                    guard direction == .left || direction == .right,
+                          let index = items.firstIndex(of: item) else { return }
                     if direction == .right { section = items[(index + 1) % items.count] }
                     if direction == .left { section = items[(index + items.count - 1) % items.count] }
                     focusedSection = section
