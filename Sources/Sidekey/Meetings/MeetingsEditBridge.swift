@@ -39,6 +39,7 @@ final class MeetingsEditBridge {
         let meetingId: UUID
         let markdown: String
         let clientVersion: Int
+        let requestID = UUID()
     }
 
     /// Public Combine publisher consumed by `MeetingsCoordinator`. Each
@@ -48,9 +49,11 @@ final class MeetingsEditBridge {
         debouncedSubject.eraseToAnyPublisher()
     }
 
-    private let rawSubject = PassthroughSubject<EditEvent, Never>()
     private let debouncedSubject = PassthroughSubject<EditEvent, Never>()
-    private var cancellable: AnyCancellable?
+    private let debounceMilliseconds: Int
+    private var subjects: [UUID: PassthroughSubject<EditEvent, Never>] = [:]
+    private var cancellables: [UUID: AnyCancellable] = [:]
+    private var pendingRequests: [UUID: UUID] = [:]
 
     /// Currently attached meeting id. Nil until `attachMeeting` is
     /// called; `noteEdit` messages received while nil are dropped so a
@@ -58,18 +61,34 @@ final class MeetingsEditBridge {
     private var currentMeetingId: UUID?
 
     init(debounceMilliseconds: Int = 500) {
-        cancellable = rawSubject
-            .debounce(
-                for: .milliseconds(debounceMilliseconds),
-                scheduler: DispatchQueue.main
-            )
-            .sink { [weak self] event in
-                self?.debouncedSubject.send(event)
-            }
+        self.debounceMilliseconds = debounceMilliseconds
     }
 
-    deinit {
-        cancellable?.cancel()
+    deinit { cancellables.values.forEach { $0.cancel() } }
+
+    func hasPendingSave(for meetingId: UUID) -> Bool { pendingRequests[meetingId] != nil }
+
+    /// Called only after the store write finishes. A stale acknowledgment must
+    /// not unlock a newer draft still waiting for debounce or persistence.
+    func finishSave(_ event: EditEvent, succeeded: Bool) {
+        guard succeeded, pendingRequests[event.meetingId] == event.requestID else { return }
+        pendingRequests[event.meetingId] = nil
+        cancellables.removeValue(forKey: event.meetingId)?.cancel()
+        subjects[event.meetingId] = nil
+    }
+
+    private func enqueue(_ event: EditEvent) {
+        pendingRequests[event.meetingId] = event.requestID
+        if subjects[event.meetingId] == nil {
+            let subject = PassthroughSubject<EditEvent, Never>()
+            subjects[event.meetingId] = subject
+            // Notes can switch during the debounce window. Coalesce edits of
+            // the same note without dropping another note's pending save.
+            cancellables[event.meetingId] = subject
+                .debounce(for: .milliseconds(debounceMilliseconds), scheduler: DispatchQueue.main)
+                .sink { [weak self] event in self?.debouncedSubject.send(event) }
+        }
+        subjects[event.meetingId]?.send(event)
     }
 
     /// Bind the bridge to the meeting currently rendered in the
@@ -142,7 +161,7 @@ final class MeetingsEditBridge {
             log: Self.log, type: .info,
             meetingId.uuidString, markdown.count, clientVersion
         )
-        rawSubject.send(EditEvent(
+        enqueue(EditEvent(
             meetingId: meetingId,
             markdown: markdown,
             clientVersion: clientVersion
@@ -167,7 +186,7 @@ final class MeetingsEditBridge {
             log: Self.log, type: .info,
             meetingId.uuidString, markdown.count, clientVersion
         )
-        rawSubject.send(EditEvent(
+        enqueue(EditEvent(
             meetingId: meetingId,
             markdown: markdown,
             clientVersion: clientVersion
@@ -178,8 +197,10 @@ final class MeetingsEditBridge {
     /// (production) and by tests that want to assert no further
     /// emissions arrive after a teardown.
     func finish() {
-        cancellable?.cancel()
-        cancellable = nil
+        cancellables.values.forEach { $0.cancel() }
+        cancellables.removeAll()
+        subjects.removeAll()
+        pendingRequests.removeAll()
     }
 
     /// JS message-handler name this bridge listens on. The viewer

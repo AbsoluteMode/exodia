@@ -347,6 +347,55 @@ final class TranslationTests: XCTestCase {
         XCTAssertEqual(captured.keys.filter { $0.hasPrefix("sidekey.translation.") }.count, 4)
     }
 
+    func testEmbeddedSessionGuardsActivityAndRejectsStalePanelTeardown() async throws {
+        let suite = "translation-embedded-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let text = TextTranslationModel(makeService: { FixtureTranslator() })
+        let audio = FixtureSubtitleAudio()
+        let subtitles = LiveSubtitleModel(makeAudio: { audio }, open: { _ in FixtureSubtitleUpstream() },
+                                          makeService: { FixtureTranslator() })
+        var active = false
+        let controller = TranslationWindowController(textModel: text, subtitleModel: subtitles, defaults: defaults,
+                                                      openSettings: { _ in }, activityChanged: { active = $0 })
+        defer { controller.window.close() }
+        let old = controller.beginEmbedding()
+        text.input = "unsent fixture"
+        XCTAssertTrue(active)
+        XCTAssertFalse(controller.window.isVisible)
+        let current = controller.beginEmbedding()
+        controller.endEmbedding(old)
+        XCTAssertTrue(controller.isEmbedded)
+        XCTAssertTrue(active)
+        XCTAssertEqual(audio.started, 0, "Selection must not start audio or a provider request")
+        await controller.endEmbedding(current)?.value
+        XCTAssertFalse(controller.isEmbedded)
+        XCTAssertFalse(active)
+        XCTAssertEqual(text.input, "unsent fixture")
+    }
+
+    func testLeavingEmbeddedSubtitlesCancelsTheCapture() async throws {
+        let suite = "translation-embedded-audio-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let audio = FixtureSubtitleAudio()
+        let upstream = FixtureSubtitleUpstream()
+        let subtitles = LiveSubtitleModel(makeAudio: { audio }, open: { _ in upstream }, makeService: { FixtureTranslator() })
+        let controller = TranslationWindowController(textModel: TextTranslationModel(makeService: { FixtureTranslator() }),
+                                                      subtitleModel: subtitles, defaults: defaults,
+                                                      openSettings: { _ in }, activityChanged: { _ in })
+        defer { controller.window.close() }
+        let id = controller.beginEmbedding()
+        let task = subtitles.start()
+        for _ in 0..<100 where subtitles.phase != .listening { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(subtitles.phase, .listening)
+        await controller.endEmbedding(id)?.value
+        await task?.value
+        XCTAssertFalse(subtitles.phase.isActive)
+        XCTAssertGreaterThan(audio.stopped, 0)
+        XCTAssertTrue(upstream.closed)
+    }
+
     func testFloatingWindowStaysVisibleAcrossAppChangesWithoutOpeningIt() throws {
         let suite = "translation-window-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

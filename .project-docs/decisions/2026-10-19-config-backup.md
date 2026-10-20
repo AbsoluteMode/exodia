@@ -32,10 +32,12 @@ sources:
   - type: url
     reference: https://docs.github.com/en/rest/releases/assets
     confirmed_at: 2026-10-19
-related: [../project.md, 2026-10-19-backup-management.md]
+related: [2026-10-20-simple-github-backup.md, ../project.md, 2026-10-19-backup-management.md]
 ---
 
 # Encrypted user artifact backup and recovery
+
+The normal Settings UI is superseded by [the 2026-10-20 simplified GitHub flow](2026-10-20-simple-github-backup.md). Encryption and unfinished maintenance recovery remain applicable.
 
 ## Context
 

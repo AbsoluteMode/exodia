@@ -268,6 +268,83 @@ final class MeetingBYOKProcessorTests: XCTestCase {
         await store.close()
     }
 
+    func testContinuationTranscribesOnlyFreshAudioAndRecoveryAppendsOnce() async throws {
+        let setup = Setup(meetings: FeatureRoute(account: .deepgram, model: "nova-3"))
+        let llm = SpyLLMClient()
+        var adapters = 0
+        let processor = setup.processor(openRouterClient: llm, sonioxSession: session) { _ in
+            adapters += 1
+            return FixedTranscriptAdapter(text: adapters == 1 ? "First call" : "Second call")
+        }
+        let store = try MeetingsStore(rootDirectory: root.appendingPathComponent("store"))
+        let stagingRoot = root.appendingPathComponent("staging")
+        let id = UUID(), recording = UUID()
+        func chunk(_ id: UUID) throws -> URL {
+            let dir = stagingRoot.appendingPathComponent(id.uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("chunk-000.wav")
+            try Self.wav(samples: [1, 2, 3, 4]).write(to: url)
+            return url
+        }
+        let first = try chunk(id)
+        _ = try await processor.process(event: .init(meetingId: id, chunkURLs: [first],
+            totalDurationSeconds: 4, reason: .autoEnd), startedAt: Date(timeIntervalSince1970: 1000),
+            language: nil, meetingsStore: store)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+        let second = try chunk(recording)
+        var manifest = MeetingFinalizeManifest(recorderMeetingId: recording,
+            startedAt: Date(timeIntervalSince1970: 1124), endedAt: Date(timeIntervalSince1970: 1128),
+            durationSeconds: 4, language: nil, chunkFileNames: [second.lastPathComponent], isFinal: true)
+        manifest.continuation = .init(meetingId: id, precedingRecordingId: id,
+            startedAt: Date(timeIntervalSince1970: 1000), audioOffsetSeconds: 4, gapSeconds: 120)
+        let manifests = MeetingFinalizeManifestStore()
+        try manifests.write(manifest, to: second.deletingLastPathComponent())
+        let defaults = UserDefaults(suiteName: "continuation.recovery.\(UUID().uuidString)")!
+        let coordinator = MeetingsCoordinator(config: MeetingsConfig(defaults: defaults),
+            detector: StubbedMeetingDetector(), stagingRoot: { stagingRoot },
+            meetingsStore: store, directProcessor: processor, meetingsEnabled: { true })
+        await coordinator.recoverFinalizeManifestsOnLaunch()
+        let rows = try await store.list()
+        let transcript = try await store.transcript(id: id)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.id, id)
+        XCTAssertEqual(rows.first?.durationSeconds, 8)
+        XCTAssertEqual(transcript?.map(\.text), ["First call", "Reconnected after 2m 0s", "Second call"])
+        XCTAssertEqual(adapters, 2)
+        XCTAssertEqual(llm.completeCalls, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: second.path))
+        // A crash after the content commit but before staging cleanup must
+        // clean the leftover without a third ASR/LLM call or duplicate text.
+        _ = try chunk(recording)
+        try manifests.write(manifest, to: second.deletingLastPathComponent())
+        await coordinator.recoverFinalizeManifestsOnLaunch()
+        XCTAssertEqual(adapters, 2)
+        XCTAssertEqual(llm.completeCalls, 2)
+        let restored = try await store.transcript(id: id)
+        XCTAssertEqual(restored, transcript)
+        await store.close()
+    }
+
+    func testContinuationWaitsForFailedPrecedingPartWithoutCallingProviders() async throws {
+        let setup = Setup(meetings: FeatureRoute(account: .deepgram, model: "nova-3"))
+        let llm = SpyLLMClient()
+        var adapterCalls = 0
+        let processor = setup.processor(openRouterClient: llm, sonioxSession: session) { _ in
+            adapterCalls += 1
+            return FixedTranscriptAdapter(text: "Never sent")
+        }
+        let store = try MeetingsStore(rootDirectory: root.appendingPathComponent("store"))
+        do {
+            _ = try await processor.process(event: Self.emptyEvent(), startedAt: Date(), language: nil,
+                meetingsStore: store, continuation: .init(meetingId: UUID(), precedingRecordingId: UUID(),
+                    startedAt: Date(), audioOffsetSeconds: 42, gapSeconds: 60))
+            XCTFail("Expected dependency deferral")
+        } catch is MeetingContinuationError {}
+        XCTAssertEqual(adapterCalls, 0)
+        XCTAssertEqual(llm.completeCalls, 0)
+        await store.close()
+    }
+
     private static func emptyEvent() -> MeetingRecorder.FinalizedEvent {
         MeetingRecorder.FinalizedEvent(meetingId: UUID(), chunkURLs: [], totalDurationSeconds: 0, reason: .user)
     }

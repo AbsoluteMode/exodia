@@ -39,20 +39,13 @@ struct ToolboxSettingsView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 20) {
-                hoverRow
-                HStack(alignment: .top, spacing: 16) {
-                    catalogPane
-                        .frame(maxWidth: .infinity)
-                    rightPane
-                        .frame(width: 300)
-                }
-                .frame(minHeight: 300)
-            }
-            .padding(24)
+        ToolboxWorkspace {
+            hoverRow
+        } catalog: {
+            catalogPane
+        } tool: {
+            rightPane
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Hover Row
@@ -69,7 +62,22 @@ struct ToolboxSettingsView: View {
                 case .tool(let tool):
                     hoverSlotTile(tool: tool)
                 case .add:
-                    ToolboxAddTile()
+                    Menu {
+                        if HoverTool.allCases.allSatisfy({ hoverStore.slots.contains($0) }) {
+                            Text("All tools added")
+                        }
+                        ForEach(HoverTool.allCases.filter { $0 != .settings && !hoverStore.slots.contains($0) }, id: \.self) { tool in
+                            Button(HoverToolRegistry.info(for: tool).title) {
+                                hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
+                            }
+                        }
+                    } label: {
+                        ToolboxAddTile()
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("Add tool to hover")
                 }
             }
             .padding(16)
@@ -138,7 +146,7 @@ struct ToolboxSettingsView: View {
 
             let catalogTools = HoverTool.allCases.filter { $0 != .settings }
 
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical) {
                 let columns = [GridItem(.adaptive(minimum: 70, maximum: 90), spacing: 10)]
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(catalogTools, id: \.self) { tool in
@@ -185,14 +193,12 @@ struct ToolboxSettingsView: View {
         .onHover { hovering in
             updateHoveredTool(tool, hovering: hovering)
         }
-        .disabled(isInHover)
         .contextMenu {
-            Button("Add to hover") {
-                hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
+            Button(isInHover ? "Remove from hover" : "Add to hover") {
+                if isInHover { hoverStore.removeTool(tool) }
+                else { hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex) }
             }
-            .disabled(isInHover)
         }
-        .opacity(isInHover ? 0.45 : 1)
         .overlay(alignment: .topTrailing) {
             if isInHover {
                 Image(systemName: "checkmark")
@@ -215,7 +221,7 @@ struct ToolboxSettingsView: View {
                     .lineLimit(1)
                 .transition(.opacity)
             } else {
-                Text("Drag tools into the empty slot to add them, or onto another tool to reorder. Settings stays pinned.")
+                Text("Drag tools to Add, or click Add to choose. Drag saved tools to reorder. Settings stays pinned.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.white.opacity(0.4))
             }
@@ -233,14 +239,14 @@ struct ToolboxSettingsView: View {
                 .tracking(0.9)
                 .foregroundStyle(.white.opacity(0.42))
 
-            ZStack {
+            ToolboxToolViewport {
                 if let tool = selectedTool {
                     rightPaneContent(for: tool)
                 } else {
                     rightPanePlaceholder
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .id(selectedTool)
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -282,6 +288,19 @@ struct ToolboxSettingsView: View {
                 Text(info.title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
+                Spacer(minLength: 0)
+                if tool != .settings {
+                    let added = hoverStore.slots.contains(tool)
+                    Button {
+                        if added { hoverStore.removeTool(tool) }
+                        else { hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex) }
+                    } label: {
+                        Image(systemName: added ? "minus.circle" : "plus.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .help(added ? "Remove from hover" : "Add to hover")
+                    .accessibilityLabel(added ? "Remove \(info.title) from hover" : "Add \(info.title) to hover")
+                }
             }
 
             Divider()
@@ -321,11 +340,27 @@ struct ToolboxSettingsView: View {
             case .notifs:
                 NotifyHoverPanel(showsBackButton: false, onBack: {})
             case .clipboard:
-                clipboardPane
+                ToolboxHistoryPane(deps: deps)
             case .brightness:
                 ToolboxDisplayPane()
-            case .hotkeys, .notes, .meetingRecord, .monitor, .translate, .subtitles, .screenshot, .quit, .settings:
-                Color.clear
+            case .monitor:
+                MonitorHoverPanel(onBack: { selectedTool = nil })
+            case .translate, .subtitles:
+                ToolboxTranslationPane(mode: tool == .translate ? .text : .subtitles, deps: deps,
+                                       openFeature: { selection.focus($0) })
+                    .id(tool)
+            case .meetingRecord:
+                ToolboxRecordingPane(toggle: deps.toggleMeetingRecord)
+            case .screenshot:
+                actionPane(tool, title: "Capture area", action: deps.openScreenshot)
+            case .hotkeys:
+                actionPane(tool, title: "Configure hotkeys") { selection.setHighlight(.tab(.hotkeys)) }
+            case .notes:
+                actionPane(tool, title: "Open meeting notes") { selection.setHighlight(.tab(.notes)) }
+            case .quit:
+                actionPane(tool, title: "Quit Whytap", action: deps.quitApplication)
+            case .settings:
+                actionPane(tool, title: "Open API & Models") { selection.select(.apiAndModels) }
             }
         }
         .animation(.easeInOut(duration: 0.16), value: tool)
@@ -410,39 +445,21 @@ struct ToolboxSettingsView: View {
         return IslandLanguageControl.languageCodeBadge(for: language)
     }
 
-    private var clipboardPane: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.on.doc")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(.white.opacity(0.5))
-            Text("Opens the Clipboard strip.")
+    private func actionPane(_ tool: HoverTool, title: String, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(HoverToolRegistry.info(for: tool).description)
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.45))
-                .multilineTextAlignment(.center)
-            Button("Open Clipboard") {
-                deps.openClipboard()
-            }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(0.12)))
-            .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(title, action: action)
+                .buttonStyle(.bordered)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Tap handling
-
+    // Selecting any tool stays in Toolbox; actions require an explicit button.
     private func handleToolTap(_ tool: HoverTool) {
-        let kind = HoverToolRegistry.info(for: tool).kind
-        if case .navigate(let target) = kind {
-            selection.setHighlight(target)
-            selectedTool = nil
-        } else {
-            selectedTool = (selectedTool == tool) ? nil : tool
-        }
+        selectedTool = (selectedTool == tool) ? nil : tool
     }
 
     private func updateHoveredTool(_ tool: HoverTool, hovering: Bool) {
@@ -450,6 +467,40 @@ struct ToolboxSettingsView: View {
             hoveredTool = tool
         } else if hoveredTool == tool {
             hoveredTool = nil
+        }
+    }
+}
+
+/// Only the catalog and selected tool scroll. The header always retains Add.
+struct ToolboxWorkspace<Header: View, Catalog: View, Tool: View>: View {
+    @ViewBuilder var header: Header
+    @ViewBuilder var catalog: Catalog
+    @ViewBuilder var tool: Tool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header.fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 16) {
+                catalog.frame(minWidth: 170, maxWidth: .infinity, maxHeight: .infinity)
+                tool.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Small Settings windows scroll the mini app instead of compressing its controls.
+struct ToolboxToolViewport<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(.vertical) {
+                content
+                    .frame(maxWidth: .infinity, minHeight: max(330, geometry.size.height), alignment: .top)
+            }
         }
     }
 }
@@ -478,20 +529,24 @@ struct ToolboxHoverEditor<Tile: View>: View {
         self.tile = tile
     }
 
-    private var items: [ToolboxHoverEditorItem] {
-        // Match the insertion index used by the store: a new tool occupies the
-        // old Add position, while the permanent Add and Settings move together.
-        hoverStore.slots.filter { $0 != .settings }.map(ToolboxHoverEditorItem.tool)
-            + [.add, .tool(.settings)]
-    }
-
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
-                                count: HoverLayoutStore.columns), spacing: 16) {
-            ForEach(items, id: \.self) { item in
-                editorCell(item)
-                    .transition(.opacity)
+        HStack(alignment: .top, spacing: 16) {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 20) {
+                    ForEach(hoverStore.slots.filter { $0 != .settings }, id: \.self) { tool in
+                        editorCell(.tool(tool))
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
             }
+            .frame(height: 106)
+            Divider().frame(height: 88)
+            editorCell(.add)
+                .padding(.top, 4)
+            editorCell(.tool(.settings))
+                .padding(.top, 4)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: hoverStore.slots)
     }
@@ -572,7 +627,7 @@ struct ToolboxAddTile: View {
         }
         .foregroundStyle(.white.opacity(0.45))
         .contentShape(Rectangle())
-        .help("Drag a tool here to add it to your hover")
+        .help("Click to choose a tool, or drag one here to add it to hover")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Drop a tool here to add it to hover")
     }
@@ -678,8 +733,13 @@ struct ToolboxTileView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
+        .focusable()
+        .onKeyPress(.return) { onTap(); return .handled }
+        .onKeyPress(.space) { onTap(); return .handled }
+        .accessibilityAction { onTap() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
+        .accessibilityValue(isAdded ? "Added to hover" : "")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }

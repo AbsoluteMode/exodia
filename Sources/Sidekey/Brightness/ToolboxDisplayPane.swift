@@ -23,7 +23,7 @@ struct ToolboxDisplayPane: View {
         VStack(alignment: .leading, spacing: 14) {
             MacCard {
                 if controller.supportsExtra {
-                    MacRow(title: "Extra", subtitle: "Turns off when brightness drops. Uses more battery.") {
+                    MacRow(title: "Extra", subtitle: "First decrease only turns Extra off. Uses more battery.") {
                         MacSwitch(isOn: Binding(get: { controller.isExtraOn }, set: { controller.setExtra($0) }))
                             .accessibilityLabel("Extra brightness")
                     }

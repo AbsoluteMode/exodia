@@ -38,7 +38,7 @@ final class SettingsWindowTabTests: XCTestCase {
 
     func test_no_removed_settings_tabs() {
         let titles = SettingsWindowTab.allCases.map { $0.title }
-        for gone in ["Account", "Usage", "Integrations", "Projects"] {
+        for gone in ["Account", "Usage", "Projects"] {
             XCTAssertFalse(titles.contains(gone), "\(gone) tab must be gone")
         }
     }

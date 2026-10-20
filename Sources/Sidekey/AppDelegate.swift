@@ -726,6 +726,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toggleDropMode: actions.toggleDropMode,
             currentDropMode: actions.currentDropMode,
             openClipboard: actions.openClipboard,
+            historyCards: actions.historyCards,
+            copyHistoryCard: actions.copyHistoryCard,
+            toggleMeetingRecord: actions.toggleMeetingRecord,
+            openScreenshot: actions.openScreenshot,
+            quitApplication: actions.quitApplication,
+            translationController: { [weak self] in self?.ensureTranslationController() },
+            endToolSessions: { [weak self] in _ = self?.translationWindowController?.endEmbedding() },
             vocabulary: actions.vocabulary,
             currentLanguage: actions.currentLanguage,
             currentTargetLanguage: actions.currentTargetLanguage,
@@ -1688,13 +1695,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openTranslation(_ mode: TranslationWindowController.Mode) {
         registerIslandHotkeyActivity()
+        ensureTranslationController().show(mode)
+    }
+
+    private func ensureTranslationController() -> TranslationWindowController {
         if translationWindowController == nil {
             translationWindowController = TranslationWindowController(
                 openSettings: { [weak self] feature in self?.openSettingsWindow(tab: .apiAndModels, feature: feature) },
                 activityChanged: { AppState.shared.translationActive = $0 }
             )
         }
-        translationWindowController?.show(mode)
+        return translationWindowController!
     }
 
     private func openScreenshot() {

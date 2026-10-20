@@ -143,6 +143,46 @@ final class MeetingsEditBridgeTests: XCTestCase {
 
     // MARK: - Test 2: invalid payloads are rejected
 
+    func testPendingSaveOnlyClearsAfterTheLatestSubmissionSucceeds() async throws {
+        let bridge = MeetingsEditBridge(debounceMilliseconds: 0)
+        defer { bridge.finish() }
+        let id = UUID()
+        bridge.attachMeeting(id: id)
+        var events: [MeetingsEditBridge.EditEvent] = []
+        let subscription = bridge.editEvents.sink { events.append($0) }
+        defer { subscription.cancel() }
+        bridge.submitEdit(markdown: "First edit", clientVersion: 1)
+        for _ in 0..<100 where events.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        let first = try XCTUnwrap(events.first)
+        bridge.submitEdit(markdown: "Newer edit", clientVersion: 1)
+        bridge.finishSave(first, succeeded: true)
+        XCTAssertTrue(bridge.hasPendingSave(for: id), "An older save cannot acknowledge the newer draft")
+        for _ in 0..<100 where events.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(events.count, 2)
+        let latest = try XCTUnwrap(events.last)
+        bridge.finishSave(latest, succeeded: false)
+        XCTAssertTrue(bridge.hasPendingSave(for: id))
+        bridge.finishSave(latest, succeeded: true)
+        XCTAssertFalse(bridge.hasPendingSave(for: id))
+    }
+
+    func testSwitchingNotesDuringDebounceSavesBothNotes() async throws {
+        let bridge = MeetingsEditBridge(debounceMilliseconds: 20)
+        defer { bridge.finish() }
+        let first = UUID(), second = UUID()
+        var events: [MeetingsEditBridge.EditEvent] = []
+        let subscription = bridge.editEvents.sink { events.append($0) }
+        defer { subscription.cancel() }
+        bridge.attachMeeting(id: first)
+        bridge.submitEdit(markdown: "First note", clientVersion: 1)
+        bridge.attachMeeting(id: second)
+        bridge.submitEdit(markdown: "Second note", clientVersion: 1)
+        for _ in 0..<100 where events.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(Set(events.map(\.meetingId)), [first, second])
+        XCTAssertTrue(bridge.hasPendingSave(for: first))
+        XCTAssertTrue(bridge.hasPendingSave(for: second))
+    }
+
     func test_invalid_payload_schema_rejected() async throws {
         let bridge = MeetingsEditBridge(debounceMilliseconds: 30)
         let meetingId = UUID()
