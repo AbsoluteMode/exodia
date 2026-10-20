@@ -181,6 +181,7 @@ struct SettingsOtherView: View {
                                     set: { displayPicker.selection = $0 }
                                 )
                             )
+                            .accessibilityLabel("Show island on")
                         }
                     }
                 }

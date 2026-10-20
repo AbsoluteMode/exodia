@@ -597,6 +597,14 @@ Done/Return/Escape close it, and Add API key opens the existing sheet. It never
 checks balances or changes routes. WHY:
 .project-docs/decisions/2026-10-19-api-hints.md
 
+Selection menus use MacMenu/MacPopup: a 30 pt neutral control with 8 pt corners
+and one down chevron, retaining native menu tracking. Model/provider menus,
+Backup, display, account/key sheets and translation share this label; the
+screenshot toolbar uses its AppKit counterpart MacPopupButton. Notifications
+centers the menu and enable switch, moving Notification type into the adjacent
+question-mark tooltip/popover. Bindings and saved selections are unchanged.
+WHY: .project-docs/decisions/2026-10-20-compact-selection-menus.md
+
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
 Settings -> API & Models (the agent's model is chosen there too; Settings ->

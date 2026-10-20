@@ -51,13 +51,11 @@ struct TranslationView: View {
                 Label("Detect language", systemImage: "globe").foregroundStyle(.secondary)
                 Image(systemName: "arrow.right").foregroundStyle(.tertiary)
             }
-            Picker("Translate to", selection: Binding(
+            MacPopup(items: [.init(value: "auto", label: "Auto · RU ↔ EN")] + languageItems, selection: Binding(
                 get: { if case .language(let code) = text.target { return code }; return "auto" },
                 set: { text.target = $0 == "auto" ? .automatic : .language($0) }
-            )) {
-                Text("Auto · RU ↔ EN").tag("auto")
-                languageOptions
-            }.labelsHidden().frame(maxWidth: 210)
+            ), maxWidth: 210, appearance: .adaptive)
+                .accessibilityLabel("Translate to")
             Spacer(minLength: 0)
             if subtitles.phase.isActive {
                 Button { presentation.mode = .subtitles } label: { Image(systemName: "waveform.circle.fill") }
@@ -88,9 +86,15 @@ struct TranslationView: View {
                 .font(.system(size: 11))
             } else {
                 HStack(spacing: 8) {
-                    sourcePicker
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Speech").font(.system(size: 11)).foregroundStyle(.secondary)
+                        sourcePicker
+                    }
                     Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                    targetPicker
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Translate to").font(.system(size: 11)).foregroundStyle(.secondary)
+                        targetPicker
+                    }
                 }.font(.system(size: 12))
                 HStack {
                     audioStatus
@@ -103,14 +107,15 @@ struct TranslationView: View {
     }
 
     private var sourcePicker: some View {
-        Picker("Speech", selection: $subtitles.sourceCode) {
-            Text("Auto-detect").tag("auto")
-            languageOptions
-        }.disabled(subtitles.phase.isActive)
+        MacPopup(items: [.init(value: "auto", label: "Auto-detect")] + languageItems,
+                 selection: $subtitles.sourceCode, maxWidth: 170, appearance: .adaptive)
+            .accessibilityLabel("Speech")
+            .disabled(subtitles.phase.isActive)
     }
 
     private var targetPicker: some View {
-        Picker("Translate to", selection: $subtitles.targetCode) { languageOptions }
+        MacPopup(items: languageItems, selection: $subtitles.targetCode, maxWidth: 170, appearance: .adaptive)
+            .accessibilityLabel("Translate to")
             .disabled(subtitles.phase.isActive)
     }
 
@@ -119,9 +124,9 @@ struct TranslationView: View {
             .foregroundStyle(subtitles.phase.isActive ? Color.blue : Color.secondary)
     }
 
-    @ViewBuilder private var languageOptions: some View {
-        ForEach(AppLanguage.all.sorted { $0.englishName < $1.englishName }, id: \.code) { language in
-            Text(language.displayName).tag(language.code)
+    private var languageItems: [MacPopup<String>.Item] {
+        AppLanguage.all.sorted { $0.englishName < $1.englishName }.map {
+            .init(value: $0.code, label: $0.displayName)
         }
     }
 

@@ -13,7 +13,7 @@ struct ModelMenu: View {
 
     var body: some View {
         let sections = viewModel.sections(for: feature)
-        Menu {
+        MacMenu(title: label, maxWidth: 300) {
             if sections.isEmpty {
                 if let hint = viewModel.missingProviderHint(for: feature) {
                     Button(hint, action: onAddKey)
@@ -26,25 +26,8 @@ struct ModelMenu: View {
                 Button("Refresh models") { Task { await viewModel.refreshModels() } }
                 Button("Other model ID…", action: onOtherModel)
             }
-        } label: {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(MacSettingsTheme.text)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(MacSettingsTheme.text2)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: 300, alignment: .trailing)
-            .background(MacSettingsTheme.controlBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .accessibilityLabel("Model for \(feature.title)")
     }
 
     @ViewBuilder
@@ -106,10 +89,12 @@ struct OtherModelSheet: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(MacSettingsTheme.text)
             if accounts.count > 1 {
-                Picker("Account", selection: $selected) {
-                    ForEach(accounts, id: \.account) { entry in
-                        Text(entry.title).tag(Optional(entry.account))
-                    }
+                HStack {
+                    Text("Account").font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
+                    Spacer()
+                    MacPopup(items: accounts.map { .init(value: Optional($0.account), label: $0.title) },
+                             selection: $selected, maxWidth: 260)
+                        .accessibilityLabel("Account")
                 }
             }
             MacField(placeholder: "Model ID", text: $modelID, monospaced: true)

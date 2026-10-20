@@ -46,12 +46,8 @@ final class MacUIContractTests: XCTestCase {
         XCTAssertTrue(s.contains(".contentShape(Rectangle())"))
     }
 
-    func test_macPopup_has_accent_chevron() throws {
-        let s = try source("Sources/Sidekey/Settings/MacUI/MacPopup.swift")
-        XCTAssertTrue(s.contains("struct MacPopup"))
-        XCTAssertTrue(s.contains("MacSettingsTheme.accent"))
-        XCTAssertTrue(s.contains("chevron"))
-    }
+    // CompactMenuTests checks popup sizing, target/action and notification alignment
+    // with actual hosted controls. The retired accent-chevron source contract is gone.
 
     func test_macField_uses_field_bg_and_supports_secure() throws {
         let s = try source("Sources/Sidekey/Settings/MacUI/MacField.swift")
