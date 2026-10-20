@@ -423,7 +423,7 @@ final class CaseViewModel: ObservableObject {
     func availableClientsToRegister() async -> [CaseKnownClient] {
         let detected = await clients.detectInstalledClients()
         let registered = Set(registrations.map(\.identity))
-        return detected.filter { !registered.contains($0.identity) }
+        return CaseKnownClient.connectableClients.filter { detected.contains($0) && !registered.contains($0.identity) }
     }
 
     /// Registers an app in Approve mode after Touch ID, then adds the Case

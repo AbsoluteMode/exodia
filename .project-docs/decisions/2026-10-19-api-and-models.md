@@ -26,10 +26,14 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Settings/APIAndModels/APIAndModelsView.swift
     confirmed_at: 2026-10-19
-related: [2026-10-18-remove-local-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-19-deepgram-language-policy.md, 2026-10-19-api-hints.md]
+related: [2026-10-18-remove-local-models.md, 2026-10-19-strict-drop-modes.md, 2026-10-19-deepgram-language-policy.md, 2026-10-19-api-hints.md, 2026-10-21-provider-key-tiles.md]
 ---
 
 # API & Models
+
+The chip layout and Anthropic-agent-only restriction below are superseded by
+[provider key tiles and direct LLM access](2026-10-21-provider-key-tiles.md).
+This record retains the original 2026-10-19 decision and validation history.
 
 ## Context
 

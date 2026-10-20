@@ -114,6 +114,17 @@ final class AIUsageTests: XCTestCase {
         XCTAssertTrue(recorded.allSatisfy { $0.basis == .estimated })
     }
 
+    func test_openai_agent_expenses_keep_the_direct_provider_identity() {
+        var events: [AIUsageEvent] = []
+        let meter = AIUsageAgentMeter(account: OpenCodeModelProvider.openAI.account, model: "selected-openai-model",
+                                      record: { events.append($0) })
+        meter.consume(#"{"type":"step_finish","sessionID":"fixture","part":{"id":"one","cost":0.01}}"#)
+        meter.finish()
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.context.account, .openAI)
+        XCTAssertEqual(events.first?.context.model, "selected-openai-model")
+    }
+
     func test_agent_interrupted_later_step_and_child_task_preserve_incomplete_total() {
         for tail in [#"{"type":"step_start"}"#, #"{"type":"tool_use","part":{"tool":"task"}}"#] {
             var events: [AIUsageEvent] = []

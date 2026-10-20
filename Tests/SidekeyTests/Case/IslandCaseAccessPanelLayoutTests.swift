@@ -56,10 +56,12 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
                                          defaultMode: .bypass, projectModes: [:], createdAt: date)
         XCTAssertTrue(IslandCaseAccessPanel.showsSharedTerminalHint(app: custom, known: nil))
 
-        for width in [CGFloat(310), CGFloat(390)] {
-            for (name, appID) in [("selected", claudeID as UUID?), ("all", payload.apps[1].id as UUID?), ("connect", nil)] {
-                try renderPanel(IslandCaseAccessPanel(viewModel: viewModel, onBack: {}, appID: appID),
-                                width: width, name: "case-access-\(name)-\(Int(width))")
+        try withBrandAssets {
+            for width in [CGFloat(310), CGFloat(390)] {
+                for (name, appID) in [("selected", claudeID as UUID?), ("all", payload.apps[1].id as UUID?), ("bypass", cursorID as UUID?), ("connect", nil)] {
+                    try renderPanel(IslandCaseAccessPanel(viewModel: viewModel, onBack: {}, appID: appID),
+                                    width: width, name: "case-access-\(name)-\(Int(width))")
+                }
             }
         }
     }
@@ -90,16 +92,61 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
     }
 
     func test_picker_ready_and_empty_states_fit_the_native_viewport() throws {
-        for width in [CGFloat(310), CGFloat(390)] {
-            for empty in [false, true] {
-                try renderPanel(IslandCaseClientPicker(clients: empty ? [] : CaseKnownClient.allCases,
-                                                      isLoading: false, onChoose: { _ in }, onChooseProgram: {})
-                    .padding(10), width: width, name: "case-picker-\(empty ? "empty" : "ready")-\(Int(width))")
+        try withBrandAssets {
+            for width in [CGFloat(310), CGFloat(390)] {
+                for (name, clients, loading, connected) in [
+                    ("both", CaseKnownClient.connectableClients, false, false),
+                    ("cursor", [.cursor], false, false),
+                    ("opencode", [.builtInOpenCode], false, false),
+                    ("empty", [], false, false),
+                    ("connected", [], false, true),
+                    ("loading", [], true, false),
+                ] {
+                    try renderPanel(IslandCaseClientPicker(clients: clients, isLoading: loading,
+                                                          hasConnectedClients: connected, onChoose: { _ in })
+                        .padding(10), width: width, name: "case-picker-\(name)-\(Int(width))")
+                }
             }
         }
     }
 
     func test_client_highlights_render_in_provider_colors() throws {
+        try withBrandAssets {
+            let date = Date(timeIntervalSince1970: 1_700_000_000)
+            let clients: [CaseKnownClient] = [.builtInOpenCode, .cursor, .codex, .claudeCode]
+            let row = HStack(spacing: 30) {
+                ForEach(clients, id: \.self) { client in
+                    let app = CaseAppRegistration(id: UUID(), displayName: client.displayName, identity: client.identity,
+                                                  defaultMode: .approve, projectModes: [:], createdAt: date)
+                    VStack(spacing: 8) {
+                        CaseConnectedAppIcon(app: app, isHighlighted: true, isFocused: true)
+                        Text(client.displayName).font(.system(size: 10)).foregroundStyle(.white)
+                    }
+                }
+            }
+            .padding(20)
+            try renderPanel(row, width: 310, name: "case-provider-highlights")
+        }
+    }
+
+    func test_interaction_feedback_states_render_without_geometry_changes() throws {
+        let states = [("normal", false, false, false, true), ("hover", true, false, false, true),
+                      ("pressed", true, true, false, true), ("focus", false, false, true, true),
+                      ("disabled", true, true, true, false)]
+        let panel = VStack(spacing: 8) {
+            ForEach(Array(states.enumerated()), id: \.offset) { _, state in
+                Text(state.0).font(.system(size: 12)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 35)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(.white.opacity(0.08)))
+                    .overlay(CaseAccessInteractionOverlay(hovering: state.1, pressed: state.2,
+                                                          focused: state.3, enabled: state.4))
+                    .opacity(state.4 ? 1 : 0.4)
+            }
+        }.padding(12)
+        try renderPanel(panel, width: 310, name: "case-interaction-states-310")
+    }
+
+    private func withBrandAssets(_ body: () throws -> Void) throws {
         var root = URL(fileURLWithPath: #filePath)
         while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("Package.swift").path) {
             root.deleteLastPathComponent()
@@ -109,33 +156,20 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
             ProviderBrandIconAsset.setResourceDirectoryForTesting(nil)
             ProviderBrandIconAsset.clearCacheForTesting()
         }
-        let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let clients: [CaseKnownClient] = [.codex, .claudeCode, .cursor]
-        let row = HStack(spacing: 30) {
-            ForEach(clients, id: \.self) { client in
-                let app = CaseAppRegistration(id: UUID(), displayName: client.displayName, identity: client.identity,
-                                              defaultMode: .approve, projectModes: [:], createdAt: date)
-                VStack(spacing: 8) {
-                    CaseConnectedAppIcon(app: app, isHighlighted: true, isFocused: true)
-                    Text(client.displayName).font(.system(size: 10)).foregroundStyle(.white)
-                }
+        for asset in ["opencode", "cursor"] {
+            let image = try XCTUnwrap(ProviderBrandIconAsset.image(named: asset, pointSize: 22))
+            XCTAssertEqual(image.size, NSSize(width: 22, height: 22))
+            let cgImage = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            let bitmap = NSBitmapImageRep(cgImage: cgImage)
+            let inkPixels = (0..<bitmap.pixelsHigh).reduce(0) { count, y in
+                count + (0..<bitmap.pixelsWide).filter {
+                    (bitmap.colorAt(x: $0, y: y)?.alphaComponent ?? 0) > 0.1
+                }.count
             }
+            XCTAssertGreaterThan(inkPixels, bitmap.pixelsWide * bitmap.pixelsHigh / 10,
+                                 "\(asset) must contain visible artwork, not an empty PDF mask")
         }
-        .padding(20)
-        try renderPanel(row, width: 310, name: "case-provider-highlights")
-    }
-
-    func test_program_choice_uses_resolved_path_and_known_identity() throws {
-        let cursor = IslandCaseAccessPanel.programChoice(for: URL(fileURLWithPath: "/Applications/Cursor.app"))
-        XCTAssertEqual(cursor?.identity, CaseKnownClient.cursor.identity)
-        XCTAssertEqual(cursor?.name, "Cursor")
-        let sh = IslandCaseAccessPanel.programChoice(for: URL(fileURLWithPath: "/bin/sh"))
-        XCTAssertEqual(sh?.identity, .executablePath("/bin/sh"))
-        XCTAssertEqual(sh?.name, "sh")
-        let notExecutable = FileManager.default.temporaryDirectory.appendingPathComponent("case-\(UUID().uuidString).txt")
-        try Data("x".utf8).write(to: notExecutable)
-        defer { try? FileManager.default.removeItem(at: notExecutable) }
-        XCTAssertNil(IslandCaseAccessPanel.programChoice(for: notExecutable))
+        try body()
     }
 
     func test_error_messages_are_user_facing() {

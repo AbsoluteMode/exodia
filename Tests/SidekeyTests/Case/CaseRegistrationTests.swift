@@ -355,7 +355,42 @@ final class CaseRegistrationTests: XCTestCase {
         let other = await setup.disconnect(.executablePath("/Applications/Other.app"))
         XCTAssertEqual(other.problems, [])
         let detected = await setup.detectInstalledClients()
-        XCTAssertEqual(detected, [.claudeCode, .builtInOpenCode])
+        XCTAssertEqual(detected, [.builtInOpenCode])
+    }
+
+    func test_connect_catalog_only_offers_installed_opencode_and_cursor() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("case-detection-\(UUID().uuidString)")
+        // Discovery must not install a CLI, write a config or request authentication.
+        for openCodeInstalled in [false, true] {
+            for cursorInstalled in [false, true] {
+                let setup = CaseClientSetup(helperURL: nil, binDir: home, flavorName: "prod",
+                                            connectors: [.cursor: CursorCaseConnector(home: home, appInstalled: { cursorInstalled })],
+                                            builtInAgentAvailable: { openCodeInstalled })
+                let found = await setup.detectInstalledClients()
+                var expected: [CaseKnownClient] = []
+                if openCodeInstalled { expected.append(.builtInOpenCode) }
+                if cursorInstalled { expected.append(.cursor) }
+                XCTAssertEqual(found, expected)
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.path))
+    }
+
+    func test_picker_filters_legacy_and_registered_clients_without_changing_saved_rights() async throws {
+        let fx = try await Fixture(payload: payload())
+        fx.clients.detected = [.claudeCode, .cursor, .codex, .builtInOpenCode]
+        let available = await fx.vm.availableClientsToRegister()
+        XCTAssertEqual(available, [.builtInOpenCode, .cursor])
+        _ = try await fx.vm.registerApp(claude, name: "Claude Code")
+        _ = try await fx.vm.registerApp(.builtInOpenCode, name: "OpenCode", projects: [serversID])
+        fx.auth.reasons.removeAll()
+        fx.clients.connected.removeAll()
+        let savedApps = fx.vm.registrations
+        let remaining = await fx.vm.availableClientsToRegister()
+        XCTAssertEqual(remaining, [.cursor])
+        XCTAssertEqual(fx.vm.registrations, savedApps)
+        XCTAssertTrue(fx.auth.reasons.isEmpty)
+        XCTAssertTrue(fx.clients.connected.isEmpty)
     }
 
     // MARK: Helpers

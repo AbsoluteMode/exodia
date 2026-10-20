@@ -59,6 +59,16 @@ final class APIAndModelsViewModelTests: XCTestCase {
         }
     }
 
+    private actor SequencedFetcher: ModelCatalogFetching {
+        var results: [Result<[CatalogModel], CatalogFetchError>]
+        private(set) var calls = 0
+        init(_ results: [Result<[CatalogModel], CatalogFetchError>]) { self.results = results }
+        func fetch(account: ProviderAccount, apiKey: String?, server: ServerEndpoint?) async throws -> [CatalogModel] {
+            calls += 1
+            return try (results.count > 1 ? results.removeFirst() : results[0]).get()
+        }
+    }
+
     private struct UnreadableTokenStore: TokenStore {
         struct Failure: Error {}
         func save(_ token: String) throws {}
@@ -122,7 +132,8 @@ final class APIAndModelsViewModelTests: XCTestCase {
     private func makeEnv(
         snapshots: [ProviderAccount: CatalogSnapshot] = [:],
         keyed: [ProviderAccount] = [],
-        unreadable: Set<String> = []
+        unreadable: Set<String> = [],
+        fetcher: any ModelCatalogFetching = OfflineFetcher()
     ) throws -> Env {
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
@@ -140,7 +151,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
             keys: ProviderKeyStore(makeStore: { name in
                 unreadable.contains(name) ? UnreadableTokenStore() as any TokenStore : InMemoryTokenStore(account: name, box: box)
             }),
-            catalogs: ModelCatalogStore(fileURL: file, fetcher: OfflineFetcher()),
+            catalogs: ModelCatalogStore(fileURL: file, fetcher: fetcher),
             checks: ModelCheckStore(defaults: defaults),
             keyStatuses: KeyStatusStore(defaults: defaults)
         )
@@ -157,6 +168,96 @@ final class APIAndModelsViewModelTests: XCTestCase {
     }
 
     // MARK: - Chips
+
+    func test_opening_picker_uses_fresh_cache_without_requests_or_model_probes() async throws {
+        let snapshot = fresh([CatalogModel(id: "chat-model", uses: [.chat])])
+        let fetcher = SequencedFetcher([.failure(.offline)])
+        let env = try makeEnv(snapshots: [.openAI: snapshot], keyed: [.openAI], fetcher: fetcher)
+        let vm = env.makeViewModel()
+        await vm.refreshModels()
+        await vm.refreshModels()
+        let calls = await fetcher.calls
+        XCTAssertEqual(calls, 0)
+        XCTAssertEqual(env.catalogs.snapshot(for: .openAI), snapshot)
+        XCTAssertTrue(env.probe.probedModels.isEmpty)
+    }
+
+    func test_settings_catalog_load_notifies_an_already_open_picker_with_unchanged_routes() async throws {
+        let fetcher = SequencedFetcher([.success([CatalogModel(id: "new-model", uses: [.chat])])])
+        let env = try makeEnv(snapshots: [.openAI: CatalogSnapshot(models: [], fetchedAt: .distantPast)],
+                              keyed: [.openAI], fetcher: fetcher)
+        env.keyStatuses.set(.valid, for: .openAI, at: env.now)
+        let vm = env.makeViewModel()
+        let rows = vm.rows
+        var notifications = 0
+        let subscription = vm.objectWillChange.sink { notifications += 1 }
+        await vm.onAppear()
+        XCTAssertGreaterThan(notifications, 0, "Settings owns an in-flight catalog request if the picker opens early")
+        XCTAssertEqual(vm.rows, rows)
+        XCTAssertTrue(vm.sections(for: .translation).flatMap(\.options).contains { $0.model == "new-model" })
+        XCTAssertTrue(env.checker.calls.isEmpty)
+        XCTAssertTrue(env.probe.probedModels.isEmpty)
+        withExtendedLifetime(subscription) {}
+    }
+
+    func test_opening_picker_retries_failed_catalog_and_exposes_recovered_models() async throws {
+        let old = CatalogModel(id: "old-model", uses: [.chat])
+        let recovered = CatalogModel(id: "new-model", uses: [.chat])
+        let fetcher = SequencedFetcher([.failure(.offline), .success([recovered])])
+        let env = try makeEnv(snapshots: [.openAI: CatalogSnapshot(models: [old], fetchedAt: Date(), lastRefreshFailed: true)],
+                              keyed: [.openAI], fetcher: fetcher)
+        let vm = env.makeViewModel()
+        let routes = env.routing.state
+        await vm.refreshModels()
+        XCTAssertEqual(env.catalogs.snapshot(for: .openAI)?.models, [old])
+        await vm.refreshModels()
+        XCTAssertEqual(env.catalogs.snapshot(for: .openAI)?.models, [recovered])
+        XCTAssertTrue(vm.sections(for: .translation).flatMap(\.options).contains { $0.model == "new-model" })
+        XCTAssertEqual(env.routing.state, routes)
+        XCTAssertTrue(env.probe.probedModels.isEmpty)
+    }
+
+    func test_direct_provider_keys_are_checked_and_failed_replacements_preserve_saved_keys() async throws {
+        for (kind, account) in [(AIProviderKind.openAI, ProviderAccount.openAI), (.anthropic, .anthropic)] {
+            let env = try makeEnv()
+            let vm = env.makeViewModel()
+            let result = await vm.addKey("working-key", kind: kind)
+            XCTAssertNil(result)
+            XCTAssertEqual(env.lookup(account), .key("working-key"))
+            XCTAssertEqual(env.checker.calls.last?.account, account)
+            let routes = env.routing.state
+            for status in [KeyStatus.rejected(.invalidKey), .rejected(.outOfCredit), .unreachable] {
+                env.checker.set(status, for: account)
+                let failure = await vm.replaceKey("unverified-candidate", for: account)
+                XCTAssertNotNil(failure)
+                XCTAssertEqual(env.lookup(account), .key("working-key"))
+                XCTAssertEqual(env.routing.state, routes)
+            }
+        }
+    }
+
+    func test_openai_key_without_catalog_access_is_not_saved_as_a_working_connection() async throws {
+        let env = try makeEnv()
+        env.checker.set(.limited, for: .openAI)
+        let failure = await env.makeViewModel().addKey("restricted", kind: .openAI)
+        XCTAssertNotNil(failure)
+        XCTAssertEqual(env.lookup(.openAI), .absent)
+    }
+
+    func test_catalogless_server_can_pick_a_named_model_through_the_same_probe() async throws {
+        let env = try makeEnv()
+        let server = env.routing.addServer(name: "My server", baseURL: "https://server.example/v1")
+        let vm = env.makeViewModel()
+        XCTAssertTrue(vm.sections(for: .translation).first { $0.account == .server(server.id) }?.options.isEmpty == true)
+        await vm.select(model: "my-local-model", account: .server(server.id), for: .translation)
+        XCTAssertEqual(env.probe.probedModels, ["my-local-model"])
+        XCTAssertEqual(env.routing.route(for: .translation), FeatureRoute(account: .server(server.id), model: "my-local-model"))
+        let reopened = try XCTUnwrap(vm.sections(for: .translation).first { $0.account == .server(server.id) })
+        XCTAssertFalse(reopened.options.isEmpty)
+        XCTAssertTrue(reopened.acceptsModelName, "The saved route must not hide the server model-name field")
+        await vm.select(model: "replacement-model", account: .server(server.id), for: .translation)
+        XCTAssertEqual(env.routing.route(for: .translation)?.model, "replacement-model")
+    }
 
     func test_catalog_refresh_notifies_open_picker_without_changing_routes_or_rows() async throws {
         let env = try makeEnv(keyed: [.openRouter])
@@ -191,7 +292,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.chips[2].statusText, "Out of credit or key limit reached")
         XCTAssertEqual(vm.chips[3].title, "Lab")
         XCTAssertEqual(vm.chips[3].statusText, "Not checked yet")
-        XCTAssertEqual(vm.addableKinds, [.deepgram, .anthropic, .openAICompatible])
+        XCTAssertEqual(vm.addableKinds, [.deepgram, .openAI, .anthropic, .openAICompatible])
     }
 
     // MARK: - Adding keys

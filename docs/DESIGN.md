@@ -41,6 +41,47 @@ checks do not establish live capture permission, real clipboard delivery, physic
 keyboard focus or perceived smoothness in the installed application. Those remain
 acceptance after the designated builder promotes the reviewed source.
 
+## Provider key tiles — 2026-10-21
+
+Tiles, form actions and picker rows show full-target hover and pressed feedback,
+with distinct keyboard focus. Disabled controls are dimmed and ignore hover.
+Feedback is local to API & Models; shared MacButton behavior stays unchanged.
+Dark pressed overlays are capped at 8% to preserve small blue/white text contrast.
+
+The person comes to connect a provider. First they see every available provider,
+including OpenAI and Anthropic, then open its square to enter and check a key.
+The chosen direction is the user's tile-to-inline-form request.
+
+- Use square provider buttons in a responsive 2/3/4-column grid, with a 12 pt
+  gap and 12 pt corners. Each tile is an independent provider connection, so
+  its boundary has a purpose. Show the brand, provider name, speech/language
+  purpose and key status even before a key exists. No decorative statistics.
+- Clicking a tile expands a full-width form immediately below that tile's row.
+  One form is open at a time; a thin accent outline marks it. Native keyboard
+  focus has an outline too. Cancel, Escape or repeating the tile closes it;
+  closing returns focus to that tile. Input receives focus on expansion.
+- Keep the shared system typography and adaptive Settings colors: 13 pt title,
+  11.5 pt explanation and 11 pt tile status. Hover never changes geometry.
+  Expansion is immediate, including Reduce Motion. At narrow widths the grid
+  reduces columns and the form retains the full row width.
+- Check & save validates before persisting. Checking disables competing actions
+  and shows progress; a failed/unreachable check keeps the form and old key.
+  A successful check clears the typed value and shows the recorded provider
+  result. Existing keys are never read back into the field. Removal keeps the
+  existing confirmation and lists affected features. Custom endpoints retain
+  their name, URL and optional-key fields.
+- OpenAI and Anthropic are ordinary LLM providers for all text modes. Adding a
+  key never assigns routes silently; model selection retains its own synthetic
+  check. Why: the user rejected limiting API setup by individual features.
+
+Native offscreen fixtures cover collapsed tiles and OpenAI, saved OpenRouter and
+custom-server forms at 600/900 pt in both appearances. Shared token contrast on
+tile surfaces is 17.01:1/14.58:1 for primary text (light/dark), 6.62:1/7.98:1
+for secondary text and at least 5.59:1 for key-entry actions; selected-state
+status text retains at least 5.98:1. Physical keyboard focus,
+VoiceOver, actual key entry and live provider responses remain installed-app
+acceptance; all automated transport checks use synthetic keys and stub servers.
+
 ## Searchable model selection — 2026-10-20
 
 The user comes to choose a model without scrolling a long catalog. First they
@@ -48,8 +89,8 @@ see a focused search field, then matching model IDs under their provider.
 The closed control retains the shared 30 pt popup label and existing widths.
 
 - Open a 440 pt native popover with a fixed search band, 300 pt scrolling list
-  and fixed result-count/Refresh models/Other model ID footer. Why: typing and
-  recovery actions must remain reachable in a large catalog.
+  and a fixed result count. Why: searching and browsing need no maintenance
+  commands; the user removed Refresh models and Other model ID on 2026-10-21.
 - Match every query term in any order, ignoring case, diacritics, width and
   separators. Split letters/digits: `qwen 27` and `qwen27` find
   `qwen/qwen3.8-27b`. Prefer contiguous matches within each provider, preserving
@@ -61,8 +102,10 @@ The closed control retains the shared 30 pt popup label and existing widths.
   moves through enabled results and scrolls them into view; Return selects.
   Escape clears the query, then closes; outside click dismisses. Focus returns
   to the originating control. There is no new animation.
-- Empty results offer Clear search and exact-ID entry; absent providers offer
-  Add API key. Refresh is single-flight and keeps the query. Search/arrow
+- Empty results offer Clear search; absent providers offer Add API key. Opening
+  the picker automatically refreshes stale/failed catalogs, keeping the query
+  and cached models. Successful catalogs are cached for one day; requests are
+  single-flight per account. Search/arrow
   movement alone never selects or checks a model. An explicit pick uses the
   existing verification and route-preservation path.
 
@@ -532,7 +575,7 @@ rights. No alternative composition or decorative screen is needed.
 | --- | --- |
 | Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
-| Client picker | Discovers installed clients only after Connect. Shows loading, an explicit empty message and Choose program. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. |
+| Client picker | Discovers installed OpenCode and Cursor only after Connect. Shows bundled brand marks, loading, no installed clients or already-connected states. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. The arbitrary program picker is removed. |
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
@@ -604,6 +647,64 @@ without activating the app. The history-date fixture measures 9.67:1 against its
 row background (RGB 211/41). Physical keyboard/VoiceOver, native tooltip timing and compositor glass
 appearance require acceptance on the one installed application.
 
+
+### Case Connect polish — 2026-10-21
+
+The person comes to connect an installed agent. First they see OpenCode and/or
+Cursor with their logos. Clicking one opens its access mode and project scope;
+only Connect commits the draft after authentication. The user chose this flow.
+
+- Offer OpenCode then Cursor, only when their existing locators find them and
+  they are not registered. Do not offer a program chooser, Claude Code or Codex
+  for a new connection. Keep all saved legacy registrations and their policy
+  editors. Why: limit new setup to the two requested integrations without
+  silently revoking existing rights.
+- Bundle the official OpenCode mark and Cursor 2D cube as square transparent PDF
+  templates, reused by the picker, policy header and connected strip. Why: the
+  same agent should remain recognizable throughout setup, even in fixtures or
+  after its app is removed. Sources: [OpenCode](https://opencode.ai/brand) and
+  [Cursor](https://cursor.com/brand); SVG sources live beside their PDFs.
+- Use 44 pt logo/name/disclosure rows, 22 pt marks, 10 pt corners, system 12 pt
+  medium labels and the existing white-on-dark island palette. Hover changes
+  the fill; keyboard focus adds an outline without moving the row. Native
+  buttons expose the agent name and setup action. No new animation is added.
+- Put Accept/Спрашивать and Bypass/Без запроса inside the mode choices, with an
+  outline for selection and amber Bypass. Keep the shared-terminal consequence
+  visible inside this group when Bypass applies. Why: the decision and its
+  consequence should read together, without detached explanatory lines.
+- Put all/selected project controls and their summary/checklist in a separate
+  group. All explicitly includes current and new projects; unchecked projects
+  remain denied. Existing project overrides get their own group. Why: scope
+  must stay clear without a loose footer between unrelated controls.
+- The primary Connect/Save button contains a Touch ID glyph. Native help and its
+  accessibility hint explain which changes require authentication. Why: this
+  explanation belongs to the commit action; normal mode/scope navigation does
+  not request authentication. Errors and retry remain visible above the editor.
+- Loading and both empty states are contained surfaces. With no installation,
+  explain to install OpenCode or Cursor and reopen Connect; with saved supported
+  registrations, point to their icons for editing rights. No client config,
+  secret, route or vault migration changes are part of this polish.
+
+Validation uses synthetic native offscreen fixtures at 310/390 pt and the
+320 pt viewport, fake authentication, isolated connector files and the four
+installed/absent client combinations. Calculated contrast on the synthetic
+0.08-gray backdrop: group headings 10.56:1, selected/unselected mode text
+10.15:1/9.58:1, picker labels 13.19:1, selected-mode border 4.35:1 and primary
+button text 4.52:1. These do not establish contrast on every live backdrop.
+Physical focus/VoiceOver, real Cursor
+reconnection and live glass contrast remain shared-app acceptance after the
+builder promotes the reviewed source. Grouping and logo recognition follow the
+user's chosen direction; they have not been tested with other people.
+
+
+Case control feedback follow-up — 2026-10-21: every custom/plain access control,
+including Back, retry, mode, scope, project rows, disconnect and Save/Connect,
+uses a shared full-target hover overlay, stronger pressed fill and keyboard-focus
+outline. Disabled controls are dimmed and ignore hover/pressed/focus highlights.
+Why: the user requires visible evidence of interactivity, beyond a button shape
+or tooltip. Picker rows use the same feedback family. Offscreen state fixtures
+cover normal/hover/pressed/focus/disabled at 310 pt; physical focus remains
+shared-app acceptance. No authorization or registration behavior changes.
 
 ## Case approval controls — 2026-10-21
 

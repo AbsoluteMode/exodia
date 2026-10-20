@@ -44,7 +44,7 @@ struct ModelProbe: ModelProbing {
                 let task = URLSession.shared.webSocketTask(with: SonioxBYOKAdapter.handshakeRequest(apiKey: key))
                 return URLSessionWebSocketTransport(task: task)
             })
-        case .deepgram, .elevenLabs, .openRouter, .anthropic, .server:
+        case .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic, .server:
             return try RealtimeAdapterFactory.make(route)
         }
     }
@@ -178,7 +178,8 @@ struct ModelProbe: ModelProbing {
 
         let model: String
         let messages: [Message]
-        let maxTokens: Int
+        let maxTokens: Int?
+        var maxCompletionTokens: Int? = nil
         let stream: Bool
         let provider: Preferences?
         let reasoning: OpenRouterReasoningSetting?
@@ -187,6 +188,7 @@ struct ModelProbe: ModelProbing {
         enum CodingKeys: String, CodingKey {
             case model, messages, stream, provider, reasoning, tools
             case maxTokens = "max_tokens"
+            case maxCompletionTokens = "max_completion_tokens"
         }
     }
 
@@ -205,6 +207,10 @@ struct ModelProbe: ModelProbing {
             isOpenRouter = false
         case .anthropic:
             return await probeAnthropic(route, withTools: withTools)
+        case .openAI:
+            guard key != nil else { return .inconclusive(reason: "Key problem") }
+            url = URL(string: "https://api.openai.com/v1")!
+            isOpenRouter = false
         case .soniox, .deepgram, .elevenLabs:
             return .inconclusive(reason: "Not supported yet")
         }
@@ -216,7 +222,8 @@ struct ModelProbe: ModelProbing {
             let body = ChatBody(
                 model: route.model,
                 messages: [.init(role: "user", content: "Reply with OK.")],
-                maxTokens: maxTokens,
+                maxTokens: route.account == .openAI ? nil : maxTokens,
+                maxCompletionTokens: route.account == .openAI ? 512 : nil,
                 stream: false,
                 provider: isOpenRouter ? .init(requireParameters: true) : nil,
                 reasoning: isOpenRouter ? catalog?.reasoning?.dictationSetting : nil,

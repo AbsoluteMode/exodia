@@ -90,6 +90,10 @@ struct ProviderKeyChecker: ProviderKeyChecking {
             let answer = await get(ModelCatalogFetcher.anthropicModelsPage(after: nil),
                                    headers: ModelCatalogFetcher.anthropicHeaders(apiKey: key))
             return Self.interpret(answer, forbidden: .rejected(.outOfCredit), paymentRequired: .rejected(.outOfCredit))
+        case .openAI:
+            guard let key else { return .rejected(.invalidKey) }
+            let answer = await get(ModelCatalogFetcher.openAIModelsURL, header: "Authorization", value: "Bearer \(key)")
+            return Self.interpret(answer, forbidden: .limited, paymentRequired: .rejected(.outOfCredit))
         case .server:
             guard let url = server?.modelsURL else { return .unreachable }
             let answer = await get(url, header: key == nil ? nil : "Authorization", value: key.map { "Bearer \($0)" })
