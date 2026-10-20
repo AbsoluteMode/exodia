@@ -5,13 +5,21 @@ user's provider keys or their own OpenAI-compatible endpoints, no on-device
 models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
 OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
-no telemetry. The user-facing name is Whytap (briefly named Exodia); the module and most internal
+no telemetry. The project and product name is **Whytap**, reaffirmed by the user
+on 2026-10-21; use it in replies, current documentation and new features.
+The module and most internal
 identifiers are still `Sidekey`. The public source repository is
 `https://github.com/AbsoluteMode/whytap`. Preserve legacy bundle IDs, Keychain
 services and Application Support paths so existing settings and permissions
 survive the rename. Keep the existing community certificate, EXODIA_* release
 variables, build metadata keys and backup formats/destinations as compatibility
 contracts. WHY: .project-docs/decisions/2026-10-19-whytap-name.md
+
+The canonical primary checkout folder is named `whytap`; an older `exodia`
+path can remain a compatibility symlink for existing chats and worktrees.
+It is not the project name. Older checkouts can contain unmerged source and WIP.
+Consult current `origin/main` guidance and the primary build receipt before
+treating an older checkout's naming or feature descriptions as the current app.
 
 ## Parallel development and the shared application
 

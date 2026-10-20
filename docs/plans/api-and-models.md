@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - Swift 5 mode, macOS 14.2, без новых зависимостей и без ресурсов SwiftPM. Case (сейф ключей для агентов) не трогаем.
-- TDD в каждой задаче. Фича-сессия только собирает и тестирует: `swift build`, `swift test --filter <классы>`; полный `swift test` — в конце частей A, B и C. Запрещено: `scripts/dev-run.sh`, `customize.py build/run`, `swift run`, `open`, регистрация в LaunchServices, установка поверх `/Applications/Exodia.app` (`.project-docs/processes/shared-app-development.md`).
+- TDD в каждой задаче. Фича-сессия только собирает и тестирует: `swift build`, `swift test --filter <классы>`; полный `swift test` — в конце частей A, B и C. Запрещено: `scripts/dev-run.sh`, `customize.py build/run`, `swift run`, `open`, регистрация в LaunchServices, установка поверх `/Applications/Whytap.app` (`.project-docs/processes/shared-app-development.md`).
 - Вывод сборки и тестов — в файл: `<команда> > /tmp/exodia-akm.log 2>&1; tail -c 3000 /tmp/exodia-akm.log`. В шагах ниже указана только сама команда.
 - Коммит после каждой задачи, локально в `claude/keys-and-models`, conventional commits, последняя строка `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Push и PR — только после «пушим» Максима. PR один, в конце: часть A без части C ломает старую вкладку Models (она пишет `sidekey.models.*`, которые рантайм больше не читает).
 - Keychain: service `BuildConfig.keychainService`; accounts не меняются: `byok.soniox.api_key`, `byok.deepgram.api_key`, `byok.elevenLabs.api_key`, `byok.selfHosted.api_key`, `byok.openrouter.llm_api_key`, `byok.custom_llm.api_key`. Новые серверы — `byok.server.<uuid в нижнем регистре>.api_key`. `CredentialMigration.migratedAccounts` не трогать: новые accounts никогда не писались в `.token`-файлы.
@@ -797,7 +797,7 @@ static func make(workingDirectory: URL, model: String, key: String?, allowAction
 - [ ] **Step 4:** → PASS.
 - [ ] **Step 5: Проверка на настоящем OpenCode** (без запроса к модели, ключ фиктивный, XDG-папки во временной папке): JSON конфига из теста →
   `OPENROUTER_API_KEY=${SYNTHETIC_API_KEY} XDG_CONFIG_HOME=… XDG_DATA_HOME=… XDG_STATE_HOME=… XDG_CACHE_HOME=… OPENCODE_DISABLE_AUTOUPDATE=true OPENCODE_CONFIG_CONTENT='<json>' opencode models openrouter --verbose`.
-  Ожидание: у модели `limit.context` и `limit.output` из конфига. 19.10 так проверено на OpenCode 1.17.12 (`${OPENCODE_EXECUTABLE}`): пустой объект → `"context": 0`, заполненный → значения конфига; `anthropic/claude-sonnet-5.5` в его снимке models.dev нет. Если есть копия, которую ставит Exodia (`OpenCodeBinaryLocator`), повторить на ней и записать версию в отчёт.
+  Ожидание: у модели `limit.context` и `limit.output` из конфига. 19.10 так проверено на OpenCode 1.17.12 (`${OPENCODE_EXECUTABLE}`): пустой объект → `"context": 0`, заполненный → значения конфига; `anthropic/claude-sonnet-5.5` в его снимке models.dev нет. Если есть копия, которую ставит Whytap (`OpenCodeBinaryLocator`), повторить на ней и записать версию в отчёт.
 - [ ] **Step 6: Полный прогон части B:** `swift build`, `swift test` → 0 failures, N — в отчёт.
 - [ ] **Step 7: Commit** `feat(agent): declare OpenCode model limits from the OpenRouter catalog`.
 
