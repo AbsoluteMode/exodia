@@ -175,6 +175,10 @@ struct AIUsageCostsView: View {
         .onChange(of: model.start) { _, _ in Task { await refresh() } }
         .onChange(of: model.end) { _, _ in Task { await refresh() } }
         .onReceive(NotificationCenter.default.publisher(for: AIUsageStore.changed)) { _ in Task { await refresh() } }
+        .onReceive(NotificationCenter.default.publisher(for: SettingsWindowController.didStartVisit)) { _ in
+            if model.period == .month { Task { await refresh() } }
+            else { model.beginVisit() }
+        }
     }
 
     private var table: some View {
