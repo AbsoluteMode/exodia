@@ -36,8 +36,16 @@ struct SettingsBackupView: View {
                 MacCard {
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(spacing: 8) {
-                            GitHubConnectionLabel(model: model)
+                            Label(model.syncState.title, systemImage: model.syncState.systemImage)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(model.syncState == .synced ? MacSettingsTheme.green : MacSettingsTheme.text)
                             Spacer()
+                            if let url = model.githubBackupURL {
+                                Link(destination: url) { Text("GitHub ↗").underline() }
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(MacSettingsTheme.text)
+                                    .accessibilityLabel("Open backup on GitHub")
+                            }
                             if !model.canUseGitHubBackup {
                                 MacButton(title: "Connect GitHub", style: .tinted, isEnabled: !model.isBusy) {
                                     openIntegrations()
@@ -52,10 +60,6 @@ struct SettingsBackupView: View {
                             MacButton(title: "Restore backup", style: .default, isEnabled: actionsEnabled) {
                                 model.hideRecoveryCode(); model.clearError(); showRestore = true
                             }
-                        }
-                        if let date = model.lastRemoteBackupAt {
-                            Text("Last backup: \(date.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
                         }
                     }
                     .padding(14)

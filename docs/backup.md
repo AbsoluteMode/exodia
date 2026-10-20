@@ -9,14 +9,21 @@ In **Settings → Backup**:
 
 - **Back up** saves everything listed below, including stored provider keys,
   encrypts it locally and verifies the GitHub upload. Save the code shown after
-  completion outside Whytap. The same code unlocks subsequent ordinary backups.
+  completion outside Whytap. The same code unlocks subsequent automatic backups.
+  Once created, the backup synchronizes changes while Whytap is idle.
 - **Restore backup** takes that code and prepares the newest complete GitHub
   backup, including all its settings, keys and data. Quit Whytap normally and
   open it again to apply it. Current data is kept for recovery.
 
 There are no data-selection switches, code verification steps or confirmation
-screens. Manual backup does not enable automatic scheduling. Existing schedules,
-folder destinations and local encrypted settings history are retained internally.
+screens. Created GitHub backups synchronize automatically, including copies made
+before automatic sync was introduced. Changes are checked every minute; uploads
+are spaced at least two minutes apart and wait while recording or agent work is
+active. Failed uploads keep their local copy and retry. Backup shows **Backup
+synced** only after verification with no detected changes or copies waiting,
+and links directly to the repository's GitHub Releases. Pending, syncing, paused
+and error states have their own labels. Existing folder destinations and local
+encrypted settings history are retained internally.
 A previously interrupted management operation can still be finished or stopped.
 Restored recording jobs and executable connections stay paused until enabled.
 

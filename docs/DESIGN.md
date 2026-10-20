@@ -59,3 +59,27 @@ These are acceptance gaps, not claims of completed live verification.
 
 Import completion, failure and cancellation do not request keyboard focus. Only
 authentication restores it; a user may be typing elsewhere during a long import.
+
+
+# Backup: automatic synchronization — 2026-10-20
+
+The user opens Backup to confirm their data is protected, then open its GitHub
+copy or restore it. The existing native Settings card, two actions, system font
+and dark theme remain. Direction is supplied by the user: a compact status with
+a backup link, without the connection caption or date. Use a 13 pt medium status
+and a 12 pt GitHub link on one row, existing green only for verified sync, existing
+neutral text for waiting/paused, and the existing actionable error banner.
+
+The row never hides the link behind hover. Link participates in native keyboard
+navigation, opens GitHub Releases and has an explicit accessibility label.
+Status changes add no animation; busy/cancel and restore-code focus retain their
+existing behavior. The scheduler waits for idle; edits during upload remain
+pending. The status must not imply success from a historical upload alone.
+
+Offscreen native fixtures cover 560 and 760 pt synchronized states, connection,
+recovery code, restore, pending, syncing, paused and error without presenting a
+window or uploading real data. The synchronized label and GitHub link have
+6.95:1 and 11.43:1 contrast on the synthetic native dark card (sRGB #323235).
+The screenshot matrix was inspected after successful render tests. Live pointer/keyboard checks remain acceptance on
+the one installed app after builder promotion. Existing Settings is a dark
+surface; a new light-theme system is outside this change.
