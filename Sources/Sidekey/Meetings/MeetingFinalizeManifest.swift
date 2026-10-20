@@ -58,6 +58,9 @@ struct MeetingFinalizeManifest: Codable, Equatable, Sendable {
     /// Transcript boundaries created by reconnecting to an auto-ended
     /// recording. Defaulted for manifests written by older clients.
     var reconnectMarkers: [MeetingReconnectMarker]? = nil
+    /// The recording is a new part of this existing meeting, never a request
+    /// to re-transcribe the old audio. Absent on all earlier manifests.
+    var continuation: MeetingContinuation? = nil
 
     /// Canonical filename for the manifest inside the recorder's staging
     /// dir. Sits alongside the WAV chunks + sidecars.

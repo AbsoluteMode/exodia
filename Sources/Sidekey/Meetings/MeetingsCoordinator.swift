@@ -141,18 +141,24 @@ final class MeetingsCoordinator {
         let event: MeetingRecorder.FinalizedEvent
         let startedAt: Date
         let endedAt: Date
-        let markers: [TranscriptReconnectMarker]
+        var continuation: MeetingContinuation? = nil
+        var meetingId: UUID { continuation?.meetingId ?? event.meetingId }
+        var audioDuration: TimeInterval { (continuation?.audioOffsetSeconds ?? 0) + event.totalDurationSeconds }
+        var rootStartedAt: Date { continuation?.startedAt ?? startedAt }
 
-        var deadline: Date {
-            endedAt.addingTimeInterval(MeetingsConfig.reconnectGracePeriodSeconds)
-        }
+        var answerDeadline: Date? = nil
+        var eligibleUntil: Date { endedAt.addingTimeInterval(MeetingsConfig.reconnectGracePeriodSeconds) }
+        var deadline: Date { max(eligibleUntil, answerDeadline ?? eligibleUntil) }
     }
 
     private struct ActiveReconnect {
-        let startedAt: Date
-        let accumulatedDuration: TimeInterval
-        let markers: [TranscriptReconnectMarker]
+        let recordingId: UUID
+        let continuation: MeetingContinuation
+        var accumulatedDuration: TimeInterval { continuation.audioOffsetSeconds }
     }
+
+    private var processingTasks: [UUID: Task<Void, Never>] = [:]
+    private var processingTails: [UUID: UUID] = [:]
 
     /// Injectable clock for the reconnect grace/silent-window math so
     /// tests can move time without sleeping. Production: `Date.init`.
@@ -575,7 +581,11 @@ final class MeetingsCoordinator {
                 let deadline = Date().addingTimeInterval(
                     MeetingsConfig.pillDecisionTimeoutSeconds
                 )
-                if let previous = pendingReconnect, now() <= previous.deadline {
+                if var previous = pendingReconnect, now() <= previous.eligibleUntil {
+                    // A prompt offered just before three minutes must retain
+                    // its candidate for the full visible decision window.
+                    previous.answerDeadline = now().addingTimeInterval(MeetingsConfig.pillDecisionTimeoutSeconds)
+                    stagePendingReconnect(previous)
                     let gapSeconds = max(0, now().timeIntervalSince(previous.endedAt))
                     // Resuming into the previous recording is always the
                     // user's call, however fast the re-fire lands: the
@@ -587,13 +597,13 @@ final class MeetingsCoordinator {
                     // WHY: docs/decisions/2026-07-29-reconnect-always-asks.md
                     pill.show(.suggestingReconnect(
                         meetingId: meetingId,
-                        previousMeetingId: previous.event.meetingId,
+                        previousMeetingId: previous.meetingId,
                         gapSeconds: gapSeconds,
                         deadline: deadline
                     ))
                 } else {
                     if pendingReconnect != nil {
-                        releasePendingReconnectForProcessing()
+                        clearPendingReconnect()
                     }
                     pill.show(.suggesting(meetingId: meetingId, deadline: deadline))
                 }
@@ -639,7 +649,7 @@ final class MeetingsCoordinator {
                 emitter.engageCooldown()
             }
             if pendingReconnect != nil {
-                releasePendingReconnectForProcessing()
+                clearPendingReconnect()
             }
 
         case .accept(let meetingId, let snapshot):
@@ -649,7 +659,7 @@ final class MeetingsCoordinator {
                 meetingId.uuidString, snapshot.count
             )
             if pendingReconnect != nil {
-                releasePendingReconnectForProcessing()
+                clearPendingReconnect()
             }
             // Accepting a nudge while the capability is OFF is the opt-in
             // itself: the detector never arms with Meeting Notes disabled,
@@ -672,7 +682,7 @@ final class MeetingsCoordinator {
 
         case .reconnect(let previousMeetingId, let gapSeconds, let snapshot):
             guard let pending = pendingReconnect,
-                  pending.event.meetingId == previousMeetingId,
+                  pending.meetingId == previousMeetingId,
                   now() <= pending.deadline else {
                 os_log(
                     "reconnect ignored — candidate expired (previousMeetingId: %{public}@)",
@@ -685,20 +695,28 @@ final class MeetingsCoordinator {
             pendingReconnectExpiryTask = nil
             pendingReconnect = nil
 
-            let marker = TranscriptReconnectMarker(
-                afterAudioSeconds: pending.event.totalDurationSeconds,
-                gapSeconds: max(0, gapSeconds)
+            let continuation = MeetingContinuation(
+                meetingId: previousMeetingId, precedingRecordingId: pending.event.meetingId,
+                startedAt: pending.rootStartedAt, audioOffsetSeconds: pending.audioDuration,
+                gapSeconds: max(0, gapSeconds), partNumber: (pending.continuation?.partNumber ?? 1) + 1
             )
-            activeReconnect = ActiveReconnect(
-                startedAt: pending.startedAt,
-                accumulatedDuration: pending.event.totalDurationSeconds,
-                markers: pending.markers + [marker]
-            )
-            activeRecorderStartedAt = pending.startedAt
-            let started = await startRecorder(
-                meetingId: previousMeetingId,
-                prerecordSnapshot: snapshot
-            )
+            let recordingId = UUID()
+            activeReconnect = ActiveReconnect(recordingId: recordingId, continuation: continuation)
+            // Never reuse a directory that the first part's processor can
+            // delete, or its provider checkpoint for a different audio set.
+            if let root = recorderStagingRoot {
+                var manifest = MeetingFinalizeManifest(recorderMeetingId: recordingId,
+                    startedAt: now(), endedAt: now(), durationSeconds: 0,
+                    language: config.preferredLanguage, chunkFileNames: [], isFinal: false)
+                manifest.continuation = continuation
+                do { try manifestStore.write(manifest, to: root.appendingPathComponent(recordingId.uuidString)) }
+                catch {
+                    activeReconnect = nil
+                    stagePendingReconnect(pending)
+                    return
+                }
+            }
+            let started = await startRecorder(meetingId: recordingId, prerecordSnapshot: snapshot)
             if !started {
                 activeReconnect = nil
                 activeRecorderStartedAt = nil
@@ -942,6 +960,7 @@ final class MeetingsCoordinator {
             )
             return
         }
+        clearPendingReconnect()
         let meetingId = UUID()
         os_log(
             "manual record toggle → start (meetingId: %{public}@)",
@@ -981,8 +1000,10 @@ final class MeetingsCoordinator {
         let startedAt = self.activeRecorderStartedAt ?? Date(
             timeIntervalSinceNow: -event.totalDurationSeconds
         )
-        let reconnect = activeReconnect
+        let continuation = activeReconnect?.continuation
         let combinedEvent = event
+        let endedAt = now()
+        let language = config.preferredLanguage
 
         // Cleanup runs first so isRecording flips false before the
         // processing pipeline (which can throw) gets a chance to fail.
@@ -1010,88 +1031,36 @@ final class MeetingsCoordinator {
         if combinedEvent.reason == .autoEnd {
             stagePendingReconnect(PendingReconnect(
                 event: combinedEvent,
-                startedAt: reconnect?.startedAt ?? startedAt,
-                endedAt: now(),
-                markers: reconnect?.markers ?? []
+                startedAt: startedAt,
+                endedAt: endedAt,
+                continuation: continuation
             ))
-            return
         }
 
-        // Processing runs in a detached Task so it survives even if our
-        // caller task does get cancelled later. The detach also disconnects
-        // it from the recorder-event consumer's cancellation lineage.
-        // Failures are logged inside `dispatchFinalizedForProcessing`;
-        // nothing here needs to await its completion.
-        Task.detached { [weak self] in
-            await self?.dispatchFinalizedForProcessing(
-                event: combinedEvent,
-                startedAt: reconnect?.startedAt ?? startedAt,
-                reconnectMarkers: reconnect?.markers ?? []
-            )
+        if config.isEnabled {
+            _ = enqueueFinalizedRecording(event: combinedEvent, startedAt: startedAt, endedAt: endedAt,
+                reconnectMarkers: [], language: language, continuation: continuation)
         }
     }
 
     private func stagePendingReconnect(_ pending: PendingReconnect) {
         pendingReconnectExpiryTask?.cancel()
         pendingReconnect = pending
-        persistReconnectGraceManifest(pending)
-        if let store = meetingsStore {
-            let meta = Self.progressMeta(
-                id: pending.event.meetingId,
-                startedAt: pending.startedAt,
-                endedAt: pending.endedAt,
-                durationSeconds: Self.roundedDurationSeconds(pending.event.totalDurationSeconds),
-                status: .waitingToReconnect
-            )
-            Task { [weak self] in
-                try? await store.upsertProgress(meta: meta, status: .waitingToReconnect)
-                await MainActor.run { self?.refreshOpenWindowIfNeeded() }
-            }
-        }
-
         let delay = max(0, pending.deadline.timeIntervalSince(now()))
         pendingReconnectExpiryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard self?.pendingReconnect?.event.meetingId == pending.event.meetingId else {
-                    return
-                }
-                self?.releasePendingReconnectForProcessing()
-            }
+            guard !Task.isCancelled,
+                  self?.pendingReconnect?.event.meetingId == pending.event.meetingId else { return }
+            self?.clearPendingReconnect()
         }
     }
 
-    private func persistReconnectGraceManifest(_ pending: PendingReconnect) {
-        guard !pending.event.chunkURLs.isEmpty else { return }
-        persistFinalizeManifest(
-            event: pending.event,
-            startedAt: pending.startedAt,
-            endedAt: pending.endedAt,
-            language: config.preferredLanguage,
-            reconnectMarkers: pending.markers
-        )
-    }
-
-    private func releasePendingReconnectForProcessing() {
-        guard let pending = pendingReconnect else { return }
+    /// The three-minute candidate is only a UI choice; processing already
+    /// started when this part ended. Skip/expiry never dispatch it twice.
+    private func clearPendingReconnect() {
         pendingReconnect = nil
         pendingReconnectExpiryTask?.cancel()
         pendingReconnectExpiryTask = nil
-        if let store = meetingsStore {
-            Task { [weak self] in
-                try? await store.updateProgress(id: pending.event.meetingId, status: .transcribing)
-                await MainActor.run { self?.refreshOpenWindowIfNeeded() }
-            }
-        }
-        Task.detached { [weak self] in
-            await self?.dispatchFinalizedForProcessing(
-                event: pending.event,
-                startedAt: pending.startedAt,
-                endedAt: pending.endedAt,
-                reconnectMarkers: pending.markers
-            )
-        }
     }
 
     // MARK: - FinalizedEvent -> processing pipeline
@@ -1113,14 +1082,15 @@ final class MeetingsCoordinator {
         event: MeetingRecorder.FinalizedEvent,
         startedAt: Date,
         endedAt: Date? = nil,
-        reconnectMarkers: [TranscriptReconnectMarker] = []
+        reconnectMarkers: [TranscriptReconnectMarker] = [],
+        continuation: MeetingContinuation? = nil
     ) async {
         await dispatchFinalizedForProcessing(
             event: event,
             startedAt: startedAt,
             endedAt: endedAt,
             reconnectMarkers: reconnectMarkers,
-            language: config.preferredLanguage
+            language: config.preferredLanguage, continuation: continuation
         )
     }
 
@@ -1130,10 +1100,44 @@ final class MeetingsCoordinator {
     /// the failed Stop and the relaunch does not change the recovered meeting.
     func dispatchFinalizedForProcessing(
         event: MeetingRecorder.FinalizedEvent,
-        startedAt: Date,
-        endedAt: Date?,
-        reconnectMarkers: [TranscriptReconnectMarker],
-        language: String?
+        startedAt: Date, endedAt: Date?, reconnectMarkers: [TranscriptReconnectMarker],
+        language: String?, continuation: MeetingContinuation? = nil
+    ) async {
+        guard config.isEnabled else { return }
+        await enqueueFinalizedRecording(event: event, startedAt: startedAt, endedAt: endedAt ?? now(),
+            reconnectMarkers: reconnectMarkers, language: language, continuation: continuation).value
+    }
+
+    /// Register the part before returning from Stop. Arrival order cannot be
+    /// reversed by scheduling two detached tasks, and every queued part has its
+    /// own durable manifest while earlier parts finish.
+    private func enqueueFinalizedRecording(
+        event: MeetingRecorder.FinalizedEvent,
+        startedAt: Date, endedAt: Date, reconnectMarkers: [TranscriptReconnectMarker],
+        language: String?, continuation: MeetingContinuation?
+    ) -> Task<Void, Never> {
+        if let existing = processingTasks[event.meetingId] { return existing }
+        let meetingId = continuation?.meetingId ?? event.meetingId
+        persistFinalizeManifest(event: event, startedAt: startedAt, endedAt: endedAt,
+            language: language, reconnectMarkers: reconnectMarkers, continuation: continuation)
+        let previous = processingTails[meetingId].flatMap { processingTasks[$0] }
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await self.processFinalizedRecording(event: event, startedAt: startedAt, endedAt: endedAt,
+                reconnectMarkers: reconnectMarkers, language: language, continuation: continuation)
+            self.processingTasks[event.meetingId] = nil
+            if self.processingTails[meetingId] == event.meetingId { self.processingTails[meetingId] = nil }
+        }
+        processingTasks[event.meetingId] = task
+        processingTails[meetingId] = event.meetingId
+        return task
+    }
+
+    private func processFinalizedRecording(
+        event: MeetingRecorder.FinalizedEvent,
+        startedAt: Date, endedAt: Date, reconnectMarkers: [TranscriptReconnectMarker],
+        language: String?, continuation: MeetingContinuation?
     ) async {
         guard config.isEnabled else {
             os_log(
@@ -1142,12 +1146,23 @@ final class MeetingsCoordinator {
             )
             return
         }
-        let endedAt = endedAt ?? Date()
-        let progressBeforeAttempt = try? await meetingsStore?.progressState(id: event.meetingId)
+        let targetMeetingId = continuation?.meetingId ?? event.meetingId
+        if (try? await meetingsStore?.hasProcessedRecording(event.meetingId)) == true {
+            // A late duplicate must not reset the edited note's metadata or
+            // version before the processor checks its idempotency receipt.
+            _ = try? await meetingsStore?.updateProgress(id: targetMeetingId, status: .ready)
+            if let directory = event.chunkURLs.first?.deletingLastPathComponent() {
+                try? FileManager.default.removeItem(at: directory)
+            }
+            eventsContinuation.yield(.newMeetingAvailable(id: targetMeetingId))
+            refreshOpenWindowIfNeeded()
+            return
+        }
+        let progressBeforeAttempt = try? await meetingsStore?.progressState(id: targetMeetingId)
 
-        if let meetingsStore {
+        if let meetingsStore, continuation == nil {
             let meta = Self.progressMeta(
-                id: event.meetingId,
+                id: targetMeetingId,
                 startedAt: startedAt,
                 endedAt: endedAt,
                 durationSeconds: Self.roundedDurationSeconds(event.totalDurationSeconds),
@@ -1157,15 +1172,10 @@ final class MeetingsCoordinator {
             refreshOpenWindowIfNeeded()
         }
 
-        // DURABILITY: persist the manifest before any processing so a crash
-        // mid-transcription keeps the recording recoverable on next launch.
-        persistFinalizeManifest(
-            event: event,
-            startedAt: startedAt,
-            endedAt: endedAt,
-            language: language,
-            reconnectMarkers: reconnectMarkers
-        )
+        if continuation != nil {
+            try? await meetingsStore?.beginContinuationUpdate(id: targetMeetingId)
+            refreshOpenWindowIfNeeded()
+        }
 
         if let directProcessor, directProcessor.shouldProcessDirectly() {
             do {
@@ -1173,7 +1183,7 @@ final class MeetingsCoordinator {
                     event: event,
                     startedAt: startedAt,
                     language: language,
-                    meetingsStore: meetingsStore
+                    meetingsStore: meetingsStore, continuation: continuation, endedAt: endedAt
                 )
                 try await persistReconnectMarkersIfNeeded(
                     reconnectMarkers,
@@ -1196,7 +1206,7 @@ final class MeetingsCoordinator {
                 )
                 if progressBeforeAttempt?.status == .failed {
                     try? await meetingsStore?.updateProgress(
-                        id: event.meetingId,
+                        id: targetMeetingId,
                         status: .failed,
                         failureReason: progressBeforeAttempt?.failureReason
                     )
@@ -1210,9 +1220,9 @@ final class MeetingsCoordinator {
                     event.meetingId.uuidString,
                     String(describing: error)
                 )
-                eventsContinuation.yield(.meetingFailed(id: event.meetingId, error: String(describing: error)))
+                eventsContinuation.yield(.meetingFailed(id: targetMeetingId, error: String(describing: error)))
                 try? await meetingsStore?.updateProgress(
-                    id: event.meetingId,
+                    id: targetMeetingId,
                     status: .failed,
                     failureReason: String(describing: error)
                 )
@@ -1229,9 +1239,9 @@ final class MeetingsCoordinator {
             log: Self.log, type: .error,
             event.meetingId.uuidString
         )
-        eventsContinuation.yield(.meetingFailed(id: event.meetingId, error: Self.processorNotConfiguredMessage))
+        eventsContinuation.yield(.meetingFailed(id: targetMeetingId, error: Self.processorNotConfiguredMessage))
         try? await meetingsStore?.updateProgress(
-            id: event.meetingId,
+            id: targetMeetingId,
             status: .failed,
             failureReason: Self.processorNotConfiguredMessage
         )
@@ -1246,7 +1256,8 @@ final class MeetingsCoordinator {
         startedAt: Date,
         endedAt: Date,
         language: String?,
-        reconnectMarkers: [TranscriptReconnectMarker]
+        reconnectMarkers: [TranscriptReconnectMarker],
+        continuation: MeetingContinuation? = nil
     ) {
         guard let firstChunkURL = event.chunkURLs.first else { return }
         let recorderDir = firstChunkURL.deletingLastPathComponent()
@@ -1260,6 +1271,7 @@ final class MeetingsCoordinator {
             isFinal: true
         )
         manifest.reconnectMarkers = reconnectMarkers
+        manifest.continuation = continuation
         do {
             try manifestStore.write(manifest, to: recorderDir)
         } catch {
@@ -1291,12 +1303,25 @@ final class MeetingsCoordinator {
             entries.count
         )
 
-        for entry in entries {
+        for entry in entries.sorted(by: { $0.manifest.startedAt < $1.manifest.startedAt }) {
             let dir = entry.dir
+            // Wake recovery must never consume or clean a live recorder's
+            // partial continuation manifest, including its suspended start.
+            if entry.manifest.recorderMeetingId == activeRecorder?.meetingId
+                || entry.manifest.recorderMeetingId == activeReconnect?.recordingId { continue }
+            if let task = processingTasks[entry.manifest.recorderMeetingId] { await task.value }
             // A meeting that already reached the store (note on disk) needs no
             // re-processing, and its staged recording is the leftover of a run
             // that stopped after the insert: release it and move on.
-            if await restoreReadyLocalMeetingIfPresent(meetingId: entry.manifest.recorderMeetingId) {
+            let committed = (try? await meetingsStore?.hasProcessedRecording(entry.manifest.recorderMeetingId)) == true
+            if committed {
+                let target = entry.manifest.continuation?.meetingId ?? entry.manifest.recorderMeetingId
+                _ = try? await meetingsStore?.updateProgress(id: target, status: .ready)
+                try? FileManager.default.removeItem(at: dir)
+                continue
+            }
+            if entry.manifest.continuation == nil,
+               await restoreReadyLocalMeetingIfPresent(meetingId: entry.manifest.recorderMeetingId) {
                 await releaseStagedRecording(of: entry.manifest.recorderMeetingId, in: dir)
                 continue
             }
@@ -1320,7 +1345,7 @@ final class MeetingsCoordinator {
                 startedAt: entry.manifest.startedAt,
                 endedAt: entry.manifest.endedAt,
                 reconnectMarkers: entry.manifest.reconnectMarkers ?? [],
-                language: entry.manifest.language
+                language: entry.manifest.language, continuation: entry.manifest.continuation
             )
         }
     }
@@ -1333,19 +1358,29 @@ final class MeetingsCoordinator {
     /// Rebuild a `FinalizedEvent` from a persisted manifest. Chunks the
     /// manifest names but that no longer exist on disk are dropped; when no
     /// mixed chunk survives the recording is unrecoverable.
-    static func finalizedEvent(
+    nonisolated static func finalizedEvent(
         from manifest: MeetingFinalizeManifest,
         in dir: URL
     ) -> MeetingRecorder.FinalizedEvent? {
         let fm = FileManager.default
-        let chunkURLs = manifest.chunkFileNames
+        let names: [String]
+        if manifest.isFinal {
+            names = manifest.chunkFileNames
+        } else {
+            names = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter {
+                $0.hasPrefix("chunk-") && $0.hasSuffix(".wav")
+            }.sorted()
+        }
+        let chunkURLs = names
             .map { dir.appendingPathComponent($0) }
             .filter { fm.fileExists(atPath: $0.path) }
         guard !chunkURLs.isEmpty else { return nil }
         return MeetingRecorder.FinalizedEvent(
             meetingId: manifest.recorderMeetingId,
             chunkURLs: chunkURLs,
-            totalDurationSeconds: TimeInterval(manifest.durationSeconds),
+            totalDurationSeconds: manifest.isFinal ? TimeInterval(manifest.durationSeconds) : chunkURLs.reduce(0) {
+                $0 + Double((try? MeetingPCM16WAVReader.readPCM16Data(from: $1).count) ?? 0) / 32_000
+            },
             reason: .user,
             interruptedBySleep: false
         )
@@ -1616,6 +1651,7 @@ final class MeetingsCoordinator {
                 return
             }
             try await store.updateTitle(id: id, title: Self.extractH1Title(from: markdown))
+            refreshOpenWindowIfNeeded()
             os_log(
                 "save persisted (meetingId: %{public}@, version: %{public}d)",
                 log: Self.log, type: .info,
@@ -1640,6 +1676,7 @@ final class MeetingsCoordinator {
     /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
     func deleteMeeting(id: UUID) async -> Bool {
         guard let store = meetingsStore else { return false }
+        guard activeReconnect?.continuation.meetingId != id, processingTails[id] == nil else { return false }
         guard let status = (try? await store.progressStatus(id: id)) ?? nil else {
             os_log(
                 "deleteMeeting refused: unknown meeting (meetingId: %{public}@)",
@@ -1656,6 +1693,9 @@ final class MeetingsCoordinator {
             )
             return false
         }
+        // The store lookup above suspends the MainActor; a Reconnect or a
+        // processing job may have begun while that lookup was in flight.
+        guard activeReconnect?.continuation.meetingId != id, processingTails[id] == nil else { return false }
         if let stagedDir = stagingRootProvider?().appendingPathComponent(id.uuidString),
            FileManager.default.fileExists(atPath: stagedDir.path) {
             do {
@@ -1667,6 +1707,14 @@ final class MeetingsCoordinator {
                     id.uuidString, String(describing: error)
                 )
                 return false
+            }
+        }
+        if pendingReconnect?.meetingId == id { clearPendingReconnect() }
+        if let stagingRoot = recorderStagingRoot {
+            for entry in manifestStore.scan(stagingRoot: stagingRoot)
+                where entry.manifest.continuation?.meetingId == id {
+                do { try FileManager.default.removeItem(at: entry.dir) }
+                catch { return false }
             }
         }
         do {

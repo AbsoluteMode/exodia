@@ -718,6 +718,100 @@ final class MeetingsCoordinatorTests: XCTestCase {
         XCTAssertLessThan(gapSeconds, MeetingsConfig.reconnectGracePeriodSeconds)
     }
 
+    func test_rejoin_at_179_seconds_offers_reconnect_but_181_starts_a_new_note() async {
+        XCTAssertEqual(MeetingsConfig.reconnectGracePeriodSeconds, 180)
+        for gap in [179.0, 181.0] {
+            let clock = MovableClock()
+            let buffer = StubBuffer()
+            let pill = MeetingPillController(buffer: buffer)
+            let coordinator = MeetingsCoordinator(config: MeetingsConfig(defaults: testDefaults),
+                detector: StubMeetingDetector(), pill: pill, buffer: buffer,
+                meetingsEnabled: { true }, now: { clock.now })
+            let previous = UUID()
+            await coordinator.handleFinalizedEvent(.init(meetingId: previous, chunkURLs: [],
+                totalDurationSeconds: 30, reason: .autoEnd))
+            clock.advance(by: gap)
+            let fresh = UUID()
+            await coordinator.handleDetectorEvent(.triggered(meetingId: fresh))
+            if gap < 180 {
+                guard case .suggestingReconnect(_, let old, _, _) = pill.state else {
+                    return XCTFail("Reconnect must stay available for three minutes")
+                }
+                XCTAssertEqual(old, previous)
+            } else {
+                guard case .suggesting(let id, _) = pill.state else {
+                    return XCTFail("A later call must offer a new note")
+                }
+                XCTAssertEqual(id, fresh)
+            }
+        }
+    }
+
+    func test_duplicate_finalize_does_not_reset_edited_metadata_or_call_processor() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try MeetingsStore(rootDirectory: root)
+        let id = UUID(), start = Date(timeIntervalSince1970: 1000)
+        _ = try await store.storeProcessedRecording(recordingId: id, startedAt: start,
+            endedAt: start.addingTimeInterval(42), duration: 42, title: "Original",
+            markdown: "# Original", transcript: [], continuation: nil)
+        _ = try await store.update(id: id, markdown: "# Edited", version: 7)
+        let before = try await store.list().first
+        let processor = RecordingMeetingDirectProcessor(active: true)
+        let coordinator = MeetingsCoordinator(config: MeetingsConfig(defaults: testDefaults),
+            detector: StubMeetingDetector(), meetingsStore: store, directProcessor: processor,
+            meetingsEnabled: { true })
+        await coordinator.dispatchFinalizedForProcessing(event: .init(meetingId: id, chunkURLs: [],
+            totalDurationSeconds: 1, reason: .user), startedAt: Date())
+        let after = try await store.list().first
+        XCTAssertEqual(after?.serverVersion, before?.serverVersion)
+        XCTAssertEqual(after?.durationSeconds, before?.durationSeconds)
+        XCTAssertEqual(after?.startedAt, before?.startedAt)
+        XCTAssertTrue(processor.calls.isEmpty)
+        await store.close()
+    }
+
+    func test_processing_parts_of_one_meeting_is_serial_and_keeps_each_manifest() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let processor = RecordingMeetingDirectProcessor(active: true)
+        processor.delaySeconds = 0.1
+        let coordinator = MeetingsCoordinator(config: MeetingsConfig(defaults: testDefaults),
+            detector: StubMeetingDetector(), directProcessor: processor, meetingsEnabled: { true })
+        let parent = UUID(), secondId = UUID()
+        func event(_ id: UUID) throws -> MeetingRecorder.FinalizedEvent {
+            let dir = root.appendingPathComponent(id.uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("chunk-000.wav")
+            try Data([0]).write(to: url)
+            return .init(meetingId: id, chunkURLs: [url], totalDurationSeconds: 10, reason: .autoEnd)
+        }
+        let first = try event(parent), second = try event(secondId)
+        let firstJob = Task {
+            await coordinator.dispatchFinalizedForProcessing(event: first, startedAt: Date())
+        }
+        await waitFor(condition: { processor.calls.count == 1 }, timeout: 1)
+        var firstFinishedBeforeSecond = false
+        processor.onProcess = { event in
+            if event.meetingId == secondId { firstFinishedBeforeSecond = processor.finishedIds.contains(parent) }
+        }
+        let secondJob = Task {
+            await coordinator.dispatchFinalizedForProcessing(event: second, startedAt: Date(),
+                continuation: .init(meetingId: parent, precedingRecordingId: parent,
+                    startedAt: Date(), audioOffsetSeconds: 10, gapSeconds: 120))
+        }
+        await waitFor(condition: {
+            MeetingFinalizeManifestStore().manifestExists(in: root.appendingPathComponent(secondId.uuidString))
+        }, timeout: 1)
+        XCTAssertEqual(processor.calls.count, 1, "Second part waits while its manifest is durable")
+        await firstJob.value
+        await secondJob.value
+        XCTAssertTrue(firstFinishedBeforeSecond)
+        XCTAssertEqual(processor.calls.map(\.meetingId), [parent, secondId])
+        XCTAssertEqual(processor.calls.last?.continuation?.meetingId, parent)
+    }
+
     /// Whytap cannot tell "the user rejoined THIS meeting" from "the user
     /// walked into a different one" — a real Teams → Zoom hop re-fired 7
     /// seconds after the auto-end and got silently glued onto the previous
@@ -820,6 +914,8 @@ final class MeetingsCoordinatorTests: XCTestCase {
         let sys = TestSystemSource()
         let micInUse = TestMicInUse()
         let factoryIds = FactoryIdBox()
+        let clock = MovableClock()
+        let processor = RecordingMeetingDirectProcessor(active: true)
         let factory: MeetingsCoordinator.RecorderFactory = { meetingId in
             factoryIds.ids.append(meetingId)
             return MeetingRecorder(
@@ -838,8 +934,8 @@ final class MeetingsCoordinatorTests: XCTestCase {
             detector: StubMeetingDetector(),
             pill: pill,
             buffer: buffer,
-            recorderFactory: factory,
-            meetingsEnabled: { true }
+            recorderFactory: factory, stagingRoot: { stagingRoot }, directProcessor: processor,
+            meetingsEnabled: { true }, now: { clock.now }
         )
 
         let previousId = UUID()
@@ -850,17 +946,24 @@ final class MeetingsCoordinatorTests: XCTestCase {
             reason: .autoEnd
         ))
 
+        clock.advance(by: 179)
+        await coordinator.handleDetectorEvent(.triggered(meetingId: UUID()))
+        clock.advance(by: 10)
+        // The full decision window remains available even though the user
+        // answers just after the original three-minute candidate deadline.
         // The user answered the pill with Reconnect; its recorder start is
         // gated inside the audio stack.
         let reconnect = Task {
             await coordinator.handlePillEvent(.reconnect(
                 previousMeetingId: previousId,
-                gapSeconds: 7,
+                gapSeconds: 179,
                 bufferSnapshot: Data()
             ))
         }
         await waitFor(condition: { factoryIds.ids.count == 1 }, timeout: 1.0)
 
+        await coordinator.recoverFinalizeManifestsOnLaunch()
+        XCTAssertEqual(processor.calls.count, 1, "Wake recovery must skip a part still starting")
         // Manual toggle lands while that start is still suspended. Run it as
         // its own task: in the buggy world it spawns a second recorder that
         // also suspends on the gate, and an inline await here would deadlock
@@ -877,10 +980,23 @@ final class MeetingsCoordinatorTests: XCTestCase {
         await toggle.value
 
         XCTAssertTrue(coordinator.isRecording)
+        XCTAssertNotEqual(factoryIds.ids.first, previousId, "Continuation must use fresh audio/checkpoints")
+        await coordinator.recoverFinalizeManifestsOnLaunch()
+        XCTAssertEqual(processor.calls.count, 1, "Wake recovery must skip a live part")
         XCTAssertEqual(
-            factoryIds.ids, [previousId],
+            factoryIds.ids.count, 1,
             "manual toggle during an in-flight start must not create a second recorder"
         )
+        await coordinator.handleStop(meetingId: factoryIds.ids[0], reason: .autoEnd)
+        await waitFor(condition: { processor.calls.count == 2 }, timeout: 1)
+        XCTAssertEqual(processor.calls.last?.continuation?.meetingId, previousId)
+        XCTAssertEqual(processor.calls.last?.continuation?.audioOffsetSeconds, 21)
+        clock.advance(by: 1)
+        await coordinator.handleDetectorEvent(.triggered(meetingId: UUID()))
+        guard case .suggestingReconnect(_, let logicalId, _, _) = pill.state else {
+            return XCTFail("Another rejoin must still target the original meeting")
+        }
+        XCTAssertEqual(logicalId, previousId)
     }
 
 
@@ -1407,7 +1523,7 @@ final class MeetingsCoordinatorTests: XCTestCase {
     /// manifest already on disk), and resolving the next nudge WITHOUT
     /// reconnecting (Skip) releases it into the processing pipeline with the
     /// chunks the recorder actually wrote.
-    func test_auto_end_then_skip_releases_recording_to_processor() async throws {
+    func test_auto_end_processes_immediately_and_skip_does_not_dispatch_twice() async throws {
         let config = MeetingsConfig(defaults: testDefaults)
         config.isEnabled = true
 
@@ -1478,10 +1594,8 @@ final class MeetingsCoordinatorTests: XCTestCase {
             !coordinator.isRecording && pill.state == .hidden
         }, timeout: 2.0)
 
-        XCTAssertTrue(
-            directProcessor.calls.isEmpty,
-            "auto-end holds the recording for reconnect; nothing is processed yet"
-        )
+        await waitFor(condition: { directProcessor.calls.count == 1 }, timeout: 2.0)
+        XCTAssertEqual(directProcessor.calls.count, 1, "Auto-end must process before any reconnect decision")
         let manifestStore = MeetingFinalizeManifestStore()
         XCTAssertTrue(
             manifestStore.manifestExists(in: stagingRoot.appendingPathComponent(meetingId.uuidString)),
@@ -2063,6 +2177,7 @@ private final class RecordingMeetingDirectProcessor: MeetingDirectProcessing {
         let storeProvided: Bool
         let chunkURLs: [URL]
         let reason: MeetingRecorderStopReason
+        let continuation: MeetingContinuation?
     }
 
     var active: Bool
@@ -2075,6 +2190,7 @@ private final class RecordingMeetingDirectProcessor: MeetingDirectProcessing {
     /// can inspect on-disk state at the moment processing starts.
     var onProcess: (@MainActor (MeetingRecorder.FinalizedEvent) -> Void)?
     private(set) var calls: [Call] = []
+    private(set) var finishedIds: [UUID] = []
 
     init(active: Bool) {
         self.active = active
@@ -2088,7 +2204,8 @@ private final class RecordingMeetingDirectProcessor: MeetingDirectProcessing {
         event: MeetingRecorder.FinalizedEvent,
         startedAt: Date,
         language: String?,
-        meetingsStore: MeetingsStore?
+        meetingsStore: MeetingsStore?,
+        continuation: MeetingContinuation?, endedAt: Date?
     ) async throws -> UUID {
         calls.append(Call(
             meetingId: event.meetingId,
@@ -2096,14 +2213,15 @@ private final class RecordingMeetingDirectProcessor: MeetingDirectProcessing {
             language: language,
             storeProvided: meetingsStore != nil,
             chunkURLs: event.chunkURLs,
-            reason: event.reason
+            reason: event.reason, continuation: continuation
         ))
         onProcess?(event)
         if delaySeconds > 0 {
             try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
         }
         if let error { throw error }
-        return event.meetingId
+        finishedIds.append(event.meetingId)
+        return continuation?.meetingId ?? event.meetingId
     }
 }
 

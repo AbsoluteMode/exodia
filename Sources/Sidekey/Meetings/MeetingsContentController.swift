@@ -350,6 +350,8 @@ final class MeetingsContentController: NSViewController {
             return "This meeting's note is not available yet."
         }
         switch meta.progressStatus {
+        case .updating:
+            return "This meeting is being updated with the continued call. The earlier note remains available."
         case .waitingToReconnect:
             return "Waiting briefly in case the meeting reconnects. The recording so far is saved."
         case .uploading:

@@ -244,10 +244,16 @@ Meeting Notes:
   converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
   enable-prompt. Auto-end when the system mic is released for 3s (not before
-  the 30s startup grace); an auto-ended recording waits 45 seconds as
-  pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
-  resuming is always the user's decision. WHY:
-  docs/decisions/2026-07-29-reconnect-always-asks.md
+  the 30s startup grace). Every completed call starts processing immediately;
+  an auto-ended part remains a Reconnect candidate for three minutes and any
+  detector re-fire inside that window asks "Notes | Reconnect | Skip".
+  Reconnect captures a fresh part in a separate staging directory. When it ends,
+  the same meeting shows Updating… while the earlier note stays readable; only
+  fresh audio is transcribed, and its findings/transcript supplement the note.
+  Per-meeting processing order, durable recording receipts/content snapshots and
+  versioned additions protect recovery and edits. Speaker labels stay scoped to
+  each part. Manual Stop is final; timeout/Skip never resume recording. WHY:
+  .project-docs/decisions/2026-10-20-meeting-continuations.md
   A BYOK key read that fails with errSecInDarkWake (no Keychain prompt
   possible: dark wake or the lid closing) defers the meeting instead of
   failing it: no failure event, the earlier failure reason is restored and

@@ -67,9 +67,10 @@ final class MeetingsConfig {
     /// An auto-ended recording remains eligible for reconnect during this
     /// window — every re-fire inside it asks via the Notes / Reconnect /
     /// Skip pill, however short the gap. Manual Stop still finalizes
-    /// immediately.
-    /// WHY: docs/decisions/2026-07-29-reconnect-always-asks.md
-    static let reconnectGracePeriodSeconds: TimeInterval = 45
+    /// immediately. Every part is processed as soon as it ends; this UI
+    /// choice never delays notes. Reconnect adds a separately recorded part.
+    /// WHY: .project-docs/decisions/2026-10-20-meeting-continuations.md
+    static let reconnectGracePeriodSeconds: TimeInterval = 3 * 60
 
     /// After the user dismisses a pill, suppress new pills for this many
     /// minutes within the same mic session. Spec: do not nag.

@@ -18,6 +18,7 @@ enum MeetingSyncStatus: String, Sendable {
 enum MeetingProgressStatus: String, Sendable, Codable, Equatable {
     case waitingToReconnect = "waiting_to_reconnect"
     case uploading
+    case updating
     case transcribing
     case generatingProtocol = "generating_protocol"
     case ready
@@ -27,6 +28,7 @@ enum MeetingProgressStatus: String, Sendable, Codable, Equatable {
         switch self {
         case .waitingToReconnect: return "Waiting to reconnect"
         case .uploading: return "Processing"
+        case .updating: return "Updating…"
         case .transcribing: return "Transcribing"
         case .generatingProtocol: return "Preparing protocol"
         case .ready: return "Ready"
@@ -41,7 +43,7 @@ enum MeetingProgressStatus: String, Sendable, Codable, Equatable {
         switch self {
         case .ready, .failed:
             return true
-        case .waitingToReconnect, .uploading, .transcribing, .generatingProtocol:
+        case .waitingToReconnect, .uploading, .transcribing, .generatingProtocol, .updating:
             return false
         }
     }
@@ -220,6 +222,7 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
         markdown: String,
         transcript: [TranscriptSegment]? = nil
     ) throws {
+        try flushPendingContent(id: meta.id)
         try writeMarkdown(meta.id, markdown: markdown)
         if let transcript {
             try writeTranscript(meta.id, transcript: transcript)
@@ -338,8 +341,10 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
     /// and for rows that never had a note (a failed meeting).
     /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
     func delete(id: UUID) throws {
+        try flushPendingContent(id: id)
         try execute("BEGIN IMMEDIATE")
         do {
+            try removeProcessingReceipts(id: id)
             try deleteRow(id: id)
             try removeSidecars(of: id)
             try execute("COMMIT")
@@ -356,8 +361,14 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
     /// come back.
     @discardableResult
     func update(id: UUID, markdown: String, version: Int) throws -> Bool {
-        guard try updateRow(id: id, version: version) else { return false }
-        try writeMarkdown(id, markdown: markdown)
+        try flushPendingContent(id: id)
+        guard let current = try list().first(where: { $0.id == id }) else { return false }
+        var merged = markdown
+        for addition in try noteAdditions(id: id, after: version - 1) {
+            merged = MeetingContinuationMarkdown.appending(addition, to: merged)
+        }
+        guard try updateRow(id: id, version: max(version, current.serverVersion + 1)) else { return false }
+        try writeMarkdown(id, markdown: merged)
         return true
     }
 
@@ -460,6 +471,7 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
     /// is missing. Disk errors are swallowed and logged so a corrupt
     /// install does not crash the menu rebuild.
     func markdown(id: UUID) throws -> String? {
+        if let pending = try pendingContent(id: id) { return pending.markdown }
         let path = markdownURL(for: id)
         guard FileManager.default.fileExists(atPath: path.path) else { return nil }
         return try String(contentsOf: path, encoding: .utf8)
@@ -470,6 +482,7 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
     /// transcript-persistence change ship without one). Decoding
     /// failure is surfaced — a corrupt sidecar is a bug worth seeing.
     func transcript(id: UUID) throws -> [TranscriptSegment]? {
+        if let pending = try pendingContent(id: id) { return pending.transcript }
         let path = transcriptURL(for: id)
         guard FileManager.default.fileExists(atPath: path.path) else { return nil }
         let data = try Data(contentsOf: path)
@@ -477,7 +490,177 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
     }
 
     func updateTranscript(id: UUID, transcript: [TranscriptSegment]) throws {
+        try flushPendingContent(id: id)
         try writeTranscript(id, transcript: transcript)
+    }
+
+    /// Only an explicit continuation can move a ready note back to processing.
+    func beginContinuationUpdate(id: UUID) throws {
+        try executeBound("UPDATE meetings SET progress_status = ?, failure_reason = NULL, status_updated_at = strftime('%s','now') WHERE id = ?",
+                         values: [MeetingProgressStatus.updating.rawValue, id.uuidString])
+    }
+
+    func hasProcessedRecording(_ id: UUID) throws -> Bool {
+        var statement: OpaquePointer?
+        let result = sqlite3_prepare_v2(db,
+            "SELECT 1 FROM meeting_recording_receipts WHERE recording_id = ?", -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        guard result == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: result, message: lastErrorMessage())
+        }
+        try bindText(stmt: statement, position: 1, value: id.uuidString)
+        let step = sqlite3_step(statement)
+        guard step == SQLITE_ROW || step == SQLITE_DONE else {
+            throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+        }
+        return step == SQLITE_ROW
+    }
+
+    /// Atomically commit the new content and the recording receipt in SQLite.
+    /// Sidecars are materialized afterward; until then reads use the committed
+    /// snapshot. A crash between the two sidecar writes cannot duplicate a part
+    /// or lose the previous note. Edits and backups flush this snapshot first.
+    /// WHY: .project-docs/decisions/2026-10-20-meeting-continuations.md
+    func storeProcessedRecording(
+        recordingId: UUID, startedAt: Date, endedAt: Date, duration: TimeInterval,
+        title: String?, markdown addition: String, transcript newTranscript: [TranscriptSegment],
+        continuation: MeetingContinuation?
+    ) throws -> UUID {
+        let id = continuation?.meetingId ?? recordingId
+        if try hasProcessedRecording(recordingId) {
+            try flushPendingContent(id: id)
+            _ = try updateProgress(id: id, status: .ready)
+            return id
+        }
+        let previous = try list().first { $0.id == id }
+        let oldMarkdown = continuation == nil ? nil : try markdown(id: id)
+        let oldTranscript = continuation == nil ? [] : try transcript(id: id) ?? []
+        if continuation != nil, previous == nil || oldMarkdown == nil {
+            throw MeetingContinuationError.missingMeeting
+        }
+        let markdown: String
+        let transcript: [TranscriptSegment]
+        if let continuation, let oldMarkdown {
+            let uneditedSilence = oldTranscript.isEmpty
+                && oldMarkdown == MeetingBYOKProcessor.noSpeechMarkdown
+            markdown = newTranscript.isEmpty ? oldMarkdown : uneditedSilence ? addition
+                : MeetingContinuationMarkdown.appending(addition, to: oldMarkdown)
+            let marker = TranscriptSegment(speaker: nil,
+                start: continuation.audioOffsetSeconds, end: continuation.audioOffsetSeconds,
+                text: "Reconnected after \(MeetingContinuation.gapLabel(continuation.gapSeconds))")
+            let shifted = newTranscript.map { segment in
+                TranscriptSegment(
+                    speaker: segment.speaker.map { "\($0) (part \(continuation.partNumber))" },
+                    start: segment.start + continuation.audioOffsetSeconds,
+                    end: segment.end + continuation.audioOffsetSeconds, text: segment.text)
+            }
+            transcript = oldTranscript + [marker] + shifted
+        } else {
+            markdown = addition
+            transcript = newTranscript
+        }
+        let content = PendingContent(markdown: markdown, transcript: transcript)
+        let encoded = String(decoding: try JSONEncoder().encode(content), as: UTF8.self)
+        let meta = MeetingMetaWithLocalState(
+            id: id, startedAt: continuation?.startedAt ?? startedAt, endedAt: endedAt,
+            durationSeconds: Int(ceil(max(0, (continuation?.audioOffsetSeconds ?? 0) + duration))),
+            title: continuation == nil ? title
+                : oldMarkdown == MeetingBYOKProcessor.noSpeechMarkdown && !newTranscript.isEmpty ? title : previous?.title,
+            syncStatus: previous?.syncStatus ?? .new,
+            serverVersion: (previous?.serverVersion ?? 0) + 1,
+            createdAt: previous?.createdAt ?? Date(), progressStatus: .ready)
+        try execute("BEGIN IMMEDIATE")
+        do {
+            try insertOrUpdateRow(meta: meta)
+            try executeBound("INSERT INTO meeting_content_commits(meeting_id, content) VALUES (?, ?) "
+                + "ON CONFLICT(meeting_id) DO UPDATE SET content = excluded.content",
+                values: [id.uuidString, encoded])
+            try executeBound("INSERT INTO meeting_recording_receipts(recording_id, meeting_id) VALUES (?, ?)",
+                values: [recordingId.uuidString, id.uuidString])
+            if continuation != nil, !newTranscript.isEmpty {
+                try executeBound("INSERT INTO meeting_note_additions(meeting_id, version, content) VALUES (?, ?, ?)",
+                    values: [id.uuidString, String(meta.serverVersion), addition])
+            }
+            try execute("COMMIT")
+        } catch {
+            try? execute("ROLLBACK")
+            throw error
+        }
+        try flushPendingContent(id: id)
+        return id
+    }
+
+    private struct PendingContent: Codable {
+        let markdown: String
+        let transcript: [TranscriptSegment]
+    }
+
+    private func pendingContent(id: UUID) throws -> PendingContent? {
+        var statement: OpaquePointer?
+        let result = sqlite3_prepare_v2(db,
+            "SELECT content FROM meeting_content_commits WHERE meeting_id = ?", -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        guard result == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: result, message: lastErrorMessage())
+        }
+        try bindText(stmt: statement, position: 1, value: id.uuidString)
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return nil }
+        guard step == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else {
+            throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+        }
+        return try JSONDecoder().decode(PendingContent.self, from: Data(String(cString: raw).utf8))
+    }
+
+    private func flushPendingContent(id: UUID) throws {
+        guard let pending = try pendingContent(id: id) else { return }
+        try writeTranscript(id, transcript: pending.transcript)
+        try writeMarkdown(id, markdown: pending.markdown)
+        try executeBound("DELETE FROM meeting_content_commits WHERE meeting_id = ?", values: [id.uuidString])
+    }
+
+    private func removeProcessingReceipts(id: UUID) throws {
+        try executeBound("DELETE FROM meeting_recording_receipts WHERE meeting_id = ?", values: [id.uuidString])
+        try executeBound("DELETE FROM meeting_content_commits WHERE meeting_id = ?", values: [id.uuidString])
+        try executeBound("DELETE FROM meeting_note_additions WHERE meeting_id = ?", values: [id.uuidString])
+    }
+
+    private func noteAdditions(id: UUID, after version: Int) throws -> [String] {
+        var statement: OpaquePointer?
+        let result = sqlite3_prepare_v2(db,
+            "SELECT content FROM meeting_note_additions WHERE meeting_id = ? AND version > ? ORDER BY version",
+            -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        guard result == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: result, message: lastErrorMessage())
+        }
+        try bindText(stmt: statement, position: 1, value: id.uuidString)
+        try bindInt(stmt: statement, position: 2, value: version)
+        var additions: [String] = []
+        while true {
+            let step = sqlite3_step(statement)
+            if step == SQLITE_DONE { return additions }
+            guard step == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else {
+                throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+            }
+            additions.append(String(cString: raw))
+        }
+    }
+
+    private func executeBound(_ sql: String, values: [String]) throws {
+        var statement: OpaquePointer?
+        let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        guard result == SQLITE_OK else {
+            throw MeetingsStoreError.sqlitePrepareFailed(code: result, message: lastErrorMessage())
+        }
+        for (index, value) in values.enumerated() {
+            try bindText(stmt: statement, position: Int32(index + 1), value: value)
+        }
+        let step = sqlite3_step(statement)
+        guard step == SQLITE_DONE else {
+            throw MeetingsStoreError.sqliteStepFailed(code: step, message: lastErrorMessage())
+        }
     }
 
     /// `true` once the store contains at least one row. Used by
@@ -569,6 +752,22 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
             ON meetings(created_at DESC)
             """)
 
+        try executeRaw(db: dbHandle, sql: """
+            CREATE TABLE IF NOT EXISTS meeting_recording_receipts (
+                recording_id TEXT PRIMARY KEY, meeting_id TEXT NOT NULL
+            )
+            """)
+        try executeRaw(db: dbHandle, sql: """
+            CREATE TABLE IF NOT EXISTS meeting_content_commits (
+                meeting_id TEXT PRIMARY KEY, content TEXT NOT NULL
+            )
+            """)
+        try executeRaw(db: dbHandle, sql: """
+            CREATE TABLE IF NOT EXISTS meeting_note_additions (
+                meeting_id TEXT NOT NULL, version INTEGER NOT NULL, content TEXT NOT NULL,
+                PRIMARY KEY(meeting_id, version)
+            )
+            """)
         return dbHandle
     }
 
@@ -874,6 +1073,7 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
         guard let db, isOpen else {
             throw MeetingsStoreError.filesystem("meetings store is closed")
         }
+        for row in try list() { try flushPendingContent(id: row.id) }
         let manager = FileManager.default
         let databaseDirectory = directory.appendingPathComponent("db", isDirectory: true)
         let notesDirectory = directory.appendingPathComponent("notes", isDirectory: true)
