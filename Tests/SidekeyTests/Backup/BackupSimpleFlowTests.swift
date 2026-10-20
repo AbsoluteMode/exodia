@@ -262,6 +262,72 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "saved")
     }
 
+    func testLaunchWithoutNetworkOrDuringRateLimitResumesSyncWithoutOpeningSettings() async throws {
+        for failure in [-1, 503, 403] {
+            remote = BackupGitHubFixture(json: { try! JSONSerialization.data(withJSONObject: $0) })
+            let source = try profile(), key = MemoryTokenStore(), token = MemoryTokenStore()
+            var time = Date(), unavailable = false
+            StubURLProtocol.handler = { [remote] request in
+                if unavailable {
+                    if failure == -1 { throw URLError(.notConnectedToInternet) }
+                    return (failure, failure == 403 ? ["Retry-After": "1800"] : [:], Data())
+                }
+                return try remote!.handle(request)
+            }
+            let first = model(source, keyStore: key, githubTokenStore: token, now: { time })
+            await first.connectGitHub(token: "synthetic-token")
+            await first.backupEverything()
+            let published = remote.publishCount
+            XCTAssertEqual(published, 1)
+            await first.stopAndWait()
+            unavailable = true
+            let restarted = model(source, keyStore: key, githubTokenStore: token, now: { time })
+            await restarted.start()?.value
+            XCTAssertEqual(restarted.githubConnectionState, .needsAttention)
+            unavailable = false
+            source.defaults.set("after-network-returned", forKey: "sidekey.preferences.transcriptionMode")
+            let requests = StubURLProtocol.capturedRequests.count
+            time.addTimeInterval(61)
+            await restarted.poll()
+            XCTAssertEqual(StubURLProtocol.capturedRequests.count, requests, "Respect the initial backoff")
+            if failure == 403 {
+                time.addTimeInterval(1_000)
+                await restarted.poll()
+                XCTAssertEqual(StubURLProtocol.capturedRequests.count, requests, "Honor GitHub's Retry-After")
+            }
+            time.addTimeInterval(2_000)
+            await restarted.poll()
+            XCTAssertEqual(restarted.githubConnectionState, .connected)
+            XCTAssertEqual(remote.publishCount, published + 1)
+            XCTAssertEqual(restarted.syncState, .synced)
+            await restarted.stopAndWait()
+        }
+    }
+
+    func testInvalidGitHubCredentialsStayPausedUntilExplicitReconnect() async throws {
+        let source = try profile(), key = MemoryTokenStore(), token = MemoryTokenStore()
+        var time = Date()
+        let first = model(source, keyStore: key, githubTokenStore: token, now: { time })
+        await first.connectGitHub(token: "synthetic-token")
+        await first.backupEverything()
+        await first.stopAndWait()
+        StubURLProtocol.handler = { _ in (401, [:], Data()) }
+        let restarted = model(source, keyStore: key, githubTokenStore: token, now: { time })
+        await restarted.start()?.value
+        let requests = StubURLProtocol.capturedRequests.count
+        source.defaults.set("after-revocation", forKey: "sidekey.preferences.transcriptionMode")
+        time.addTimeInterval(2_000)
+        await restarted.poll()
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, requests)
+        XCTAssertEqual(remote.publishCount, 1)
+        StubURLProtocol.handler = { [remote] request in try remote!.handle(request) }
+        await restarted.connectGitHub(token: "synthetic-new-token")
+        await restarted.poll()
+        XCTAssertEqual(remote.publishCount, 2)
+        XCTAssertEqual(restarted.syncState, .synced)
+        await restarted.stopAndWait()
+    }
+
     func testRestoreFindsTheNewestSnapshotThatMatchesItsRecoveryCode() async throws {
         let source = try profile(), other = try profile(), target = try profile()
         source.defaults.set("original-key-generation", forKey: "sidekey.preferences.transcriptionMode")
@@ -396,6 +462,11 @@ final class BackupSimpleFlowTests: XCTestCase {
         await model.backupEverything()
         XCTAssertTrue(model.recoveryCode.isEmpty)
         XCTAssertEqual(prompts, 0, "Ordinary backups do not prompt or reveal credentials")
+        // Switching a destination clears its remote date, but the same code
+        // has already been presented and must still require authentication.
+        model.lastRemoteBackupAt = nil
+        await model.backupEverything()
+        XCTAssertTrue(model.recoveryCode.isEmpty)
         await model.showRecoveryCode()
         XCTAssertEqual(prompts, 1)
         XCTAssertTrue(model.recoveryCode.isEmpty)

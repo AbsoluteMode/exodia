@@ -26,6 +26,9 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Backup/ArtifactBackupCoverageTests.swift
     confirmed_at: 2026-10-21
+  - type: url
+    reference: https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api
+    confirmed_at: 2026-10-21
 related: [2026-10-19-config-backup.md, 2026-10-21-backup-tagged-caches.md]
 ---
 
@@ -46,11 +49,14 @@ repeating Back up exposed the same code without the existing authentication gate
   copies by capture date. New indexes carry the date inside their ciphertext;
   legacy indexes read the authenticated archive manifest prefix. Continue full
   digest/content verification before staging any restore. A new Mac with remote
-  copies must use Restore before creating another key.
+  copies must use Restore before uploading under another key. Local encrypted
+  settings history can still create a local-only key before that restore.
 - Transfer existing pending copies before exporting another full archive. Keep
   existing copies rather than deleting unsent data. Back off network failures
-  from two to fifteen minutes, require reconnecting for account/repository
-  failures, and stop automatic exports of an unchanged invalid source. A source
+  from two to fifteen minutes (or a later GitHub rate-limit deadline). Recheck a
+  transient connection failure after an offline launch without requiring open
+  Settings. Only actual authentication/permission/public-repository failures
+  require reconnecting. Stop automatic exports of an unchanged invalid source. A source
   change or explicit Back up retries it. Validate workspace paths before large
   meeting exports and identify unsupported relative paths in the visible error.
 - Schema 3 recognizes retained inactive recording manifests and regular Notify
@@ -87,6 +93,7 @@ new Mac remain separate from restoring saved values.
 
 Synthetic profiles and an in-memory GitHub transport exercise offline edits,
 reverse upload order, legacy completion indexes, multiple recovery keys,
+offline startup, advertised rate limits versus revoked credentials,
 clean-profile restore, failed-authentication display, unchanged invalid inputs,
 repeat restore/backup, inactive-file coexistence, and Case policy precedence.
 Offscreen native fixtures cover supported widths, appearances and control states.

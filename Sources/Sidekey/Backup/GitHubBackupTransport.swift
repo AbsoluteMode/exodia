@@ -19,12 +19,14 @@ actor GitHubBackupTransport {
 
     enum Failure: Error, LocalizedError, Equatable {
         case authentication, permission, publicRepository, unavailable, invalidResponse, incomplete, noCLI, noLogin
+        case rateLimited(until: Date)
+        var requiresReconnect: Bool { [.authentication, .permission, .publicRepository].contains(self) }
         var errorDescription: String? {
             switch self {
             case .authentication: return "GitHub could not sign you in. Reconnect with a valid token or GitHub CLI login."
             case .permission: return "GitHub needs access to Exodia-Backup. Give the token Contents read and write access; creating the private repository also requires repository creation permission."
             case .publicRepository: return "Exodia-Backup is public. Your backups are encrypted, but automatic uploads are paused. Make the repository private, then reconnect."
-            case .unavailable: return "GitHub is unavailable or its request limit was reached. Your local copy is safe; Whytap will retry."
+            case .unavailable, .rateLimited: return "GitHub is unavailable or its request limit was reached. Your local copy is safe; Whytap will retry."
             case .invalidResponse: return "GitHub returned an unexpected response. Reconnect and try again."
             case .incomplete: return "This GitHub backup is incomplete or damaged. Choose another version."
             case .noCLI: return "GitHub CLI was not found. Connect with an access token, or install GitHub CLI and run gh auth login."
@@ -428,8 +430,21 @@ actor GitHubBackupTransport {
         switch response.statusCode {
         case 200..<300: return
         case 401: throw Failure.authentication
-        case 403, 404: throw Failure.permission
-        case 429, 500...599: throw Failure.unavailable
+        case 403, 429:
+            let retry = response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+            let exhausted = response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0"
+            let reset = response.value(forHTTPHeaderField: "X-RateLimit-Reset").flatMap(Double.init)
+            if retry != nil || exhausted {
+                let now = Date()
+                var until = now.addingTimeInterval(60)
+                if let retry, retry.isFinite, retry >= 0 { until = max(until, now.addingTimeInterval(retry)) }
+                if exhausted, let reset, reset.isFinite { until = max(until, Date(timeIntervalSince1970: reset)) }
+                throw Failure.rateLimited(until: until)
+            }
+            if response.statusCode == 403 { throw Failure.permission }
+            throw Failure.unavailable
+        case 404: throw Failure.permission
+        case 500...599: throw Failure.unavailable
         default: throw Failure.invalidResponse
         }
     }

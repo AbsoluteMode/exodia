@@ -27,7 +27,9 @@ before automatic sync was introduced. Changes are checked every minute; uploads
 are spaced at least two minutes apart and wait while recording or agent work is
 active. Failed uploads keep their local copy and retry before creating another
 full archive, so every offline edit does not add another full copy. Network
-retries back off to at most once every fifteen minutes; account or repository
+retries back off to at most once every fifteen minutes, or longer if GitHub
+requests it. Starting without a network also retries the connection in the
+background; opening Settings is not required. Account or repository
 permission failures require reconnecting. An unchanged unsupported file or size
 limit stops automatic export retries until the files change; **Back up** also
 retries explicitly. Backup shows **Backup
@@ -46,6 +48,9 @@ saved elsewhere; keep it outside this Mac.
 
 Encryption happens before upload. The recovery code is independent of GitHub
 and cannot be reset by GitHub or Whytap. macOS permissions stay machine-specific.
+If the code is lost, the existing encrypted copies cannot be unlocked. A new Mac
+keeps them rather than silently replacing them with another code. Starting fresh
+requires removing those copies in GitHub yourself or using another GitHub account.
 GitHub receives encrypted bytes and cannot read the backed-up secrets without
 the recovery code.
 A backup restores a saved version; it does not merge edits between Macs.

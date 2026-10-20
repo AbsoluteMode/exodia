@@ -77,6 +77,7 @@ final class BackupViewModel: ObservableObject {
     private var transferFailureCount = 0
     private var nextAutomaticAttempt = Date.distantPast
     private var stalledSourceStamp: String?
+    private var githubRequiresReconnect = false
 
     init(defaults: UserDefaults = .standard,
          keyStore: TokenStore = KeychainStore(account: BackupViewModel.keyAccount),
@@ -183,7 +184,11 @@ final class BackupViewModel: ObservableObject {
                 }
                 github = try GitHubBackupTransport(token: token, owner: owner, session: githubSession)
                 await updateGitHubConnection()
-            } catch { githubConnectionState = .needsAttention; githubConnectionError = error.localizedDescription }
+            } catch {
+                githubRequiresReconnect = (error as? GitHubBackupTransport.Failure)?.requiresReconnect == true
+                githubConnectionState = .needsAttention; githubConnectionError = error.localizedDescription
+                recordBackupFailure(error, sourceStamp: nil)
+            }
         }
         do { versions = try await local.versions(destinationID: defaults.string(forKey: "backup.destination-id.v1")) }
         catch { fail(error) }
@@ -538,6 +543,8 @@ final class BackupViewModel: ObservableObject {
                 _ = try await transport.versions()
                 try githubTokenStore.save(token.trimmingCharacters(in: .whitespacesAndNewlines))
                 github = transport; githubConnectionState = .connected; githubConnectionError = nil; isBusy = false
+                githubRequiresReconnect = false
+                transferFailureCount = 0; nextAutomaticAttempt = .distantPast
                 statusText = "Reconnected. Choose Finish backup management to continue."
                 return
             }
@@ -546,6 +553,8 @@ final class BackupViewModel: ObservableObject {
             let name = await transport.destinationName
             try githubTokenStore.save(token.trimmingCharacters(in: .whitespacesAndNewlines))
             github = transport; githubConnectionState = .connected; githubConnectionError = nil
+            githubRequiresReconnect = false
+            transferFailureCount = 0; nextAutomaticAttempt = .distantPast
             destinationName = "GitHub · " + name
             selectDestination(id: "github:" + name.lowercased())
             defaults.set("github", forKey: "backup.destination-kind.v1")
@@ -607,6 +616,8 @@ final class BackupViewModel: ObservableObject {
             try await github.checkConnection()
             try Task.checkCancellation()
             githubConnectionState = .connected
+            githubRequiresReconnect = false
+            transferFailureCount = 0; nextAutomaticAttempt = .distantPast
         } catch {
             if error is CancellationError || Task.isCancelled {
                 githubConnectionState = previousState
@@ -614,6 +625,8 @@ final class BackupViewModel: ObservableObject {
             }
             githubConnectionState = .needsAttention
             githubConnectionError = error.localizedDescription
+            githubRequiresReconnect = (error as? GitHubBackupTransport.Failure)?.requiresReconnect == true
+            recordBackupFailure(error, sourceStamp: nil)
         }
     }
 
@@ -641,7 +654,7 @@ final class BackupViewModel: ObservableObject {
             guard self.idle() else { self.fail(ConfigBackupError.busy); return }
             self.hideRecoveryCode()
             let presentationID = self.codePresentationID
-            let firstBackup = self.lastRemoteBackupAt == nil
+            let firstBackup = self.lastRemoteBackupAt == nil && !self.hasPresentedRecoveryCode
             do {
                 if self.lastBackupAt == nil, self.lastRemoteBackupAt == nil, !self.recoverySaved,
                    let github = self.github {
@@ -1203,8 +1216,17 @@ final class BackupViewModel: ObservableObject {
         let stamp = await Task.detached(priority: .utility) { probe() }.value
         if stamp != sourceStamp { markDirty() }
         guard isEnabled, recoverySaved, idle(), now().timeIntervalSince(lastAttempt) >= 120,
-              now() >= nextAutomaticAttempt, stamp != stalledSourceStamp,
-              destinationKind != "github" || githubConnectionState == .connected else { return }
+              now() >= nextAutomaticAttempt, stamp != stalledSourceStamp else { return }
+        if destinationKind == "github", githubConnectionState != .connected {
+            guard !githubRequiresReconnect, github != nil else { return }
+            await retainOperation(.connection) {
+                self.isBusy = true
+                await self.updateGitHubConnection()
+                self.isBusy = false
+            }
+            guard !stopped, !Task.isCancelled, !needsRestart, !hasPendingMaintenance,
+                  isEnabled, recoverySaved, idle(), githubConnectionState == .connected else { return }
+        }
         if needsFullBackup { await backupNow() }
         else if let pending = try? await local.pendingCopies(destinationID: defaults.string(forKey: "backup.destination-id.v1") ?? ""), !pending.isEmpty {
             await retainOperation(.backup) { await self.retryPendingCopies() }
@@ -1237,6 +1259,9 @@ final class BackupViewModel: ObservableObject {
             transferFailureCount += 1
             let delay = min(900, 120 * pow(2, Double(min(transferFailureCount - 1, 3))))
             nextAutomaticAttempt = now().addingTimeInterval(delay)
+            if let failure = error as? GitHubBackupTransport.Failure, case .rateLimited(let until) = failure {
+                nextAutomaticAttempt = max(nextAutomaticAttempt, until)
+            }
         }
     }
 
@@ -1261,7 +1286,8 @@ final class BackupViewModel: ObservableObject {
         else if let error = error as? ArtifactBackupError { errorMessage = error.localizedDescription }
         else if let error = error as? GitHubBackupTransport.Failure {
             errorMessage = error.localizedDescription
-            if [.authentication, .permission, .publicRepository].contains(error) {
+            if error.requiresReconnect {
+                githubRequiresReconnect = true
                 githubConnectionState = .needsAttention; githubConnectionError = error.localizedDescription
             }
         }
