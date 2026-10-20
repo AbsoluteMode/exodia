@@ -146,7 +146,7 @@ final class APIAndModelsRenderTests: XCTestCase {
                 size: NSSize(width: 390, height: 390), dark: dark,
                 to: directory.appendingPathComponent("cost-models-many-\(dark ? "dark" : "light").png"))
             try await render(AIUsageDateCalendar(title: "From", date: .constant(fixtureNow), latest: fixtureNow, close: {}),
-                size: NSSize(width: 300, height: 310), dark: dark,
+                size: NSSize(width: 310, height: 318), dark: dark,
                 to: directory.appendingPathComponent("cost-date-calendar-\(dark ? "dark" : "light").png"))
             try await render(HStack(spacing: 12) {
                 Button("Normal") {}.buttonStyle(AIUsageControlStyle(hovered: false, focused: false, compactLabel: true))

@@ -2,7 +2,7 @@
 id: api-and-models-2026-10-19
 type: decision
 title: API & Models - provider keys once, one model per AI feature
-summary: Settings -> API & Models replaces Models. Keys are entered once per provider; each of eight AI features has its own provider and model, read on every call. Catalogs and synthetic probes decide which models are offered; Exodia never changes a model or provider by itself.
+summary: Settings -> API & Models replaces Models. Keys are entered once per provider; each of eight AI features has its own provider and model, read on every call. Catalogs and synthetic probes decide which models are offered; Whytap never changes a model or provider by itself.
 status: confirmed
 tags: [settings, models, keys, routing, migration, agent, anthropic, privacy]
 canonical_for: [feature-model-routing, api-and-models-tab]
@@ -105,7 +105,7 @@ tool calls, which the agent needs.
 - Catalogs alone cannot say whether a model fits a feature (none of the
   providers publishes enough), so the decision is catalog data, the built-in
   registry and a cheap probe. Routing it through verification lets new
-  provider models appear without an Exodia release, while untested ones are
+  provider models appear without a Whytap release, while untested ones are
   labelled instead of hidden or silently trusted.
 - Reusing the Keychain accounts avoids asking anyone to re-enter keys after
   the update.
@@ -148,7 +148,7 @@ tool calls, which the agent needs.
 - Two pickers per row (provider, then model): heavier than the approved layout;
   the provider is part of the model's name.
 - Assigning a new key to empty features automatically: it would turn on a route
-  only because a key exists. After a key is saved Exodia only offers "Use
+  only because a key exists. After a key is saved Whytap only offers "Use
   Soniox for" and the user ticks.
 - Replacing `stt-rt-v4` with `stt-rt-v5` quietly: works today (alias), but is
   exactly the screen-versus-sent mismatch. It is flagged "Deprecated alias" with

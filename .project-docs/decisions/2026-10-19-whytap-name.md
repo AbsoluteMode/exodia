@@ -6,8 +6,11 @@ summary: Return public branding to Whytap while preserving signing, stores, encr
 status: confirmed
 tags: [branding, repository, compatibility, macos]
 canonical_for: [product-name]
-verified_at: 2026-10-19
+verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 the user reaffirmed that the project is Whytap, not Exodia, and requested correction of all remaining stale naming information.
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-19 the user chose Whytap, stated ownership of whytap.ai and asked to rename everything back from Exodia.
     confirmed_at: 2026-10-19
@@ -17,7 +20,7 @@ sources:
   - type: repository
     reference: scripts/build-dmg.sh
     confirmed_at: 2026-10-19
-related: [../project.md, ../processes/shared-app-development.md, 2026-10-17-exodia-name.md]
+related: [../project.md, ../processes/shared-app-development.md, 2026-10-19-shared-working-app.md, 2026-10-17-exodia-name.md]
 ---
 
 # Restore Whytap
@@ -37,6 +40,11 @@ Use **Whytap** for the product, app bundle names, interface, agent identity,
 current guides and new release artifacts. The public source repository is
 `AbsoluteMode/whytap`; rename the existing repository in place so its numeric
 identity, issues, pull requests, history and released assets survive.
+
+The user reaffirmed this name on 2026-10-21. The canonical primary checkout folder
+is named `whytap`; an older `exodia` path can remain a compatibility symlink.
+User-level harness instructions and current project guidance must use
+Whytap and must not treat that old path or historical sessions as current branding.
 
 ## Rationale
 
@@ -63,10 +71,10 @@ The domain is a product address, not a new application backend or update host.
 - Existing Exodia GitHub URLs redirect after the repository rename. Do not
   relabel old sealed DMGs or claim a new public binary release. Until a new
   release is published, its latest package can still be Exodia-latest.dmg.
-- The next checked local promotion uses `/Applications/Whytap.app`. Preserve the
-  existing Exodia bundle privately and remove it from Applications only at a
-  safe normal quit. A merge and a repository rename alone do not update the
-  running application.
+- The canonical working app is `/Applications/Whytap.app`; the primary build
+  receipt records its verified running version and source. An older bundle
+  must only be replaced at a checked safe promotion. A documentation edit or
+  repository rename alone does not update the running application.
 
 ## Sources
 
