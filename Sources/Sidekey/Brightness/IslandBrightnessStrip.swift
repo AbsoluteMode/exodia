@@ -36,7 +36,11 @@ struct IslandBrightnessStrip: View {
                 .accessibilityLabel("Back to tools")
 
                 BrightnessCapsuleSlider(level: controller.level, isEnabled: controller.isAvailable,
-                                        onChange: controller.setLevel)
+                                        onChange: controller.setLevel,
+                                        onEditingChanged: { editing in
+                                            if editing { controller.beginLevelDrag() }
+                                            else { controller.endLevelDrag() }
+                                        })
 
                 if controller.supportsExtra {
                     // The island is never the active app's key window, where the native switch
@@ -108,9 +112,11 @@ struct BrightnessCapsuleSlider: View {
     let level: Double
     let isEnabled: Bool
     let onChange: @MainActor (Double) -> Void
+    var onEditingChanged: @MainActor (Bool) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dragging = false
+    @GestureState private var dragActive = false
 
     /// The fill always covers the sun at the start, so the pointer maps from
     /// the middle of that start to the middle of the end.
@@ -142,16 +148,36 @@ struct BrightnessCapsuleSlider: View {
             .contentShape(Capsule())
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($dragActive) { _, active, _ in active = true }
                     .onChanged { value in
-                        dragging = true
+                        if !dragging {
+                            dragging = true
+                            onEditingChanged(true)
+                        }
                         onChange(Self.level(atX: value.location.x, width: width))
                     }
-                    .onEnded { _ in dragging = false }
+                    .onEnded { _ in
+                        dragging = false
+                        onEditingChanged(false)
+                    }
             )
         }
         .frame(height: Self.height)
         .opacity(isEnabled ? 1 : 0.6)
         .allowsHitTesting(isEnabled)
+        .onChange(of: dragActive) { _, active in
+            // GestureState also resets when macOS cancels a drag without an onEnded.
+            if !active, dragging {
+                dragging = false
+                onEditingChanged(false)
+            }
+        }
+        .onDisappear {
+            if dragging {
+                dragging = false
+                onEditingChanged(false)
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel("Brightness")
         .accessibilityValue("\(Int((ScreenBrightnessScale.clampedLevel(level) * 100).rounded())) percent")
