@@ -85,14 +85,14 @@ struct IslandCaseVaultPanel: View {
 
             if case let .needsReset(message) = viewModel.unlockState {
                 Button(action: resetCase) {
-                    unlockPill(title: viewModel.isResetArmed ? "Confirm Reset" : "Reset Case")
+                    unlockPill(title: viewModel.isResetArmed ? "Подтвердить сброс" : "Сбросить Case")
                 }
                 .buttonStyle(.plain)
                 .disabled(isUnlocking)
 
                 // Armed: spell out the stakes — the second press is irreversible.
                 Text(viewModel.isResetArmed
-                    ? "This permanently deletes this Case. Press again to confirm."
+                    ? "Case будет удалён навсегда. Нажмите ещё раз для подтверждения."
                     : message)
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.52))
@@ -101,7 +101,7 @@ struct IslandCaseVaultPanel: View {
                     .minimumScaleFactor(0.8)
                     .padding(.horizontal, 14)
             } else if case let .needsNewerApp(message) = viewModel.unlockState {
-                unlockPill(title: "Update Required")
+                unlockPill(title: "Нужно обновление")
 
                 Text(message)
                     .font(.system(size: 9.5, weight: .medium))
@@ -112,16 +112,16 @@ struct IslandCaseVaultPanel: View {
                     .padding(.horizontal, 14)
             } else {
                 if isUnlocking || !hasTriggeredInitialUnlock {
-                    unlockPill(title: "Unlocking...")
+                    unlockPill(title: "Открываю…")
                 } else {
                     Button(action: unlock) {
-                        unlockPill(title: "Retry Unlock")
+                        unlockPill(title: "Открыть ещё раз")
                     }
                     .buttonStyle(.plain)
                     .disabled(isUnlocking)
                 }
 
-                Text("Touch ID / macOS password")
+                Text("Touch ID или пароль macOS")
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.46))
 
@@ -240,7 +240,7 @@ struct IslandCaseVaultPanel: View {
     private static let cancelInputAction = IslandCaseRowAction(
         systemImage: "xmark",
         accessibilityIdentifier: "case.input.cancel",
-        accessibilityLabel: "Cancel key input"
+        accessibilityLabel: "Отменить ввод ключа"
     )
 
     @ViewBuilder
@@ -272,7 +272,7 @@ struct IslandCaseVaultPanel: View {
             }
             return "Имя ключа или поиск"
         case .value:
-            return "Enter value"
+            return "Введите значение"
         }
     }
 
@@ -385,11 +385,11 @@ struct IslandCaseVaultPanel: View {
     private func secretEditControls(_ row: CaseDisplayRow) -> some View {
         VStack(spacing: 4) {
             editField {
-                TextField("Name", text: $editName)
+                TextField("Имя", text: $editName)
                     .font(.system(size: 9.5, weight: .medium, design: .monospaced))
             }
             editField {
-                SecureField("New value", text: $editValue)
+                SecureField("Новое значение", text: $editValue)
                     .font(.system(size: 9.5, weight: .medium))
                     .onSubmit { saveSecretEdit(row) }
             }
@@ -454,13 +454,13 @@ struct IslandCaseVaultPanel: View {
     private static let saveEditAction = IslandCaseRowAction(
         systemImage: "checkmark",
         accessibilityIdentifier: "case.edit.save",
-        accessibilityLabel: "Save"
+        accessibilityLabel: "Сохранить"
     )
 
     private static let cancelEditAction = IslandCaseRowAction(
         systemImage: "xmark",
         accessibilityIdentifier: "case.edit.cancel",
-        accessibilityLabel: "Cancel edit"
+        accessibilityLabel: "Отменить правку"
     )
 
     private var accessRow: some View {
@@ -715,31 +715,31 @@ struct IslandCaseVaultPanel: View {
     private func caseErrorMessage(for error: Error, isProjectAction: Bool = false) -> String {
         switch error {
         case CaseNameValidationError.empty:
-            return "Name is required"
+            return "Введите имя"
         case CaseNameValidationError.rawTooLong:
-            return "Name is too long"
+            return "Имя слишком длинное"
         case CaseNameValidationError.nonASCII:
-            return "Use A-Z, 0-9 and separators"
+            return "Только A-Z, 0-9 и разделители"
         case CaseNameValidationError.normalizedTooLong:
-            return "Normalized name is too long"
+            return "Имя после приведения слишком длинное"
         case CaseViewModelError.duplicateName:
-            return isProjectAction ? "Project already exists" : "Key already exists"
+            return isProjectAction ? "Такой проект уже есть" : "Такой ключ уже есть"
         case CaseViewModelError.emptyValue:
-            return "Value is required"
+            return "Введите значение"
         case CaseViewModelError.valueTooLong:
-            return "Value is too long"
+            return "Значение слишком длинное"
         case CaseViewModelError.invalidProjectName:
-            return "Project name is invalid"
+            return "Недопустимое имя проекта"
         case CaseViewModelError.invalidProjectOperation:
-            return "Cannot change this project"
+            return "Этот проект нельзя изменить"
         case CaseViewModelError.descriptionTooLong:
-            return "Description is too long"
+            return "Описание слишком длинное"
         case CaseViewModelError.missingProject:
-            return "Project not found"
+            return "Проект не найден"
         case CaseViewModelError.locked:
-            return "Case is locked"
+            return "Case заблокирован"
         default:
-            return "Action failed"
+            return "Не получилось"
         }
     }
 }

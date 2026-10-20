@@ -44,8 +44,8 @@ final class IslandCaseVaultPanelTests: XCTestCase {
 
         XCTAssertTrue(source.contains("unlockIfNeededOnOpen()"))
         XCTAssertTrue(source.contains("hasTriggeredInitialUnlock"))
-        XCTAssertTrue(source.contains("Retry Unlock"))
-        XCTAssertTrue(source.contains("Unlocking..."))
+        XCTAssertTrue(source.contains("Открыть ещё раз"))
+        XCTAssertTrue(source.contains("Открываю…"))
         XCTAssertTrue(source.contains("Touch ID"))
         XCTAssertFalse(source.contains("openSettings"))
         XCTAssertFalse(source.contains("Settings"))
@@ -56,8 +56,8 @@ final class IslandCaseVaultPanelTests: XCTestCase {
 
         // Two-step confirm: armed state must flip the button label AND swap the
         // supporting copy to spell out that the second press is irreversible.
-        XCTAssertTrue(source.contains("Confirm Reset"))
-        XCTAssertTrue(source.contains("This permanently deletes this Case. Press again to confirm."))
+        XCTAssertTrue(source.contains("Подтвердить сброс"))
+        XCTAssertTrue(source.contains("Case будет удалён навсегда. Нажмите ещё раз для подтверждения."))
     }
 
     private func caseVaultPanelSource() throws -> String {

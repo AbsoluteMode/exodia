@@ -149,17 +149,17 @@ final class CaseViewModel: ObservableObject {
     private static let maxValueBytes = 16 * 1024
     private static let maxDescriptionCharacters = 200
     private static let maxProjectNameCharacters = CaseProject.maxNameCharacters
-    private static let sanitizedUnlockFailureMessage = "Unable to unlock Case"
-    private static let needsResetMessage = "Couldn't unlock this Case. Reset starts a new one and keeps the old file."
-    private static let needsNewerAppMessage = "Update the app to open this Case."
-    private static let unlockReason = "Unlock Case"
+    private static let sanitizedUnlockFailureMessage = "Не удалось открыть Case"
+    private static let needsResetMessage = "Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."
+    private static let needsNewerAppMessage = "Обновите приложение, чтобы открыть этот Case."
+    private static let unlockReason = "Открыть Case"
 
     @Published private(set) var unlockState: CaseUnlockState = .locked
     @Published private(set) var rows: [CaseDisplayRow] = []
     @Published private(set) var inputMode: CaseInputMode = .name
     /// Whether the first "arm" step of the two-step reset confirm has been
     /// taken. The UI calls armResetVault() on first press; resetVault() on
-    /// second. Published because the panel keys its "Confirm Reset" label and
+    /// second. Published because the panel keys its "Подтвердить сброс" label and
     /// warning copy off this — arming must trigger a SwiftUI re-render.
     @Published private(set) var isResetArmed = false
     /// What the last registration change could not set up in the client

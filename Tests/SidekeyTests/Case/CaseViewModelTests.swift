@@ -162,7 +162,7 @@ final class CaseViewModelTests: XCTestCase {
             XCTAssertFalse(String(describing: error).contains("sk-secret-value"))
         }
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertFalse(String(describing: vm.unlockState).contains("sk-secret-value"))
     }
 
@@ -182,7 +182,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertTrue(vm.rows.isEmpty)
         XCTAssertEqual(vm.inputMode, .name)
         XCTAssertFalse(String(describing: vm.rows).contains("sk-stale-value"))
@@ -200,7 +200,7 @@ final class CaseViewModelTests: XCTestCase {
             XCTAssertFalse(String(describing: error).contains("sk-secret-value"))
         }
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertFalse(String(describing: vm.unlockState).contains("sk-secret-value"))
     }
 
@@ -216,7 +216,7 @@ final class CaseViewModelTests: XCTestCase {
             XCTAssertFalse(String(describing: error).contains("sk-secret-value"))
         }
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertFalse(String(describing: vm.unlockState).contains("sk-secret-value"))
     }
 
@@ -229,7 +229,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."))
         XCTAssertTrue(vm.rows.isEmpty)
     }
 
@@ -242,7 +242,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."))
     }
 
     func test_unlock_newer_schema_vault_enters_needs_newer_app_not_needs_reset() async {
@@ -257,7 +257,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsNewerApp("Update the app to open this Case."))
+        XCTAssertEqual(vm.unlockState, .needsNewerApp("Обновите приложение, чтобы открыть этот Case."))
     }
 
     func test_newer_schema_vault_does_not_classify_as_undecryptable() async {
@@ -299,7 +299,7 @@ final class CaseViewModelTests: XCTestCase {
     }
 
     func test_arm_reset_publishes_change_so_confirm_ui_can_render() async throws {
-        // The panel's "Confirm Reset" label and warning copy key off
+        // The panel's "Подтвердить сброс" label and warning copy key off
         // isResetArmed. Arming must emit objectWillChange or SwiftUI never
         // re-renders and the confirm step is invisible to the user.
         let env = TestCaseEnvironment(
@@ -348,7 +348,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
     }
 
     func test_reset_vault_discards_file_and_allows_fresh_unlock() async throws {
@@ -358,7 +358,7 @@ final class CaseViewModelTests: XCTestCase {
         )
         let vm = env.makeViewModel()
         await XCTAssertAsyncThrows(try await vm.unlock())
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."))
 
         vm.armResetVault()
         try vm.resetVault()
@@ -392,7 +392,7 @@ final class CaseViewModelTests: XCTestCase {
 
         XCTAssertEqual(env.authenticator.authenticateCallCount, 1)
         XCTAssertEqual(env.keys.readCallCount, 0)
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
     }
 
     func test_query_change_refreshes_idle_lock() async throws {
@@ -800,7 +800,7 @@ private final class StubCaseAuthenticator: CaseAuthenticating {
 
     func authenticate(reason: String) async throws {
         authenticateCallCount += 1
-        XCTAssertEqual(reason, "Unlock Case")
+        XCTAssertEqual(reason, "Открыть Case")
         if let error {
             throw error
         }
