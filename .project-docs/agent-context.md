@@ -205,6 +205,13 @@ Translation tools:
   .project-docs/decisions/2026-10-20-translation-tools.md
 
 Meeting Notes:
+  Meetings opens an overview of the five newest notes with a History button.
+  History keeps the full date-grouped list. Back from a note preserves its list
+  origin; the Settings Meetings entry and direct note links return to overview.
+  Both use MeetingListModel and retain refresh, status and confirmed deletion.
+  Load failures preserve existing rows and offer Retry. The vertical overview
+  layout leaves room for future Meeting Assistant presets without showing
+  unfinished controls. UI rationale and behavior: docs/DESIGN.md.
   Always-on detector (mic activity + CoreAudio system audio + FluidAudio
   Silero VAD, the only remaining Core ML model, downloaded from Hugging Face
   on the first speech check; fires only when a recognised meeting app writes

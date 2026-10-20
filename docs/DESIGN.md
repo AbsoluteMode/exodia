@@ -1,5 +1,52 @@
 # Interface decisions
 
+## Meetings overview — 2026-10-20
+
+The user approved the Overview composition: recent meetings first, History
+beside the screen title, and room below for future Meeting Assistant presets.
+The person comes to reopen a recent note; first they see the newest five
+meetings, then they can open a note or browse the complete history.
+
+- Keep one source, selection and refresh path for overview and history.
+  Why: continuing a call, deleting a meeting and opening a notification must
+  describe the same meeting in every surface.
+- Show five meetings in descending start time, with a date/time on every row.
+  Why: the overview should be quick to scan without losing temporal context.
+- History keeps every date-grouped meeting. The header stays visible while
+  scrolling. Back from a note returns to the page that opened it; the Settings
+  Meetings entry and direct note links use the overview as their parent.
+  Why: browsing older notes must not repeatedly reset the user's context.
+- Reserve extension through the overview's vertical section layout, without
+  empty Meeting Assistant panels, preset settings or new persistence yet.
+  Why: unfinished controls would imply that the assistant is already available.
+- Use the current adaptive Settings tokens and the system font. Screen title is
+  23 pt semibold, section headings 13 pt semibold, titles 13 pt medium, dates
+  and statuses 12 pt. Titles wrap to two lines; full text is available through
+  the native help tooltip. Rows have 14 pt horizontal and 13 pt vertical insets.
+  Why: long Russian meeting titles need room while date/status remain readable.
+- Each row is a native Button with stable hover/selection geometry. Preserve
+  deletion's context menu, status restrictions and confirmation. Return to the
+  list requests keyboard focus on the selected meeting, or navigation if it
+  is outside the overview. No entrance or navigation animation is introduced.
+  Why: keyboard use and repeated navigation should stay immediate.
+- Initial loading, a successfully empty store and a failed load are distinct.
+  Retry preserves the last readable list until a new load succeeds.
+  Why: a storage error must not suggest that saved meetings disappeared.
+
+The native supported window remains at least 800×600; renders inspect both
+800 pt and a 600 pt Settings content pane, including long names, processing,
+failure and empty states. Offscreen renders do not establish real keyboard
+focus, compositor appearance or screen-reader behavior on the installed app.
+In the original feature fixture on a synthetic dark 0.12-gray backdrop, normal title/date contrast is 11.44:1 /
+5.44:1, selected title/date/status contrast is 7.34:1 and unselected failure
+text is 4.53:1. Selected and hovered statuses/dates use the primary text color
+to retain contrast over their brighter fills.
+Five recent meetings and the future preset details remain product hypotheses
+to revisit after normal use; actual presets require a separate feature.
+
+Combined with adaptive Settings, native overview/history/error fixtures also render in light and dark appearance on the matching page surface. Semantic token contrast remains covered by MacSettingsThemeTests.
+
+
 ## Settings appearance and switches
 
 ### Purpose and attention

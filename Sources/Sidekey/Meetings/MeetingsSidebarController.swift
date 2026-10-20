@@ -87,6 +87,7 @@ final class MeetingsSidebarController: NSViewController {
     /// Grouped sections the SwiftUI list renders. Exposed for tests so the
     /// bucketing contract can be asserted without touching view internals.
     var sections: [MeetingListSectionItem] { model.sections }
+    var page: MeetingListModel.Page { model.page }
 
     init(
         source: MeetingsSidebarSource,
@@ -154,6 +155,10 @@ final class MeetingsSidebarController: NSViewController {
     func selectMeeting(id: UUID) {
         model.select(id)
     }
+
+    func showOverview() { model.showOverview() }
+    func showHistory() { model.showHistory() }
+    func restoreFocus() { model.restoreFocus() }
 
     /// A row was tapped by the user — highlight it and notify the delegate.
     func handleUserSelection(id: UUID) {
