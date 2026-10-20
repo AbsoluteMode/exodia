@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/DynamicIsland/IslandNotificationPill.swift
     confirmed_at: 2026-10-19
-related: [../project.md, 2026-10-19-icon-notifications.md, 2026-10-19-notify-parent-death-guard.md]
+related: [../project.md, 2026-10-19-icon-notifications.md, 2026-10-19-notify-parent-death-guard.md, 2026-10-20-meeting-ready-notifications.md]
 ---
 
 # Local script notifications

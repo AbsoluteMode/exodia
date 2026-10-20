@@ -5,13 +5,17 @@ import SwiftUI
 struct NotifyHoverPanel: View {
     @ObservedObject var hub: LocalNotificationHub
     @ObservedObject var supervisor: NotifyScriptSupervisor
+    @ObservedObject var meetingNotifications: MeetingReadyNotifications
     let onBack: () -> Void
     let showsBackButton: Bool
     @State private var showsSources = false
     @State private var pendingRemoval: String?
 
-    init(hub: LocalNotificationHub? = nil, supervisor: NotifyScriptSupervisor? = nil, showsBackButton: Bool = true, onBack: @escaping () -> Void) {
+    init(hub: LocalNotificationHub? = nil, supervisor: NotifyScriptSupervisor? = nil,
+         meetingNotifications: MeetingReadyNotifications? = nil,
+         showsBackButton: Bool = true, onBack: @escaping () -> Void) {
         self.hub = hub ?? .shared; self.supervisor = supervisor ?? .shared; self.onBack = onBack; self.showsBackButton = showsBackButton
+        self.meetingNotifications = meetingNotifications ?? .shared
     }
     var body: some View {
         VStack(spacing: 8) {
@@ -47,8 +51,19 @@ struct NotifyHoverPanel: View {
             ScrollView {
                 LazyVStack(spacing: 6) {
                     if showsSources {
+                        HStack(spacing: 7) {
+                            NotificationSourceIcon(glyph: .brandImage(name: "whytap"), tint: Color(hexCSS: "#785EFF"))
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Meeting notes").font(.system(size: 11, weight: .semibold))
+                                Text("When your notes are ready").font(.system(size: 9)).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Toggle("Enable meeting notes notifications", isOn: $meetingNotifications.enabled)
+                                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                        }
+                        .padding(8).background(RoundedRectangle(cornerRadius: 10).fill(Color(red: 0.12, green: 0.12, blue: 0.14)))
                         if supervisor.sources.isEmpty {
-                            empty("No sources yet", detail: "Ask your agent to connect the notifications you want.")
+                            empty("No other sources yet", detail: "Ask your agent to connect more notifications.")
                         }
                         ForEach(supervisor.sources) { source in sourceRow(source) }
                     } else {
@@ -91,7 +106,7 @@ struct NotifyHoverPanel: View {
     }
     private func historyRow(_ event: LocalNotificationEvent) -> some View {
         Button {
-            if let link = event.link { NSWorkspace.shared.open(link) }
+            hub.activate(event)
         } label: {
             HStack(spacing: 8) {
                 NotificationSourceIcon(glyph: IslandNotificationPill.resolvedGlyph(for: event),
@@ -109,7 +124,7 @@ struct NotifyHoverPanel: View {
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .disabled(event.link == nil)
+        .disabled(!event.canActivate)
         .opacity(1)
         .accessibilityLabel("\(event.sourceName), \(event.title), \(event.body)")
         .contextMenu { Button("Copy text") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(event.title + "\n" + event.body, forType: .string) } }

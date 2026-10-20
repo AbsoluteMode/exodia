@@ -33,6 +33,16 @@ and notifications immediately, while keeping its configuration and event history
 the switch remains off after restarting Whytap. Agent-added sources appear
 automatically without reopening Settings.
 
+The built-in **Meeting notes** source needs no setup. It is enabled by default
+for new and existing users and announces successful processing with Whytap's
+color app icon. Its initial type is Small; Settings → Notifications offers
+Large / Small and an off switch that survives relaunch. Notify → Sources also
+offers the switch. Clicking a meeting event in the island or history opens that
+exact note. Failures do not announce success; old notifications do not replay
+on launch. This source runs inside Whytap and does not use a script slot or
+require system notification permission. Its internal meeting target is not a
+script payload field. External script links retain the validation below.
+
 A coding agent can connect a source without rebuilding Whytap. Ask the agent for
 the exact events you want; it requests the access and filters needed for that
 source, then installs a private local script and manifest. This does not authorize

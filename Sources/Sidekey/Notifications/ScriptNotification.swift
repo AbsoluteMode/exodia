@@ -86,6 +86,11 @@ struct LocalNotificationEvent: Codable, Identifiable, Equatable, Sendable {
     var read: Bool = false
     // Optional for compatibility with histories written before icon notifications.
     var presentation: NotifyPresentation? = nil
+    /// Internal navigation, never accepted from script output or an OS URL.
+    /// Optional so older notification histories still decode.
+    var meetingID: UUID? = nil
+
+    var canActivate: Bool { meetingID != nil || link != nil }
 
     var resolvedPresentation: NotifyPresentation { presentation ?? .card }
     var resolvedDuration: TimeInterval { customDuration ?? resolvedPresentation.defaultDuration }

@@ -243,7 +243,8 @@ struct NotificationSourceIcon: View {
             switch glyph {
             case .brandImage(let name):
                 if let image = imageLoader(name) {
-                    Image(nsImage: image).resizable().renderingMode(.template).scaledToFit()
+                    Image(nsImage: image).resizable()
+                        .renderingMode(name == "whytap" ? .original : .template).scaledToFit()
                 }
             case .symbol(let symbol):
                 Image(systemName: symbol).font(.system(size: size * 0.5, weight: .semibold))
@@ -252,6 +253,7 @@ struct NotificationSourceIcon: View {
             }
         }
         .foregroundStyle(.white)
-        .frame(width: size * 0.56, height: size * 0.56)
+        .frame(width: glyph == .brandImage(name: "whytap") ? size : size * 0.56,
+               height: glyph == .brandImage(name: "whytap") ? size : size * 0.56)
     }
 }

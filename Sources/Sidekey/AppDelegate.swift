@@ -333,6 +333,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        LocalNotificationHub.shared.openMeeting = { [weak self] id in
+            guard let self else { return }
+            self.openSettingsWindow(tab: .notes)
+            self.ensureSettingsWindowController().selectNoteMeeting(id: id)
+        }
         NotifyScriptSupervisor.shared.start()
         Task { await AgentSettingsStore.shared.refreshCodexCatalog() }
         // Final-rubber-stamp diagnostic + last-resort retry. If we reach
@@ -3699,9 +3704,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingsEventConsumer = Task { [weak self] in
             for await event in coordinator.events {
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self?.handleMeetingsCoordinatorEvent(event)
-                }
+                self?.handleMeetingsCoordinatorEvent(event)
+                await MeetingReadyNotifications.shared.receive(event)
             }
         }
     }
