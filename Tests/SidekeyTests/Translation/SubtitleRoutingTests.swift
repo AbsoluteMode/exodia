@@ -103,10 +103,11 @@ final class SubtitleRoutingTests: XCTestCase {
         }
     }
 
-    private func partialState(in defaults: UserDefaults) throws -> Data {
+    private func partialState(in defaults: UserDefaults, llm: FeatureRoute? = nil,
+                              servers: [ServerEndpoint] = []) throws -> Data {
         let state = AIRoutingState(routes: [AIFeature.subtitlesAudio.rawValue: speech,
-                                           AIFeature.translation.rawValue: shared],
-                                   migratedRoutes: [:], servers: [], migrationVersion: 1)
+                                           AIFeature.translation.rawValue: llm ?? shared],
+                                   migratedRoutes: [:], servers: servers, migrationVersion: 1)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
         var routes = try XCTUnwrap(object["routes"] as? [String: Any])
         routes["future"] = ["account": "unknown", "model": "future"]
@@ -114,6 +115,96 @@ final class SubtitleRoutingTests: XCTestCase {
         let raw = try JSONSerialization.data(withJSONObject: object)
         defaults.set(raw, forKey: AIRoutingStore.defaultsKey)
         return raw
+    }
+
+    func testPartialUpgradeResolvesTheExactPriorSubtitleLLMBeforeAnyEdit() async throws {
+        let defaults = makeDefaults()
+        let raw = try partialState(in: defaults)
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        try keys.save("fixture-key", account: OpenRouterLLMKeyStore.account)
+
+        for _ in 0..<2 {
+            let routing = AIRoutingStore(defaults: defaults)
+            routing.separateSubtitleTranslationIfNeeded()
+            let route = try await DirectLLMRouteResolver(feature: .subtitlesTranslation, routing: routing, keys: keys).routeIfEnabled()
+            XCTAssertEqual(route, DirectLLMRoute(endpoint: .openRouter(apiKey: "fixture-key", provider: shared.provider), model: shared.model))
+            XCTAssertEqual(routing.route(for: .subtitlesTranslation), shared)
+            XCTAssertEqual(routing.route(for: .subtitlesAudio), speech)
+            XCTAssertEqual(routing.route(for: .translation), shared)
+            XCTAssertEqual(routing.state.migrationVersion, 1, "the persisted partial document has not been migrated")
+            XCTAssertEqual(defaults.data(forKey: AIRoutingStore.defaultsKey), raw)
+            XCTAssertNil(defaults.object(forKey: AIRoutingStore.backupKey))
+        }
+    }
+
+    func testUnreadIndependentSubtitleChoiceNeverBorrowsTheTextTranslator() async throws {
+        for unread: Any in [["account": "futureProvider", "model": "private-model"], NSNull(), "invalid-route"] {
+            let defaults = makeDefaults()
+            let previous = try partialState(in: defaults)
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: previous) as? [String: Any])
+            var routes = try XCTUnwrap(object["routes"] as? [String: Any])
+            routes[AIFeature.subtitlesTranslation.rawValue] = unread
+            object["routes"] = routes
+            let raw = try JSONSerialization.data(withJSONObject: object)
+            defaults.set(raw, forKey: AIRoutingStore.defaultsKey)
+            let routing = AIRoutingStore(defaults: defaults)
+            let box = InMemoryTokenStore.Box()
+            let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+            try keys.save("fixture-key", account: OpenRouterLLMKeyStore.account)
+            routing.separateSubtitleTranslationIfNeeded()
+            let resolved = try await DirectLLMRouteResolver(feature: .subtitlesTranslation, routing: routing, keys: keys).routeIfEnabled()
+            XCTAssertNil(resolved)
+            XCTAssertEqual(defaults.data(forKey: AIRoutingStore.defaultsKey), raw)
+            XCTAssertNil(defaults.object(forKey: AIRoutingStore.backupKey))
+
+            routing.setRoute(FeatureRoute(account: .openRouter, model: "new-text"), for: .translation)
+            let reloaded = AIRoutingStore(defaults: defaults)
+            reloaded.separateSubtitleTranslationIfNeeded()
+            XCTAssertNil(reloaded.route(for: .subtitlesTranslation))
+            XCTAssertEqual(reloaded.state.migrationVersion, 2)
+            XCTAssertEqual(defaults.data(forKey: AIRoutingStore.backupKey), raw)
+        }
+    }
+
+    func testPartialUpgradeCustomSubtitleRouteResolvesBeforeEditAndStaysUnsetAfterServerRemoval() async throws {
+        let defaults = makeDefaults()
+        let id = UUID()
+        let server = ServerEndpoint(id: id, name: "Fixture", baseURL: "https://subtitles.invalid/v1",
+                                    keyAccount: "byok.server.\(id.uuidString.lowercased()).api_key")
+        let previous = FeatureRoute(account: .server(id), model: "custom-subtitles")
+        let raw = try partialState(in: defaults, llm: previous, servers: [server])
+        let routing = AIRoutingStore(defaults: defaults)
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        try keys.save("fixture-custom-key", account: server.keyAccount)
+        routing.separateSubtitleTranslationIfNeeded()
+        let route = try await DirectLLMRouteResolver(feature: .subtitlesTranslation, routing: routing, keys: keys).routeIfEnabled()
+        XCTAssertEqual(route, DirectLLMRoute(endpoint: .custom(baseURL: try XCTUnwrap(URL(string: server.baseURL)), apiKey: "fixture-custom-key"), model: previous.model))
+        XCTAssertEqual(defaults.data(forKey: AIRoutingStore.defaultsKey), raw)
+
+        routing.removeServer(id)
+        routing.setRoute(shared, for: .translation)
+        let reloaded = AIRoutingStore(defaults: defaults)
+        reloaded.separateSubtitleTranslationIfNeeded()
+        let cleared = try await DirectLLMRouteResolver(feature: .subtitlesTranslation, routing: reloaded, keys: keys).routeIfEnabled()
+        XCTAssertNil(cleared)
+        XCTAssertEqual(reloaded.state.migrationVersion, 2)
+        XCTAssertEqual(defaults.data(forKey: AIRoutingStore.backupKey), raw)
+    }
+
+    func testPartialUpgradeProviderRemovalClearsTheEffectiveSubtitleRouteWithoutReseeding() throws {
+        let defaults = makeDefaults()
+        let raw = try partialState(in: defaults)
+        let routing = AIRoutingStore(defaults: defaults)
+        XCTAssertEqual(routing.clearRoutes(using: .openRouter), [.translation, .subtitlesTranslation])
+        routing.setRoute(shared, for: .translation)
+        let reloaded = AIRoutingStore(defaults: defaults)
+        reloaded.separateSubtitleTranslationIfNeeded()
+        XCTAssertNil(reloaded.route(for: .subtitlesTranslation))
+        XCTAssertEqual(reloaded.route(for: .translation), shared)
+        XCTAssertEqual(reloaded.state.migrationVersion, 2)
+        XCTAssertEqual(defaults.data(forKey: AIRoutingStore.backupKey), raw)
     }
 
     func testExplicitChoiceThenClearInPartialDocumentStaysClearedAfterRelaunch() throws {
