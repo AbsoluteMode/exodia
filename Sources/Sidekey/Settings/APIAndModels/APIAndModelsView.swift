@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum APIAndModelsSection: String, CaseIterable {
+    case keys = "API keys", models = "Models", costs = "Costs", hints = "API hints"
+}
+
 /// The "API keys" and "Models" blocks of the API & Models tab. One model menu
 /// per feature row: a provider is never picked on its own, only through the
 /// model it serves.
@@ -12,36 +16,38 @@ struct APIAndModelsView: View {
     @State private var popoverAccount: ProviderAccount?
     @State private var highlighted: Set<AIFeature> = []
     @State private var expandedGroup: String?
+    @State private var section: APIAndModelsSection
+    @StateObject private var usage: AIUsageCostsViewModel
     @FocusState private var focusedGroup: String?
     /// Bumped by "Show": the scroll reader then finds the features with no model.
     @State private var showUnsetTick = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(viewModel: APIAndModelsViewModel, focusedFeature: Binding<AIFeature?>,
-         initiallyExpandedGroup: String? = nil) {
+         initiallyExpandedGroup: String? = nil, initialSection: APIAndModelsSection = .models,
+         usageStore: AIUsageStore? = nil, usageModel: AIUsageCostsViewModel? = nil) {
         self.viewModel = viewModel
         self._focusedFeature = focusedFeature
         self._expandedGroup = State(initialValue: initiallyExpandedGroup)
+        self._section = State(initialValue: initialSection)
+        self._usage = StateObject(wrappedValue: usageModel ?? AIUsageCostsViewModel(store: usageStore ?? .shared))
     }
 
     /// What the one sheet of the tab shows. The proposal wins: after Save the
     /// add-key window gives way to it without a second presentation.
     private enum ActiveSheet: Equatable {
         case addKey
-        case hints
         case otherModel(AIFeature)
     }
 
     private enum PresentedSheet: Identifiable {
         case addKey
-        case hints
         case otherModel(AIFeature)
         case assign(AssignProposal)
 
         var id: String {
             switch self {
             case .addKey: return "addKey"
-            case .hints: return "hints"
             case .otherModel(let feature): return "otherModel.\(feature.rawValue)"
             case .assign: return "assign"
             }
@@ -49,22 +55,27 @@ struct APIAndModelsView: View {
     }
 
     var body: some View {
-        ScrollViewReader { scroller in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    keysBlock
-                    modelsBlock
-                    Button("API hints") { activeSheet = .hints }
-                        .buttonStyle(.link)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .help("Free provider credits and included usage")
-                        .accessibilityLabel("API hints: free credits and included usage")
-                        .fixedSize()
-                        .padding(.leading, 6)
+        VStack(spacing: 0) {
+            sectionTabs
+            Rectangle().fill(MacSettingsTheme.sep).frame(height: 0.5)
+            ScrollViewReader { scroller in
+                Group {
+                    switch section {
+                    case .keys, .models:
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 22) {
+                                if section == .keys { keysBlock } else { modelsBlock }
+                            }
+                            .padding(18)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                    case .costs:
+                        AIUsageCostsView(model: usage)
+                    case .hints:
+                        APIHintsView(onAddKey: { section = .keys; activeSheet = .addKey },
+                                     onClose: { section = .models }, embedded: true)
+                    }
                 }
-                .padding(.horizontal, 24).padding(.vertical, 22)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
             .onChange(of: focusedFeature) { _, feature in
                 if let feature { focus(feature, scroller: scroller) }
             }
@@ -76,17 +87,16 @@ struct APIAndModelsView: View {
                 if let feature = focusedFeature { focus(feature, scroller: scroller) }
                 await viewModel.onAppear()
             }
+            }
         }
+        .background(MacSettingsTheme.bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5) }
+        .padding(.horizontal, 24).padding(.vertical, 22)
         .sheet(item: presentedSheet) { sheet in
             switch sheet {
             case .addKey:
                 AddKeySheet(viewModel: viewModel) { activeSheet = nil }
-            case .hints:
-                APIHintsView(
-                    onAddKey: { activeSheet = .addKey },
-                    onClose: { activeSheet = nil }
-                )
-                .frame(width: 700, height: 700)
             case .otherModel(let feature):
                 OtherModelSheet(
                     feature: feature,
@@ -105,13 +115,37 @@ struct APIAndModelsView: View {
         }
     }
 
+    private var sectionTabs: some View {
+        HStack(spacing: 22) {
+            ForEach(APIAndModelsSection.allCases, id: \.self) { item in
+                Button { section = item } label: {
+                    Text(item.rawValue)
+                        .font(.system(size: 12.5, weight: section == item ? .medium : .regular))
+                        .foregroundStyle(section == item ? MacSettingsTheme.text : MacSettingsTheme.text2)
+                        .padding(.vertical, 14)
+                        .overlay(alignment: .bottom) {
+                            if section == item { Rectangle().fill(MacSettingsTheme.text).frame(height: 2) }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityValue(section == item ? "Selected" : "")
+                .onMoveCommand { direction in
+                    let items = APIAndModelsSection.allCases
+                    guard let index = items.firstIndex(of: section) else { return }
+                    if direction == .right { section = items[(index + 1) % items.count] }
+                    if direction == .left { section = items[(index + items.count - 1) % items.count] }
+                }
+            }
+            Spacer(minLength: 0)
+        }.padding(.horizontal, 18)
+    }
+
     private var presentedSheet: Binding<PresentedSheet?> {
         Binding(
             get: {
                 if let proposal = viewModel.proposal { return .assign(proposal) }
                 switch activeSheet {
                 case .addKey: return .addKey
-                case .hints: return .hints
                 case .otherModel(let feature): return .otherModel(feature)
                 case nil: return nil
                 }
@@ -428,8 +462,12 @@ struct APIAndModelsView: View {
 
     /// Scrolls to the row, lights it for a second and gives the binding back.
     private func focus(_ feature: AIFeature, scroller: ScrollViewProxy) {
-        focusedFeature = nil
-        highlight([feature], scrollTo: feature, scroller: scroller, seconds: 1)
+        section = .models
+        Task { @MainActor in
+            await Task.yield()
+            focusedFeature = nil
+            highlight([feature], scrollTo: feature, scroller: scroller, seconds: 1)
+        }
     }
 
     /// Scrolls to `target` and tints the rows of `features` for a moment.

@@ -33,6 +33,35 @@ popover dismissal or VoiceOver on the installed app; those remain acceptance.
 The interpretation that a family plus size is the useful search input follows
 the user's example; typo correction and model aliases are outside this change.
 
+## API & Models costs — 2026-10-20
+
+The user chose four tabs in one surface: API keys, Models, Costs, API hints.
+Costs first shows the nearby period, then used features and separate USD/
+ElevenLabs credit totals; model details appear on the feature. Why: compare
+feature expenses without a permanent model-level grid or scattered period control.
+
+- One existing bgCard surface, 14 pt corners, shared underlined tabs and quiet
+  separators. No extra metric cards, chart, entrance or number animation.
+- Period choices are Today, Last 7 days, This month and inclusive Custom dates;
+  local-calendar date labels stay beside the table header. Invalid dates, loading,
+  empty history and a recoverable storage error have explicit states.
+- System typography: 15 pt heading, 13 pt feature/value rows, 11.5 pt secondary
+  labels. Aligned numeric columns use monospaced digits; colors reuse adaptive
+  MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
+  so meaning does not rely on color.
+- Hover opens model details; click pins, keyboard focus opens, Escape closes.
+  A short delayed dismissal permits pointer transfer into the native popover.
+  The model list scrolls at 320 pt while its heading and explanation stay visible.
+  Rows retain their geometry during disclosure; no new motion needs reduction.
+- Historical feature/provider/model snapshots drive expenses. Unknown price is
+  Unavailable, never free; ≈ denotes a calculated estimate and + excluded unknown
+  costs. ElevenLabs credits are never combined with dollars or inferred from a plan.
+
+Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
+long model histories and synthetic temporary-store usage. Physical pointer
+transfer, keyboard/VoiceOver and live provider billing remain shared-app
+acceptance. Tracking starts with this update; earlier history is not inferred.
+
 ## Model disclosure — 2026-10-20
 
 The user chose compact function rows that open their settings on click. The

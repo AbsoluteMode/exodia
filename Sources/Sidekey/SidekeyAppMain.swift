@@ -15,6 +15,7 @@ public enum SidekeyAppMain {
         // Restore before stores open or jobs start; a completed rollback can
         // safely continue, while an unfinished transaction keeps its originals.
         guard ArtifactBackupStartup.finishPendingRestore() else { return }
+        AIUsageRecorder.enable()
         AppDelegate.main()
     }
 }
