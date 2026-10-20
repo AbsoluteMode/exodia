@@ -163,6 +163,18 @@ final class MeetingContinuationTests: XCTestCase {
         await store.close()
     }
 
+    func testDetailSnapshotKeepsNoteReadableWhenTranscriptIsCorrupt() async throws {
+        let store = try MeetingsStore(rootDirectory: root)
+        let id = UUID()
+        try await seed(store, id: id)
+        try Data("invalid transcript".utf8).write(to: root.appendingPathComponent(id.uuidString + "-transcript.json"))
+        let detail = try await store.detailSnapshot(id: id)
+        XCTAssertEqual(detail?.markdown, firstNote)
+        XCTAssertEqual(detail?.version, 1)
+        XCTAssertNil(detail?.transcript)
+        await store.close()
+    }
+
     func testSilenceContinuationPreservesEarlierNote() async throws {
         let store = try MeetingsStore(rootDirectory: root)
         let id = UUID()

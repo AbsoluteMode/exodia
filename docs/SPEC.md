@@ -414,6 +414,9 @@ Updating… while keeping the earlier note readable. Only new audio is processed
 new summary findings and a transcript boundary are appended. Manual Stop is
 final, and neither Skip nor timeout starts recording. Recovery is idempotent,
 manual edits are preserved, and speaker labels remain scoped to each part.
+Open notes and transcripts refresh automatically in both Notes surfaces. Active
+drafts defer that refresh until Cancel or successful persistence after Done;
+merely submitting a debounced save does not reload older stored text.
 See [the continuation decision](../.project-docs/decisions/2026-10-20-meeting-continuations.md).
 The backend design below is historical; current processing uses the user's BYOK
 routes and the native notes viewer.

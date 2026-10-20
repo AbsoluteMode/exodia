@@ -40,6 +40,10 @@ final class MeetingsContentController: NSViewController {
     /// completions must match this id before touching the detail model, otherwise
     /// a slower request can overwrite a newer selection with stale content.
     private var requestedMeetingId: UUID?
+    private weak var editBridge: MeetingsEditBridge?
+    private var pendingDetailRefreshId: UUID?
+    private var detailLoadGeneration: UInt64 = 0
+    private var sidebarRefreshGeneration: UInt64 = 0
 
     var currentMeetingId: UUID? { detailView.currentMeetingId }
 
@@ -146,6 +150,10 @@ final class MeetingsContentController: NSViewController {
             )
         }
 
+        detail.onEditingFinished = { [weak self] in
+            guard let self, let id = self.pendingDetailRefreshId else { return }
+            self.reloadMeeting(id: id)
+        }
         showList()
     }
 
@@ -157,6 +165,8 @@ final class MeetingsContentController: NSViewController {
     // MARK: - Navigation
 
     private func showList() {
+        detailLoadGeneration &+= 1
+        pendingDetailRefreshId = nil
         requestedMeetingId = nil
         mode = .list
         editorContainer.isHidden = true
@@ -193,7 +203,7 @@ final class MeetingsContentController: NSViewController {
 
     /// Refresh the sidebar; Notes always opens on the list screen.
     func refreshOnShow() {
-        sidebarController.refresh()
+        refreshSidebar()
         if mode != .editor { showList() }
         refreshAllOnShow()
     }
@@ -210,32 +220,63 @@ final class MeetingsContentController: NSViewController {
     /// Open a specific meeting straight in the editor (Dynamic Island Notes tile,
     /// menu entries). Refreshes the list underneath so back lands on fresh data.
     func selectMeeting(id: UUID) {
-        prepareDetailForSelection(id: id)
+        let generation = prepareDetailForSelection(id: id)
         sidebarController.refresh()
         Task { [weak self] in
             guard let self else { return }
             try? await self.sidebarController.awaitLoad()
-            guard self.requestedMeetingId == id else { return }
+            guard self.requestedMeetingId == id, self.detailLoadGeneration == generation else { return }
             self.sidebarController.selectMeeting(id: id)
             self.showEditor(title: self.meetingTitle(for: id))
-            await self.loadMarkdownIfNeeded(for: id)
+            await self.loadMarkdownIfNeeded(for: id, generation: generation)
         }
     }
 
     func refreshSidebar() {
         sidebarController.refresh()
-    }
-
-    func reloadMeeting(id: UUID) {
-        guard detailView.currentMeetingId == id else { return }
-        // Don't stomp an in-progress edit with a background refresh.
-        guard !detailView.isEditing else { return }
+        sidebarRefreshGeneration &+= 1
+        let generation = sidebarRefreshGeneration
+        guard let id = requestedMeetingId else { return }
         Task { [weak self] in
-            await self?.loadMarkdownIfNeeded(for: id)
+            guard let self else { return }
+            try? await self.sidebarController.awaitLoad()
+            guard self.sidebarRefreshGeneration == generation, self.requestedMeetingId == id,
+                  self.mode == .editor,
+                  self.sidebarController.meetings.contains(where: { $0.id == id }) else { return }
+            self.reloadSelectedDetail(id: id)
         }
     }
 
+    func reloadMeeting(id: UUID) {
+        guard requestedMeetingId == id, detailView.currentMeetingId == id else { return }
+        pendingDetailRefreshId = id
+        // Done only submits a debounced edit. Wait for the actual store
+        // acknowledgment before replacing that local edited note.
+        guard !detailView.isEditing, editBridge?.hasPendingSave(for: id) != true else { return }
+        refreshSidebar()
+    }
+
+    private func reloadSelectedDetail(id: UUID) {
+        detailLoadGeneration &+= 1
+        let generation = detailLoadGeneration
+        pendingDetailRefreshId = id
+        guard mayApplyDetailLoad(id: id, generation: generation) else { return }
+        Task { [weak self] in
+            await self?.loadMarkdownIfNeeded(for: id, generation: generation, preservingTab: true)
+        }
+    }
+
+    private func mayApplyDetailLoad(id: UUID, generation: UInt64) -> Bool {
+        guard requestedMeetingId == id, detailLoadGeneration == generation else { return false }
+        guard !detailView.isEditing, editBridge?.hasPendingSave(for: id) != true else {
+            pendingDetailRefreshId = id
+            return false
+        }
+        return true
+    }
+
     func attachEditBridge(_ bridge: MeetingsEditBridge) {
+        editBridge = bridge
         detailView.attachEditBridge(bridge)
     }
 
@@ -274,31 +315,42 @@ final class MeetingsContentController: NSViewController {
 
     // MARK: - Loading
 
-    private func loadMarkdownIfNeeded(for id: UUID) async {
-        guard requestedMeetingId == id else { return }
+    private func loadMarkdownIfNeeded(for id: UUID, generation: UInt64, preservingTab: Bool = false) async {
+        guard mayApplyDetailLoad(id: id, generation: generation) else { return }
         do {
+            if let snapshots = source as? MeetingDetailSnapshotSource {
+                let snapshot = try await snapshots.loadDetail(id: id)
+                guard mayApplyDetailLoad(id: id, generation: generation) else { return }
+                if let snapshot {
+                    await applyDetail(id: id, markdown: snapshot.markdown, transcript: snapshot.transcript,
+                        version: snapshot.version, title: snapshot.title, preservingTab: preservingTab)
+                } else {
+                    detailView.loadUnavailableMeeting(id: id, message: unavailableMessage(for: id))
+                }
+                return
+            }
             guard let rawMarkdown = try await markdownProvider(id) else {
                 os_log(
                     "viewer markdown missing for meeting (id: %{public}@)",
                     log: Self.log, type: .error,
                     id.uuidString
                 )
-                guard requestedMeetingId == id else { return }
+                guard mayApplyDetailLoad(id: id, generation: generation) else { return }
                 detailView.loadUnavailableMeeting(
                     id: id,
                     message: unavailableMessage(for: id)
                 )
                 return
             }
-            guard requestedMeetingId == id else { return }
-            await loadMeeting(id: id, rawMarkdown: rawMarkdown)
+            guard mayApplyDetailLoad(id: id, generation: generation) else { return }
+            await loadMeeting(id: id, rawMarkdown: rawMarkdown, generation: generation, preservingTab: preservingTab)
         } catch {
             os_log(
                 "viewer markdown load failed (id: %{public}@, error: %{public}@)",
                 log: Self.log, type: .error,
                 id.uuidString, String(describing: error)
             )
-            guard requestedMeetingId == id else { return }
+            guard mayApplyDetailLoad(id: id, generation: generation) else { return }
             detailView.loadUnavailableMeeting(
                 id: id,
                 message: "This meeting could not be loaded. Your previous meeting has not been substituted."
@@ -306,9 +358,8 @@ final class MeetingsContentController: NSViewController {
         }
     }
 
-    private func loadMeeting(id: UUID, rawMarkdown: String) async {
-        guard requestedMeetingId == id else { return }
-        let noteMarkdown = NoteMarkdownStripper.stripTranscript(rawMarkdown)
+    private func loadMeeting(id: UUID, rawMarkdown: String, generation: UInt64, preservingTab: Bool) async {
+        guard mayApplyDetailLoad(id: id, generation: generation) else { return }
         let transcript: [TranscriptSegment]?
         do {
             transcript = try await transcriptProvider(id)
@@ -320,22 +371,32 @@ final class MeetingsContentController: NSViewController {
             )
             transcript = nil
         }
-        guard requestedMeetingId == id else { return }
+        guard mayApplyDetailLoad(id: id, generation: generation) else { return }
         // The note's stored version, so an edit bumps the right base (falls
         // back to 1).
         let version = sidebarController.meetings.first { $0.id == id }?.serverVersion ?? 1
+        await applyDetail(id: id, markdown: rawMarkdown, transcript: transcript,
+            version: version, title: nil, preservingTab: preservingTab)
+    }
+
+    private func applyDetail(id: UUID, markdown: String, transcript: [TranscriptSegment]?,
+                             version: Int, title: String?, preservingTab: Bool) async {
+        currentTitle = title ?? meetingTitle(for: id)
+        pendingDetailRefreshId = nil
         await detailView.loadMeeting(
             id: id,
-            noteMarkdown: noteMarkdown,
+            noteMarkdown: NoteMarkdownStripper.stripTranscript(markdown),
             transcript: transcript,
-            version: version
+            version: version, preservingTab: preservingTab
         )
     }
 
     /// Clears the old note synchronously, before either provider can suspend.
     /// The selected row therefore always owns the visible detail state, even
     /// while its note is still processing or permanently unavailable.
-    private func prepareDetailForSelection(id: UUID) {
+    private func prepareDetailForSelection(id: UUID) -> UInt64 {
+        detailLoadGeneration &+= 1
+        pendingDetailRefreshId = nil
         requestedMeetingId = id
         currentTitle = meetingTitle(for: id)
         detailView.loadUnavailableMeeting(
@@ -343,6 +404,7 @@ final class MeetingsContentController: NSViewController {
             message: "Loading this meeting…",
             isLoading: true
         )
+        return detailLoadGeneration
     }
 
     private func unavailableMessage(for id: UUID) -> String {
@@ -375,10 +437,10 @@ final class MeetingsContentController: NSViewController {
 
 extension MeetingsContentController: MeetingsSidebarDelegate {
     func sidebarDidSelectMeeting(id: UUID) {
-        prepareDetailForSelection(id: id)
+        let generation = prepareDetailForSelection(id: id)
         showEditor(title: meetingTitle(for: id))
         Task { [weak self] in
-            await self?.loadMarkdownIfNeeded(for: id)
+            await self?.loadMarkdownIfNeeded(for: id, generation: generation)
         }
         guard let refreshHandler else { return }
         Task { @MainActor in

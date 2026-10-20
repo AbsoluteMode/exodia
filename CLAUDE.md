@@ -251,8 +251,11 @@ Meeting Notes:
   the same meeting shows Updating… while the earlier note stays readable; only
   fresh audio is transcribed, and its findings/transcript supplement the note.
   Per-meeting processing order, durable recording receipts/content snapshots and
-  versioned additions protect recovery and edits. Speaker labels stay scoped to
-  each part. Manual Stop is final; timeout/Skip never resume recording. WHY:
+  versioned additions protect recovery and edits. Both Notes hosts refresh the
+  selected note/transcript after the list fetch and preserve its current tab.
+  Active drafts defer refresh; Done waits for the latest store-save acknowledgment,
+  while Cancel applies the deferred refresh. Speaker labels stay scoped to each
+  part. Manual Stop is final; timeout/Skip never resume recording. WHY:
   .project-docs/decisions/2026-10-20-meeting-continuations.md
   A BYOK key read that fails with errSecInDarkWake (no Keychain prompt
   possible: dark wake or the lid closing) defers the meeting instead of

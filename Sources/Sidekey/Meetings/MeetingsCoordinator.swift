@@ -334,13 +334,16 @@ final class MeetingsCoordinator {
         )
         controller.attachEditBridge(bridge)
         _editBridges.append(bridge)
-        _editBridgeCancellables.append(bridge.editEvents.sink { [weak self] event in
+        _editBridgeCancellables.append(bridge.editEvents.sink { [weak self, weak bridge] event in
             Task { @MainActor in
-                await self?.saveNoteEdit(
+                guard let self, let bridge else { return }
+                let saved = await self.saveNoteEdit(
                     id: event.meetingId,
                     markdown: event.markdown,
                     clientVersion: event.clientVersion
                 )
+                bridge.finishSave(event, succeeded: saved)
+                if saved { self.refreshOpenWindowIfNeeded() }
             }
         })
     }
@@ -1642,13 +1645,14 @@ final class MeetingsCoordinator {
     /// with a bumped version so the sidebar / viewer stay in step. A save that
     /// lands after Delete finds no meeting and is dropped quietly: nothing is
     /// written and no alert is shown.
-    func saveNoteEdit(id: UUID, markdown: String, clientVersion: Int) async {
+    @discardableResult
+    func saveNoteEdit(id: UUID, markdown: String, clientVersion: Int) async -> Bool {
         guard let store = meetingsStore else {
             os_log(
                 "saveNoteEdit no-op (meetingsStore nil)",
                 log: Self.log, type: .info
             )
-            return
+            return false
         }
         let version = clientVersion + 1
         do {
@@ -1658,21 +1662,22 @@ final class MeetingsCoordinator {
                     log: Self.log, type: .info,
                     id.uuidString
                 )
-                return
+                return false
             }
             try await store.updateTitle(id: id, title: Self.extractH1Title(from: markdown))
-            refreshOpenWindowIfNeeded()
             os_log(
                 "save persisted (meetingId: %{public}@, version: %{public}d)",
                 log: Self.log, type: .info,
                 id.uuidString, version
             )
+            return true
         } catch {
             os_log(
                 "saveNoteEdit store update failed (meetingId: %{public}@, error: %{public}@)",
                 log: Self.log, type: .error,
                 id.uuidString, String(describing: error)
             )
+            return false
         }
     }
 

@@ -34,6 +34,8 @@ final class MeetingsDetailView: NSView {
     /// availability changes, so the segmented control stays in sync.
     var onTabState: ((_ current: Int, _ transcribeEnabled: Bool) -> Void)?
 
+    var onEditingFinished: (() -> Void)?
+
     private let model: MeetingDetailModel
     private weak var editBridge: MeetingsEditBridge?
 
@@ -62,6 +64,7 @@ final class MeetingsDetailView: NSView {
         // Done in the editor forwards the new markdown to the edit bridge,
         // which debounces + persists through the coordinator (local store) —
         // the same path the old BlockNote webview used.
+        model.onEditingFinished = { [weak self] in self?.onEditingFinished?() }
         model.onSave = { [weak self] markdown, version in
             self?.editBridge?.submitEdit(markdown: markdown, clientVersion: version)
         }
@@ -92,8 +95,10 @@ final class MeetingsDetailView: NSView {
         id: UUID,
         noteMarkdown: String,
         transcript: [TranscriptSegment]?,
-        version: Int = 1
+        version: Int = 1,
+        preservingTab: Bool = false
     ) async {
+        let previousTab = currentTab
         let noteBlocks = MeetingNoteMarkdownParser.parse(noteMarkdown)
 
         let transcriptBlocks: [NoteBlock]
@@ -117,7 +122,7 @@ final class MeetingsDetailView: NSView {
             version: version,
             transcriptCopyText: transcript.map(TranscriptMarkdownFormatter.plainText) ?? ""
         )
-        switchTo(.note)
+        showTab(preservingTab ? previousTab : .note)
     }
 
     /// Selects a meeting whose note is not available yet (or failed to load).
@@ -151,8 +156,10 @@ final class MeetingsDetailView: NSView {
     private func switchTo(_ tab: Tab) {
         currentTab = tab
         model.activeTab = tab
+        let wasEditing = model.isEditing
         model.isEditing = false
         onTabState?(tab.rawValue, model.hasTranscript)
+        if wasEditing { model.onEditingFinished?() }
     }
 }
 
@@ -185,6 +192,7 @@ final class MeetingDetailModel: ObservableObject {
     /// Called on Done with the edited markdown + base version. Wired by
     /// `MeetingsDetailView` to the edit bridge.
     var onSave: ((_ markdown: String, _ version: Int) -> Void)?
+    var onEditingFinished: (() -> Void)?
 
     private let meetingSharePresenter: @MainActor (MeetingSharePayload) -> Void
 
@@ -244,10 +252,12 @@ final class MeetingDetailModel: ObservableObject {
         noteProtocol = MeetingProtocolParser.parse(markdown)
         isEditing = false
         onSave?(markdown, version)
+        onEditingFinished?()
     }
 
     func cancelEdit() {
         isEditing = false
+        onEditingFinished?()
     }
 
     func copyTranscript(to pasteboard: NSPasteboard = .general) {

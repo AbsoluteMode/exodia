@@ -17,6 +17,9 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsStore.swift
     confirmed_at: 2026-10-20
+  - type: repository
+    reference: Sources/Sidekey/Meetings/MeetingsContentController.swift
+    confirmed_at: 2026-10-20
 related: [../project.md]
 ---
 
@@ -72,6 +75,18 @@ The store commits metadata, an idempotency receipt and a complete note/transcrip
 snapshot in one SQLite transaction. Canonical sidecars are materialized after
 the commit. Until both writes succeed, readers use the committed snapshot. Edits
 and backup export flush it first. A replay after a crash cannot append twice.
+Both Notes hosts refresh the selected note and transcript after the list fetch,
+without manual reselection and without changing the current tab. The production
+store supplies note, transcript and edit version in one actor-isolated snapshot;
+a newer body must not inherit an older list version and duplicate additions on
+the next edit. A corrupt transcript still leaves the note readable. Generation
+checks reject older asynchronous results, including when editing begins while a
+provider is suspended. A draft defers the refresh. Cancel applies that deferred
+refresh; Done first registers a pending save, and only a successful store
+acknowledgment for the latest submitted edit permits the refresh. A failed save
+keeps the local edited content. Debounce is scoped per note, so switching notes
+does not discard another note's pending save.
+
 Continuation additions carry their note versions so an editor opened before an
 update can save its changes without discarding the new findings. The existing
 title and edited content are preserved; an untouched No speech detected
@@ -111,4 +126,7 @@ and manual Stop semantics remain in force.
 Synthetic provider, temporary-store and fake-recorder tests cover immediate
 processing, the three-minute boundary, ordering, append/replay recovery, partial
 manifests, cleanup/rejoin races, scoped speakers, silence, readable Updating state, and concurrent
-note edits. These checks do not claim live-device or installed-app acceptance.
+note edits. Actual unshown Settings and standalone controllers cover open-note
+completion, transcript/tab updates, drafts, Cancel, asynchronous loads, and
+post-save refresh through the production coordinator/bridge. These checks do not
+claim live-device or installed-app acceptance.

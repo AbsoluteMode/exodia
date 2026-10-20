@@ -477,6 +477,17 @@ actor MeetingsStore: MeetingsStoring, ArtifactMeetingsExporting {
         return try String(contentsOf: path, encoding: .utf8)
     }
 
+    /// Keep the reader's body, transcript and edit base in one actor turn.
+    /// Mixing a newer body with an older list version would make a later
+    /// edit incorrectly re-apply continuation additions already in that body.
+    func detailSnapshot(id: UUID) throws -> MeetingDetailSnapshot? {
+        guard let meta = try list().first(where: { $0.id == id }),
+              let markdown = try markdown(id: id) else { return nil }
+        let transcript = try? transcript(id: id)
+        return MeetingDetailSnapshot(markdown: markdown, transcript: transcript,
+            version: meta.serverVersion, title: meta.title)
+    }
+
     /// Returns the persisted diarized transcript for a meeting, or
     /// `nil` when no sidecar exists (meetings finalized before the
     /// transcript-persistence change ship without one). Decoding
