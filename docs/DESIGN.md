@@ -1,5 +1,38 @@
 # Interface decisions
 
+## Searchable model selection — 2026-10-20
+
+The user comes to choose a model without scrolling a long catalog. First they
+see a focused search field, then matching model IDs under their provider.
+The closed control retains the shared 30 pt popup label and existing widths.
+
+- Open a 440 pt native popover with a fixed search band, 300 pt scrolling list
+  and fixed result-count/Refresh models/Other model ID footer. Why: typing and
+  recovery actions must remain reachable in a large catalog.
+- Match every query term in any order, ignoring case, diacritics, width and
+  separators. Split letters/digits: `qwen 27` and `qwen27` find
+  `qwen/qwen3.8-27b`. Prefer contiguous matches within each provider, preserving
+  the catalog order for ties. Why: remembering a family and size should suffice.
+- Keep provider headings, current-selection checkmarks, cached-refresh failures
+  and disabled unsupported models. A two-line model label and full-ID tooltip
+  handle long names. Exact account/model pairs remain distinct.
+- The native search field owns normal editing and IME composition. Up/Down
+  moves through enabled results and scrolls them into view; Return selects.
+  Escape clears the query, then closes; outside click dismisses. Focus returns
+  to the originating control. There is no new animation.
+- Empty results offer Clear search and exact-ID entry; absent providers offer
+  Add API key. Refresh is single-flight and keeps the query. Search/arrow
+  movement alone never selects or checks a model. An explicit pick uses the
+  existing verification and route-preservation path.
+
+Offscreen native fixtures cover the 440 pt picker in both appearances, filtered,
+empty, absent-provider, stale-catalog and long/disabled-row states. Search and
+native editing-command tests cover matching, stable ordering, account identity,
+keyboard bounds and IME Return. These checks do not prove physical focus,
+popover dismissal or VoiceOver on the installed app; those remain acceptance.
+The interpretation that a family plus size is the useful search input follows
+the user's example; typo correction and model aliases are outside this change.
+
 ## Model disclosure — 2026-10-20
 
 The user chose compact function rows that open their settings on click. The

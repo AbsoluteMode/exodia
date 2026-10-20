@@ -158,6 +158,24 @@ final class APIAndModelsViewModelTests: XCTestCase {
 
     // MARK: - Chips
 
+    func test_catalog_refresh_notifies_open_picker_without_changing_routes_or_rows() async throws {
+        let env = try makeEnv(keyed: [.openRouter])
+        let vm = env.makeViewModel()
+        let rows = vm.rows
+        let routes = env.routing.state
+        var notifications = 0
+        let subscription = vm.objectWillChange.sink { notifications += 1 }
+
+        await vm.refreshModels()
+
+        XCTAssertGreaterThan(notifications, 0, "An open picker must update even when only its catalog changes")
+        XCTAssertEqual(vm.rows, rows)
+        XCTAssertEqual(env.routing.state, routes)
+        XCTAssertTrue(env.probe.probedModels.isEmpty)
+        XCTAssertTrue(vm.sections(for: .translation).allSatisfy(\.refreshFailed))
+        withExtendedLifetime(subscription) {}
+    }
+
     func test_chips_show_keyed_providers_and_servers_only() throws {
         let env = try makeEnv(keyed: [.soniox, .openRouter], unreadable: [BYOKKeyStore.account(for: .elevenLabs)])
         let server = env.routing.addServer(name: "Lab", baseURL: "http://10.0.0.2:8000/v1")

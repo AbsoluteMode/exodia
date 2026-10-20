@@ -3,6 +3,7 @@ import SwiftUI
 /// The one model dropdown of a feature row: models grouped by the providers
 /// that have a key and can serve the feature. Picking a model is the only way
 /// to pick a provider.
+// WHY: .project-docs/decisions/2026-10-20-model-search.md
 @MainActor
 struct ModelMenu: View {
     @ObservedObject var viewModel: APIAndModelsViewModel
@@ -11,53 +12,119 @@ struct ModelMenu: View {
     let onAddKey: () -> Void
     let onOtherModel: () -> Void
     var width: CGFloat? = nil
+    @State private var isPresented = false
+    @FocusState private var focused: Bool
 
     var body: some View {
-        let sections = viewModel.sections(for: feature)
-        MacMenu(title: label, minWidth: width ?? 90, maxWidth: width ?? 300) {
-            if sections.isEmpty {
-                if let hint = viewModel.missingProviderHint(for: feature) {
-                    Button(hint, action: onAddKey)
-                }
-            } else {
-                ForEach(sections, id: \.account) { section in
-                    sectionItems(section)
-                }
-                Divider()
-                Button("Refresh models") { Task { await viewModel.refreshModels() } }
-                Button("Other model ID…", action: onOtherModel)
-            }
+        Button {
+            isPresented.toggle()
+        } label: {
+            MacPopupLabel(title: label, minWidth: width ?? 90, maxWidth: width ?? 300)
         }
+        .buttonStyle(.plain)
+        .focused($focused)
+        .help(label)
         .accessibilityLabel("Model for \(feature.title)")
-    }
-
-    @ViewBuilder
-    private func sectionItems(_ section: PickerSection) -> some View {
-        Section(section.refreshFailed ? "\(section.title) · Couldn't refresh" : section.title) {
-            ForEach(section.options, id: \.model) { option in
-                Button {
-                    Task { await viewModel.select(model: option.model, account: section.account, for: feature) }
-                } label: {
-                    if option.isSelected {
-                        Label(optionTitle(option), systemImage: "checkmark")
-                    } else {
-                        Text(optionTitle(option))
-                    }
-                }
-                .disabled(isUnsupported(option))
-            }
+        .accessibilityValue(label)
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            ModelPicker(
+                sections: viewModel.sections(for: feature),
+                missingProviderHint: viewModel.missingProviderHint(for: feature),
+                onSelect: { account, model in
+                    close()
+                    Task { await viewModel.select(model: model, account: account, for: feature) }
+                },
+                onRefresh: { await viewModel.refreshModels() },
+                onAddKey: { close(); onAddKey() },
+                onOtherModel: { close(); onOtherModel() },
+                onClose: close
+            )
+        }
+        .onChange(of: isPresented) { _, shown in
+            if !shown { focused = true }
         }
     }
 
-    /// Just the model ID; a short hint ("with speakers") stays on the same line.
-    /// A new model is still checked when picked, without saying so in every item.
-    private func optionTitle(_ option: PickerOption) -> String {
-        option.hint.map { "\(option.model) — \($0)" } ?? option.model
+    private func close() {
+        isPresented = false
+    }
+}
+
+/// Query terms can appear anywhere in an ID and in any order. Keeping the
+/// provider in each result prevents identical IDs on two accounts from merging.
+enum ModelPickerSearch {
+    struct ID: Hashable {
+        let account: ProviderAccount
+        let model: String
     }
 
-    private func isUnsupported(_ option: PickerOption) -> Bool {
-        if case .notSupported = option.state { return true }
-        return false
+    struct Result: Identifiable {
+        let account: ProviderAccount
+        let providerTitle: String
+        let refreshFailed: Bool
+        let option: PickerOption
+        var id: ID { ID(account: account, model: option.model) }
+        var isEnabled: Bool {
+            if case .notSupported = option.state { return false }
+            return true
+        }
+    }
+
+    static func results(in sections: [PickerSection], query: String) -> [Result] {
+        let terms = tokens(query)
+        let phrase = terms.joined()
+        return sections.flatMap { section in
+            section.options.compactMap { option -> (result: Result, rank: Int)? in
+                let modelTerms = tokens(option.model)
+                let model = modelTerms.joined()
+                let searchable = modelTerms + tokens(section.title)
+                // Never invent a size by joining numeric version components:
+                // qwen 27 must not match qwen2.7-72b.
+                guard terms.allSatisfy({ term in searchable.contains { $0.contains(term) } }) else { return nil }
+                let rank = phrase.isEmpty ? 2 : (model == phrase ? 0 : (model.contains(phrase) ? 1 : 2))
+                return (Result(account: section.account, providerTitle: section.title,
+                               refreshFailed: section.refreshFailed, option: option), rank)
+            }
+            .enumerated()
+            .sorted { lhs, rhs in
+                lhs.element.rank == rhs.element.rank ? lhs.offset < rhs.offset : lhs.element.rank < rhs.element.rank
+            }
+            .map(\.element.result)
+        }
+    }
+
+    /// Split before digits: qwen27 and qwen 27 are the same query. Keep suffixes
+    /// together so gpt4o still requires 4o, rather than a stray "o" in the provider.
+    private static func tokens(_ text: String) -> [String] {
+        let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                                  locale: Locale(identifier: "en_US_POSIX"))
+        var result: [String] = []
+        var word = ""
+        var wasNumber: Bool?
+        for character in folded {
+            guard character.isLetter || character.isNumber else {
+                if !word.isEmpty { result.append(word); word = "" }
+                wasNumber = nil
+                continue
+            }
+            if wasNumber == false, character.isNumber, !word.isEmpty {
+                result.append(word)
+                word = ""
+            }
+            word.append(character)
+            wasNumber = character.isNumber
+        }
+        if !word.isEmpty { result.append(word) }
+        return result
+    }
+
+    static func moved(from current: ID?, by offset: Int, in results: [Result]) -> ID? {
+        let enabled = results.filter(\.isEnabled).map(\.id)
+        guard !enabled.isEmpty else { return nil }
+        guard let current, let index = enabled.firstIndex(of: current) else {
+            return offset < 0 ? enabled.last : enabled.first
+        }
+        return enabled[min(max(index + offset, 0), enabled.count - 1)]
     }
 }
 
