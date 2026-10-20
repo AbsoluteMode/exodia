@@ -35,7 +35,7 @@ enum ProviderBatchRoute: Equatable, Sendable {
         case .server:
             guard let server = route.server, let endpoint = selfHostedEndpoint(baseURL: server.baseURL) else { return nil }
             return .selfHosted(apiKey: key, endpoint: endpoint, model: route.model)
-        case .openRouter, .anthropic:
+        case .openRouter, .openAI, .anthropic:
             return nil
         }
     }

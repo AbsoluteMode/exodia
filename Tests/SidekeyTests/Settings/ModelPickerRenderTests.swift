@@ -20,13 +20,15 @@ final class ModelPickerRenderTests: XCTestCase {
                          isSelected: false, hint: nil),
         ], refreshFailed: true)]
 
+        let unlisted = PickerSection(account: .server(UUID()), title: "My server", options: [], refreshFailed: false,
+                                     acceptsModelName: true)
         for dark in [false, true] {
-            for state in ["all", "qwen27", "empty", "no-provider"] {
+            for state in ["all", "qwen27", "empty", "no-provider", "unlisted-server"] {
                 let query = state == "qwen27" ? "qwen 27" : (state == "empty" ? "missing model" : "")
-                let picker = ModelPicker(sections: state == "no-provider" ? [] : sections,
+                let picker = ModelPicker(sections: state == "no-provider" ? [] : (state == "unlisted-server" ? [unlisted] : sections),
                                          missingProviderHint: "Add API key", initialQuery: query,
                                          onSelect: { _, _ in }, onRefresh: {}, onAddKey: {},
-                                         onOtherModel: {}, onClose: {})
+                                         onClose: {})
                 let host = NSHostingView(rootView: picker.environment(\.colorScheme, dark ? .dark : .light))
                 host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 let size = NSSize(width: 440, height: 400)

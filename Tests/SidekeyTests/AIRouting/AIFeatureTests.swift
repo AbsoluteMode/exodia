@@ -27,10 +27,10 @@ final class AIFeatureTests: XCTestCase {
     }
 
     func test_provider_kinds_carry_their_ui_names() {
-        XCTAssertEqual(AIProviderKind.allCases, [.soniox, .deepgram, .elevenLabs, .openRouter, .anthropic, .openAICompatible])
+        XCTAssertEqual(AIProviderKind.allCases, [.soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic, .openAICompatible])
         XCTAssertEqual(
             AIProviderKind.allCases.map(\.displayName),
-            ["Soniox", "Deepgram", "ElevenLabs", "OpenRouter", "Anthropic", "OpenAI-compatible server"]
+            ["Soniox", "Deepgram", "ElevenLabs", "OpenRouter", "OpenAI", "Anthropic", "OpenAI-compatible server"]
         )
     }
 
@@ -48,6 +48,7 @@ final class AIFeatureTests: XCTestCase {
             case .deepgram: return deepgram
             case .elevenLabs: return elevenLabs
             case .openRouter: return openRouter
+            case .openAI: return openRouter
             case .anthropic: return anthropic
             case .openAICompatible: return openAICompatible
             }
@@ -69,7 +70,7 @@ final class AIFeatureTests: XCTestCase {
             TableRow(
                 features: [.dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation],
                 soniox: nil, deepgram: nil, elevenLabs: nil,
-                openRouter: .chat, anthropic: nil, openAICompatible: .chat
+                openRouter: .chat, anthropic: .chat, openAICompatible: .chat
             ),
             TableRow(
                 features: [.agent],
@@ -96,22 +97,16 @@ final class AIFeatureTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(visited, 66)
+        XCTAssertEqual(visited, 77)
     }
 
-    /// Decision of 19.10: Anthropic credits are spent through the agent only;
-    /// Drop Smart cleanup and Meeting notes do not offer it.
-    func test_anthropic_is_offered_only_for_the_agent() {
-        for feature in AIFeature.allCases {
-            XCTAssertEqual(
-                feature.modelUse(on: .anthropic), feature == .agent ? .chatWithTools : nil,
-                feature.rawValue
-            )
-        }
-        XCTAssertEqual(AIProviderKind.anthropic.displayName, "Anthropic")
-        XCTAssertEqual(ModelRegistry.recommended(for: .agent, kind: .anthropic), "claude-sonnet-5-5")
-        for feature in AIFeature.allCases where feature != .agent {
-            XCTAssertNil(ModelRegistry.recommended(for: feature, kind: .anthropic), feature.rawValue)
+    func test_direct_llm_providers_are_available_for_all_text_modes_only() {
+        for kind in [AIProviderKind.openAI, .anthropic] {
+            for feature in AIFeature.allCases {
+                let expected: ModelUse? = feature.mode == .llm ? .chat
+                    : (feature.mode == .llmWithTools ? .chatWithTools : nil)
+                XCTAssertEqual(feature.modelUse(on: kind), expected, feature.rawValue)
+            }
         }
     }
 
@@ -123,6 +118,7 @@ final class AIFeatureTests: XCTestCase {
             (.deepgram, .deepgram, "deepgram"),
             (.elevenLabs, .elevenLabs, "elevenLabs"),
             (.openRouter, .openRouter, "openRouter"),
+            (.openAI, .openAI, "openAI"),
             (.anthropic, .anthropic, "anthropic"),
             (.server(serverID), .openAICompatible, serverStorageID),
         ]

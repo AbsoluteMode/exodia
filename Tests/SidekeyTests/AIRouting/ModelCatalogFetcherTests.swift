@@ -17,6 +17,17 @@ final class ModelCatalogFetcherTests: XCTestCase {
         ServerEndpoint(id: UUID(), name: "Local", baseURL: baseURL, keyAccount: "byok.server.test.api_key")
     }
 
+    func test_openai_catalog_authenticates_and_excludes_non_text_endpoints() async throws {
+        let fetcher = makeFetcher(body: #"{"data":[{"id":"gpt-6.1-sol"},{"id":"gpt-4.1-mini"},{"id":"o3"},{"id":"text-embedding-3-small"},{"id":"gpt-4o-transcribe"},{"id":"gpt-realtime"},{"id":"gpt-image-1"},{"id":"gpt-5-pro"},{"id":"gpt-5-codex"}]}"#)
+        let models = try await fetcher.fetch(account: .openAI, apiKey: "openai-key", server: nil)
+        XCTAssertEqual(models.map(\.id), ["gpt-4.1-mini", "gpt-6.1-sol", "o3"])
+        XCTAssertTrue(models.allSatisfy { $0.uses == [.chat, .chatWithTools] })
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/models")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer openai-key")
+        XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
+    }
+
     func test_soniox_catalog_maps_modes_and_aliases() async throws {
         let fetcher = makeFetcher(body: """
         {"models":[

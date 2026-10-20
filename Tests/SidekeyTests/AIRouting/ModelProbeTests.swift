@@ -169,6 +169,20 @@ final class ModelProbeTests: XCTestCase {
 
     // MARK: Chat
 
+    func test_openai_probe_uses_its_own_endpoint_with_modern_output_limit() async throws {
+        let probe = httpProbe { _ in (200, [:], Self.okBody) }
+        let outcome = await probe.probe(route(.openAI, feature: .translation), use: .chat, catalog: nil)
+        XCTAssertEqual(outcome, .passed)
+        let request = try XCTUnwrap(StubURLProtocol.capturedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/chat/completions")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer the-key")
+        let body = try jsonBody(at: 0)
+        XCTAssertEqual(body["max_completion_tokens"] as? Int, 512)
+        XCTAssertNil(body["max_tokens"])
+        XCTAssertNil(body["provider"])
+        XCTAssertNil(body["reasoning"])
+    }
+
     func test_chat_probe_body() async throws {
         let probe = httpProbe { _ in (200, [:], Self.okBody) }
         let catalog = CatalogModel(id: "vendor/model", reasoning: OpenRouterReasoningCapabilities(mandatory: false, supportedEfforts: nil))

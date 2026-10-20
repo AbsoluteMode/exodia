@@ -75,6 +75,74 @@ final class OpenRouterLLMClientTests: XCTestCase {
         XCTAssertEqual(result, "clean text")
     }
 
+    func testDirectOpenAIUsesOnlyItsAuthAndOmitsUnsupportedSamplingOverrides() async throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://api.openai.com/v1/chat/completions")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer openai-key")
+            XCTAssertNil(request.value(forHTTPHeaderField: "HTTP-Referer"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
+            let body = try XCTUnwrap(StubURLProtocol.capturedBodies.last)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["model"] as? String, "selected-openai-model")
+            XCTAssertNil(json["temperature"])
+            XCTAssertNil(json["reasoning"])
+            XCTAssertNil(json["provider"])
+            return (200, [:], Data(#"{"choices":[{"message":{"content":"direct text"}}]}"#.utf8))
+        }
+        let result = try await client.complete(endpoint: .openAI(apiKey: "openai-key"), model: "selected-openai-model",
+                                               messages: [.init(role: "user", content: "example")])
+        XCTAssertEqual(result, "direct text")
+    }
+
+    func testDirectAnthropicUsesMessagesAndSeparatesSystemInstructions() async throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://api.anthropic.com/v1/messages")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "anthropic-key")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "HTTP-Referer"))
+            let body = try XCTUnwrap(StubURLProtocol.capturedBodies.last)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["model"] as? String, "selected-claude-model")
+            XCTAssertEqual(json["system"] as? String, "instruction")
+            XCTAssertEqual(json["max_tokens"] as? Int, 8192)
+            XCTAssertEqual(json["messages"] as? [[String: String]], [["role": "user", "content": "example"]])
+            XCTAssertNil(json["provider"])
+            return (200, [:], Data(#"{"content":[{"type":"thinking","thinking":"ignored"},{"type":"text","text":"direct answer"}],"stop_reason":"end_turn"}"#.utf8))
+        }
+        let result = try await client.complete(endpoint: .anthropic(apiKey: "anthropic-key"), model: "selected-claude-model",
+                                               messages: [.init(role: "system", content: "instruction"), .init(role: "user", content: "example")])
+        XCTAssertEqual(result, "direct answer")
+    }
+
+    func testDirectAnthropicRejectsEmptyAndTruncatedReplies() async throws {
+        for (body, expected) in [
+            (#"{"content":[],"stop_reason":"end_turn"}"#, OpenRouterLLMError.emptyContent),
+            (#"{"content":[{"type":"text","text":"partial"}],"stop_reason":"max_tokens"}"#, .outputLimitReached),
+        ] {
+            StubURLProtocol.handler = { _ in (200, [:], Data(body.utf8)) }
+            do {
+                _ = try await client.complete(endpoint: .anthropic(apiKey: "key"), model: "selected",
+                                                messages: [.init(role: "user", content: "example")])
+                XCTFail("Expected incomplete output to fail")
+            } catch { XCTAssertEqual(error as? OpenRouterLLMError, expected) }
+        }
+    }
+
+    func testAnthropicInputOverflowDoesNotMarkTheModelUnsupported() async throws {
+        StubURLProtocol.handler = { _ in
+            (400, [:], Data(#"{"error":{"type":"invalid_request_error","message":"prompt is too long"}}"#.utf8))
+        }
+        do {
+            _ = try await client.complete(endpoint: .anthropic(apiKey: "key"), model: "selected",
+                                            messages: [.init(role: "user", content: "example")])
+            XCTFail("Expected rejected input")
+        } catch let error as OpenRouterLLMError {
+            XCTAssertEqual(error, .inputRejected)
+            XCTAssertFalse(error.isModelRefusal)
+        }
+    }
+
     func testCustomEndpointSendsChatCompletionWithoutOpenRouterHeadersOrKey() async throws {
         StubURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.absoluteString, "http://localhost:8000/v1/chat/completions")

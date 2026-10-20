@@ -34,6 +34,9 @@ struct PickerSection: Equatable {
     let options: [PickerOption]
     /// The latest catalog refresh failed: the list is the cached one.
     let refreshFailed: Bool
+    /// A custom server without a catalog still accepts its configured model
+    /// name, even when the selected route is included in `options`.
+    var acceptsModelName = false
 }
 
 /// One "Switch" action: several features sit on the same deprecated alias of
@@ -69,7 +72,7 @@ extension OpenRouterLLMError {
 struct ModelStatusResolver {
     static let refusedReason = "The provider refused this model"
 
-    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .anthropic]
+    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic]
 
     private let routing: AIRoutingStore
     private let keys: ProviderKeyStore
@@ -167,7 +170,8 @@ struct ModelStatusResolver {
                 account: account,
                 title: title(of: account),
                 options: options,
-                refreshFailed: snapshot?.lastRefreshFailed ?? false
+                refreshFailed: snapshot?.lastRefreshFailed ?? false,
+                acceptsModelName: account.kind == .openAICompatible && (snapshot?.models.isEmpty ?? true)
             )
         }
     }
@@ -333,7 +337,7 @@ struct ModelStatusResolver {
 
     private static func phrase(for kind: AIProviderKind) -> String {
         switch kind {
-        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic: return kind.displayName
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic: return kind.displayName
         case .openAICompatible: return "an OpenAI-compatible server"
         }
     }

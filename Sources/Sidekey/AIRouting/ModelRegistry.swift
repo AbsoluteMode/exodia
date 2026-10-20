@@ -77,8 +77,12 @@ extension ModelRegistry {
         case .anthropic:
             switch feature {
             case .agent: return anthropicAgentModel
-            case .dropFast, .dropSmart, .dropSmartCleanup, .translation, .subtitlesTranslation, .meetings, .meetingNotes, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
+            case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation: return anthropicAgentModel
+            case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
             }
+        case .openAI:
+            // The authenticated live catalog is the source of available IDs.
+            return nil
         case .openAICompatible:
             return nil
         }
@@ -95,7 +99,7 @@ extension ModelRegistry {
         switch kind {
         case .deepgram:
             return id.hasPrefix("flux-") ? "needs Deepgram's v2 streaming API" : nil
-        case .soniox, .elevenLabs, .openRouter, .anthropic, .openAICompatible:
+        case .soniox, .elevenLabs, .openRouter, .openAI, .anthropic, .openAICompatible:
             return nil
         }
     }

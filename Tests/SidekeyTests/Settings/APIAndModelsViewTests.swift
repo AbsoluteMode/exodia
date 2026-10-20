@@ -5,7 +5,7 @@ import XCTest
 final class APIAndModelsViewTests: XCTestCase {
     private let files = [
         "APIAndModelsView.swift", "ModelMenu.swift", "KeyChipPopover.swift",
-        "AddKeySheet.swift", "AssignModelsSheet.swift", "ProviderMenu.swift", "ModelPicker.swift",
+        "AddKeySheet.swift", "AssignModelsSheet.swift", "ProviderMenu.swift", "ModelPicker.swift", "ProviderKeyTiles.swift",
     ]
 
     func test_tab_uses_mac_components_and_verbatim_strings() throws {
@@ -15,7 +15,7 @@ final class APIAndModelsViewTests: XCTestCase {
         }
         for text in [
             "\"API keys\"", "\"Models\"", "\"Add key\"", "\"Replace key\"", "\"Remove\"", "\"Check now\"",
-            "\"Refresh models\"", "\"Other model ID…\"", "checked when picked", "\"Use\"", "\"Not now\"",
+            "checked when picked", "\"Use\"", "\"Not now\"",
             "\"Show\"", "Not verified", "Removed by provider", "Key problem", "Not supported yet",
             "No features use this key.", "will have no model.", "http://localhost:8000/v1",
         ] {

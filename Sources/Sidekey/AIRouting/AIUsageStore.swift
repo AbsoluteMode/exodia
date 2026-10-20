@@ -55,14 +55,11 @@ enum AIUsageRecorder {
     static func enable() { lock.withLock { enabled = true } }
     static func record(_ event: AIUsageEvent) {
         guard lock.withLock({ enabled }) else { return }
-        Task {
-            await AIUsageStore.shared.record(event)
-            await ElevenLabsCreditUsage.shared.refresh(events: [event], store: .shared)
-        }
+        Task { await AIUsageStore.shared.record(event) }
     }
-    static func refreshCredits(_ events: [AIUsageEvent]) {
-        guard lock.withLock({ enabled }) else { return }
-        Task { await ElevenLabsCreditUsage.shared.refresh(events: events, store: .shared) }
+    static func billingUsage(in interval: DateInterval) async throws -> ElevenLabsBillingUsage? {
+        guard lock.withLock({ enabled }) else { return nil }
+        return try await ElevenLabsCreditUsage.shared.usage(in: interval)
     }
 }
 

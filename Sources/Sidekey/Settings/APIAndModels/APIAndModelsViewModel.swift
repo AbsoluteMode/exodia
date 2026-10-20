@@ -113,7 +113,7 @@ final class APIAndModelsViewModel: ObservableObject {
     @Published private(set) var providerLists: [String: ProviderList] = [:]
 
     /// Built-in providers in the order the tab lists them and Set up picks them.
-    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .anthropic]
+    private static let builtInAccounts: [ProviderAccount] = [.soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic]
 
     private let routing: AIRoutingStore
     private let keys: ProviderKeyStore
@@ -184,6 +184,8 @@ final class APIAndModelsViewModel: ObservableObject {
         }
     }
 
+    func account(for kind: AIProviderKind) -> ProviderAccount? { Self.builtInAccount(for: kind) }
+
     // MARK: - Opening
 
     /// Refreshes stale catalogs and re-checks keys whose result is a day old,
@@ -197,6 +199,9 @@ final class APIAndModelsViewModel: ObservableObject {
                 keyStatuses.set(status, for: account, at: now())
             }
         }
+        // A picker opened during this refresh can share its in-flight request.
+        // Publish catalog-only changes even when all saved rows stay equal.
+        objectWillChange.send()
         recompute()
     }
 
@@ -225,6 +230,11 @@ final class APIAndModelsViewModel: ObservableObject {
             routing.removeServer(server.id)
             recompute()
             return apiKey == nil ? "This server asks for a key" : "Key not accepted"
+        }
+        guard status == .valid || status == .limited else {
+            routing.removeServer(server.id)
+            recompute()
+            return Self.statusText(for: status, account: account)
         }
         if let apiKey {
             do {
@@ -260,7 +270,7 @@ final class APIAndModelsViewModel: ObservableObject {
         }
         switch account {
         case .server(let id): routing.removeServer(id)
-        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic: routing.clearRoutes(using: account)
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic: routing.clearRoutes(using: account)
         }
         catalogs.forget(account)
         keyStatuses.forget(account)
@@ -348,10 +358,12 @@ final class APIAndModelsViewModel: ObservableObject {
         _ = await probePassed(route, for: [feature])
     }
 
+    /// Opening a model picker refreshes stale or failed catalogs automatically.
+    /// Fresh successful catalogs keep their daily cache and never run a probe.
     func refreshModels() async {
         for account in keyedAccounts() {
             guard let access = access(account) else { continue }
-            await catalogs.refresh(account, apiKey: access.apiKey, server: access.server)
+            await catalogs.refreshIfStale(account, apiKey: access.apiKey, server: access.server)
         }
         // Catalog contents can change without changing any selected row/chip.
         // Refresh the open searchable picker in that case as well.
@@ -408,7 +420,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .server(let id):
             guard let endpoint = routing.server(id) else { return "This server was removed" }
             server = endpoint
-        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic:
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic:
             guard !key.isEmpty else { return "Enter a key" }
             server = nil
         }
@@ -418,7 +430,10 @@ final class APIAndModelsViewModel: ObservableObject {
         // Checked before it is stored, so a key the provider turns down never
         // replaces anything.
         let status = await keyChecker.check(account, apiKey: apiKey, server: server, allowPaidProbe: true)
-        if case .rejected(.invalidKey) = status {
+        if account == .openAI, status == .limited {
+            return "Allow model-list access for this OpenAI key, then try again."
+        }
+        guard status == .valid || status == .limited else {
             return Self.statusText(for: status, account: account)
         }
         do {
@@ -563,7 +578,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .deepgram:
             return DeepgramLanguagePolicy.configurationError(model: route.model, language: inputLanguage())?
                 .localizedDescription
-        case .soniox, .elevenLabs, .openRouter, .anthropic, .server:
+        case .soniox, .elevenLabs, .openRouter, .openAI, .anthropic, .server:
             return nil
         }
     }
@@ -590,7 +605,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .rejected(.invalidKey):
             switch account {
             case .soniox, .elevenLabs: return "Key not accepted. Regional keys aren't supported yet."
-            case .deepgram, .openRouter, .anthropic, .server: return "Key not accepted"
+            case .deepgram, .openRouter, .openAI, .anthropic, .server: return "Key not accepted"
             }
         }
     }
@@ -627,7 +642,7 @@ final class APIAndModelsViewModel: ObservableObject {
             case .absent: return Access(apiKey: nil, server: server)
             case .unreadable: return nil
             }
-        case .soniox, .deepgram, .elevenLabs, .openRouter, .anthropic:
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .anthropic:
             guard case .key(let key) = lookup(account) else { return nil }
             return Access(apiKey: key, server: nil)
         }
@@ -644,6 +659,7 @@ final class APIAndModelsViewModel: ObservableObject {
         case .deepgram: return .deepgram
         case .elevenLabs: return .elevenLabs
         case .openRouter: return .openRouter
+        case .openAI: return .openAI
         case .anthropic: return .anthropic
         case .openAICompatible: return nil
         }

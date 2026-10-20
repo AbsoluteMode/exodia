@@ -1,6 +1,9 @@
 import Foundation
 
 extension ProviderAccount {
+    /// Separate from the retired OpenAI speech credential; adding an LLM
+    /// provider never silently revives a previous audio route or key.
+    static let openAIKeychainAccount = "byok.openai.llm_api_key"
     /// The Anthropic key's Keychain account. New with Anthropic, so it was
     /// never written to a `.token` file and needs no credential migration.
     static let anthropicKeychainAccount = "byok.anthropic.api_key"
@@ -16,6 +19,7 @@ extension ProviderAccount {
         case .deepgram: return BYOKKeyStore.account(for: .deepgram)
         case .elevenLabs: return BYOKKeyStore.account(for: .elevenLabs)
         case .openRouter: return OpenRouterLLMKeyStore.account
+        case .openAI: return Self.openAIKeychainAccount
         case .anthropic: return Self.anthropicKeychainAccount
         case .server(let id): return routing.server(id)?.keyAccount
         }

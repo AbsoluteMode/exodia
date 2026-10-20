@@ -101,7 +101,7 @@ Voice flow (Drop / dictation):
        finalize + text EOF. A final <fin> acknowledgement completes the take;
        finished=true also completes it. The 10s watchdog remains the backstop.
        -> cleanup (PostProcessor, route of dropSmartCleanup):
-            OpenRouter with the user's key / a custom OpenAI-compatible
+            OpenRouter, OpenAI or Anthropic with the user's key / a custom OpenAI-compatible
             server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
             The mode is captured at take start:
             Fast bypasses the LLM; Smart requires processed text and never
@@ -149,32 +149,31 @@ Voice flow (Drop / dictation):
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
 
-Agent flow (OpenCode + OpenRouter or Anthropic):
+Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop, route of agentVoice
        -> OpenCodeProvider -> opencode run --format json --model
-          <openrouter|anthropic>/<selected-model> --dir <local workspace>,
+          <openrouter|openai|anthropic>/<selected-model> --dir <local workspace>,
           prompt on stdin; provider and model come from the agent feature's
           route in AIRoutingStore
        -> complete text/tool events rendered progressively in the island
   Settings -> Agents installs an app-managed OpenCode binary from its official
   GitHub release after SHA-256 digest verification, or locates an existing CLI.
   The agent's key and model are chosen in Settings -> API & Models (the
-  Agent row: OpenRouter from the live catalog or an exact ID, or Anthropic
-  from its /v1/models list); the Agents tab shows "Model: <provider> · <id>"
+  Agent row: OpenRouter, OpenAI or Anthropic from their live catalogs); the Agents tab shows "Model: <provider> · <id>"
   with Change in API & Models, and Save & connect only checks the local
   version and the free key endpoint of the route's provider (OpenRouter
-  /key, Anthropic /v1/models). Connecting does not submit a model request.
-  Keys are the Keychain items byok.openrouter.llm_api_key and
-  byok.anthropic.api_key and enter only the child process environment
-  (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never a credential JSON file or
+  /key, OpenAI/Anthropic /v1/models). Connecting does not submit a model request.
+  Keys are the Keychain items byok.openrouter.llm_api_key,
+  byok.openai.llm_api_key and byok.anthropic.api_key and enter only the child process environment
+  (OPENROUTER_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY), never a credential JSON file or
   argv. The runtime enables only the route's provider, declares the selected
   model with its limits and tool support from the provider catalog (so
   OpenCode keeps context compaction), disables sharing/default plugins/
   automatic updates and excludes inherited provider credential/config
-  environment variables. Anthropic is offered for the Agent row only, not
-  for Drop Smart cleanup or Meeting notes. WHY:
-  .project-docs/decisions/2026-10-19-api-and-models.md
+  environment variables. OpenAI uses OpenCode's own model metadata when its
+  /models list omits limits. Both direct APIs serve every LLM mode. WHY:
+  .project-docs/decisions/2026-10-21-provider-key-tiles.md
   Actions are allowed by default so the agent can edit and run tests; the user
   can turn them off in Settings. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
@@ -296,8 +295,10 @@ Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
   appear as app icons; clicking one opens that client's policy. An always-visible
-  Connect button opens the agent picker, then project scope and Accept/Bypass
-  before registration. Codex highlights blue, Claude orange and Cursor white
+  Connect button offers only installed OpenCode and Cursor with bundled logos,
+  then grouped project scope and Accept/Bypass before registration. There is no
+  arbitrary program picker; existing legacy registrations stay editable. Mode
+  explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
   on hover/keyboard focus. Search matches project and key names/descriptions,
   including empty projects and General. A matching project shows all its keys;
   key-only matches show only those keys. + Key opens a separate creation field,
@@ -316,7 +317,9 @@ Case secrets manager:
   Schema 2 migrates without changing existing access; older apps refuse schema 3.
   WHY: docs/decisions/2026-10-20-case-connect-and-scope.md. `Contents/Helpers/whytap`
   exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
-  names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). The app's local Unix
+  names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). `case_list_keys(query:)`
+  searches authorized key names/descriptions and project names directly; a known
+  key uses `case run --only KEY` without listing projects first. The app's local Unix
   socket broker accepts only its bundled helper by audit-token cdhash and
   dynamic validity. It validates every bundled architecture and compares the
   running peer with a valid signed slice, including x86_64 under Rosetta. It
@@ -328,8 +331,14 @@ Case secrets manager:
   invalidates its pending requests, including queued approvals.
   Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
-  grants. The prompt's Stepper selects 1–240 minutes (default 15); physical A
-  uses the displayed duration. Each new prompt resets its duration. Registration configures the client's names-only MCP entry. The
+  grants. Temporary Bypass is a separate button beside a native editable
+  1–240 minute field (default 15), without stepper arrows; the bottom row has
+  Deny/Allow only. The command's native hover help contains its full original
+  text. While editing minutes the approval keys are suspended; Return commits
+  the edit and Escape restores its starting value. Invalid drafts disable timed
+  approval and revert to the last valid value on blur. Explicit field focus is
+  released on prompt replacement/hide. Buttons expose hover/pressed/focus and
+  disabled states. Each new prompt resets its duration. Registration configures the client's names-only MCP entry. The
   helper injects authorized values into the child command's environment and
   applies best-effort masking to stdout/stderr. Deliberately transformed
   output, files and values shorter than four bytes can expose values; this is
@@ -650,7 +659,7 @@ Update flow (download-on-action):
 
 Presentation: Settings -> API & Models has four internal tabs: API keys,
 Models (the initial tab), Costs and API hints. API keys holds the provider keys (Soniox,
-Deepgram, ElevenLabs, OpenRouter, Anthropic for the Agent row, and the user's
+Deepgram, ElevenLabs, OpenRouter, OpenAI, Anthropic, and the user's
 OpenAI-compatible servers) and one model per AI feature (Drop Fast, Drop
 Smart, Drop Smart cleanup, Meetings, Meeting notes, Agent, Agent voice, Voice
 search); Local was removed. Models come from provider catalogs plus the
@@ -672,10 +681,16 @@ rewrite past usage. Only used feature groups appear for the selected local-date
 period; hover/click/keyboard focus reveals their models. One Price column
 retains explicit USD and ElevenLabs credit units, both when mixed. Each visit
 starts at This month; matching neutral From/To controls open a dismissing native
-calendar. No permanent bottom explanation or sticky text-segment highlight. OpenRouter response costs and exact matched ElevenLabs
-analytics debits are reported; Soniox public hourly equivalents and OpenCode's
-computed step prices are estimates. Missing prices stay unavailable, never zero;
-partial totals show +. No account-wide balance deltas or USD-to-credit conversion.
+calendar. No permanent bottom explanation or sticky text-segment highlight.
+OpenRouter response costs are reported; Soniox public hourly equivalents and
+OpenCode's computed step prices are estimates. ElevenLabs feature estimates use
+recorded audio minutes times the matching STT model's reported credits/minute,
+marked ≈ without rewriting journal amounts. A separate Reported usage section
+reads the workspace usage API for the same dates, grouped by API key/model;
+it explicitly includes other apps and is never added to feature Total. The live
+request log has no credit column; do not restore speculative request-ID billing.
+Missing rates or billing failures stay unavailable with a retryable explanation,
+never zero. Partial totals show +. No balance deltas or USD-to-credit conversion.
 Tracking starts with this update; synthetic model checks are excluded. WHY:
 .project-docs/decisions/2026-10-20-feature-costs.md
 
@@ -688,7 +703,12 @@ form. Opening hints never checks balances or changes routes. WHY:
 Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
 MacPopupLabel. Name/size terms match in any order (`qwen 27`, `qwen27`), ignoring
 case/separators. Search never changes routes; explicit picks retain verification.
-Up/Down and Return choose enabled results; Escape clears then closes. WHY:
+Up/Down and Return choose enabled results; Escape clears then closes. Opening
+the picker refreshes stale/failed catalogs automatically; the footer has no
+Refresh models or Other model ID actions. Custom servers without /models offer
+a contextual model-name field. API keys uses square provider tiles opening an
+inline Check & save form; failed checks keep the previous key. WHY:
+.project-docs/decisions/2026-10-21-provider-key-tiles.md;
 .project-docs/decisions/2026-10-20-model-search.md
 
 Other selection menus use MacMenu/MacPopup: a 30 pt neutral control with 8 pt corners
