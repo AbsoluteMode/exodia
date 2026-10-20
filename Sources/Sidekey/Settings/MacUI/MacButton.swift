@@ -27,6 +27,7 @@ struct MacButton: View {
         }
         .buttonStyle(MacButtonInteractionStyle(background: bg,
                                                highlight: style == .primary ? .black : MacSettingsTheme.text,
+                                               outline: style == .ghost || style == .tinted || style == .danger ? fg : nil,
                                                focused: focused))
         .focused($focused)
         .disabled(!isEnabled)
@@ -58,16 +59,19 @@ struct MacButton: View {
 struct MacButtonInteractionStyle: ButtonStyle {
     var background: Color = .clear
     var highlight: Color = MacSettingsTheme.text
+    var outline: Color? = nil
     var focused = false
 
     func makeBody(configuration: Configuration) -> some View {
-        Content(configuration: configuration, background: background, highlight: highlight, focused: focused)
+        Content(configuration: configuration, background: background, highlight: highlight,
+                outline: outline, focused: focused)
     }
 
     private struct Content: View {
         let configuration: ButtonStyleConfiguration
         let background: Color
         let highlight: Color
+        let outline: Color?
         let focused: Bool
         @Environment(\.isEnabled) private var isEnabled
         @State private var isHovered = false
@@ -77,6 +81,7 @@ struct MacButtonInteractionStyle: ButtonStyle {
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .background {
                     MacButtonInteractionSurface(background: background, highlight: highlight,
+                                                outline: outline,
                                                 hovered: isHovered, pressed: configuration.isPressed,
                                                 focused: focused, enabled: isEnabled)
                         .allowsHitTesting(false)
@@ -89,6 +94,7 @@ struct MacButtonInteractionStyle: ButtonStyle {
 struct MacButtonInteractionSurface: View {
     var background: Color
     var highlight: Color
+    var outline: Color? = nil
     var hovered: Bool
     var pressed: Bool
     var focused: Bool
@@ -99,7 +105,14 @@ struct MacButtonInteractionSurface: View {
             .fill(background)
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(highlight.opacity(!enabled ? 0 : pressed ? 0.18 : hovered ? 0.10 : 0))
+                    .fill(highlight.opacity(!enabled || outline != nil ? 0 : pressed ? 0.18 : hovered ? 0.10 : 0))
+            }
+            .overlay {
+                // Colored labels retain their existing contrast. Brightening
+                // their dark background would make blue/red text harder to read.
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke((outline ?? .clear).opacity(!enabled ? 0 : pressed ? 0.85 : hovered ? 0.5 : 0),
+                            lineWidth: pressed ? 2 : 1)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)

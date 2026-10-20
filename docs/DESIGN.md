@@ -472,6 +472,11 @@ area on hover, use a stronger pressed overlay and show a separate focus ring;
 disabled controls suppress those active states. Why: the user explicitly asked
 for visible interaction feedback on 2026-10-21. These state changes add no motion
 and preserve control geometry and existing native keyboard activation.
+Colored-text buttons use a hover outline, strengthened on press, instead of
+brightening their background. Why: the recovery-code action's dark-theme blue
+text would drop from 4.92:1 to 3.59:1 on hover and 2.76:1 on press with the neutral
+overlay. The outline keeps its text contrast unchanged and marks the whole hit
+area. The state matrix includes this ghost action in both appearances.
 The backup regression tests cover key-only automatic
 sync and clean-profile recovery. Native offscreen renders cover 560/760 pt in
 both already-supported Settings appearances and normal/hover/pressed/focus/

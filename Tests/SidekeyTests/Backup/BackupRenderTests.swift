@@ -109,7 +109,7 @@ final class BackupRenderTests: XCTestCase {
         }
         for scheme in [ColorScheme.dark, .light] {
             let label = scheme == .dark ? "dark" : "light"
-            try render(hosted(interactionSamples, scheme: scheme), size: NSSize(width: 760, height: 230),
+            try render(hosted(interactionSamples, scheme: scheme), size: NSSize(width: 900, height: 300),
                        to: directory.appendingPathComponent("backup-control-states-\(label).png"),
                        appearance: scheme == .dark ? .darkAqua : .aqua)
         }
@@ -147,20 +147,21 @@ final class BackupRenderTests: XCTestCase {
 
     private var interactionSamples: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(0..<3) { kind in
+            ForEach(0..<4) { kind in
                 HStack(spacing: 14) {
                     ForEach(0..<5) { state in
                         VStack(spacing: 8) {
                             Text(["Normal", "Hover", "Pressed", "Focus", "Disabled"][state])
                                 .font(.system(size: 11)).foregroundStyle(MacSettingsTheme.text2)
-                            Text(["Back up", "Restore backup", "GitHub ↗"][kind])
+                            Text(["Back up", "Restore backup", "GitHub ↗", "Show recovery code"][kind])
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(kind == 0 ? Color.white : MacSettingsTheme.text)
+                                .foregroundStyle(kind == 0 ? Color.white : kind == 3 ? MacSettingsTheme.accent : MacSettingsTheme.text)
                                 .padding(.horizontal, 13).padding(.vertical, 5)
                                 .background {
                                     MacButtonInteractionSurface(
                                         background: kind == 0 ? MacSettingsTheme.accentFill : kind == 1 ? MacSettingsTheme.controlBg : .clear,
                                         highlight: kind == 0 ? .black : MacSettingsTheme.text,
+                                        outline: kind == 3 ? MacSettingsTheme.accent : nil,
                                         hovered: state == 1 || state == 4, pressed: state == 2 || state == 4,
                                         focused: state == 3 || state == 4, enabled: state != 4)
                                 }
