@@ -56,13 +56,14 @@ services and data locations. A switch to Beta changes some credentials, local
 stores and permissions; do not use it as a shortcut for sharing development.
 Only this installed application is used for ordinary user acceptance.
 
-The [Whytap rename](../decisions/2026-10-19-whytap-name.md) changes the canonical
-bundle to `/Applications/Whytap.app` at the next checked safe promotion. Before
-that handoff, the existing `/Applications/Exodia.app` remains the working copy.
-Preserve its certificate, stores and permissions and keep one installed copy.
-The primary checkout and receipt remain the existing primary checkout and
-the existing primary checkout’s build receipt; do not move other sessions' WIP.
-Keep the existing `exodia-integration.lock` name across this transition.
+The [Whytap naming decision](../decisions/2026-10-19-whytap-name.md) owns the
+current name and compatibility contracts. The canonical primary checkout folder
+is named `whytap`; an older `exodia` path can remain a compatibility symlink for
+existing sessions. Use the primary build receipt for the actual running build;
+an older worktree's source is not evidence of the installed app.
+Preserve other sessions' WIP, the existing
+certificate, stores and permissions. Keep the `exodia-integration.lock` name
+so old and new sessions still serialize against the same lock.
 
 `origin/main` is the shared source of ready features. Each feature has its own
 branch and worktree, normally based on current `origin/main`. Keep the primary
