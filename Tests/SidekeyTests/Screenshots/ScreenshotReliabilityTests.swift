@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class ScreenshotReliabilityTests: XCTestCase {
+    func testHoverKeepsItsExistingStateUntilPixelsAreFrozen() {
+        XCTAssertTrue(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false, wasExpanded: true,
+                                                  glance: false, screenshotPreparing: true))
+        XCTAssertFalse(IslandView.mouseHoldsDrawer(pillHovering: true, panelHovering: true, wasExpanded: false,
+                                                   glance: false, screenshotPreparing: true))
+        XCTAssertFalse(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false, wasExpanded: true,
+                                                   glance: false, screenshotPreparing: false))
+    }
+
+    func testDoubleClickDoesNotSelectFullDisplay() throws {
+        _ = NSApplication.shared
+        let context = try XCTUnwrap(CGContext(data: nil, width: 100, height: 80, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let canvas = ScreenshotCanvas(image: try XCTUnwrap(context.makeImage()), size: CGSize(width: 100, height: 80))
+        let window = ScreenshotCapturePanel(contentRect: CGRect(x: -20_000, y: -20_000, width: 100, height: 80), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false; window.contentView = canvas; window.keyboardCanvas = canvas
+        defer { window.contentView = nil; window.close() }
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: CGPoint(x: 40, y: 30), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1))
+            type == .leftMouseDown ? canvas.mouseDown(with: event) : canvas.mouseUp(with: event)
+        }
+        XCTAssertTrue(canvas.selection.isEmpty)
+        XCTAssertFalse(window.isVisible)
+    }
+
     func testCaptureTimeoutReleasesActivityAndAllowsRetryEvenWhenProviderIgnoresCancellation() async throws {
         _ = NSApplication.shared
         var pending: [CheckedContinuation<[(NSScreen, CGImage)], Error>] = []
@@ -33,10 +59,10 @@ final class ScreenshotReliabilityTests: XCTestCase {
     func testRepeatedShortcutDoesNotCancelCaptureAndUnchangedDisplayNotificationIsIgnored() async throws {
         _ = NSApplication.shared
         var continuation: CheckedContinuation<[(NSScreen, CGImage)], Error>?
-        var activity: [Bool] = []
+        var activity: [Bool] = [], preparing: [Bool] = []
         var requests = 0
         let started = expectation(description: "Capture requested")
-        let coordinator = ScreenshotCoordinator(activityChanged: { activity.append($0) }, captureOverride: {
+        let coordinator = ScreenshotCoordinator(activityChanged: { activity.append($0) }, preparationChanged: { preparing.append($0) }, captureOverride: {
             requests += 1
             return try await withCheckedThrowingContinuation { continuation = $0; started.fulfill() }
         })
@@ -44,7 +70,7 @@ final class ScreenshotReliabilityTests: XCTestCase {
         await fulfillment(of: [started], timeout: 2)
         coordinator.start(); coordinator.start()
         XCTAssertTrue(coordinator.isActive)
-        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(requests, 1); XCTAssertEqual(preparing, [true])
         XCTAssertEqual(activity, [true], "Repeated hotkey events must not toggle capture off")
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
         XCTAssertTrue(coordinator.isActive, "An unchanged display layout must not dismiss capture")
@@ -52,7 +78,9 @@ final class ScreenshotReliabilityTests: XCTestCase {
         continuation?.resume(throwing: CancellationError())
         await Task.yield()
         XCTAssertFalse(coordinator.isActive)
-        XCTAssertEqual(activity, [true, false])
+        XCTAssertEqual(activity, [true, false]); XCTAssertEqual(preparing, [true, false])
+        coordinator.cancel(restoreFocus: false)
+        XCTAssertEqual(preparing, [true, false], "Idle cancellation must not release/wake Hover again")
     }
 
     func testCommandZFromBothFloatingPanelsUndoesScreenshotEdits() throws {

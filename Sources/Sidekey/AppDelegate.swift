@@ -1686,7 +1686,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Shares the tile's effect, independent of visibility and layout order.
     private func onToolHotkeyActivated(_ tool: HoverTool) {
-        registerIslandHotkeyActivity()
+        if tool != .screenshot { registerIslandHotkeyActivity() }
         let effect = HoverSlotRouter.effect(for: tool)
 
         switch effect {
@@ -1785,15 +1785,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openScreenshot() {
-        registerIslandHotkeyActivity()
-        AppState.shared.programmaticHoverExpansion = false
         if screenshotCoordinator == nil {
             screenshotCoordinator = ScreenshotCoordinator(
                 activityChanged: { AppState.shared.screenshotActive = $0 },
-                excludedWindowIDs: {
-                    Set([IslandPanel.shared.windowNumber, IslandNotificationPanel.shared.windowNumber].compactMap {
-                        $0 > 0 ? CGWindowID($0) : nil
-                    })
+                preparationChanged: { [weak self] preparing in
+                    AppState.shared.screenshotPreparing = preparing
+                    if !preparing { self?.registerIslandHotkeyActivity() }
                 }
             )
         }

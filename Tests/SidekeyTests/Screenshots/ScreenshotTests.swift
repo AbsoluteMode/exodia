@@ -310,15 +310,16 @@ final class ScreenshotTests: XCTestCase {
 
     func testScreenshotKeyboardCommandsAndHelpAgree() throws {
         let canvas = ScreenshotCanvas(image: try fixture(), size: CGSize(width: 800, height: 400))
-        var selectionEvents = 0
-        canvas.onSelection = { selectionEvents += 1 }
-        var fullDisplayCopies = 0
-        canvas.onCommand = { if case .copy = $0 { fullDisplayCopies += 1 } }
-        let fullDisplay = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                                                        windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
-        canvas.keyDown(with: fullDisplay)
-        XCTAssertEqual(canvas.selection, canvas.bounds); XCTAssertEqual(selectionEvents, 1)
-        XCTAssertEqual(fullDisplayCopies, 1, "Return without a crop copies the full display in one action")
+        var copiesWithoutSelection = 0
+        canvas.onCommand = { if case .copy = $0 { copiesWithoutSelection += 1 } }
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                                  windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        canvas.keyDown(with: enter)
+        XCTAssertTrue(canvas.selection.isEmpty); XCTAssertEqual(copiesWithoutSelection, 0)
+        XCTAssertTrue(canvas.message.isEmpty, "The passive instruction banner is removed")
+        XCTAssertFalse(HelpWindowContent.hotkeyRows.contains { $0.title == "Screenshot — full display" })
+        let crop = CGRect(x: 50, y: 50, width: 400, height: 200)
+        canvas.selection = crop
         for entry in ScreenshotEditorKeys.tools {
             let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                        windowNumber: 0, context: nil, characters: entry.key,
@@ -334,9 +335,9 @@ final class ScreenshotTests: XCTestCase {
         // The coordinator queues Copy during Blur and refuses unfinished pixels.
         canvas.busy = true; XCTAssertTrue(canvas.performKeyEquivalent(with: copy)); XCTAssertEqual(copyRequests, 1)
         canvas.busy = false; XCTAssertTrue(canvas.performKeyEquivalent(with: copy)); XCTAssertEqual(copyRequests, 2)
-        canvas.keyDown(with: fullDisplay); XCTAssertEqual(copyRequests, 3)
-        canvas.busy = true; canvas.keyDown(with: fullDisplay); XCTAssertEqual(copyRequests, 4)
-        XCTAssertEqual(canvas.selection, canvas.bounds)
+        canvas.keyDown(with: enter); XCTAssertEqual(copyRequests, 3)
+        canvas.busy = true; canvas.keyDown(with: enter); XCTAssertEqual(copyRequests, 4)
+        XCTAssertEqual(canvas.selection, crop)
     }
 
     func testAllToolbarCommandsAndSeparateSettingsFitWithoutOpeningApp() throws {

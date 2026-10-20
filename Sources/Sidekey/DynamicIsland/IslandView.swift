@@ -414,7 +414,8 @@ struct IslandView: View {
             panelHovering: panelHovering,
             wasExpanded: mouseExpanded,
             glance: hoverPanelGlance,
-            interactionHeld: holdsHoverMenu
+            interactionHeld: holdsHoverMenu,
+            screenshotPreparing: appState.screenshotPreparing
         )
         if mouseExpanded != next {
             mouseExpanded = next
@@ -460,8 +461,9 @@ struct IslandView: View {
     /// A glance opened without the pointer crossing the pill, so reaching its strip from below
     /// counts as entering the drawer rather than as the drawer's fading band.
     static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool,
-                                 glance: Bool, interactionHeld: Bool = false) -> Bool {
-        interactionHeld || IslandHoverGate.mouseExpanded(
+                                 glance: Bool, interactionHeld: Bool = false, screenshotPreparing: Bool = false) -> Bool {
+        if screenshotPreparing { return wasExpanded }
+        return interactionHeld || IslandHoverGate.mouseExpanded(
             pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance
         )
     }
@@ -573,6 +575,7 @@ struct IslandView: View {
     }
 
     private func dismissHoverMenu() {
+        guard !appState.screenshotPreparing else { return }
         guard hoverPanelMode != .caseVault || !caseViewModel.isSystemInteractionActive else { return }
         hoverPanelMode = .controls
         hoverSearchFocused = false
@@ -1358,6 +1361,11 @@ struct IslandView: View {
         // closed drawer before the cursor reaches the pill.
         .onChange(of: pillHovering) { _, _ in recomputeMouseExpanded() }
         .onChange(of: panelHovering) { _, _ in recomputeMouseExpanded() }
+        .onChange(of: appState.screenshotPreparing) { _, preparing in
+            guard !preparing else { return }
+            recomputeMouseExpanded()
+            if appState.programmaticHoverExpansion { armProgrammaticExpansionCollapse() }
+        }
         .onChange(of: isHovering) { _, newValue in
             onHoverChange(isHoverExpanded)
             if newValue {
@@ -1605,7 +1613,7 @@ struct IslandView: View {
         programmaticExpansionCollapseGeneration += 1
         let generation = programmaticExpansionCollapseGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.programmaticCollapseDelay(glance: hoverPanelGlance)) {
-            guard programmaticExpansionCollapseGeneration == generation else { return }
+            guard programmaticExpansionCollapseGeneration == generation, !appState.screenshotPreparing else { return }
             if !isHovering && !hoverSearchFocused && !hoverVocabularyFocused && !holdsHoverMenu {
                 appState.programmaticHoverExpansion = false
             }
@@ -2845,6 +2853,7 @@ private struct IslandDropModeHoverPanel: View {
     }
 
     private func activateSearchTool(_ tool: HoverTool) {
+        if tool == .screenshot { onOpenScreenshot(); return }
         // Capture the tool before changing query/focus; mouse clicks can resign
         // the field editor before the Button fires. Searching never pins it.
         onSearchWillActivate(tool)
@@ -2854,6 +2863,7 @@ private struct IslandDropModeHoverPanel: View {
     }
 
     private func activateTool(_ tool: HoverTool) {
+        if tool == .screenshot { onOpenScreenshot(); return }
         // A tile can be clicked while an empty search field owns the key window.
         // End text entry only after the activation has captured its tool.
         if searchFocused {

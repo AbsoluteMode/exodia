@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user requested preserving Whytap Hover in the frozen capture, area-only output without full-display Enter/double-click actions, and removal of the initial instruction strip.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user requested visible Copy and exit with Enter, every tool on the main toolbar without More, separate tool settings, Cmd-Z editing undo, and reported intermittent Screenshot activation and spontaneous editor dismissal.
     confirmed_at: 2026-10-21
   - type: repository
@@ -148,6 +151,21 @@ screen's notch safe area. Retina PNG records its logical point size alongside
 full pixel dimensions. The primary action draws its accent independently of
 which screenshot panel is key. Other spontaneous-dismissal causes and physical
 hotkey reliability remain installed-app acceptance.
+
+# Visible-state freeze and area-only revision
+
+Freeze the visible screen, including Whytap Hover, before presenting editor
+windows. A capture-preparation signal holds the existing mouse-expansion latch
+and defers its expiry/dismissal. Screenshot activation does not wake the island,
+release search focus or clear a query first. Release the hold after all source
+frames have been captured, or on cancellation/failure/timeout. No continuous
+screen stream or background capture is introduced.
+
+Export requires a region the user dragged. Remove full-display Enter and
+double-click selection, its accessibility command and Help row, and the passive
+instruction strip. Enter with no crop is inert. Keep transient processing,
+error and download confirmation states. This supersedes the earlier full-display
+and pre-capture island-exclusion behavior.
 
 # Consequences
 

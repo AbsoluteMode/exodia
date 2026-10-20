@@ -25,12 +25,19 @@ with the visible **Copy & exit ↩** action or Enter.
 - Wrap main-bar controls onto more rows at the width where they stop fitting,
   retaining order, full hit areas and every command. Why: exposing more tools
   must not hide Copy or clip controls on smaller displays.
-- Enter and the copy button both copy and exit; the initial/crop hint names
-  Enter explicitly. Cmd-Z / Shift-Cmd-Z undo/redo edits from both panels;
+- Enter and the copy button both copy the selected area and exit. The button
+  names the outcome and shows ↩. No passive instruction strip remains; errors,
+  processing and download results still appear when relevant. There is no
+  full-display Enter/double-click mode. Why: the user wants area capture only.
+- Cmd-Z / Shift-Cmd-Z undo/redo edits from both panels;
   a focused text field keeps native text undo. Tab/Shift-Tab traverse enabled
   controls in both panels. Unknown editor keys terminate locally instead of
   bubbling back into the forwarding window. Why: outcomes and shortcuts
   must be discoverable and match macOS editing behavior.
+- Capture the visible Hover before any focus/search/hover cleanup or island
+  wake. Hold its current open/closed mouse latch until pixels are frozen;
+  include Whytap's visible windows in the capture. Why: the user expects the
+  same visible-state freeze as Apple's region screenshot.
 - Repeated Screenshot activation preserves the current capture. Unchanged
   screen-parameter notifications do not cancel it; actual display layout or
   Space changes still discard stale pixels. Sanitized lifecycle logs record

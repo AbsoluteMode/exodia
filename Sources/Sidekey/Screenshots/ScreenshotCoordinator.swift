@@ -52,7 +52,8 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var copyWaitReason: String?
     private var copyAfterProcessing = false
     private let activityChanged: (Bool) -> Void
-    private let excludedWindowIDs: () -> Set<CGWindowID>
+    private let preparationChanged: (Bool) -> Void
+    private var preparing = false
     private let captureOverride: (() async throws -> [(NSScreen, CGImage)])?
     private let captureTimeout: Duration
     private let captureFailure: (String) -> Void
@@ -60,10 +61,10 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private static let log = OSLog(subsystem: "com.rootwise.sidekey", category: "Screenshot")
     var isActive: Bool { generation != nil }
 
-    init(activityChanged: @escaping (Bool) -> Void, excludedWindowIDs: @escaping () -> Set<CGWindowID> = { [] },
+    init(activityChanged: @escaping (Bool) -> Void, preparationChanged: @escaping (Bool) -> Void = { _ in },
          captureOverride: (() async throws -> [(NSScreen, CGImage)])? = nil,
          captureTimeout: Duration = .seconds(10), captureFailure: ((String) -> Void)? = nil) {
-        self.activityChanged = activityChanged; self.excludedWindowIDs = excludedWindowIDs; self.captureOverride = captureOverride
+        self.activityChanged = activityChanged; self.preparationChanged = preparationChanged; self.captureOverride = captureOverride
         self.captureTimeout = captureTimeout
         self.captureFailure = captureFailure ?? { message in
             let alert = NSAlert(); alert.messageText = "Screenshot unavailable"
@@ -96,6 +97,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         }
         previousApp = NSWorkspace.shared.frontmostApplication
         let token = UUID(); generation = token; activityChanged(true); outputWidth = nil
+        setPreparing(true)
         displayLayout = Self.currentDisplayLayout()
         os_log("screenshot_capture begin", log: Self.log, type: .info)
         task = Task { [weak self] in
@@ -111,14 +113,13 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                     }
                     guard self.generation == token, !Task.isCancelled else { return }
                     self.startCaptureDeadline(token: token)
-                    // Capture before ordering any selection windows. Exclude only the island,
-                    // not all Whytap windows: the user can also screenshot Settings.
+                    // Freeze the visible screen before ordering editor windows or releasing
+                    // Hover. Include Whytap's own visible surfaces, like Apple's area capture.
                     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                    let excluded = self.excludedWindowIDs()
                     for screen in NSScreen.screens {
                         guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
                               let display = content.displays.first(where: { $0.displayID == id }) else { continue }
-                        let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excluded.contains($0.windowID) })
+                        let filter = SCContentFilter(display: display, excludingWindows: [])
                         let config = ScreenshotCaptureConfiguration.make(contentRect: filter.contentRect, pointPixelScale: filter.pointPixelScale)
                         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
                         try Task.checkCancellation()
@@ -130,6 +131,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                 guard self.generation == token else { return }
                 self.captureDeadlineTask?.cancel(); self.captureDeadlineTask = nil
                 self.present(snapshots)
+                self.setPreparing(false)
                 os_log("screenshot_capture presented", log: Self.log, type: .info)
             } catch {
                 guard self.generation == token else { return }
@@ -147,6 +149,11 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             self.cancel(reason: "capture_timeout")
             self.captureFailure("The screen capture took too long. Press your Screenshot shortcut again to retry.")
         }
+    }
+
+    private func setPreparing(_ value: Bool) {
+        guard preparing != value else { return }
+        preparing = value; preparationChanged(value)
     }
 
     private static func currentDisplayLayout() -> [ScreenshotDisplayLayout] {
@@ -256,6 +263,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         if isActive { os_log("screenshot_cancel reason=%{public}@", log: Self.log, type: .info, String(describing: reason)) }
         generation = nil; task?.cancel(); task = nil
         captureDeadlineTask?.cancel(); captureDeadlineTask = nil
+        setPreparing(false)
         copyWaitReason = nil; copyAfterProcessing = false
         toolbar?.closeAuxiliaryWindows()
         if let settingsPanel { settingsPanel.parent?.removeChildWindow(settingsPanel); settingsPanel.orderOut(nil); settingsPanel.close() }

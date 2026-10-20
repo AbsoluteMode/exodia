@@ -15,7 +15,7 @@ final class ScreenshotCanvas: NSView {
     var blurMode = ScreenshotBlurMode.textAndNumbers
     var busy = false { didSet { needsDisplay = true; onChange?() } }
     var busyMessage = "Processing on this Mac…"
-    var message = "Drag to select · Enter: copy full display & exit · Double-click: edit · Esc: cancel"
+    var message = ""
     var onChange: (() -> Void)?
     var onSelection: (() -> Void)?
     var onBlur: ((CGRect, ScreenshotBlurMode) -> Void)?
@@ -41,14 +41,9 @@ final class ScreenshotCanvas: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         setAccessibilityLabel("Screenshot selection and annotations")
-        setAccessibilityHelp("Drag to select. Double-click selects the whole display. Enter copies and closes the editor. Tools and export actions are in the floating toolbar.")
-        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Select full display", target: self, selector: #selector(selectDisplayAccessibility))])
+        setAccessibilityHelp("Drag to select an area. Enter copies that area and closes the editor. Tools and export actions are in the floating toolbar.")
     }
     required init?(coder: NSCoder) { nil }
-    @objc private func selectDisplayAccessibility() -> Bool {
-        guard !busy else { return false }
-        checkpoint(snapshot()); selection = bounds; needsDisplay = true; onSelection?(); onChange?(); return true
-    }
     override var acceptsFirstResponder: Bool { true }
     override var isOpaque: Bool { true }
 
@@ -125,9 +120,7 @@ final class ScreenshotCanvas: NSView {
     func selectTool(_ value: ScreenshotTool) {
         guard !busy else { return }
         tool = value; selectedAnnotation = nil
-        message = value == .select ? "Drag the edges to crop · Enter: copy & exit · ⌘S Download · Esc Cancel" :
-            value == .blur ? "Select an area to blur text and numbers · Check the result before sharing" :
-            value == .text ? "Enter a label in the toolbar, then click the screenshot" : "Draw inside the selection · V to select and move annotations"
+        message = ""
         window?.invalidateCursorRects(for: self); needsDisplay = true; onChange?()
     }
 
@@ -137,10 +130,6 @@ final class ScreenshotCanvas: NSView {
         window?.makeFirstResponder(self)
         start = bounded(convert(event.locationInWindow, from: nil), to: bounds)
         beforeDrag = snapshot(); movingSelection = false; creatingSelection = false; movingAnnotation = nil; resizeCorner = nil
-        if event.clickCount == 2 && tool == .select && annotations.isEmpty {
-            selection = bounds; checkpoint(beforeDrag!); beforeDrag = nil
-            needsDisplay = true; onSelection?(); return
-        }
         if selection.isEmpty || tool == .select {
             if let corner = corners.first(where: { hypot($0.x - start.x, $0.y - start.y) <= 10 }), !selection.isEmpty {
                 resizeCorner = CGPoint(x: corner.x == selection.minX ? selection.maxX : selection.minX,
@@ -243,10 +232,7 @@ final class ScreenshotCanvas: NSView {
         }
         if event.keyCode == 53 { cancelOperation(nil); return }
         if [36, 76].contains(event.keyCode) {
-            if selection.isEmpty {
-                guard !busy else { return }
-                _ = selectDisplayAccessibility()
-            }
+            guard !selection.isEmpty else { return }
             onCommand?(.copy)
             return
         }

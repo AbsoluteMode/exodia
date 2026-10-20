@@ -908,7 +908,12 @@ preserves the editor; unchanged display notifications are ignored. Capture has
 its own 10-second deadline with retry, cancelled before editing. Unknown keys
 are consumed locally to avoid recursion through ScreenshotCapturePanel; Tab
 traverses both bars. Both bars avoid the display's top safe area. PNG stores
-Retina point scale as well as full-resolution pixels. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
+Retina point scale as well as full-resolution pixels. The visible Hover state
+is held until capture freezes its pixels; Whytap surfaces are included, and no
+island wake or dismissal happens first. Only a dragged area is exported: Enter
+without selection does nothing, double-click does not select a full display,
+and the passive instruction strip is removed. Return copies the selected area
+and closes, waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
 Shape,
 Pen, Text, Blur, secondary tools, OCR, pin, output size and system sharing are

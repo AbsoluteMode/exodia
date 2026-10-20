@@ -13,8 +13,12 @@ this access; opening Settings or launching Whytap never requests it. It is
 optional for other features. Follow macOS's reopen instruction after finishing
 current work.
 
-Drag an area on a frozen display, or double-click to edit the whole display.
-**Copy & exit ↩** or Enter copies/closes immediately, using the full display if there is no crop.
+The visible screen freezes before the editor opens, including Whytap's current
+Hover. Hover keeps its current open/closed state during capture; capture does not
+wake, close or exclude the island first. Only the area you drag is exported.
+There is no full-display shortcut or initial instruction strip. **Copy & exit ↩**
+or Enter copies that selected area and closes; Enter without a selection does
+nothing, and double-click does not select the display.
 Selection belongs to the display where it starts. The floating toolbar stays
 outside the crop where space permits, flips above a bottom-edge crop and is
 never included in the image.
@@ -83,8 +87,7 @@ Editor shortcuts, also listed in Help: V Select/crop, A Arrow, R Rectangle,
 O Oval, P Pen, T Text, B Blur, M Highlighter, N Numbered steps, ⌘C Copy,
 ⌘S Download, ⌘Z Undo, ⇧⌘Z Redo. Arrow keys move the crop, Shift moves 10 points,
 Option resizes. Delete removes the selected annotation. Escape cancels the
-current drawing first, then capture. Without a crop, Return copies the full display and closes; with a crop it
-copies that area and closes. These are local editor commands.
+current drawing first, then capture. Return requires a selected area, then copies that area and closes. These are local editor commands.
 
 Opening Screenshot again while capturing or editing keeps the current editor
 and edits instead of toggling it closed. A stalled capture times out after ten
