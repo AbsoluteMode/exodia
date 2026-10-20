@@ -71,7 +71,7 @@ verification must still be reported separately.
 First-time downloaded community apps may trigger macOS warnings; permission or
 Keychain approval can be needed after a signing-identity change. Do not disable
 OS protections or promise Apple notarization. Earlier installed Whytap copies
-can use a different update feed, so they require a one-time manual Exodia
+can use a different update feed, so they require a one-time manual Whytap
 installation unless a separately verified bridge is published to that feed.
 
 An idle app may install and relaunch after the requested download finishes. An
@@ -98,7 +98,7 @@ The focused update tests cover busy/idle decisions, resumed downloads and stale
 actions. A separate native fixture using the actual Sparkle framework rejected
 a tampered archive, then downloaded a correctly signed ad-hoc app, replaced
 version 1 and relaunched version 2. This proves the framework's community update
-path independently of a public Exodia release; public package acceptance is a
+path independently of a public Whytap release; public package acceptance is a
 separate release check.
 
 ## Ordinary-quit decision

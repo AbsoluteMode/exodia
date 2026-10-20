@@ -136,9 +136,18 @@ feature expenses without a permanent model-level grid or scattered period contro
   MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
   so meaning does not rely on color.
 - From/To controls share the period menu's 30 pt geometry, neutral fill and
-  typography. They open a native calendar, closing on a changed date or Done/
-  Return/Escape. Why: the user rejected mismatched black date fields and their
-  persistent blue text selection. The control retains a keyboard focus outline.
+  typography. They open a 310 pt calendar with separate month menu and editable year combo.
+  Selecting a day or Today applies and closes; month/year browsing never changes
+  the filter, and Done/Return/Escape close without applying the browsed month.
+  Year offers the recent 100 years and accepts any earlier positive year; future
+  days and next-month navigation after today are disabled. Why: the user found
+  the native whole-calendar focus ring distracting and year navigation unclear
+  (2026-10-21). Focus stays visible on individual controls/day buttons, with
+  full-area hover and pressed feedback; disabled days never respond to hover.
+  The neutral closed controls retain their keyboard focus outline. The month
+  selector uses a local native popup with an enabled-gated highlight drawing;
+  shared plain menus are unchanged. Why: its pressed state must be verifiable
+  from the real native control, rather than assumed from SwiftUI Menu styling.
 - Hover opens model details; click pins, keyboard focus opens, Escape closes.
   Row fill follows actual pointer hover, so an open popover does not leave a
   selected-looking row after the pointer moves away.
@@ -162,6 +171,15 @@ calendar actions visibly highlight their full hit area on hover and press,
 outline keyboard focus, and dim while disabled without active hover feedback.
 Feature disclosures retain row hover and explicit press/focus feedback. This preserves the chosen
 table while making its available evidence useful and its scope explicit.
+
+The revised date popover has 310 pt offscreen fixtures in English/Russian and
+both appearances. Calendar arithmetic covers leap days, DST, previous years
+and future bounds; native month highlight snapshots cover rest/pressed/disabled
+(with disabled/highlighted drawings identical), and native month actions reject
+disabled future choices. Native year-editor Return is tested without selecting a day
+or closing the popover. Physical day-grid keyboard navigation and VoiceOver
+remain acceptance on the shared installed application. White selected-day text
+on the shared #0064D2 fill has 5.59:1 contrast.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
 long model histories, custom dates, empty/error states and synthetic temporary-store
