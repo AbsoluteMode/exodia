@@ -10,6 +10,14 @@ struct ToolboxDeps {
     var currentDropMode: () -> TranscriptionMode = { .fast }
     /// Open the floating clipboard history strip.
     var openClipboard: () -> Void = {}
+    var historyCards: (HistoryStripMode) async -> [HistoryStripCard] = { _ in [] }
+    var copyHistoryCard: (HistoryStripCard) -> Void = { _ in }
+    var toggleMeetingRecord: () -> Void = {}
+    var openScreenshot: () -> Void = {}
+    var quitApplication: () -> Void = {}
+    /// Reuse the floating translator's models, preferences and activity guard.
+    var translationController: () -> TranslationWindowController? = { nil }
+    var endToolSessions: () -> Void = {}
     /// Local vocabulary store behind the Vocab editor.
     var vocabulary: () -> VocabularyCache = { .shared }
     /// Current input language (nil = Auto).

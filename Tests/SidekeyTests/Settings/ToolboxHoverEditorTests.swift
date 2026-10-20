@@ -5,9 +5,9 @@ import XCTest
 
 @MainActor
 final class ToolboxHoverEditorTests: XCTestCase {
-    func testAddedToolOccupiesThePreviousAddTargetAcrossRowBoundaries() throws {
+    func testAddAndSettingsStayVisibleAndFixedAcrossToolCountsAndInsertions() throws {
         let available = HoverTool.allCases.filter { $0 != .settings && $0 != .vocab }
-        for count in [0, 1, 2, 5, 6, 8, 11] {
+        for count in [0, 1, 2, 5, 6, 8, 11, 16] {
             try withEditor(tools: Array(available.prefix(count)), reduceMotion: true) { fixture in
                 let before = try fixture.frames()
                 let add = try XCTUnwrap(before[Self.addLabel])
@@ -17,7 +17,12 @@ final class ToolboxHoverEditorTests: XCTestCase {
                 fixture.settle()
 
                 let after = try fixture.frames()
-                assertSameFrame(try XCTUnwrap(after["Vocab"]), add)
+                assertSameFrame(try XCTUnwrap(after[Self.addLabel]), add)
+                XCTAssertNotNil(after["Vocab"])
+                XCTAssertGreaterThanOrEqual(add.minX, 0)
+                XCTAssertLessThanOrEqual(add.maxX, fixture.host.bounds.width)
+                XCTAssertLessThanOrEqual(add.maxY, 130)
+                XCTAssertLessThanOrEqual(try XCTUnwrap(after["Settings"]).maxX, fixture.host.bounds.width)
                 XCTAssertEqual(fixture.store.slots.last, .settings)
                 XCTAssertNotNil(after[Self.addLabel])
                 XCTAssertEqual(after.count, count + 3) // tools + newly added Vocab + Add + Settings
@@ -26,14 +31,14 @@ final class ToolboxHoverEditorTests: XCTestCase {
         }
     }
 
-    func testRemovingAToolReturnsTheAddTargetToItsPlace() throws {
+    func testRemovingAToolKeepsTheAddTargetFixed() throws {
         try withEditor(tools: [.inputLang, .notes, .vocab], reduceMotion: true) { fixture in
             let before = try fixture.frames()
-            let vocab = try XCTUnwrap(before["Vocab"])
+            let add = try XCTUnwrap(before[Self.addLabel])
             fixture.store.removeTool(.vocab)
             fixture.settle()
             let after = try fixture.frames()
-            assertSameFrame(try XCTUnwrap(after[Self.addLabel]), vocab)
+            assertSameFrame(try XCTUnwrap(after[Self.addLabel]), add)
             XCTAssertNil(after["Vocab"])
             XCTAssertEqual(fixture.store.slots, [.inputLang, .notes, .settings])
         }

@@ -6,8 +6,11 @@ same width as the compact island, using its actual notch-derived `compactWidth`.
 Each cell width is `(panelWidth - 24 - 16) / 3`: 90 points for a 310-point island,
 or about 90.67 for 312 points. Each shows an icon and title inside,
 with a current status when the tool has state. Settings stays last and cannot
-be removed. The editor always
-shows an add target; the live hover grid shows the selected tools. The search
+be removed. The Settings editor keeps Add and Settings fixed in its header;
+saved tools scroll horizontally while the catalog scrolls vertically below.
+Click Add to choose a tool, or drag a tile onto it. Already pinned catalog tiles
+remain usable and draggable. The right pane hosts mini apps; its header and
+context menu can add/remove a tool. The live hover grid shows the selected tools. The search
 field above it searches the full catalog and launches a tool without pinning it.
 At most four rows are visible in a 312-point grid viewport; the thirteenth
 and later selections scroll without being removed. New-install defaults have six
@@ -32,7 +35,8 @@ All paths below start at `Sources/Sidekey/`.
 | Brightness keys (event tap, steps, Extra gesture) and the Settings -> Toolbox -> Display pane | `Brightness/BrightnessKeys.swift`, `Brightness/BrightnessKeyEventTap.swift`, `Brightness/ToolboxDisplayPane.swift` |
 | Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `DynamicIsland/IslandPanel.swift` |
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
-| Drag/drop catalog and selected layout | `Settings/ToolboxSettingsView.swift` |
+| Drag/drop catalog, fixed Add and selected layout | `Settings/ToolboxSettingsView.swift` |
+| Embedded History, Record and translation panels | `Settings/ToolboxMiniApps.swift` |
 | App services and hotkey dispatch | `AppDelegate.swift` (`onToolHotkeyActivated`) |
 | Feature hotkey labels and hints | `Hotkeys/HotkeysSettingsView.swift`, `HelpWindowController.swift` |
 
