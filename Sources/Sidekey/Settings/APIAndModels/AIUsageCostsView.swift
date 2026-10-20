@@ -45,6 +45,21 @@ struct AIUsageTotal {
     }
 }
 
+/// One Price column, with each unit retained even when a feature has used
+/// both providers. Different currencies are never added to one number.
+struct AIUsagePrice {
+    let events: [AIUsageEvent]
+    var text: String {
+        [AIUsageCurrency.usd, .elevenLabsCredits].compactMap { currency -> String? in
+            let matching = events.filter { $0.currency == currency }
+            guard !matching.isEmpty else { return nil }
+            let total = AIUsageTotal(events: matching, currency: currency).text
+            if total == "Unavailable" { return currency == .usd ? "USD unavailable" : "Credits unavailable" }
+            return total + (currency == .elevenLabsCredits ? " credits" : "")
+        }.joined(separator: "\n")
+    }
+}
+
 struct AIUsageCostRow: Identifiable {
     let title: String
     let events: [AIUsageEvent]
@@ -83,6 +98,7 @@ final class AIUsageCostsViewModel: ObservableObject {
     let store: AIUsageStore
     private var generation = UUID()
     init(store: AIUsageStore) { self.store = store }
+    func beginVisit() { period = .month }
     func load(_ interval: DateInterval) async {
         let token = UUID(); generation = token
         loading = true
@@ -123,9 +139,9 @@ struct AIUsageCostsView: View {
                     }
                     if model.period == .custom {
                         HStack(spacing: 16) {
-                            DatePicker("From", selection: $model.start, in: ...now(), displayedComponents: .date)
-                            DatePicker("To", selection: $model.end, in: ...now(), displayedComponents: .date)
-                        }.font(.system(size: 12)).datePickerStyle(.field)
+                            AIUsageDateControl(title: "From", date: $model.start, latest: now())
+                            AIUsageDateControl(title: "To", date: $model.end, latest: now())
+                        }.font(.system(size: 12))
                     }
                     if interval == nil {
                         Text("Choose an end date on or after the start date.").foregroundStyle(MacSettingsTheme.red)
@@ -159,14 +175,17 @@ struct AIUsageCostsView: View {
         .onChange(of: model.start) { _, _ in Task { await refresh() } }
         .onChange(of: model.end) { _, _ in Task { await refresh() } }
         .onReceive(NotificationCenter.default.publisher(for: AIUsageStore.changed)) { _ in Task { await refresh() } }
+        .onReceive(NotificationCenter.default.publisher(for: SettingsWindowController.didStartVisit)) { _ in
+            if model.period == .month { Task { await refresh() } }
+            else { model.beginVisit() }
+        }
     }
 
     private var table: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text("Feature").frame(maxWidth: .infinity, alignment: .leading)
-                Text("USD").frame(width: 110, alignment: .trailing)
-                Text("ElevenLabs credits").frame(width: 150, alignment: .trailing)
+                Text("Price").frame(width: 190, alignment: .trailing)
             }.font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2).padding(.horizontal, 18).padding(.vertical, 10)
             divider
             ForEach(AIUsageCostRow.grouped(model.events)) { row in
@@ -175,12 +194,8 @@ struct AIUsageCostsView: View {
             }
             HStack(spacing: 12) {
                 Text("Total").frame(maxWidth: .infinity, alignment: .leading)
-                Text(AIUsageTotal(events: model.events, currency: .usd).text).frame(width: 110, alignment: .trailing)
-                Text(AIUsageTotal(events: model.events, currency: .elevenLabsCredits).text).frame(width: 150, alignment: .trailing)
+                AIUsagePriceLabel(events: model.events)
             }.font(.system(size: 13, weight: .semibold)).monospacedDigit().padding(18)
-            Text("Whytap activity only · ≈ public-rate estimate · + excludes unreported costs")
-                .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18).padding(.bottom, 16)
         }
     }
     private var divider: some View { Rectangle().fill(MacSettingsTheme.rowSeparator).frame(height: 0.5) }
@@ -229,11 +244,10 @@ private struct AIUsageFeatureCostRow: View {
                     .onExitCommand { shown = false; pinned = false }
             }
             Spacer(minLength: 0)
-            Text(AIUsageTotal(events: row.events, currency: .usd).text).frame(width: 110, alignment: .trailing)
-            Text(AIUsageTotal(events: row.events, currency: .elevenLabsCredits).text).frame(width: 150, alignment: .trailing)
+            AIUsagePriceLabel(events: row.events)
         }
         .font(.system(size: 13)).monospacedDigit().padding(.horizontal, 18).padding(.vertical, 10)
-        .background(shown ? MacSettingsTheme.hover : .clear)
+        .background(hovered ? MacSettingsTheme.hover : .clear)
         .onChange(of: shown) { _, value in if !value { pinned = false } }
         .onExitCommand { shown = false; pinned = false }
         .onDisappear { closeTask?.cancel() }
@@ -245,6 +259,62 @@ private struct AIUsageFeatureCostRow: View {
             guard !Task.isCancelled, !hovered, !focused, !pinned else { return }
             shown = false
         }
+    }
+}
+
+private struct AIUsagePriceLabel: View {
+    let events: [AIUsageEvent]
+    var body: some View {
+        Text(AIUsagePrice(events: events).text)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 190, alignment: .trailing)
+            .help("≈ Estimated cost. + Additional calls have no reported cost. Credits are separate from USD.")
+    }
+}
+
+/// A calendar popover avoids NSDatePicker's persistent selected text segment.
+/// Its closed control shares the period menu's geometry, fill and typography.
+@MainActor
+struct AIUsageDateControl: View {
+    let title: String
+    @Binding var date: Date
+    let latest: Date
+    @State private var presented = false
+    @FocusState private var focused: Bool
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+            Button { presented.toggle() } label: {
+                MacPopupLabel(title: date.formatted(date: .numeric, time: .omitted), minWidth: 116, maxWidth: 136)
+            }
+            .buttonStyle(.plain)
+            .focused($focused)
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? MacSettingsTheme.accent : .clear, lineWidth: 1.5) }
+            .accessibilityLabel("\(title) date")
+            .accessibilityValue(date.formatted(date: .complete, time: .omitted))
+            .popover(isPresented: $presented, arrowEdge: .bottom) {
+                AIUsageDateCalendar(title: title, date: $date, latest: latest) { presented = false }
+            }
+        }
+        .onExitCommand { presented = false }
+    }
+}
+
+@MainActor
+struct AIUsageDateCalendar: View {
+    let title: String
+    @Binding var date: Date
+    let latest: Date
+    let close: () -> Void
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            DatePicker(title, selection: $date, in: ...latest, displayedComponents: .date)
+                .datePickerStyle(.graphical).labelsHidden()
+            Button("Done", action: close).keyboardShortcut(.defaultAction)
+        }
+        .padding(12)
+        .onChange(of: date) { _, _ in close() }
+        .onExitCommand(perform: close)
     }
 }
 

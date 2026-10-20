@@ -77,26 +77,36 @@ the user's example; typo correction and model aliases are outside this change.
 ## API & Models costs — 2026-10-20
 
 The user chose four tabs in one surface: API keys, Models, Costs, API hints.
-Costs first shows the nearby period, then used features and separate USD/
-ElevenLabs credit totals; model details appear on the feature. Why: compare
+Costs first shows the nearby period, then used features with one Price column;
+USD and ElevenLabs credit values retain explicit units, including both lines
+when a feature used both. Model details appear on the feature. Why: compare
 feature expenses without a permanent model-level grid or scattered period control.
 
 - One existing bgCard surface, 14 pt corners, shared underlined tabs and quiet
   separators. No extra metric cards, chart, entrance or number animation.
-- Period choices are Today, Last 7 days, This month and inclusive Custom dates;
-  local-calendar date labels stay beside the table header. Invalid dates, loading,
+- Period choices are Today, Last 7 days, This month and inclusive Custom dates.
+  Each entry into Costs starts at This month. Local-calendar date labels stay
+  beside the table header. Invalid dates, loading,
   empty history and a recoverable storage error have explicit states.
 - System typography: 15 pt heading, 13 pt feature/value rows, 11.5 pt secondary
   labels. Aligned numeric columns use monospaced digits; colors reuse adaptive
   MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
   so meaning does not rely on color.
+- From/To controls share the period menu's 30 pt geometry, neutral fill and
+  typography. They open a native calendar, closing on a changed date or Done/
+  Return/Escape. Why: the user rejected mismatched black date fields and their
+  persistent blue text selection. The control retains a keyboard focus outline.
 - Hover opens model details; click pins, keyboard focus opens, Escape closes.
+  Row fill follows actual pointer hover, so an open popover does not leave a
+  selected-looking row after the pointer moves away.
   A short delayed dismissal permits pointer transfer into the native popover.
   The model list scrolls at 320 pt while its heading and explanation stay visible.
   Rows retain their geometry during disclosure; no new motion needs reduction.
 - Historical feature/provider/model snapshots drive expenses. Unknown price is
   Unavailable, never free; ≈ denotes a calculated estimate and + excluded unknown
-  costs. ElevenLabs credits are never combined with dollars or inferred from a plan.
+  costs. The permanent bottom explanation is removed at the user's request;
+  help and model details explain these marks. ElevenLabs credits are never
+  combined with dollars or inferred from a plan.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
 long model histories, custom dates, empty/error states and synthetic temporary-store

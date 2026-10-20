@@ -7,6 +7,7 @@ import UserNotifications
 /// new one each time.
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    static let didStartVisit = Notification.Name("SettingsWindowController.didStartVisit")
     private let permissionsViewModel: PermissionsSettingsViewModel
     private let apiAndModelsViewModel: APIAndModelsViewModel
     let selection = SettingsWindowSelection()
@@ -93,6 +94,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     /// Bring the window forward and refresh the selected tab.
     func show(tab: SettingsWindowTab = .apiAndModels, feature: AIFeature? = nil) {
+        if window?.isVisible != true {
+            NotificationCenter.default.post(name: Self.didStartVisit, object: self)
+        }
         if let feature {
             selection.focus(feature)
         } else {

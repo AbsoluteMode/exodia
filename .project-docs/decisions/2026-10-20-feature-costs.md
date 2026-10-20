@@ -2,12 +2,18 @@
 id: feature-costs-2026-10-20
 type: decision
 title: Feature costs preserve historical models and separate ElevenLabs credits
-summary: Four API & Models tabs share one surface; Costs lists used features for a chosen period and reveals historical models on hover, click or keyboard focus.
+summary: Costs has one Price column with explicit USD or credit units, defaults to This month and reveals historical models; calendar controls share the period menu appearance.
 status: confirmed
 tags: [settings, costs, models, credits, providers]
 canonical_for: [feature-costs]
 verified_at: 2026-10-20
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-20 Maxim requested one Price column, removal of the bottom explanation, This month by default, consistent control fills, no persistent date selection and repair of ElevenLabs credits.
+    confirmed_at: 2026-10-20
+  - type: url
+    reference: https://elevenlabs.io/docs/api-reference/analytics/workspace/requests
+    confirmed_at: 2026-10-20
   - type: user-confirmed
     reference: On 2026-10-20 Maxim approved API keys, Models, Costs and API hints, used features only, a nearby period selector and historical models on hover in a unified panel.
     confirmed_at: 2026-10-20
@@ -41,7 +47,12 @@ The four tabs share one native settings panel. Models remains the initial tab;
 runtime repair links select it before expanding the affected feature. API hints
 becomes the fourth tab, retaining its offer content and existing add-key form.
 
-Costs shows Today, Last 7 days, This month or Custom dates at the heading. Dates
+Costs shows Today, Last 7 days, This month or Custom dates at the heading. Each
+visit starts at This month; custom dates remain selectable within that visit.
+From/To use the same neutral control fill as the period menu and open a native
+calendar that closes after a changed date, Done/Return or Escape. No selected
+text segment remains on the closed control. Feature-row fill follows actual
+pointer hover rather than the lifetime of its detail popover. Dates
 use the local calendar and include the selected end day. Only feature groups
 with activity in that period appear. Hover, click or keyboard focus reveals all
 models actually used, grouped by provider and model; Escape closes details.
@@ -54,7 +65,11 @@ Routes are captured before the request; later changes cannot rewrite history.
 Synthetic model checks are excluded. Tracking starts with this update: there is
 no retroactive estimate from current routes or account-wide spending.
 
-USD and ElevenLabs credits are separate columns. OpenRouter `usage.cost` is a
+USD and ElevenLabs credits are distinct values in one **Price** column, each
+with its unit. If a feature used both, the cell and Total retain both on separate
+lines. The user replaced the earlier two-column design; currencies are never
+added or converted. The bottom explanation is removed; estimate/incomplete
+marks remain on values and their explanation is available in help/details. OpenRouter `usage.cost` is a
 reported expense. Soniox's equivalent hourly rates ($0.12 realtime / $0.10 async
 for the supported v5 models) and OpenCode's per-step token/price calculation are
 estimates, marked ≈. A partial total uses + for excluded unknown prices; a wholly
@@ -65,7 +80,12 @@ an incomplete marker rather than a fabricated complete total.
 ElevenLabs' official SDK exposes a request analytics endpoint with explicit
 column units. The app reads it with the existing key, joins only an exact
 request/session ID captured from its own response, verifies the model when
-present, and accepts one unambiguous credit column. The same journal entry is
+present, and accepts one unambiguous credit column. The documented analytics
+response includes numeric strings, which the credit parser accepts without
+relaxing inference API parsing. A search result without an ID column cannot
+establish attribution; a bounded second query uses an explicit request_id
+equality filter and accepts only one matching row. Unsupported filters or
+ambiguous responses remain unavailable. The same journal entry is
 reconciled once. Free and purchased credits remain credits. USD columns,
 account-wide balance deltas, ambiguous rows and guessed plan conversions are
 never used. Delayed analytics, missing identifiers or insufficient key scope

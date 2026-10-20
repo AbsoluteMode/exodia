@@ -47,24 +47,35 @@ actor ElevenLabsCreditUsage {
             request.httpMethod = "POST"; request.timeoutInterval = 12
             request.setValue(key, forHTTPHeaderField: "xi-api-key")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            let body: [String: Any] = [
+            let range: [String: Any] = [
                 "start_time": Int(event.createdAt.addingTimeInterval(-120).timeIntervalSince1970 * 1000),
                 "end_time": Int(now.addingTimeInterval(60).timeIntervalSince1970 * 1000),
-                "search": reference, "limit": 10
+                "limit": 10
             ]
             do {
-                request.httpBody = try JSONSerialization.data(withJSONObject: body)
-                let (data, response) = try await session.data(for: request)
-                guard (response as? HTTPURLResponse)?.statusCode == 200,
-                      let amount = Self.credits(in: data, reference: reference, model: event.context.model) else { continue }
-                let reconciled = AIUsageEvent(id: event.id, createdAt: event.createdAt, context: event.context,
-                    currency: .elevenLabsCredits, amount: amount, basis: .reported, audioSeconds: event.audioSeconds)
-                await store.record(reconciled)
+                for exactFilter in [false, true] {
+                    var body = range
+                    if exactFilter {
+                        // The documented table can omit the ID column. An
+                        // explicit server-side equality filter still anchors
+                        // a single result to this request; search alone cannot.
+                        body["filters"] = [["column": "request_id", "operation": "eq", "values": [reference]]]
+                    } else { body["search"] = reference }
+                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                    let (data, response) = try await session.data(for: request)
+                    guard (response as? HTTPURLResponse)?.statusCode == 200 else { break }
+                    guard let amount = Self.credits(in: data, reference: reference, model: event.context.model,
+                                                    exactRequestFilter: exactFilter) else { continue }
+                    let reconciled = AIUsageEvent(id: event.id, createdAt: event.createdAt, context: event.context,
+                        currency: .elevenLabsCredits, amount: amount, basis: .reported, audioSeconds: event.audioSeconds)
+                    await store.record(reconciled)
+                    break
+                }
             } catch { /* Unavailable remains visible; normal inference is independent of billing reads. */ }
         }
     }
 
-    static func credits(in data: Data, reference: String, model: String) -> Double? {
+    static func credits(in data: Data, reference: String, model: String, exactRequestFilter: Bool = false) -> Double? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let columns = object["columns"] as? [String],
               let units = object["column_units"] as? [Any], units.count == columns.count,
@@ -73,13 +84,23 @@ actor ElevenLabsCreditUsage {
         // Ambiguous currencies/cost components must not silently become a total.
         guard creditColumns.count == 1, let creditIndex = creditColumns.first else { return nil }
         let idColumns = columns.indices.filter { ["request_id", "session_id", "id"].contains(columns[$0]) }
-        guard !idColumns.isEmpty else { return nil }
+        guard !idColumns.isEmpty || exactRequestFilter else { return nil }
         let modelIndex = columns.firstIndex(of: "model_id") ?? columns.firstIndex(of: "model")
         let matched = rows.filter { row in
-            guard row.count == columns.count, idColumns.contains(where: { row[$0] as? String == reference }) else { return false }
+            guard row.count == columns.count,
+                  (idColumns.isEmpty && exactRequestFilter) || idColumns.contains(where: { row[$0] as? String == reference }) else { return false }
             return modelIndex.map { row[$0] as? String == model } ?? true
         }
         guard matched.count == 1 else { return nil }
-        return AIUsageNumber.nonnegative(matched[0][creditIndex])
+        let value = matched[0][creditIndex]
+        // Analytics rows are documented as mixed string/numeric cells. Keep
+        // this coercion local: inference APIs still require numeric JSON cost.
+        // https://elevenlabs.io/docs/api-reference/analytics/workspace/requests
+        if let string = value as? String {
+            guard let amount = Double(string.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  amount.isFinite, amount >= 0 else { return nil }
+            return amount
+        }
+        return AIUsageNumber.nonnegative(value)
     }
 }
