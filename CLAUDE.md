@@ -647,8 +647,9 @@ question-mark tooltip/popover. Bindings and saved selections are unchanged.
 WHY: .project-docs/decisions/2026-10-20-compact-selection-menus.md
 
 Settings follows macOS light/dark appearance while open. MacSettingsTheme owns
-dynamic SwiftUI/AppKit colors; the shell uses inset groups and SF Symbol sidebar
-tiles. MacSwitch adapts the supplied glass switch in SwiftUI with click/drag,
+dynamic SwiftUI/AppKit colors; the shell uses inset groups and text-only sidebar
+rows with a 140 ms background hover fade (immediate with Reduce Motion).
+MacSwitch adapts the supplied glass switch in SwiftUI with click/drag,
 keyboard and native Toggle accessibility, respecting Reduce Motion/Transparency.
 The island keeps its compact blue switch and explicitly dark Toolbox previews.
 UI decisions and verification limits: docs/DESIGN.md.
