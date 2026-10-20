@@ -14,6 +14,9 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Case/Broker/CaseBroker.swift
     confirmed_at: 2026-10-19
+  - type: user-confirmed
+    reference: On 2026-10-20 the user requested a larger Case hover, clearer AI connection wording, copying all Doppler secrets into Case, and a fix for hover closing during Touch ID.
+    confirmed_at: 2026-10-20
 related: []
 ---
 
@@ -245,3 +248,33 @@ Masking is best effort and bytes-based; it is not a security boundary.
 2026-10-19. Commits: 0fee034..225df91 on branch claude/sad-nobel-2aaef9, final
 packaging and docs commit follows. Fix wave 2026-10-20: 084e293..4511f84 and
 the docs commit after it.
+
+## 2026-10-20: held drawer and Doppler import
+
+The 145 pt menu viewport is too short for managing keys. Case now uses a
+320 pt content viewport while preserving the compact island width and shared
+hit-band geometry. The access action explicitly describes access to keys;
+its screen explains that connected clients use keys in commands.
+
+Touch ID can end SwiftUI hover tracking while the person moves their hand to
+the sensor. A system-interaction hold keeps the current panel in place across
+success or cancellation. Returning directly into that visible drawer counts
+as staying in an expanded panel; outside click, Escape or switching tools
+releases an inactive hold. The existing activity/preemption policy still wins.
+
+Doppler import uses the existing CLI login and reads all pages of projects
+and configurations before one encrypted vault save. Each configuration maps
+to a stable project ID and a distinct project/config group because Case has
+no environment selector yet. Unchanged reimports are idempotent; differing
+local values abort the merge. No plaintext export/fallback file is created,
+and values never enter UI state, provider configurations, diagnostics or
+process arguments. Generated DOPPLER_PROJECT/ENVIRONMENT/CONFIG metadata is
+excluded. Empty and multiline values are preserved. Read, validation,
+cancellation and conflict failures do not commit partial imports.
+
+Physical Touch ID, keyboard restoration and real import are acceptance on the
+installed shared app. Synthetic tests and offscreen native renders do not
+establish those live results. UI choices are recorded in [DESIGN.md](../DESIGN.md).
+
+Import completion, failure and cancellation do not request keyboard focus. Only
+authentication restores it; a user may be typing elsewhere during a long import.

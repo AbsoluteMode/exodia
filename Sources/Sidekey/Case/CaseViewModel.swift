@@ -157,6 +157,11 @@ final class CaseViewModel: ObservableObject {
     @Published private(set) var unlockState: CaseUnlockState = .locked
     @Published private(set) var rows: [CaseDisplayRow] = []
     @Published private(set) var inputMode: CaseInputMode = .name
+    /// System authentication interrupts SwiftUI hover tracking. Keep the panel
+    /// until the pointer returns or the person explicitly dismisses it.
+    @Published private(set) var holdsPanelOpen = false
+    @Published private(set) var isSystemInteractionActive = false
+    @Published private(set) var isImporting = false
     /// Whether the first "arm" step of the two-step reset confirm has been
     /// taken. The UI calls armResetVault() on first press; resetVault() on
     /// second. Published because the panel keys its "Подтвердить сброс" label and
@@ -186,6 +191,8 @@ final class CaseViewModel: ObservableObject {
     private var idleLockGeneration = 0
     private var serviceSubscription: AnyCancellable?
     private let clients: CaseClientConfiguring
+    private var interactionCount = 0
+    private let doppler: CaseDopplerImporting
 
     init(
         service: CaseVaultService = .shared,
@@ -194,9 +201,11 @@ final class CaseViewModel: ObservableObject {
         now: @escaping () -> Date = Date.init,
         unlockedSessionSeconds: Int = CaseViewModel.defaultUnlockedSessionSeconds,
         scheduleIdleLock: IdleLockScheduler? = nil,
-        clients: CaseClientConfiguring = CaseClientSetup.live()
+        clients: CaseClientConfiguring = CaseClientSetup.live(),
+        doppler: CaseDopplerImporting = CaseDopplerImporter()
     ) {
         self.clients = clients
+        self.doppler = doppler
         self.service = service
         self.authenticator = authenticator
         self.pasteboard = pasteboard
@@ -225,6 +234,8 @@ final class CaseViewModel: ObservableObject {
     }
 
     func unlock() async throws {
+        beginSystemInteraction()
+        defer { endSystemInteraction() }
         // Touch ID is only the UI gate. The service reads key + vault itself
         // and never authenticates, so the broker can share it.
         do {
@@ -577,11 +588,52 @@ final class CaseViewModel: ObservableObject {
     }
 
     private func authenticateAccessChange(reason: String) async throws {
+        beginSystemInteraction()
+        defer { endSystemInteraction() }
         do {
             try await authenticator.authenticate(reason: reason)
         } catch {
             throw CaseViewModelError.authenticationFailed
         }
+    }
+
+    private func beginSystemInteraction() {
+        interactionCount += 1
+        holdsPanelOpen = true
+        isSystemInteractionActive = true
+    }
+
+    private func endSystemInteraction() {
+        interactionCount -= 1
+        isSystemInteractionActive = interactionCount > 0
+    }
+
+    func releasePanelHold() {
+        guard !isSystemInteractionActive else { return }
+        holdsPanelOpen = false
+    }
+
+    /// Fetch into memory, validate everything, then save once. A failed fetch,
+    /// cancelled task or a locked UI never leaves a partial import behind.
+    func importFromDoppler() async throws -> CaseDopplerImportResult {
+        _ = try unlockedPayload()
+        guard !isImporting else { throw CaseDopplerImportError.busy }
+        isImporting = true
+        beginSystemInteraction()
+        defer {
+            isImporting = false
+            endSystemInteraction()
+        }
+        let snapshot = try await doppler.fetch()
+        try Task.checkCancellation()
+        _ = try unlockedPayload()
+        var result = CaseDopplerImportResult()
+        try service.mutate { payload in
+            result = try snapshot.merge(into: &payload, now: now())
+        }
+        refreshRows()
+        scheduleIdleLock()
+        return result
     }
 
     func copySecret(_ secretID: UUID) throws {
