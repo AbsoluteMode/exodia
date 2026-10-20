@@ -125,7 +125,7 @@ enum ConfigBackupRegistry {
             ids.insert(server.id); servers.append(server)
         }
         object["servers"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(servers))
-        object["migrationVersion"] = 1
+        object["migrationVersion"] = max(1, object["migrationVersion"] as? Int ?? 1)
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         _ = try routingServers(data)
         return (data, true)

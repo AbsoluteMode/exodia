@@ -33,6 +33,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
     case voiceSearch
     case translation
     case subtitlesAudio
+    case subtitlesTranslation
 
     var title: String {
         switch self {
@@ -46,6 +47,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
         case .voiceSearch: return "Voice search"
         case .translation: return "Translation"
         case .subtitlesAudio: return "Subtitles audio"
+        case .subtitlesTranslation: return "Subtitles translation"
         }
     }
 
@@ -53,7 +55,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
         switch self {
         case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio: return .realtime
         case .meetings: return .recorded
-        case .dropSmartCleanup, .meetingNotes, .translation: return .llm
+        case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation: return .llm
         case .agent: return .llmWithTools
         }
     }

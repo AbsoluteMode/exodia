@@ -242,6 +242,29 @@ final class BackupAIRoutingTests: XCTestCase {
         XCTAssertNotNil(captured[ConfigBackupRegistry.aiRoutingPreservedKey])
     }
 
+    func testRepairedBackupPreservesTheSubtitleSplitAndExplicitlyUnsetLLM() throws {
+        let profile = try ArtifactBackupTestProfile(); defer { profile.tearDown() }
+        let speech = FeatureRoute(account: .soniox, model: "stt-rt-v5")
+        let text = FeatureRoute(account: .openRouter, model: "text-only")
+        let state = AIRoutingState(routes: [AIFeature.subtitlesAudio.rawValue: speech,
+                                            AIFeature.translation.rawValue: text],
+                                   migratedRoutes: [:], servers: [server()], migrationVersion: 2)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        var servers = try XCTUnwrap(object["servers"] as? [Any])
+        servers.append(["id": "invalid-new-server-shape"])
+        object["servers"] = servers
+        profile.defaults.set(try JSONSerialization.data(withJSONObject: object), forKey: ConfigBackupRegistry.aiRoutingKey)
+
+        let captured = try ConfigBackupRegistry.capture(profile.defaults)
+        try ConfigBackupRegistry.apply(captured, sections: [.models], to: profile.defaults)
+        let restored = AIRoutingStore(defaults: profile.defaults)
+        restored.separateSubtitleTranslationIfNeeded()
+
+        XCTAssertEqual(restored.state.migrationVersion, 2)
+        XCTAssertEqual(restored.route(for: .translation), text)
+        XCTAssertNil(restored.route(for: .subtitlesTranslation))
+    }
+
     func testUnmigratedImportedRoutingCannotSilentlySwitchToLegacyRoutes() throws {
         let profile = try ArtifactBackupTestProfile(); defer { profile.tearDown() }
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: routing([server()])) as? [String: Any])
