@@ -51,7 +51,8 @@ struct IslandNotificationPill: View {
         NotifyLogoStore.resolve(logo: event.customLogo, source: event.sourceName)
     }
 
-    private static let pillHeight: CGFloat = 32
+    static let pillHeight: CGFloat = 32
+    // WHY: .project-docs/decisions/2026-10-20-notification-cards-and-sounds.md
     private static let cornerRadius: CGFloat = 12
 
     // Pill content geometry (kept in sync with the `HStack`/padding below).
@@ -113,40 +114,7 @@ struct IslandNotificationPill: View {
             let liveProgress = NotificationCountdown.progress(
                 now: context.date, deadline: deadline, duration: duration)
             let progress = hovering ? (frozenProgress ?? liveProgress) : liveProgress
-            let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-
-            HStack(spacing: Self.contentSpacing) {
-                NotificationSourceIcon(glyph: Self.resolvedGlyph(for: event), tint: Self.resolvedTint(for: event), size: Self.iconSize)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(event.title)
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Text(event.body)
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.68))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .frame(maxWidth: Self.textColumnMaxWidth, alignment: .leading)
-            }
-            .padding(.leading, Self.leadingPadding)
-            .padding(.trailing, Self.trailingPadding)
-            .frame(height: Self.pillHeight)
-            .fixedSize(horizontal: true, vertical: false)
-            .background(wash(progress: progress).clipShape(shape))
-            // Dark frame: product is dark-only, but `.popover` material is
-            // translucent enough that a light window/wallpaper behind bleeds
-            // through and washes the pill out (visible over a light Linear UI).
-            // An opaque-ish dark layer over the material keeps the pill readable
-            // regardless of what sits behind the island.
-            .background(Color.black.opacity(0.8).clipShape(shape))
-            .background(IslandVisualEffectBackground().clipShape(shape))
-            .overlay(borders(shape: shape))
-            .contentShape(shape)
-            .scaleEffect(hovering && !reduceMotion ? 1.03 : 1.0)
-            .brightness(hovering ? 0.06 : 0)
+            content(progress: progress, hovered: hovering)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovering)
             .onHover { isHovering in
                 // Capture the wash position at the moment hover begins so
@@ -166,6 +134,43 @@ struct IslandNotificationPill: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { onTap() }
         }
+    }
+
+    /// Shared native content lets offscreen checks exercise the actual hover state.
+    func content(progress: Double, hovered: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+
+        return HStack(spacing: Self.contentSpacing) {
+            NotificationSourceIcon(glyph: Self.resolvedGlyph(for: event), tint: Self.resolvedTint(for: event), size: Self.iconSize)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(event.title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(event.body)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: Self.textColumnMaxWidth, alignment: .leading)
+        }
+        .padding(.leading, Self.leadingPadding)
+        .padding(.trailing, Self.trailingPadding)
+        .frame(height: Self.pillHeight)
+        .fixedSize(horizontal: true, vertical: false)
+        .background(wash(progress: progress).clipShape(shape))
+        // Dark frame: product is dark-only, but `.popover` material is
+        // translucent enough that a light window/wallpaper behind bleeds
+        // through and washes the pill out (visible over a light Linear UI).
+        // An opaque-ish dark layer over the material keeps the pill readable
+        // regardless of what sits behind the island.
+        .background(Color.black.opacity(0.8).clipShape(shape))
+        .background(IslandVisualEffectBackground().clipShape(shape))
+        .overlay(borders(shape: shape))
+        .contentShape(shape)
+        .brightness(hovered ? 0.06 : 0)
     }
 
     /// Wash position captured at hover-start, held steady while hovered.
@@ -195,7 +200,7 @@ struct IslandNotificationPill: View {
     @ViewBuilder
     private func borders(shape: RoundedRectangle) -> some View {
         shape
-            .stroke(
+            .strokeBorder(
                 LinearGradient(
                     colors: [.white.opacity(0.13), .white.opacity(0.05), .clear],
                     startPoint: .top, endPoint: .bottom

@@ -59,3 +59,29 @@ These are acceptance gaps, not claims of completed live verification.
 
 Import completion, failure and cancellation do not request keyboard focus. Only
 authentication restores it; a user may be typing elsewhere during a long import.
+
+
+# Notification cards — 2026-10-20
+
+The user comes to notice a completed event and open its result. First they see
+the source, title and short message. They can click to open the destination or
+hover to keep the card visible while reading.
+
+- All sources use the existing left-side card. Small notifications and the type
+  selector are removed at the user's request; older icon sources become cards.
+- Hover brightens the card and pauses expiry without resizing. The previous 3%
+  scale overflowed the fixed panel and clipped the rounded edge. The border is
+  inset, and the panel always fits the 32 pt card on unnotched displays too.
+- Each source has a separate labeled Notification sound row using the existing
+  native menu. Off is the default; Glass, Ping and Pop preview when selected.
+  A separate row keeps long source names and the enable switch readable.
+- Existing type, spacing and colors stay in use. Keyboard and VoiceOver can
+  reach the sound selector; no new movement is introduced. Reduced Motion
+  still suppresses transition animation. Live pointer/audio acceptance follows
+  promotion of the one signed installed app; offscreen renders use fixtures.
+
+Offscreen native checks cover 560 and 760 pt settings widths, enabled/disabled
+sources and both card hover states. A pixel silhouette comparison prevents
+hover growth from returning. Synthetic card text contrast is 11.44:1 for primary
+and 5.44:1 for secondary text on the sampled dark backdrop. This does not claim
+live pointer, VoiceOver or audio-output acceptance before installed promotion.

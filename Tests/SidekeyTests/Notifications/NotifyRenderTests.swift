@@ -29,50 +29,28 @@ final class NotifyRenderTests: XCTestCase {
                 link: URL(string: "https://example.com"), timestamp: Date(), customDuration: 8,
                 customTint: tint, customLogo: logo)
             events.append(event)
-            let view = IslandNotificationPill(event: event, deadline: Date().addingTimeInterval(6), duration: 8)
-                .frame(width: 300, height: 48, alignment: .topTrailing)
-            try render(view, size: NSSize(width: 300, height: 48), to: directory.appendingPathComponent(id + ".png"))
-        }
-        for (name, logo, tint) in [("codex", "codex", "#373A42"), ("claude", "claude-code", "#C87554")] {
-            let event = LocalNotificationEvent(id: name, source: name, sourceName: name, title: "Waiting for your answer",
-                body: "", link: URL(string: "https://example.com/session"), timestamp: Date(),
-                customTint: tint, customLogo: logo, presentation: .icon)
+            let pill = IslandNotificationPill(event: event, deadline: Date().addingTimeInterval(6), duration: 8)
             for hovered in [false, true] {
-                let icon = IslandNotificationIconContent(event: event, hovered: hovered, rotation: 0,
-                    onTap: {}, onDismiss: {}, imageLoader: loadImage)
-                try render(icon, size: NSSize(width: 70, height: 38),
-                    to: directory.appendingPathComponent("icon-\(name)-\(hovered ? "hover" : "idle").png"))
+                let view = pill.content(progress: 0.75, hovered: hovered)
+                    .padding(.trailing, 8)
+                    .frame(width: 300, height: 32, alignment: .topTrailing)
+                try render(view, size: NSSize(width: 300, height: 32),
+                           to: directory.appendingPathComponent("card-\(id)-\(hovered).png"))
             }
-        }
-        let stacked = (0..<33).map { index in
-            LocalNotificationEvent(id: "stack-\(index)", source: "agent", sourceName: "Agent", title: "Finished",
-                body: "", link: nil, timestamp: Date(), customTint: index.isMultiple(of: 2) ? "#373A42" : "#C87554",
-                customLogo: index.isMultiple(of: 2) ? "codex" : "claude-code", presentation: .icon)
-        }
-        for count in [2, 3, 33] {
-            for hovered in [false, true] {
-                for height: CGFloat in [28, 38] {
-                    let view = IslandNotificationStackContent(events: Array(stacked.prefix(count)), height: height,
-                        hovered: hovered, rotation: 0, onTap: { _ in }, onDismiss: { _ in }, imageLoader: loadImage)
-                    try render(view, size: NSSize(width: 70, height: height),
-                        to: directory.appendingPathComponent("stack-\(count)-\(Int(height))-\(hovered ? "hover" : "idle").png"))
+            let idle = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: directory.appendingPathComponent("card-\(id)-false.png"))))
+            let hovered = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: directory.appendingPathComponent("card-\(id)-true.png"))))
+            XCTAssertEqual(idle.pixelsWide, hovered.pixelsWide)
+            XCTAssertEqual(idle.pixelsHigh, hovered.pixelsHigh)
+            // Compare actual silhouette, including the formerly clipped corner.
+            // Hover may brighten pixels but must never grow past the idle card.
+            for y in 0..<idle.pixelsHigh {
+                for x in 0..<idle.pixelsWide {
+                    let idleAlpha = try XCTUnwrap(idle.colorAt(x: x, y: y)).alphaComponent
+                    let hoverAlpha = try XCTUnwrap(hovered.colorAt(x: x, y: y)).alphaComponent
+                    XCTAssertEqual(idleAlpha > 0.05, hoverAlpha > 0.05, "Hover changed the card silhouette at \(x),\(y)")
                 }
             }
         }
-        let comparison = VStack(spacing: 14) {
-            ForEach([2, 3, 33], id: \.self) { count in
-                HStack(spacing: 12) {
-                    Text("\(count)").frame(width: 25)
-                    ForEach([false, true], id: \.self) { hovered in
-                        IslandNotificationStackContent(events: Array(stacked.prefix(count)), hovered: hovered,
-                            rotation: 0, onTap: { _ in }, onDismiss: { _ in }, imageLoader: loadImage)
-                            .scaleEffect(3).frame(width: 210, height: 114)
-                    }
-                }
-            }
-        }.padding(14).foregroundStyle(.white).background(Color(white: 0.13))
-        try render(comparison, size: NSSize(width: 510, height: 400),
-            to: directory.appendingPathComponent("stack-comparison.png"))
         let tools = HStack {
             IslandHoverPanelControl(title: "Notify", systemImage: "bell", pdfResource: nil, label: nil,
                 circleSize: 30, accessibilityLabel: "Notify", showsDot: true, action: {})
@@ -110,10 +88,6 @@ final class NotifyRenderTests: XCTestCase {
         XCTAssertEqual(supervisor.sources.count, 2)
         try render(settings(supervisor), size: NSSize(width: 760, height: 560),
                    to: directory.appendingPathComponent("settings-sources.png"))
-        supervisor.setPresentation(.icon, id: "telegram")
-        XCTAssertEqual(try JSONDecoder().decode(NotifyScript.self, from: Data(contentsOf: registry.appendingPathComponent("telegram.json"))).presentation, .icon)
-        try render(settings(supervisor), size: NSSize(width: 760, height: 560),
-                   to: directory.appendingPathComponent("settings-small.png"))
         supervisor.setEnabled(false, id: "telegram")
         XCTAssertFalse(try JSONDecoder().decode(NotifyScript.self, from: Data(contentsOf: registry.appendingPathComponent("telegram.json"))).enabled)
         try render(settings(supervisor), size: NSSize(width: 760, height: 560),

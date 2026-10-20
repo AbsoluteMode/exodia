@@ -14,8 +14,8 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Settings/MacUI/MacPopup.swift
     confirmed_at: 2026-10-20
-  - type: repository
-    reference: Sources/Sidekey/Settings/NotificationPresentationControl.swift
+  - type: commit
+    reference: a770cff80758a7bef5c1ff503937954337f5e5aa (Sources/Sidekey/Settings/NotificationPresentationControl.swift)
     confirmed_at: 2026-10-20
 related: [../project.md]
 ---

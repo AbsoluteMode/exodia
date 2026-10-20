@@ -654,8 +654,7 @@ voice demos were removed. WHY:
 Notify includes a built-in Meeting notes source, enabled by default for new and
 existing users unless explicitly switched off. MeetingReadyNotifications sends
 successful newMeetingAvailable events to the local queue/history with the
-packaged Whytap app icon in color and Small as the initial type. Settings ->
-Notifications has a persistent switch and Large / Small selector; Notify ->
+packaged Whytap app icon in color. Settings -> Notifications has a persistent switch; Notify ->
 Sources also has the switch. An optional internal meetingID in the archived
 event opens that exact note through SettingsWindowController.selectNoteMeeting;
 scripts cannot supply this target. Failed processing does not announce success,
@@ -670,22 +669,22 @@ quit. A perl stdin-EOF guard (NotifyProcess.parentWatchGuardScript) leads each
 group and ends it when the app is killed or crashes. WHY:
 .project-docs/decisions/2026-10-19-notify-parent-death-guard.md. No backend or built-in provider connectors are restored. The original
 IslandNotificationPill / nonactivating panel sits left of the island, using the
-selected screen and screenshot-protection preference. `presentation: "icon"`
-adds a text-free Small notification over the compact right wing, above hints,
-meetings and music. It shakes for up to 5 seconds, expires after 5 by default,
-grows slightly and reveals a close button on hover. Hover pauses dismissal and
-shake; Reduce Motion disables shake/scale. Consecutive Small events form a counted stack, newest first,
-with up to three visible icons that fan apart on hover for individual links.
-New arrivals restart the stack lifetime; expiry dismisses the entire stack.
-Large cards separate bursts and retain queue order; presentation is bounded to
-33 events. Notify retains 500 history events. Unseen events show a red dot only
-on Notify in hover/search until history is opened, including after a restart.
-Clear All is text-only and immediately clears history and current events without
-confirmation, preserving sources.
-Card remains the backwards-compatible
-default (8 seconds). Settings -> Notifications offers Notification type (Large /
-Small) per source; events can override it. Icon titles may be omitted and use
-the source name for history/VoiceOver. Existing Codex chats support click-through
+selected screen and screenshot-protection preference. All notifications use
+cards (8 seconds by default), queued in arrival order with at most 33 presented
+or queued events. Hover pauses dismissal and brightens without scaling; the
+panel height fits the 32 pt card even on unnotched displays. Small notification
+rendering, stacks and type controls are removed. Legacy presentation fields are
+ignored; missing titles use the source name, preserving former icon-only sources.
+Notify retains 500 history events. Unseen events show a red dot only on Notify in
+hover/search until history is opened, including after a restart. Clear All is
+text-only and immediately clears history and current events, preserving sources.
+NotificationSoundSettings persists Off (default), Glass, Ping or Pop per source;
+Settings selection previews the sound. LocalNotificationHub signals fresh accepted
+arrivals within the presentation limit. Duplicates, restored history and suspended
+delivery stay silent. NotificationSoundPlayer bounds bursts to one sound per
+0.75 seconds and never overlaps sounds; scripts cannot enable them. WHY:
+.project-docs/decisions/2026-10-20-notification-cards-and-sounds.md.
+Existing Codex chats support click-through
 via codex://threads/<thread-id>; no query/fragment or new-chat/action links.
 Claude Desktop local Code sessions accept
 claude://code/continue?session=local_<uuid>, restricted to that one parameter.
@@ -695,7 +694,7 @@ Bundled logos include codex and claude-code. Actual agent event sources are
 configured separately. WHY:
 .project-docs/decisions/2026-10-19-icon-notifications.md. Hover pauses dismissal.
 LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
-presentation in history; unreadable history is never silently overwritten. Notify
+content in history; unreadable history is never silently overwritten. Notify
 opens through hover search, Toolbox and assigned feature hotkeys without
 changing saved layouts. Settings -> Notifications lists connected sources with
 their name, logo, runtime status and individual persistent enable switches.
