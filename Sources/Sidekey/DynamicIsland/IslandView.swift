@@ -280,7 +280,6 @@ struct IslandView: View {
     // NSTextView can hide the cursor during typing and end SwiftUI hover tracking.
     // Hold Vocab open until its actual responder/window focus ends.
     @State private var hoverVocabularyFocused = false
-    @State private var casePanelFocusRestoration = CasePanelFocusRestoration()
     /// Invalidation token for the programmatic-expansion auto-collapse timer:
     /// each change to `programmaticHoverExpansion` AND each ⌥N panel request
     /// bumps it (`armProgrammaticExpansionCollapse`), so a stale deferred
@@ -413,7 +412,7 @@ struct IslandView: View {
             panelHovering: panelHovering,
             wasExpanded: mouseExpanded,
             glance: hoverPanelGlance,
-            interactionHeld: holdsCasePanel
+            interactionHeld: holdsHoverMenu
         )
         if mouseExpanded != next {
             mouseExpanded = next
@@ -460,8 +459,8 @@ struct IslandView: View {
     /// counts as entering the drawer rather than as the drawer's fading band.
     static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool,
                                  glance: Bool, interactionHeld: Bool = false) -> Bool {
-        IslandHoverGate.mouseExpanded(
-            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance || interactionHeld
+        interactionHeld || IslandHoverGate.mouseExpanded(
+            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance
         )
     }
 
@@ -560,8 +559,26 @@ struct IslandView: View {
         islandState == .listening ? appState.audioLevels : []
     }
 
-    private var holdsCasePanel: Bool {
-        hoverPanelMode == .caseVault && caseViewModel.holdsPanelOpen
+    // WHY: docs/decisions/2026-10-19-case-secrets-broker.md (2026-10-20 simplification)
+    static func menuStaysOpen(_ mode: IslandHoverPanelMode, glance: Bool) -> Bool {
+        mode != .controls && !glance
+    }
+
+    private var holdsHoverMenu: Bool {
+        Self.menuStaysOpen(hoverPanelMode, glance: hoverPanelGlance)
+    }
+
+    private func dismissHoverMenu() {
+        guard hoverPanelMode != .caseVault || !caseViewModel.isSystemInteractionActive else { return }
+        hoverPanelMode = .controls
+        hoverSearchFocused = false
+        hoverVocabularyFocused = false
+        hoverPanelGlance = false
+        pillHovering = false
+        panelHovering = false
+        mouseExpanded = false
+        appState.programmaticHoverExpansion = false
+        onKeyboardFocusRequest(false)
     }
 
     private var isHoverExpanded: Bool {
@@ -569,7 +586,7 @@ struct IslandView: View {
         // ⌥N press — D4), then gate the result on the policy so neither path
         // forces the drawer open during a meeting suggestion / agent flow.
         !displayPreferences.hideIslandHoverWidgets
-            && (isHovering || hoverSearchFocused || hoverVocabularyFocused || holdsCasePanel || appState.programmaticHoverExpansion)
+            && (isHovering || hoverSearchFocused || hoverVocabularyFocused || holdsHoverMenu || appState.programmaticHoverExpansion)
             && IslandHoverPolicy.allowsExpansion(
                 meetingSuggestionActive: appState.meetingSuggestionActive,
                 meetingRecordingActive: appState.meetingRecordingActive,
@@ -1240,6 +1257,10 @@ struct IslandView: View {
                             }
                         )
                         .frame(width: compactWidth, height: hoverDrawerHeight)
+                        .background(IslandHoverMenuDismissObserver(
+                            enabled: holdsHoverMenu && !(hoverPanelMode == .caseVault && caseViewModel.isSystemInteractionActive),
+                            onDismiss: dismissHoverMenu
+                        ))
                         .islandHoverGlassSurface(
                             showGlass: hoverPanelMode != .history || IslandHoverGlass.usesNativeLiquidGlass
                         )
@@ -1247,13 +1268,6 @@ struct IslandView: View {
                         .onContinuousHover { phase in
                             // Local space: the drawer's top stays put while it shrinks.
                             guard case .active(let location) = phase else { return }
-                            if holdsCasePanel && !caseViewModel.isSystemInteractionActive {
-                                // A fresh pointer event, not stale hover flags left by
-                                // Touch ID, hands the visible drawer back to the mouse.
-                                panelHovering = true
-                                mouseExpanded = true
-                                caseViewModel.releasePanelHold()
-                            }
                             guard hoverPanelHeightHold != nil,
                                   Self.releasesHeldHoverZone(pointerY: location.y, drawerHeight: hoverDrawerHeight)
                             else { return }
@@ -1344,7 +1358,6 @@ struct IslandView: View {
         .onChange(of: isHovering) { _, newValue in
             onHoverChange(isHoverExpanded)
             if newValue {
-                caseViewModel.releasePanelHold()
                 // Mouse takes over the drawer: drop the programmatic latch in both
                 // directions. On exit it collapses the keyboard-opened drawer (D4);
                 // on enter it hands animation control back to the hover path.
@@ -1354,7 +1367,7 @@ struct IslandView: View {
                     hoverPanelGlance = false
                     requestPanelKeyboardFocus(hoverPanelMode, glance: false)
                 }
-            } else if !hoverSearchFocused && !hoverVocabularyFocused && !holdsCasePanel {
+            } else if !hoverSearchFocused && !hoverVocabularyFocused && !holdsHoverMenu {
                 hoverPanelMode = .controls
                 onKeyboardFocusRequest(false)
                 // The mouse left the island: drop any programmatic (⌥N)
@@ -1364,14 +1377,8 @@ struct IslandView: View {
             }
         }
         .onChange(of: caseViewModel.isSystemInteractionActive) { _, active in
-            let restoresFocus = casePanelFocusRestoration.interactionChanged(
-                active: active, isImporting: caseViewModel.isImporting
-            )
             guard !active else { return }
-            if hoverPanelMode != .caseVault {
-                caseViewModel.releasePanelHold()
-            }
-            if restoresFocus && hoverPanelMode == .caseVault && isHoverExpanded {
+            if hoverPanelMode == .caseVault && isHoverExpanded {
                 // Restore keyboard use only after the system sheet has finished.
                 requestPanelKeyboardFocus(.caseVault, glance: false)
             }
@@ -1380,7 +1387,7 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: hoverPanelMode) { oldValue, newValue in
-            if newValue != .caseVault { caseViewModel.releasePanelHold() }
+            recomputeMouseExpanded()
             if newValue != .vocabularyEditor { hoverVocabularyFocused = false }
             hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
             let height = { (mode: IslandHoverPanelMode) in
@@ -1593,7 +1600,7 @@ struct IslandView: View {
         let generation = programmaticExpansionCollapseGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.programmaticCollapseDelay(glance: hoverPanelGlance)) {
             guard programmaticExpansionCollapseGeneration == generation else { return }
-            if !isHovering && !hoverSearchFocused && !hoverVocabularyFocused {
+            if !isHovering && !hoverSearchFocused && !hoverVocabularyFocused && !holdsHoverMenu {
                 appState.programmaticHoverExpansion = false
             }
         }
@@ -2455,7 +2462,7 @@ private struct IslandInlineShortcut: View {
     }
 }
 
-enum IslandHoverPanelMode: Equatable {
+enum IslandHoverPanelMode: Equatable, CaseIterable {
     case controls
     case languagePicker
     case outputLanguagePicker
@@ -2603,7 +2610,6 @@ private struct IslandDropModeHoverPanel: View {
                 IslandCaseVaultPanel(
                     viewModel: caseViewModel,
                     onDismiss: {
-                        caseViewModel.releasePanelHold()
                         panelMode = .controls
                     }
                 )

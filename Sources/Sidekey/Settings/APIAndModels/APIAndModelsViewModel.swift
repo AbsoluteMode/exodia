@@ -23,6 +23,15 @@ struct FeatureRow: Equatable, Identifiable {
     let message: String?
     /// The provider choice of an OpenRouter route; `nil` for other accounts.
     var provider: ProviderChoice? = nil
+    /// The exact selected model, without transport modes or repeated account names.
+    var modelSummary: String = "Choose a model"
+
+    var fieldLabel: String {
+        switch feature.mode {
+        case .realtime, .recorded: return "Speech"
+        case .llm, .llmWithTools: return "Text"
+        }
+    }
     var id: AIFeature { feature }
 }
 
@@ -32,6 +41,8 @@ struct FeatureGroup: Equatable, Identifiable {
     let title: String
     let rows: [FeatureRow]
     var id: String { title }
+
+    var summary: String { rows.map(\.modelSummary).joined(separator: " · ") }
 
     /// Every feature exactly once. Drop Smart and Meetings each pair their
     /// speech route with the LLM route that processes its text.
@@ -332,7 +343,7 @@ final class APIAndModelsViewModel: ObservableObject {
 
     /// Probes the feature's current model again. The route does not change.
     func checkNow(_ feature: AIFeature) async {
-        guard let route = routing.route(for: feature) else { return }
+        guard !checking.contains(feature), let route = routing.route(for: feature) else { return }
         _ = await probePassed(route, for: [feature])
     }
 
@@ -524,7 +535,8 @@ final class APIAndModelsViewModel: ObservableObject {
             status: resolver.status(for: feature),
             isChecking: checking.contains(feature),
             message: messages[feature] ?? route.flatMap(languageWarning(for:)),
-            provider: route.flatMap(providerChoice(for:))
+            provider: route.flatMap(providerChoice(for:)),
+            modelSummary: route?.model ?? "Choose a model"
         )
     }
 

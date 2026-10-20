@@ -31,14 +31,14 @@ final class ScreenRecordingRemovalTests: XCTestCase {
         XCTAssertFalse(source.contains("await luminance.stop()"))
     }
 
-    func testPermissionsSurfacesDoNotAskForScreenRecording() throws {
+    func testPermissionsSurfaceOffersExplicitScreenshotAccess() throws {
         let settings = try loadSource(named: "SettingsPermissionsView.swift")
 
-        XCTAssertFalse(settings.contains("title: \"Screen Recording\""))
-        XCTAssertFalse(settings.contains("requestScreenRecording"))
+        XCTAssertTrue(settings.contains("title: \"Screen Recording\""))
+        XCTAssertTrue(settings.contains("action: viewModel.requestScreenRecording"))
     }
 
-    func testOnlyExplicitScreenshotEntryMayRequestScreenRecording() throws {
+    func testOnlyExplicitScreenshotAndSettingsEntriesMayRequestScreenRecording() throws {
         let forbidden = [
             "CGRequestScreenCaptureAccess",
             "ScreenCapture.hasPermission",
@@ -48,6 +48,7 @@ final class ScreenRecordingRemovalTests: XCTestCase {
             // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
             // The user explicitly added screenshots; launch/orb/meetings still must not prompt.
             if url.path.hasSuffix("/Screenshots/ScreenshotCoordinator.swift") { return nil }
+            if url.lastPathComponent == "PermissionsHelper.swift" { return nil }
             guard let source = try? String(contentsOf: url, encoding: .utf8) else { return nil }
             let hits = forbidden.filter { source.contains($0) }
             guard !hits.isEmpty else { return nil }
@@ -56,7 +57,7 @@ final class ScreenRecordingRemovalTests: XCTestCase {
 
         XCTAssertTrue(
             offenders.isEmpty,
-            "Only explicit Screenshot invocation may request Screen Recording: \(offenders.joined(separator: "; "))"
+            "Only explicit Screenshot or Settings actions may request Screen Recording: \(offenders.joined(separator: "; "))"
         )
     }
 

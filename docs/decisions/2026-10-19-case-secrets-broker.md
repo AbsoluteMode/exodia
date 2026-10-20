@@ -278,3 +278,22 @@ establish those live results. UI choices are recorded in [DESIGN.md](../DESIGN.m
 
 Import completion, failure and cancellation do not request keyboard focus. Only
 authentication restores it; a user may be typing elsewhere during a long import.
+
+
+## 2026-10-20: simplify Case and keep opened menus stable
+
+The user clarified that Doppler is only the source for a one-time transfer of
+all keys, not a product integration. Remove its Case importer and UI after the
+operational transfer is verified; retain unrelated monitoring/build workflows.
+This supersedes the earlier permanent import-screen direction. Code removal
+and a successful build are not evidence that real user data was migrated.
+
+The connected-client footer uses only application icons, with accessible names
+and click-through to access settings. The access explanation becomes one line,
+Back is white, and security-relevant Touch ID/shared-terminal hints stay short.
+
+Once the user opens any hover submenu, pointer exit no longer closes it. Only
+explicit navigation/selection, outside click or bare Escape exits. Root tools
+continue to follow hover, and transient hardware brightness glances keep their
+timeout. System authentication, native menus and file pickers suspend outside
+dismissal. Existing meeting/agent/approval preemption remains authoritative.

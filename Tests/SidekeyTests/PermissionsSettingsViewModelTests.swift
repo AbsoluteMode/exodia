@@ -41,4 +41,39 @@ final class PermissionsSettingsViewModelTests: XCTestCase {
         AppState.shared.dropHotkeyStatus = .ready
         XCTAssertTrue(model.allRequiredGranted)
     }
+
+    func testOptionalScreenRecordingRefreshesWithoutRequestingOrBlockingReadiness() {
+        AppState.shared.dropHotkeyStatus = .ready
+        var granted = false
+        var requests = 0
+        let model = PermissionsSettingsViewModel(onComplete: {}, autoComplete: false,
+            snapshotProvider: { .init(accessibilityGranted: true, microphoneStatus: .authorized) },
+            screenRecordingAccessProvider: { granted },
+            screenRecordingRequester: { requests += 1 },
+            runtimeRefresh: { _, _ in })
+        XCTAssertFalse(model.screenRecordingGranted)
+        XCTAssertTrue(model.allRequiredGranted)
+        granted = true
+        model.refresh(restartRecoveryPolling: false)
+        XCTAssertTrue(model.screenRecordingGranted)
+        granted = false
+        model.refresh()
+        XCTAssertFalse(model.screenRecordingGranted)
+        XCTAssertTrue(model.allRequiredGranted)
+        XCTAssertEqual(requests, 0)
+    }
+
+    func testScreenRecordingButtonRequestsAndRefreshesPermission() {
+        var granted = false
+        var requests = 0
+        let model = PermissionsSettingsViewModel(onComplete: {}, autoComplete: false,
+            snapshotProvider: { .init(accessibilityGranted: true, microphoneStatus: .authorized) },
+            screenRecordingAccessProvider: { granted },
+            screenRecordingRequester: { requests += 1; granted = true },
+            runtimeRefresh: { _, _ in })
+        XCTAssertEqual(requests, 0)
+        model.requestScreenRecording()
+        XCTAssertEqual(requests, 1)
+        XCTAssertTrue(model.screenRecordingGranted)
+    }
 }

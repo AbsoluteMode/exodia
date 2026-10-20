@@ -1,5 +1,63 @@
 # Interface decisions
 
+## Model disclosure — 2026-10-20
+
+The user chose compact function rows that open their settings on click. The
+person comes to see which models each function uses; first they see the function
+and selected model IDs, then they can open that function to change its routes.
+
+- Closed headers are 48 pt high, with a 116 pt name column, a single-line model
+  summary and a reserved 12 pt disclosure arrow. Paired speech/text routes show
+  their model IDs together, separated by a dot, truncating in the middle.
+  Full provider/model labels remain available through native help; accessibility
+  announces both model IDs and expansion/setup state. Why: model names must not
+  move other rows or cause uneven header heights.
+- A click anywhere on the header, Space or Return opens settings directly below
+  it. One function is open at a time; another click or Escape closes it. Escape
+  returns focus to that header. No expansion or entrance animation is added.
+  Why: configuration should stay compact and connected to the chosen function.
+- The summary stays visible while open. The expanded controls use Speech/Text
+  labels for paired routes and Model for a single route. Transport labels such
+  as real-time, recorded and LLM with tools are removed from the main list.
+  Model filtering still follows the unchanged internal feature modes.
+- Selected model IDs are derived directly from the saved routes. Changing or
+  removing a route updates the summary; opening/closing rows writes no route.
+  Unselected routes show Choose a model and retain the existing warm contour.
+- Actual errors, language warnings and recovery actions stay visible even when
+  collapsed. Configuration-error links and Show expand the target function
+  before scrolling to its stable group ID. Why: disclosure must not hide a
+  required repair or break runtime links into Settings.
+- Existing system typography, adaptive colors, card contours and 10 pt gaps
+  remain. Expanded model fields have equal widths, with reserved space for the
+  optional provider menu. Checking… and its progress indicator remain visible
+  below the header even when closed; repeated checks are ignored until the
+  pending check completes. Native menu behavior is retained.
+
+Offscreen fixtures cover 600/900 pt content panes, both appearances and closed
+and open paired rows, using temporary stores, synthetic keys and offline
+providers. They do not establish physical keyboard focus, VoiceOver or native
+menu operation on the installed app; those remain promotion acceptance.
+
+## Screenshot permission — 2026-10-20
+
+The user requested a screenshot access entry in Settings -> Permissions.
+Keep the existing permission group, MacRow, MacPill and MacButton: this is one
+more permission in the same workflow. The person first sees Screen Recording,
+then Allowed/Not allowed, then Allow/Open. A persistent explanation names
+screenshots and tells them to finish current work before a macOS-requested reopen.
+
+Only clicking Allow requests access. Open manages an existing grant; a denial
+opens the system privacy pane. Returning to the app and Refresh reread access
+without prompting. A missing grant never blocks launch or Drop. Existing native
+button focus, keyboard activation, semantic colors and scroll behavior apply;
+there is no new hover-only action or animation. A denied Bool cannot distinguish
+an unasked grant from a previous denial, so use Not allowed rather than Denied.
+
+Offscreen native fixtures cover allowed/missing access in light/dark at 739 and
+1059 pt content widths (the existing 960 and 1280 pt Settings shells). Real TCC
+prompts, keyboard focus and post-promotion refresh remain installed-app acceptance.
+
+
 ## Meetings overview — 2026-10-20
 
 The user approved the Overview composition: recent meetings first, History
@@ -60,8 +118,8 @@ and its current value, then changes that value without losing context.
 - Use iOS inset groups within the existing macOS sidebar window. Groups describe
   related settings. In API & Models, independently configured functions have
   separate contours and a 10 pt gap, so their setup states do not run together.
-- Keep the current tabs and navigation. A small colored SF Symbol tile makes
-  sections recognizable without changing their names or order.
+- Keep the current tabs and navigation. Sidebar rows use text alone, following
+  the user's 2026-10-20 request to remove the colored icon tiles.
 - Use 14 pt group corners, 14 pt row insets and 12 pt vertical row padding.
   Shared dividers are one point, inset on both sides, with 2 pt breathing room
   above/below. Long descriptions wrap instead of shrinking the control.
@@ -143,67 +201,71 @@ installed app. Older-macOS fallback needs device acceptance.
   glow: the user requested a calm setup cue, plus clearer separation of rows.
   Each model function gets its own contour because its routes form one setting.
 
-## Case: drawer refinements
+## Text-only Settings sidebar — 2026-10-20
 
-### Scope and attention
+The user requested removal of the sidebar icons and animation on hover.
+Keep section names, order, 220 pt sidebar width and 38 pt row hit targets.
+Removing the icon and gap gives labels 180 pt instead of 144 pt, without
+changing text size or moving any row during interaction.
 
-This record covers the Case secrets drawer only. The existing native SwiftUI,
-AppKit hit regions and transparent island materials remain the UI system.
-The person comes to find or use a key. First they see search and projects;
-then they can copy/edit a key, import Doppler or manage application access.
+- Hover fades the rounded background in/out over 140 ms with ease-out. It
+  signals which row is clickable, accepts reversals immediately, and affects
+  only background opacity. Text and hit geometry stay fixed.
+- Unselected rows use the existing adaptive hover color at 85% opacity; the
+  selected blue row gets a 10% white overlay (white-label contrast 4.67:1).
+  Selection remains recognizable during hover.
+  FAQ and Quit use the same feedback. Existing navigation highlights remain.
+- Reduce Motion makes the hover response immediate. Native Button actions,
+  keyboard access and focus are preserved. No function requires hovering.
 
-### Decisions — 2026-10-20
+Offscreen native Settings fixtures cover the minimum 960 × 560 pt and larger
+1280 × 760 pt window in both appearances. Physical hover, focus/VoiceOver and
+system Reduce Motion acceptance remain on the shared installed app after
+builder promotion; the feature session does not launch another app instance.
+Offscreen cacheDisplay captures intermittently omit sidebar glyphs, including
+the selected label on the unmodified base. These images establish layout only;
+check every label in both appearances on the installed app.
 
-- The content viewport is 320 pt high; width follows the compact island.
-  Why: the earlier 145 pt menu showed too little of the key list. A taller
-  viewport supplies room without changing the established island alignment.
-- Search is 32 pt, project rows 30 pt, key rows 28 pt, icons 22 pt.
-  Why: improve readable density and pointer targets while preserving hierarchy.
-- The access action reads “Доступ к ключам”, with an explanation inside.
-  Why: “ИИ: нет / Подключить” did not explain what the person was granting.
-- System authentication holds Case until its result is available. Pointer
-  return hands control back to hover; outside click and Escape dismiss it.
-  Why: the person must be able to move to Touch ID without losing the panel.
-- Import is an explicit separate screen with scope, progress, cancellation,
-  result/error and retry. Back is disabled during fetching.
-  Why: the person should see what will be copied before starting a long read.
-- Each Doppler config becomes a separate group named `project / config`.
-  Why: Case has no environment selector; flattening configs would mix values.
-- Import never overwrites differing values; unchanged imports are idempotent.
-  Why: importing should preserve existing keys and be safe to retry.
+## Case and persistent hover menus — 2026-10-20
 
-### States and keyboard use
+The person comes to find a key, then use it or configure access. The existing
+native SwiftUI/AppKit surface, notch-derived width and 320 pt Case viewport
+remain. Search, projects and keys get the available space.
 
-Search, import and access actions are always visible. Existing project
-expansion and row actions remain in place and have accessibility identifiers.
-The system-interaction hold does not override meeting/agent/approval policy.
-The panel regains keyboard focus after authentication; Escape then returns to
-tools. An outside click passes through normally. Import cancellation finishes
-without committing; read, validation or conflict failure also leaves Case
-unchanged and shows a sanitized message. Import values never enter view state.
+- Connected apps appear as their icons, without a status lamp or text caption.
+  The icons describe saved Case registrations, not whether a process is running.
+  Clicking an icon opens access settings; an empty state has a link icon for
+  setup. Native help and accessibility name the app and action. A horizontal
+  strip supports more registrations without widening the drawer.
+- Access explains Approve/Bypass in one line. The Touch ID requirement and
+  shared-terminal Bypass consequence remain concise and visible where relevant.
+  Back uses white at 88% opacity, matching the island's navigation.
+- Case has no Doppler import action, integration, or background synchronization.
+  The requested one-time transfer is operational work; removing the integration
+  does not establish that the user's real keys were transferred.
+- Every explicitly opened inline menu stays open through pointer exit, including
+  Case authentication success/denial. Back and normal selection retain their
+  existing navigation; outside click or bare Escape dismiss the menu. The outside
+  click still reaches its target. Native submenu and file-picker interactions
+  temporarily suspend dismissal. Activity/preemption policy still wins.
+- Root tools retain hover dismissal. Hardware brightness glances retain their
+  two-second timeout and leave keyboard focus in the user's app. Entering the
+  glance converts it to an ordinary persistent menu. Timers cannot dismiss an
+  explicitly opened submenu. Search keeps its own focus behavior.
 
-### Type, color and motion
+No new entrance animation or decoration is introduced. Existing density, system
+font and motion settings remain. The app icons are 18 pt in 28 pt targets.
+Offscreen native fixtures use synthetic names and values, widths 310/390 pt,
+320 pt content height and a dark backdrop. They cover connected icons, long
+names and access modes without launching an app runtime or requesting Touch ID.
+White navigation has 14.28:1 contrast and the explanation 13.36:1 over the
+synthetic 0.08-gray backdrop; the 60% footer has 7.12:1 there. These measurements
+do not establish contrast on every live glass backdrop. Native event classifier
+checks cover outside/inside clicks and bare/modified Escape; pure state checks
+cover every inline mode, pointer exit, stale hover zones and brightness glances.
 
-Use the existing system font and white foregrounds on the native dark surface.
-Input: 12 pt medium; names/actions: 11 pt medium/semibold; messages: 11 pt.
-Groups use existing 4–6 pt spacing. No new decoration or entrance animation.
-The existing reduced-motion behavior remains; the hold itself has no animation.
-On the synthetic 0.08-gray test backdrop, composited sRGB contrast is 7.09:1
-for the search placeholder, 12.50:1 for key names and 14.92:1 for import copy.
-These measurements do not establish contrast over every live native backdrop.
-
-### Verification and open acceptance
-
-Offscreen native renders use synthetic data and never order a window front.
-Render widths are 310 pt and a wider notch-derived example; actual content
-height is 320 pt. Tests cover long names, projects, access and import screens.
-Automated authentication tests simulate both success and denial, without
-invoking Touch ID. Physical Touch ID, returned keyboard focus and real import
-remain acceptance on the one installed signed app, after builder promotion.
-These are acceptance gaps, not claims of completed live verification.
-
-Import completion, failure and cancellation do not request keyboard focus. Only
-authentication restores it; a user may be typing elsewhere during a long import.
+Actual keyboard focus, compositor appearance, menus/file pickers and physical
+Touch ID remain acceptance on the one signed installed app after promotion.
 
 
 # Backup: automatic synchronization — 2026-10-20

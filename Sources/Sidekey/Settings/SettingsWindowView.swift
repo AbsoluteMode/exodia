@@ -126,13 +126,7 @@ struct SettingsWindowView: View {
         Button {
             selection.select(tab)
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: tab.systemImageName)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 26, height: 26)
-                    .foregroundStyle(.white)
-                    .background(tab.iconTint, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .accessibilityHidden(true)
+            HStack(spacing: 0) {
                 Text(tab.title)
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
@@ -144,6 +138,7 @@ struct SettingsWindowView: View {
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .modifier(SettingsSidebarHover(isSelected: selection.selectedTab == tab))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHighlighted
@@ -176,6 +171,7 @@ struct SettingsWindowView: View {
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .modifier(SettingsSidebarHover())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Open FAQ and Learning Center")
@@ -201,6 +197,7 @@ struct SettingsWindowView: View {
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .modifier(SettingsSidebarHover(isSelected: isHighlighted))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHighlighted ? Color.red.opacity(0.25) : Color.clear)
@@ -261,6 +258,27 @@ struct SettingsWindowView: View {
         case .backup:
             SettingsBackupView(openIntegrations: { selection.select(.integrations) })
         }
+    }
+}
+
+/// Fade only the background: text, focus and hit targets stay in place.
+// WHY: docs/DESIGN.md — Text-only Settings sidebar.
+private struct SettingsSidebarHover: ViewModifier {
+    var isSelected = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? Color.white.opacity(0.10) : MacSettingsTheme.hover.opacity(0.85))
+                    .opacity(isHovered ? 1 : 0)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
+                    .allowsHitTesting(false)
+            }
+            .onHover { isHovered = $0 }
+            .onDisappear { isHovered = false }
     }
 }
 
@@ -377,6 +395,5 @@ enum SettingsSidebarStyle {
         width
             - horizontalPadding * 2
             - buttonHorizontalPadding * 2
-            - 36 // icon and its gap
     }
 }

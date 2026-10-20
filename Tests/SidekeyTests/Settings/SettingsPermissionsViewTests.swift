@@ -11,9 +11,9 @@ final class SettingsPermissionsViewTests: XCTestCase {
         XCTAssertTrue(s.contains("MacPill"))
         XCTAssertTrue(s.contains("MacButton"))
         XCTAssertFalse(s.contains("SettingsRowShell"))
-        // Screen Recording must never be requested here (guarded elsewhere too).
-        XCTAssertFalse(s.contains("title: \"Screen Recording\""))
-        XCTAssertFalse(s.contains("requestScreenRecording"))
+        XCTAssertTrue(s.contains("title: \"Screen Recording\""))
+        XCTAssertTrue(s.contains("action: viewModel.requestScreenRecording"))
+        XCTAssertTrue(s.contains("NSApplication.didBecomeActiveNotification"))
     }
 
     private func projectRoot() throws -> URL {

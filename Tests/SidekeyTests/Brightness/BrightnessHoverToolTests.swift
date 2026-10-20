@@ -162,8 +162,12 @@ final class BrightnessHoverToolTests: XCTestCase {
             fixture.settle()
             XCTAssertFalse(fixture.window.isKeyWindow)
             // The switch ends the control row: 10 pt padding, then the 24 pt row.
+            // The compact island switch stays fixed blue (#0064D2) in both themes.
+            // Adaptive Settings accent resolves against the caller's appearance and
+            // can differ from this fill; it is not the inactive-island contract.
+            let fixedBlue = NSColor(srgbRed: 0, green: 100.0 / 255, blue: 210.0 / 255, alpha: 1)
             let accent = try fixture.pixelCount(in: CGRect(x: 310 - 10 - 44, y: 10, width: 44, height: 24),
-                                                near: MacSettingsTheme.NS.accent)
+                                                near: fixedBlue)
             if state == .extraOn {
                 XCTAssertGreaterThan(accent, 40, "On draws the accent color without key status.")
             } else {
