@@ -96,6 +96,11 @@ protocol OpenRouterLLMClienting {
 }
 
 extension OpenRouterLLMClienting {
+    func complete(route: DirectLLMRoute, messages: [OpenRouterChatMessage]) async throws -> String {
+        try await AIUsageTaskScope.$context.withValue(route.usageContext) {
+            try await complete(endpoint: route.endpoint, model: route.model, messages: messages)
+        }
+    }
     func listModels(apiKey: String?) async throws -> [OpenRouterModelOption] {
         try await listModels(endpoint: .openRouter(apiKey: apiKey))
     }
@@ -112,17 +117,20 @@ struct OpenRouterLLMClient: OpenRouterLLMClienting {
     private let reasoningCatalog: OpenRouterReasoningCatalog
     let baseURL: URL
     let session: URLSession
+    let usageSink: (AIUsageEvent) -> Void
 
     init(
         baseURL: URL = URL(string: "https://openrouter.ai/api/v1")!,
         session: URLSession = .shared,
         profile: Profile = .standard,
-        reasoningCatalog: OpenRouterReasoningCatalog = OpenRouterReasoningCatalog()
+        reasoningCatalog: OpenRouterReasoningCatalog = OpenRouterReasoningCatalog(),
+        usageSink: @escaping (AIUsageEvent) -> Void = AIUsageRecorder.record
     ) {
         self.baseURL = baseURL
         self.session = session
         self.profile = profile
         self.reasoningCatalog = reasoningCatalog
+        self.usageSink = usageSink
     }
 
     func listModels(endpoint: OpenAICompatibleLLMEndpoint) async throws -> [OpenRouterModelOption] {
@@ -214,9 +222,27 @@ struct OpenRouterLLMClient: OpenRouterLLMClienting {
         )
 
         let requestStarted = ProcessInfo.processInfo.systemUptime
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            if let context = AIUsageTaskScope.context {
+                usageSink(AIUsageEvent(context: context, currency: .usd, amount: nil, basis: .unavailable))
+            }
+            throw error
+        }
         let requestMs = Int((ProcessInfo.processInfo.systemUptime - requestStarted) * 1000)
         try validate(response: response, body: data)
+        if let context = AIUsageTaskScope.context {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let usage = object?["usage"] as? [String: Any]
+            let cost = AIUsageNumber.nonnegative(usage?["cost"])
+            let amount = endpoint.sendsOpenRouterHeaders ? cost.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } : nil
+            let actual = (object?["model"] as? String).flatMap { !$0.isEmpty && $0.count <= 512 ? $0 : nil } ?? context.model
+            usageSink(AIUsageEvent(context: .init(feature: context.feature, account: context.account, model: actual),
+                                   currency: .usd, amount: amount, basis: amount == nil ? .unavailable : .reported))
+        }
 
         struct ChatResponse: Decodable {
             struct Choice: Decodable {

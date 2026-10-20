@@ -298,8 +298,10 @@ Case secrets manager:
   appear as app icons; clicking one opens that client's policy. An always-visible
   Connect button opens the agent picker, then project scope and Accept/Bypass
   before registration. Codex highlights blue, Claude orange and Cursor white
-  on hover/keyboard focus. Search matches key names/descriptions only; + Key
-  opens a separate creation field. Navigation is white and explanations are
+  on hover/keyboard focus. Search matches project and key names/descriptions,
+  including empty projects and General. A matching project shows all its keys;
+  key-only matches show only those keys. + Key opens a separate creation field,
+  including from a project search result; typing/Return in search never writes. Navigation is white and explanations are
   short. Case has no Doppler integration or import screen.
   All explicitly opened hover submenus survive pointer exit until Back, an
   outside click or bare Escape. The root tools grid follows ordinary hover;
@@ -631,7 +633,8 @@ Update flow (download-on-action):
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
 
-Presentation: Settings -> API & Models holds the provider keys (Soniox,
+Presentation: Settings -> API & Models has four internal tabs: API keys,
+Models (the initial tab), Costs and API hints. API keys holds the provider keys (Soniox,
 Deepgram, ElevenLabs, OpenRouter, Anthropic for the Agent row, and the user's
 OpenAI-compatible servers) and one model per AI feature (Drop Fast, Drop
 Smart, Drop Smart cleanup, Meetings, Meeting notes, Agent, Agent voice, Voice
@@ -647,11 +650,22 @@ retired Local choice shows "not set up" banners until the user saves a
 provider. WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md,
 .project-docs/decisions/2026-10-18-remove-local-models.md
 
-API hints: a small link after Models at the bottom of API & Models opens four provider offer cards in a
-native sheet, with brand marks, allowances, official links and a fixed footer.
-It distinguishes starter credit, monthly allowance and paid-plan benefits;
-Done/Return/Escape close it, and Add API key opens the existing sheet. It never
-checks balances or changes routes. WHY:
+Costs: the local ai-usage.sqlite journal records only feature/provider/model,
+request ID, time, duration, currency and expense metadata from actual runtime
+calls. Historical routes are captured before sending; switching models does not
+rewrite past usage. Only used feature groups appear for the selected local-date
+period; hover/click/keyboard focus reveals their models. USD and ElevenLabs
+credits stay separate. OpenRouter response costs and exact matched ElevenLabs
+analytics debits are reported; Soniox public hourly equivalents and OpenCode's
+computed step prices are estimates. Missing prices stay unavailable, never zero;
+partial totals show +. No account-wide balance deltas or USD-to-credit conversion.
+Tracking starts with this update; synthetic model checks are excluded. WHY:
+.project-docs/decisions/2026-10-20-feature-costs.md
+
+API hints: the fourth tab contains four provider offer cards with brand marks,
+allowances and official links. It distinguishes starter credit, monthly allowance
+and paid-plan benefits. Add API key switches to API keys and opens the existing
+form. Opening hints never checks balances or changes routes. WHY:
 .project-docs/decisions/2026-10-19-api-hints.md
 
 Model selection uses ModelPicker: a searchable native popover sharing the 30 pt

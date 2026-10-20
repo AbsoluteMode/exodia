@@ -86,10 +86,12 @@ enum ProviderBatchTranscriptionError: Error, Equatable {
 struct ProviderBatchTranscriber: BatchTranscribing {
     private static let log = OSLog(subsystem: "com.rootwise.sidekey", category: "byok-batch")
 
-    private let route: @MainActor @Sendable () -> ProviderBatchRoute?
+    private struct Selection { let route: ProviderBatchRoute; let usage: AIUsageContext? }
+    private let route: @MainActor @Sendable () -> Selection?
     private let session: URLSession
     private let pollInterval: Duration
     private let jobTimeout: Duration
+    private let usageSink: (AIUsageEvent) -> Void
 
     /// `jobTimeout` bounds Soniox polling on the paths without the recovery
     /// deadline (recorder fallback, agent voice) and the retried deletion of
@@ -98,12 +100,28 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         route: @escaping @MainActor @Sendable () -> ProviderBatchRoute?,
         session: URLSession = .shared,
         pollInterval: Duration = .milliseconds(500),
-        jobTimeout: Duration = .seconds(30)
+        jobTimeout: Duration = .seconds(30),
+        usageSink: @escaping (AIUsageEvent) -> Void = AIUsageRecorder.record
     ) {
-        self.route = route
+        self.route = { route().map { Selection(route: $0, usage: nil) } }
         self.session = session
         self.pollInterval = pollInterval
         self.jobTimeout = jobTimeout
+        self.usageSink = usageSink
+    }
+
+    private init(resolvedRoute: @escaping @MainActor @Sendable () -> ResolvedRoute?, session: URLSession,
+                 pollInterval: Duration) {
+        self.route = {
+            guard let resolved = resolvedRoute(), let route = ProviderBatchRoute.make(for: resolved) else { return nil }
+            let model: String
+            switch route {
+            case .soniox(_, let value), .deepgram(_, let value), .elevenLabs(_, let value), .selfHosted(_, _, let value): model = value
+            }
+            return Selection(route: route, usage: .init(feature: resolved.feature, account: resolved.account, model: model))
+        }
+        self.session = session; self.pollInterval = pollInterval; self.jobTimeout = .seconds(30)
+        self.usageSink = AIUsageRecorder.record
     }
 
     func isAvailable() async -> Bool {
@@ -111,10 +129,21 @@ struct ProviderBatchTranscriber: BatchTranscribing {
     }
 
     func transcribe(audio: Data, language: String?) async throws -> String {
-        guard let route = await route() else { throw BatchTranscriptionUnavailable() }
+        guard let selection = await route() else { throw BatchTranscriptionUnavailable() }
+        let route = selection.route
         let wav = Self.wavFile(audio)
         let language = language.flatMap { $0.isEmpty ? nil : $0 }
         let started = ContinuousClock.now
+        let usageStartedAt = Date()
+        var providerReference: String?
+        func usageEvent(_ context: AIUsageContext, failed: Bool) -> AIUsageEvent {
+            let id = providerReference.map { "elevenlabs:\($0)" } ?? UUID().uuidString
+            if failed {
+                return AIUsageEvent(id: id, createdAt: usageStartedAt, context: context,
+                                    currency: context.currency, amount: nil, basis: .unavailable)
+            }
+            return .speech(context, seconds: AIUsageAudio.wavSeconds(wav) ?? 0, id: id, at: usageStartedAt)
+        }
         do {
             let result: String
             switch route {
@@ -123,16 +152,23 @@ struct ProviderBatchTranscriber: BatchTranscribing {
             case .deepgram(let apiKey, let model):
                 result = try await deepgram(wav, apiKey: apiKey, model: model, language: language)
             case .elevenLabs(let apiKey, let model):
-                result = try await elevenLabs(wav, apiKey: apiKey, model: model, language: language)
+                result = try await elevenLabs(wav, apiKey: apiKey, model: model, language: language,
+                                             onReference: { providerReference = $0 })
             case .selfHosted(let apiKey, let endpoint, let model):
                 result = try await selfHosted(wav, apiKey: apiKey, endpoint: endpoint, model: model, language: language)
             }
             let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let context = selection.usage {
+                usageSink(usageEvent(context, failed: false))
+            }
             os_log("batch transcription provider=%{public}@ audio_bytes=%{public}d ms=%{public}d chars=%{public}d",
                    log: Self.log, type: .info,
                    route.provider.rawValue, wav.count, Self.milliseconds(since: started), text.count)
             return text
         } catch {
+            if let context = selection.usage {
+                usageSink(usageEvent(context, failed: true))
+            }
             os_log("batch transcription failed provider=%{public}@ ms=%{public}d reason=%{public}@",
                    log: Self.log, type: .error,
                    route.provider.rawValue, Self.milliseconds(since: started), Self.reason(error))
@@ -174,7 +210,8 @@ struct ProviderBatchTranscriber: BatchTranscribing {
     /// ElevenLabs speech-to-text with the recorded model (Scribe v2;
     /// `scribe_v2_realtime` is the realtime model), without audio-event tags or
     /// filler words.
-    private func elevenLabs(_ wav: Data, apiKey: String, model: String, language: String?) async throws -> String {
+    private func elevenLabs(_ wav: Data, apiKey: String, model: String, language: String?,
+                            onReference: @escaping (String) -> Void) async throws -> String {
         var form = MultipartFormBody()
         form.field("model_id", model)
         if let language { form.field("language_code", language) }
@@ -185,7 +222,9 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
         request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
-        let data = try await send(request, body: form.finished())
+        let data = try await send(request, body: form.finished(), onResponse: { response in
+            if let id = response.value(forHTTPHeaderField: "request-id"), !id.isEmpty, id.count <= 256 { onReference(id) }
+        })
         return try Self.text(in: data)
     }
 
@@ -291,10 +330,12 @@ struct ProviderBatchTranscriber: BatchTranscribing {
     // MARK: HTTP
 
     /// The body of a 2xx answer; any other status is thrown.
-    private func send(_ request: URLRequest, body: Data? = nil) async throws -> Data {
+    private func send(_ request: URLRequest, body: Data? = nil,
+                      onResponse: ((HTTPURLResponse) -> Void)? = nil) async throws -> Data {
         var request = request
         request.httpBody = body
         let (data, response) = try await session.data(for: request)
+        if let response = response as? HTTPURLResponse { onResponse?(response) }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw ProviderBatchTranscriptionError.httpStatus(status) }
         return data
@@ -362,10 +403,10 @@ extension ProviderBatchTranscriber {
     ) -> ProviderBatchTranscriber {
         let take = take ?? .shared
         return ProviderBatchTranscriber(
-            route: {
+            resolvedRoute: {
                 guard let latched = take.route,
                       let resolved = try? resolver.resolve(latched, for: take.feature) else { return nil }
-                return ProviderBatchRoute.make(for: resolved)
+                return resolved
             },
             session: session,
             pollInterval: pollInterval
@@ -382,9 +423,9 @@ extension ProviderBatchTranscriber {
         pollInterval: Duration = .milliseconds(500)
     ) -> ProviderBatchTranscriber {
         ProviderBatchTranscriber(
-            route: {
+            resolvedRoute: {
                 guard let resolved = try? resolver.resolve(feature) else { return nil }
-                return ProviderBatchRoute.make(for: resolved)
+                return resolved
             },
             session: session,
             pollInterval: pollInterval
