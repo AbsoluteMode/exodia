@@ -41,6 +41,7 @@ final class ProviderKeyCheckerTests: XCTestCase {
             (.deepgram, "https://api.deepgram.com/v1/projects", "Authorization", "Token the-key"),
             (.elevenLabs, "https://api.elevenlabs.io/v1/user", "xi-api-key", "the-key"),
             (.openRouter, "https://openrouter.ai/api/v1/key", "Authorization", "Bearer the-key"),
+            (.openAI, "https://api.openai.com/v1/models", "Authorization", "Bearer the-key"),
         ]
         for (account, url, header, value) in expectations {
             let checker = checker(status: 200)

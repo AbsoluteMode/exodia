@@ -23,6 +23,14 @@ final class APIAndModelsRenderTests: XCTestCase {
         }
         let directory = URL(fileURLWithPath: output, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        ProviderBrandIconAsset.clearCacheForTesting()
+        ProviderBrandIconAsset.setResourceDirectoryForTesting(root.appendingPathComponent("Resources/UsefulLinkIcons"))
+        defer {
+            ProviderBrandIconAsset.clearCacheForTesting()
+            ProviderBrandIconAsset.setResourceDirectoryForTesting(nil)
+        }
 
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
@@ -65,6 +73,15 @@ final class APIAndModelsRenderTests: XCTestCase {
 
         for dark in [false, true] {
             for width in [600.0, 900.0] {
+                for target in [ProviderKeyTiles.Target.provider(.openAI), .provider(.openRouter), .provider(.openAICompatible)] {
+                    let label: String
+                    if case .provider(let kind) = target { label = kind.rawValue } else { label = "server" }
+                    try await render(ProviderKeyTiles(viewModel: vm, initiallyExpanded: target)
+                        .padding(18).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(MacSettingsTheme.bgCard),
+                        size: NSSize(width: width, height: 1100), dark: dark,
+                        to: directory.appendingPathComponent("key-form-\(label)-\(dark ? "dark" : "light")-\(Int(width)).png"))
+                }
                 for expanded in [nil, "Drop Smart", "Subtitles"] as [String?] {
                     let state = expanded == "Subtitles" ? "subtitles-expanded" : (expanded == nil ? "collapsed" : "expanded")
                     try await render(

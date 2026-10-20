@@ -13,7 +13,6 @@ struct APIAndModelsView: View {
     @Binding var focusedFeature: AIFeature?
 
     @State private var activeSheet: ActiveSheet?
-    @State private var popoverAccount: ProviderAccount?
     @State private var highlighted: Set<AIFeature> = []
     @State private var expandedGroup: String?
     @State private var section: APIAndModelsSection
@@ -173,45 +172,8 @@ struct APIAndModelsView: View {
     private var keysBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             MacGroupTitle(title: "API keys")
-            ChipFlowLayout(spacing: 8) {
-                ForEach(viewModel.chips) { chip in
-                    chipButton(chip)
-                }
-                addKeyChip
-            }
+            ProviderKeyTiles(viewModel: viewModel)
         }
-    }
-
-    private func chipButton(_ chip: KeyChip) -> some View {
-        Button { popoverAccount = chip.account } label: {
-            HStack(spacing: 6) {
-                ProviderKindIcon(kind: chip.account.kind, size: 14)
-                Text(chip.title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(MacSettingsTheme.text)
-            }
-            .chipBackground()
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: Binding(
-            get: { popoverAccount == chip.account },
-            set: { if !$0, popoverAccount == chip.account { popoverAccount = nil } }
-        ), arrowEdge: .bottom) {
-            KeyChipPopover(viewModel: viewModel, account: chip.account) { popoverAccount = nil }
-        }
-        .accessibilityLabel("\(chip.title), \(chip.statusText)")
-    }
-
-    private var addKeyChip: some View {
-        Button { activeSheet = .addKey } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "plus").font(.system(size: 10.5, weight: .semibold))
-                Text("Add key").font(.system(size: 12.5, weight: .medium))
-            }
-            .foregroundStyle(MacSettingsTheme.accent)
-            .chipBackground()
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Models
@@ -366,7 +328,6 @@ struct APIAndModelsView: View {
                     feature: row.feature,
                     label: row.selectionLabel,
                     onAddKey: { activeSheet = .addKey },
-                    onOtherModel: { activeSheet = .otherModel(row.feature) },
                     width: modelWidth
                 )
                 Group {
@@ -514,7 +475,7 @@ struct ProviderKindIcon: View {
     static func systemName(for kind: AIProviderKind) -> String {
         switch kind {
         case .anthropic: return TranscriptionProviderBrand.anthropicSystemName
-        case .soniox, .deepgram, .elevenLabs, .openRouter, .openAICompatible: return "server.rack"
+        case .soniox, .deepgram, .elevenLabs, .openRouter, .openAI, .openAICompatible: return "server.rack"
         }
     }
 
@@ -524,6 +485,7 @@ struct ProviderKindIcon: View {
         case .deepgram: return "deepgram"
         case .elevenLabs: return "elevenlabs"
         case .openRouter: return "openrouter"
+        case .openAI: return "openai"
         case .anthropic, .openAICompatible: return nil
         }
     }

@@ -95,6 +95,7 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
     private static let deepgramURL = URL(string: "https://api.deepgram.com/v1/models")!
     private static let openRouterURL = URL(string: "https://openrouter.ai/api/v1/models")!
     static let anthropicModelsURL = URL(string: "https://api.anthropic.com/v1/models")!
+    static let openAIModelsURL = URL(string: "https://api.openai.com/v1/models")!
     static let anthropicVersion = "2023-06-01"
     /// A stop for a catalog that keeps saying `has_more`.
     private static let anthropicMaxPages = 20
@@ -117,6 +118,9 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
         case .anthropic:
             guard let apiKey, !apiKey.isEmpty else { throw CatalogFetchError.http(401, code: nil) }
             return try await fetchAnthropic(apiKey: apiKey)
+        case .openAI:
+            guard let apiKey, !apiKey.isEmpty else { throw CatalogFetchError.http(401, code: nil) }
+            return try Self.parseOpenAI(await get(Self.openAIModelsURL, bearer: apiKey))
         case .server:
             guard let url = server?.modelsURL else { throw CatalogFetchError.malformed }
             let data = try await get(url, bearer: apiKey)
@@ -417,6 +421,19 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
 
     static func parseServer(_ data: Data) throws -> [CatalogModel] {
         try decode(ServerResponse.self, from: data).data.map { CatalogModel(id: $0.id) }
+    }
+
+    /// OpenAI's list has IDs, not endpoint capabilities. Offer text families;
+    /// each unverified ID still passes the existing synthetic model check.
+    static func parseOpenAI(_ data: Data) throws -> [CatalogModel] {
+        try decode(ServerResponse.self, from: data).data.compactMap { model in
+            let id = model.id
+            let base = id.hasPrefix("ft:") ? String(id.dropFirst(3).split(separator: ":").first ?? "") : id
+            guard base.hasPrefix("gpt-") || ["o1", "o3", "o4"].contains(where: { base == $0 || base.hasPrefix($0 + "-") }),
+                  !["audio", "realtime", "transcribe", "tts", "image", "search", "codex", "deep-research", "-pro", "instruct"].contains(where: base.contains)
+            else { return nil }
+            return CatalogModel(id: id, uses: [.chat, .chatWithTools])
+        }.sorted { $0.id < $1.id }
     }
 
     private static func parseDate(_ text: String) -> Date? {

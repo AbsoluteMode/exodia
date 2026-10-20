@@ -93,15 +93,22 @@ Case — зашифрованное хранилище ключей по про�
 команду, передавая значения только в её окружении, а вывод маскируется. Режимы
 Accept (запрос под островом: Y/N/A) и Bypass на приложение и проект.
 Доступ можно ограничить выбранными проектами или разрешить все текущие и новые.
-В запросе Accept временный Bypass настраивается на 1–240 минут, по умолчанию 15. Значения
+В запросе Accept временный Bypass — отдельная кнопка рядом с полем числа минут
+(1–240, по умолчанию 15), без стрелок. Внизу только «Отклонить» и «Разрешить».
+Наведение на команду показывает её полностью; ввод минут временно отключает
+клавиши ответа. Агент может напрямую искать нужный ключ через `case_list_keys(query:)`
+по имени, описанию и проекту, затем использовать существующий `case run --only KEY`. Значения
 не попадают в аргументы, MCP-ответы, конфиги и логи. Защита — от случайных утечек
 в переписку, а не от ИИ, который нарочно достаёт значение.
 Решение: [decisions/2026-10-19-case-secrets-broker.md](decisions/2026-10-19-case-secrets-broker.md).
 
 Case открывается в панели высотой 320 pt. Подключённые приложения показаны
 иконками без лампочки и подписей; клик открывает права именно этого приложения.
-Постоянная кнопка Connect открывает выбор агента, затем проекты и Accept/Bypass;
-сохранение подключает его через Touch ID. При наведении и фокусе логотип Codex
+Постоянная кнопка Connect предлагает только найденные на Mac OpenCode и Cursor
+с логотипами, без выбора произвольной программы. Затем открываются два блока:
+режим Accept/Bypass с пояснениями внутри вариантов и область проектов.
+Сохранение подключает агента через Touch ID, обозначенный на кнопке; подробности
+доступны в её подсказке. Ранее сохранённые подключения других агентов остаются. При наведении и фокусе логотип Codex
 подсвечивается синим, Claude — оранжевым, Cursor — белым свечением.
 Поиск ищет имена и описания проектов и ключей, включая пустые проекты и General.
 Совпадение проекта показывает все его ключи, совпадение ключа — только найденные
@@ -345,7 +352,7 @@ API keys, Models, Costs и API hints в одной панели. При откр
 *API keys* — прямоугольные чипы провайдеров без цветных индикаторов (статус
 ключа — «Key works», «Limited key», «Key not accepted» и т. п. — во всплывающем
 окне чипа) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
-Anthropic (только для строки Agent) и свои OpenAI-compatible серверы. Ключи
+Anthropic и OpenAI (для LLM) и свои OpenAI-compatible серверы. Ключи
 лежат в Keychain, на экран не возвращаются; проверка ключа — бесплатный запрос
 к провайдеру. *Models* — компактная строка одинаковой высоты на функцию: название,
 краткая сводка выбранных моделей и стрелка раскрытия. Нажатие открывает настройки
@@ -354,7 +361,13 @@ Anthropic (только для строки Agent) и свои OpenAI-compatible
 The model picker opens a searchable popover: all query terms match in any
 order across model ID/provider, ignoring case and separators (`qwen 27` and
 `qwen27` find `qwen/qwen3.8-27b`). Up/Down and Return select; Escape clears then
-closes. Search and refresh keep the current route until an explicit verified pick.
+closes. Opening the picker automatically refreshes stale or failed catalogs;
+cached results remain available offline. There are no Refresh models or Other
+model ID actions. Search and refresh keep the current route until an explicit
+verified pick. API keys shows all providers as square tiles; clicking a tile
+opens its inline Check & save form. Failed or unreachable checks preserve the
+previous key and keep the form open. OpenAI and Anthropic are available to all
+LLM routes with their own provider keys.
 Подписей real-time, recorded и LLM with tools в списке нет. Функции: Drop Fast,
 Drop Smart (распознавание + очистка текста), Meetings (расшифровка + заметки),
 Agent, Agent voice, Voice search, Translation и Subtitles (Speech + отдельная LLM). Ошибки и

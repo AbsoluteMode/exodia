@@ -26,6 +26,7 @@ struct OpenRouterChatMessage: Codable, Equatable {
 }
 
 struct OpenAICompatibleLLMEndpoint: Equatable {
+    enum TextAPI: Equatable { case chatCompletions, openAI, anthropic }
     let baseURL: URL
     let apiKey: String?
     let requiresAPIKey: Bool
@@ -33,6 +34,17 @@ struct OpenAICompatibleLLMEndpoint: Equatable {
     /// OpenRouter endpoint tag the request must use, with no fallback; `nil`
     /// lets OpenRouter pick.
     var pinnedProvider: String? = nil
+    var textAPI: TextAPI = .chatCompletions
+
+    static func openAI(apiKey: String?) -> OpenAICompatibleLLMEndpoint {
+        .init(baseURL: URL(string: "https://api.openai.com/v1")!, apiKey: apiKey,
+              requiresAPIKey: true, sendsOpenRouterHeaders: false, textAPI: .openAI)
+    }
+
+    static func anthropic(apiKey: String?) -> OpenAICompatibleLLMEndpoint {
+        .init(baseURL: URL(string: "https://api.anthropic.com/v1")!, apiKey: apiKey,
+              requiresAPIKey: true, sendsOpenRouterHeaders: false, textAPI: .anthropic)
+    }
 
     static func openRouter(apiKey: String?, provider: String? = nil) -> OpenAICompatibleLLMEndpoint {
         OpenAICompatibleLLMEndpoint(
@@ -63,6 +75,8 @@ enum OpenRouterLLMError: Error, CustomStringConvertible, Equatable {
     case missingModel
     case unexpectedStatus(Int, String?)
     case emptyContent
+    case outputLimitReached
+    case inputRejected
     case decoding(String)
 
     var description: String {
@@ -84,6 +98,10 @@ enum OpenRouterLLMError: Error, CustomStringConvertible, Equatable {
             return "LLM API error \(status)."
         case .emptyContent:
             return "LLM endpoint returned an empty response."
+        case .outputLimitReached:
+            return "The model reached its output limit. Try a shorter request."
+        case .inputRejected:
+            return "The provider rejected the input. Try a shorter request."
         case .decoding(let message):
             return "Could not parse LLM response: \(message)"
         }
@@ -189,6 +207,9 @@ struct OpenRouterLLMClient: OpenRouterLLMClienting {
         if endpoint.requiresAPIKey, trimmedKey.isEmpty { throw OpenRouterLLMError.missingKey }
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedModel.isEmpty else { throw OpenRouterLLMError.missingModel }
+        if endpoint.textAPI == .anthropic {
+            return try await completeAnthropic(endpoint: endpoint, model: trimmedModel, messages: messages)
+        }
 
         var request = URLRequest(
             url: endpoint.baseURL
@@ -212,13 +233,15 @@ struct OpenRouterLLMClient: OpenRouterLLMClienting {
         struct ChatRequest: Encodable {
             let model: String
             let messages: [OpenRouterChatMessage]
-            let temperature: Double
+            let temperature: Double?
             let stream: Bool
             let reasoning: OpenRouterReasoningSetting?
             let provider: ProviderPreferences?
         }
         request.httpBody = try JSONEncoder().encode(
-            ChatRequest(model: trimmedModel, messages: messages, temperature: 0.1, stream: false, reasoning: reasoning, provider: provider)
+            ChatRequest(model: trimmedModel, messages: messages,
+                        temperature: endpoint.textAPI == .openAI ? nil : 0.1,
+                        stream: false, reasoning: reasoning, provider: provider)
         )
 
         let requestStarted = ProcessInfo.processInfo.systemUptime

@@ -382,6 +382,83 @@ final class CaseApprovalControllerTests: XCTestCase {
         _ = await next.value
     }
 
+    func test_minutes_editing_suspends_answer_keys_even_when_arming_timer_fires() async {
+        let task = await ask(request())
+        controller.setEditingMinutes(true)
+        clock.advance(by: 0.3)
+        XCTAssertTrue(controller.isArmed, "click answers remain available")
+        XCTAssertFalse(tap.isArmed, "typing in the field must not answer the prompt")
+        for key in [CaseApprovalKey.yes, .no, .timed, .escape] { tap.press(key) }
+        XCTAssertNotNil(controller.current)
+        controller.setTimedMinutes(37)
+        controller.setEditingMinutes(false)
+        XCTAssertTrue(tap.isArmed)
+        tap.press(.timed)
+        let outcome = await task.value
+        XCTAssertEqual(outcome, .allowTimed(minutes: 37))
+        XCTAssertFalse(controller.isEditingMinutes)
+    }
+
+    func test_timeout_during_minutes_editing_clears_editor_and_stops_tap() async {
+        let task = await ask(request())
+        controller.setEditingMinutes(true)
+        clock.advance(by: 60)
+        let outcome = await task.value
+        XCTAssertEqual(outcome, .timedOut)
+        XCTAssertFalse(controller.isEditingMinutes)
+        XCTAssertFalse(tap.isRunning)
+    }
+
+    func test_native_minutes_field_acquires_keyboard_editing_without_a_mouse_click() async throws {
+        let task = await ask(request())
+        clock.advance(by: 0.3)
+        let editor = CaseApprovalMinutesField(value: 15, onChange: { self.controller.setTimedMinutes($0) },
+                                             onEditingChange: { self.controller.setEditingMinutes($0) },
+                                             onValidityChange: { _ in })
+        let coordinator = editor.makeCoordinator()
+        let field = CaseApprovalMinutesTextField(frame: NSRect(x: 0, y: 0, width: 50, height: 26))
+        field.stringValue = "15"
+        field.delegate = coordinator
+        field.onEditingChange = { self.controller.setEditingMinutes($0) }
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 100, height: 60),
+                              styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = field
+        defer { window.contentView = nil; window.close() }
+        XCTAssertTrue(window.makeFirstResponder(field))
+        XCTAssertTrue(controller.isEditingMinutes)
+        XCTAssertFalse(tap.isArmed, "first response must suspend keys before the first typed character")
+        XCTAssertFalse(window.isVisible || window.isKeyWindow)
+        tap.press(.no)
+        XCTAssertNotNil(controller.current)
+        controller.choose(.deny)
+        _ = await task.value
+    }
+
+    func test_queued_prompt_releases_previous_native_field_editor_without_presenting_a_panel() async throws {
+        let panel = CaseApprovalPanel(controller: controller, present: { _ in })
+        defer { panel.close() }
+        let first = await ask(request())
+        let second = await ask(request("Codex"))
+        clock.advance(by: 0.3)
+        let field = CaseApprovalMinutesTextField(frame: NSRect(x: 0, y: 0, width: 50, height: 26))
+        field.stringValue = "15"
+        field.onEditingChange = { self.controller.setEditingMinutes($0) }
+        panel.contentView?.addSubview(field)
+        XCTAssertTrue(panel.makeFirstResponder(field))
+        XCTAssertTrue(controller.isEditingMinutes)
+        XCTAssertNotNil(field.currentEditor())
+        controller.choose(.allow)
+        let firstOutcome = await first.value
+        XCTAssertEqual(firstOutcome, .allow)
+        XCTAssertFalse(panel.firstResponder is NSTextView, "old field editor must not capture typing for the next prompt")
+        XCTAssertFalse(controller.isEditingMinutes)
+        XCTAssertEqual(controller.current?.appName, "Codex")
+        XCTAssertFalse(panel.isVisible || panel.isKeyWindow)
+        controller.resolve(.deny)
+        _ = await second.value
+    }
+
     func test_click_answers_after_arming() async {
         let task = await ask(request())
         clock.advance(by: 0.3)
@@ -526,6 +603,39 @@ final class CaseApprovalControllerTests: XCTestCase {
         XCTAssertEqual(CaseApprovalView.timedTitle(minutes: 15), "Bypass 15 мин")
         XCTAssertEqual(CaseApprovalView.commandLine("git push\n  --force"), "git push --force",
                        "one line, whitespace collapsed")
+    }
+}
+
+@MainActor
+final class CaseApprovalMinutesFieldTests: XCTestCase {
+    func test_duration_validation_and_native_edit_commands() {
+        for text in ["", "0", "241", "-1", "1.5", "1e2", " 15", "999999999999999999999999"] {
+            XCTAssertNil(CaseApprovalMinutesField.minutes(from: text), text)
+        }
+        XCTAssertEqual(CaseApprovalMinutesField.minutes(from: "1"), 1)
+        XCTAssertEqual(CaseApprovalMinutesField.minutes(from: "240"), 240)
+        var values: [Int] = []
+        var validity: [Bool] = []
+        var editing: [Bool] = []
+        let editor = CaseApprovalMinutesField(value: 15, onChange: { values.append($0) },
+                                             onEditingChange: { editing.append($0) },
+                                             onValidityChange: { validity.append($0) })
+        let coordinator = editor.makeCoordinator()
+        let field = NSTextField()
+        coordinator.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
+        field.stringValue = "37"
+        coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        field.stringValue = "999"
+        coordinator.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        XCTAssertEqual(values, [37], "invalid drafts never change the duration")
+        XCTAssertEqual(validity, [true, false])
+        coordinator.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+        XCTAssertEqual(field.stringValue, "37", "revert to the last valid number, even before SwiftUI's next update")
+        XCTAssertEqual(editing, [true, false])
+        XCTAssertTrue(coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        XCTAssertEqual(values.last, 15, "Escape cancels the duration edit, not the key request")
+        XCTAssertEqual(field.stringValue, "15")
+        XCTAssertTrue(coordinator.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
     }
 }
 

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The Case Approve prompt: one compact black card attached under the island, at
 /// the island's width. App, project with key names, the command on one line, and
-/// three answers with their physical keys.
+/// two bottom answers and a separate temporary Bypass action.
 struct CaseApprovalView: View {
     let request: CaseApprovalRequest
     let width: CGFloat
@@ -13,6 +13,12 @@ struct CaseApprovalView: View {
     let onChoose: (CaseApprovalOutcome) -> Void
     var timedMinutes: Int? = nil
     var onTimedMinutesChange: (Int) -> Void = { _ in }
+    var onMinutesEditingChange: (Bool) -> Void = { _ in }
+
+    @State private var validTimedInput = true
+    @State private var editingMinutes = false
+    @State private var hoveringMinutes = false
+    @State private var hoveringCommand = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -50,17 +56,29 @@ struct CaseApprovalView: View {
             }
             if request.timedMinutes > 0 {
                 HStack(spacing: 8) {
-                    Text("Временный Bypass")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.white.opacity(0.78))
-                    Spacer(minLength: 4)
-                    Stepper(value: Binding(get: { selectedMinutes }, set: onTimedMinutesChange), in: 1...240) {
-                        Text("\(selectedMinutes) мин")
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
-                            .foregroundStyle(.white.opacity(0.92))
+                    CaseApprovalButton(title: "Временный Bypass", key: "A", prominent: false) {
+                        onChoose(.allowTimed(minutes: selectedMinutes))
                     }
-                    .fixedSize()
-                    .accessibilityIdentifier("case.approval.minutes")
+                    .disabled(!isArmed || !validTimedInput)
+                    .opacity(isArmed && validTimedInput ? 1 : 0.5)
+                    .accessibilityLabel(Self.timedTitle(minutes: selectedMinutes))
+                    .help("Без повторного запроса для этого агента и проекта на \(selectedMinutes) мин")
+                    .accessibilityIdentifier("case.approval.timed")
+                    HStack(spacing: 4) {
+                        CaseApprovalMinutesField(value: selectedMinutes, onChange: onTimedMinutesChange,
+                                                 onEditingChange: {
+                                                     editingMinutes = $0
+                                                     onMinutesEditingChange($0)
+                                                 }, onValidityChange: { validTimedInput = $0 })
+                            .frame(width: 34, height: 24)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(.white.opacity(hoveringMinutes ? 0.15 : 0.08)))
+                            .onHover { hoveringMinutes = $0 }
+                            .overlay(RoundedRectangle(cornerRadius: 5)
+                                .strokeBorder(editingMinutes ? .white.opacity(0.75) : .white.opacity(0.16), lineWidth: 1))
+                        Text("мин")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.white.opacity(0.78))
+                    }
                 }
             }
             buttons
@@ -133,29 +151,166 @@ struct CaseApprovalView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(hoveringCommand ? 0.13 : 0.08)))
+            .onHover { hoveringCommand = $0 }
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5))
+            .help(request.command)
             .accessibilityLabel("Команда: \(request.command)")
     }
 
     private var buttons: some View {
         HStack(spacing: 6) {
             CaseApprovalButton(title: "Отклонить", key: "N", prominent: false) { onChoose(.deny) }
-            if request.timedMinutes > 0 {
-                CaseApprovalButton(title: "Bypass", key: "A",
-                                   prominent: false) { onChoose(.allowTimed(minutes: selectedMinutes)) }
-                    .accessibilityLabel(Self.timedTitle(minutes: selectedMinutes))
-                    .help("Без повторного запроса для этого агента и проекта на \(selectedMinutes) мин")
-            }
             CaseApprovalButton(title: "Разрешить", key: "Y", prominent: true) { onChoose(.allow) }
         }
         .opacity(isArmed ? 1 : 0.5)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isArmed)
-        .allowsHitTesting(isArmed)
+        .disabled(!isArmed)
     }
 
     private var selectedMinutes: Int { timedMinutes ?? request.timedMinutes }
+}
+
+/// Native text editing in the nonactivating panel. Intermediate invalid input
+/// stays visible, disables timed approval and reverts to the last valid value on
+/// blur/Return. Escape restores the value from before editing, without denial.
+struct CaseApprovalMinutesField: NSViewRepresentable {
+    let value: Int
+    let onChange: (Int) -> Void
+    let onEditingChange: (Bool) -> Void
+    let onValidityChange: (Bool) -> Void
+
+    static func minutes(from text: String) -> Int? {
+        guard !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }),
+              let value = Int(text), CaseViewModel.timedApprovalRange.contains(value) else { return nil }
+        return value
+    }
+
+    func makeNSView(context: Context) -> CaseApprovalMinutesTextField {
+        let field = CaseApprovalMinutesTextField()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.alignment = .center
+        field.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        field.textColor = .white
+        field.stringValue = String(value)
+        field.delegate = context.coordinator
+        field.onEditingChange = onEditingChange
+        field.setAccessibilityLabel("Временный Bypass, минуты")
+        field.setAccessibilityHelp("От 1 до 240 минут. Return завершает ввод, Escape отменяет изменение.")
+        field.setAccessibilityIdentifier("case.approval.minutes")
+        field.toolTip = "От 1 до 240 минут"
+        return field
+    }
+
+    func updateNSView(_ field: CaseApprovalMinutesTextField, context: Context) {
+        context.coordinator.parent = self
+        field.onEditingChange = onEditingChange
+        if field.currentEditor() == nil { field.stringValue = String(value) }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    static func dismantleNSView(_ field: CaseApprovalMinutesTextField, coordinator: Coordinator) {
+        field.removeWindowObserver()
+        field.delegate = nil
+        field.onEditingChange = { _ in }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: CaseApprovalMinutesField
+        private var initialValue: Int
+        private var lastValidValue: Int
+        init(parent: CaseApprovalMinutesField) {
+            self.parent = parent
+            self.initialValue = parent.value
+            self.lastValidValue = parent.value
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            initialValue = parent.value
+            lastValidValue = parent.value
+            parent.onEditingChange(true)
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            let minutes = CaseApprovalMinutesField.minutes(from: field.stringValue)
+            parent.onValidityChange(minutes != nil)
+            field.textColor = minutes == nil ? .systemOrange : .white
+            if let minutes {
+                lastValidValue = minutes
+                parent.onChange(minutes)
+            }
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            field.stringValue = String(lastValidValue)
+            field.textColor = .white
+            parent.onValidityChange(true)
+            parent.onEditingChange(false)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.cancelOperation(_:)):
+                lastValidValue = initialValue
+                parent.onChange(initialValue)
+                (control as? NSTextField)?.stringValue = String(initialValue)
+            case #selector(NSResponder.insertNewline(_:)):
+                break
+            default: return false
+            }
+            control.window?.makeFirstResponder(nil)
+            control.window?.resignKey()
+            return true
+        }
+    }
+}
+
+@MainActor
+final class CaseApprovalMinutesTextField: NSTextField {
+    var onEditingChange: (Bool) -> Void = { _ in }
+    private var resignKeyObserver: NSObjectProtocol?
+    override var needsPanelToBecomeKey: Bool { true }
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onEditingChange(true) }
+        return accepted
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        onEditingChange(true)
+        window?.makeKey()
+        super.mouseDown(with: event)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeWindowObserver()
+        guard let window else { return }
+        resignKeyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.window?.makeFirstResponder(nil)
+                self?.onEditingChange(false)
+            }
+        }
+    }
+
+    func removeWindowObserver() {
+        if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
+        resignKeyObserver = nil
+    }
+
+    deinit {
+        if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
+    }
 }
 
 /// One answer: a capsule with its title and its key, the key drawn by `HotkeyHintView`.
@@ -165,7 +320,8 @@ private struct CaseApprovalButton: View {
     let prominent: Bool
     let action: () -> Void
 
-    @State private var hovering = false
+    @FocusState private var focused: Bool
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
@@ -179,18 +335,34 @@ private struct CaseApprovalButton: View {
             .foregroundStyle(Color.white.opacity(prominent ? 1 : 0.88))
             .frame(maxWidth: .infinity)
             .frame(height: 28)
-            .background(Capsule().fill(fill))
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .buttonStyle(CaseApprovalButtonStyle(prominent: prominent))
+        .focused($focused)
+        .overlay(Capsule().strokeBorder(focused && isEnabled ? .white.opacity(0.9) : .clear, lineWidth: 1))
         .accessibilityLabel(title)
         .accessibilityHint("Клавиша \(key)")
     }
 
-    private var fill: Color {
-        if prominent { return CaseApprovalView.accent.opacity(hovering ? 1 : 0.9) }
-        return Color.white.opacity(hovering ? 0.18 : 0.11)
+}
+
+private struct CaseApprovalButtonStyle: ButtonStyle {
+    let prominent: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Capsule().fill(fill(pressed: configuration.isPressed)))
+            .onHover { hovering = $0 }
+    }
+
+    private func fill(pressed: Bool) -> Color {
+        let active = isEnabled && hovering
+        if prominent {
+            return CaseApprovalView.accent.opacity(isEnabled && pressed ? 0.72 : (active ? 1 : 0.9))
+        }
+        return .white.opacity(isEnabled && pressed ? 0.25 : (active ? 0.18 : 0.11))
     }
 }
 
@@ -208,7 +380,8 @@ struct CaseApprovalHostView: View {
                 isArmed: controller.isArmed,
                 onChoose: { controller.choose($0) },
                 timedMinutes: controller.selectedTimedMinutes,
-                onTimedMinutesChange: { controller.setTimedMinutes($0) }
+                onTimedMinutesChange: { controller.setTimedMinutes($0) },
+                onMinutesEditingChange: { controller.setEditingMinutes($0) }
             )
             // A new prompt is a new card (resets hover and the countdown).
             .id(controller.promptSerial)
@@ -220,16 +393,18 @@ struct CaseApprovalHostView: View {
 /// island (under the meeting nudge or the agent answer card when one is up), at
 /// the island's width. A
 /// separate panel like `MeetingPillPanel`, so its buttons get clicks without
-/// widening the island window's hit zones. It never becomes key: the answer keys
-/// come from `CaseApprovalKeyTap`.
+/// widening the island window's hit zones. It becomes key only for an explicit
+/// click in the minutes field; otherwise answer keys come from `CaseApprovalKeyTap`.
 @MainActor
 final class CaseApprovalPanel: NSPanel {
     private let controller: CaseApprovalController
     private let host: CaseApprovalHostingView
+    private let present: (NSPanel) -> Void
     private var cancellables = Set<AnyCancellable>()
 
-    init(controller: CaseApprovalController) {
+    init(controller: CaseApprovalController, present: @escaping (NSPanel) -> Void = { $0.orderFrontRegardless() }) {
         self.controller = controller
+        self.present = present
         host = CaseApprovalHostingView(rootView: AnyView(EmptyView()))
         super.init(contentRect: NSRect(x: 0, y: 0, width: 312, height: 140),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -243,10 +418,17 @@ final class CaseApprovalPanel: NSPanel {
         ignoresMouseEvents = false
         isMovable = false
         hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = true
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
         contentView = host
 
+        // Release the old field editor synchronously before a queued prompt
+        // replaces its view. Visibility can stay true across that transition.
+        controller.$promptSerial
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.finishMinutesEditing() }
+            .store(in: &cancellables)
         controller.$current
             .map { $0 != nil }
             .removeDuplicates()
@@ -272,7 +454,7 @@ final class CaseApprovalPanel: NSPanel {
         }
     }
 
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
@@ -297,10 +479,16 @@ final class CaseApprovalPanel: NSPanel {
         if visible {
             sharingType = PrivacyPreferences.shared.screenshotProtectionEnabled ? .none : .readOnly
             refreshFrame()
-            orderFrontRegardless()
+            present(self)
         } else {
+            finishMinutesEditing()
             orderOut(nil)
         }
+    }
+
+    private func finishMinutesEditing() {
+        makeFirstResponder(nil)
+        if isKeyWindow { resignKey() }
     }
 
     private func refreshFrameIfVisible() {
@@ -320,8 +508,9 @@ final class CaseApprovalPanel: NSPanel {
     }
 }
 
-/// Takes the first click even though the panel is never key, so a button answers
-/// on the first press.
+/// Buttons work on first click without acquiring keyboard focus. The native
+/// minutes field explicitly requests key status when the person edits it.
 private final class CaseApprovalHostingView: NSHostingView<AnyView> {
+    override var needsPanelToBecomeKey: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

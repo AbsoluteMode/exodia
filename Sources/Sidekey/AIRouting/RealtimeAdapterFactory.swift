@@ -23,7 +23,7 @@ enum RealtimeAdapterFactory {
                 throw FeatureRouteError.invalidBaseURL(route.feature)
             }
             return OpenAIRealtimeAdapter(apiKey: route.apiKey ?? "", url: url, model: route.model)
-        case .openRouter, .anthropic:
+        case .openRouter, .openAI, .anthropic:
             // OpenRouter and Anthropic serve text models only.
             throw FeatureRouteError.notSet(route.feature)
         }

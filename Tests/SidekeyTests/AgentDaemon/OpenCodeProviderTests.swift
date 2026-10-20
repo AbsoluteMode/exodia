@@ -2,6 +2,25 @@ import XCTest
 @testable import Sidekey
 
 final class OpenCodeProviderTests: XCTestCase {
+    func testOpenAIAgentKeepsOnlyItsOwnKeyAndUsesNativeModelMetadata() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let env = try OpenCodeEnvironment.make(workingDirectory: directory, model: "gpt-6.1-sol",
+            provider: .openAI, key: "openai-key", allowActions: true,
+            inherited: ["ANTHROPIC_API_KEY": "wrong-anthropic", "OPENROUTER_API_KEY": "wrong-router",
+                        "OPENAI_API_KEY": "wrong-openai"])
+        XCTAssertEqual(env["OPENAI_API_KEY"], "openai-key")
+        XCTAssertNil(env["ANTHROPIC_API_KEY"])
+        XCTAssertNil(env["OPENROUTER_API_KEY"])
+        let text = try XCTUnwrap(env["OPENCODE_CONFIG_CONTENT"])
+        XCTAssertFalse(text.contains("openai-key"))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        XCTAssertEqual(json["enabled_providers"] as? [String], ["openai"])
+        XCTAssertEqual(json["model"] as? String, "openai/gpt-6.1-sol")
+        let providers = try XCTUnwrap(json["provider"] as? [String: [String: Any]])
+        XCTAssertNil(providers["openai"]?["models"], "Do not override OpenCode's catalog with an empty model")
+        XCTAssertEqual(OpenCodeModelProvider.openAI.account, .openAI)
+    }
     func testCancellationKillsChildThatIgnoresSIGTERM() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -14,7 +14,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Settings/APIAndModels/ModelPicker.swift
     confirmed_at: 2026-10-20
-related: []
+related: [2026-10-21-provider-key-tiles.md]
 ---
 
 ## Context
@@ -60,6 +60,9 @@ The model control opens a popover; other selection controls keep native menus.
 Catalog refresh must notify the open picker even when selected rows stay equal.
 
 ## Supersedes/superseded by
+
+Footer actions are superseded by
+[automatic model refresh](2026-10-21-provider-key-tiles.md); search remains.
 
 No prior decision is superseded in full. The model control is the exception to
 the native-menu portion of the compact selection-menu decision.

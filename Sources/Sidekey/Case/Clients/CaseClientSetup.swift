@@ -9,6 +9,9 @@ enum CaseKnownClient: String, CaseIterable, Equatable {
     case cursor
     case builtInOpenCode
 
+    /// The current Connect catalog. Preserve legacy identities and registrations.
+    static let connectableClients: [CaseKnownClient] = [.builtInOpenCode, .cursor]
+
     var displayName: String {
         switch self {
         case .claudeCode: return "Claude Code"
@@ -97,7 +100,7 @@ final class CaseClientSetup: CaseClientConfiguring {
         let builtIn = builtInAgentAvailable
         // Locators may ask a login shell; keep that off the main thread.
         return await Task.detached {
-            CaseKnownClient.allCases.filter { client in
+            CaseKnownClient.connectableClients.filter { client in
                 client == .builtInOpenCode ? builtIn() : (connectors[client]?.isInstalled() ?? false)
             }
         }.value
