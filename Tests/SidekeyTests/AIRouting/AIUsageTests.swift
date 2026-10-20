@@ -44,6 +44,7 @@ final class AIUsageTests: XCTestCase {
         XCTAssertEqual(AIUsageTotal(events: events, currency: .usd).text, "$0.02 +")
         XCTAssertEqual(AIUsageTotal(events: [event(0.000001)], currency: .usd).text, "< $0.0001")
         XCTAssertEqual(AIUsageTotal(events: [event(0)], currency: .usd).text, "$0.00")
+        XCTAssertEqual(AIUsageTotal(events: [event(0.01, account: .elevenLabs)], currency: .elevenLabsCredits).text, "< 0.1")
     }
 
     func test_invalid_amounts_and_currency_are_rejected() async throws {

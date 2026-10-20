@@ -39,7 +39,7 @@ struct AIUsageTotal {
             if amount > 0 && amount < 0.0001 { number = "< $0.0001" }
             else { number = String(format: amount > 0 && amount < 0.01 ? "$%.4f" : "$%.2f", amount) }
         } else {
-            number = amount.formatted(.number.precision(.fractionLength(0...1)))
+            number = amount > 0 && amount < 0.1 ? "< 0.1" : amount.formatted(.number.precision(.fractionLength(0...1)))
         }
         return (estimated ? "≈ " : "") + number + (incomplete ? " +" : "")
     }
