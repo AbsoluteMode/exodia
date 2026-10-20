@@ -128,11 +128,13 @@ final class CaseBroker {
         switch request {
         case .listProjects:
             if let denial = await authorizeListing(caller) { return denial }
+            if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }
             guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
             return .projects(Self.projectInfos(current.projects, in: current))
 
         case .listKeys(let projectName):
             if let denial = await authorizeListing(caller) { return denial }
+            if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }
             guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
             var secrets = current.secrets
             if let projectName {
@@ -182,10 +184,12 @@ final class CaseBroker {
                 guard await authenticate(reason: Self.touchIDListReason) else {
                     return .denied(reason: .touchIDFailed)
                 }
+                if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }
             }
             return response
         }
 
+        var timedGrant: (appID: UUID, minutes: Int)?
         switch CaseAccessPolicy.decideRun(caller: caller, projectID: target.project.id, grants: grants, now: now()) {
         case .allow:
             break
@@ -217,9 +221,7 @@ final class CaseBroker {
                 break
             case .allowTimed:
                 if minutes > 0 {
-                    grants.grant(
-                        appID: app.id, projectID: target.project.id,
-                        until: now().addingTimeInterval(TimeInterval(minutes) * 60))
+                    timedGrant = (app.id, minutes)
                 }
             case .deny:
                 return .denied(reason: .userDeclined)
@@ -230,9 +232,14 @@ final class CaseBroker {
 
         // A client that went away during Touch ID or the prompt gets nothing.
         if Task.isCancelled { return .denied(reason: .userDeclined) }
+        // Approval is for this principal, not a registration snapshot. No await
+        // may separate this check, the grant and value release on the main actor.
+        // WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+        if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }
         // The vault may have changed while the prompt was up: read values now,
         // and only for the secrets that were approved.
         guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
+        guard current.project(target.project.id) != nil else { return .denied(reason: .unknownProject) }
         var environment: [String: String] = [:]
         for id in target.secretIDs {
             guard let secret = current.secrets.first(where: { $0.id == id }),
@@ -240,6 +247,11 @@ final class CaseBroker {
             else { return .denied(reason: .unknownKey) }
             guard let value = current.value(for: id) else { return .denied(reason: .vaultUnavailable) }
             environment[secret.name] = value
+        }
+        if let timedGrant {
+            grants.grant(
+                appID: timedGrant.appID, projectID: target.project.id,
+                until: now().addingTimeInterval(TimeInterval(timedGrant.minutes) * 60))
         }
         return .runEnvironment(environment)
     }
@@ -294,6 +306,25 @@ final class CaseBroker {
     }
 
     // MARK: Helpers
+
+    /// Re-resolve after suspension, preserving the authenticated principal.
+    /// A removed custom-path registration must not fall back to a human run;
+    /// re-registering the same app also requires a new request and approval.
+    private func currentAuthorityDenial(for caller: CaseCaller, peerPID: pid_t) -> CaseBrokerResponse? {
+        guard let current = service.payload else { return .denied(reason: .vaultUnavailable) }
+        let resolved = resolver.resolve(peerPID: peerPID, registrations: current.apps)
+        switch (caller, resolved) {
+        case (.human, .human):
+            return nil
+        case let (.registered(original), .registered(fresh)):
+            guard original.id == fresh.id, original.identity == fresh.identity,
+                  current.apps.contains(where: { $0.id == original.id && $0.identity == original.identity })
+            else { return .denied(reason: .notRegistered) }
+            return nil
+        default:
+            return .denied(reason: .notRegistered)
+        }
+    }
 
     private func authorizeListing(_ caller: CaseCaller) async -> CaseBrokerResponse? {
         switch CaseAccessPolicy.decideList(caller: caller) {

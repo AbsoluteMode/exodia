@@ -269,25 +269,26 @@ Meeting Notes:
   .project-docs/decisions/2026-10-20-meeting-source-noise-floor.md,
   .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
 
-Case secrets manager (AI access without values):
-  Case (island hover tool) is an encrypted project/key vault (schema v2, Touch
-  ID, `Case/`). AI clients use keys without seeing values: `Contents/Helpers/
-  whytap` (targets `WhytapCaseKit` + `WhytapCLI`) offers `whytap case ls`,
-  `whytap case run [-p project] [--only A,B] '<cmd>'` and `whytap case mcp`
-  (stdio; `case_list_projects`, `case_list_keys`: names and descriptions only,
-  no run tool). `run` asks the app's broker (`Case/Broker/`, Unix socket
-  `case-broker.sock` in Application Support, 0700/0600) which trusts only the
-  bundled helper by cdhash, finds the caller by walking the process chain to a
-  registered AI app (Developer ID team IDs trusted only if Apple-anchored; no AI
-  ancestor = a person, Touch ID), applies Approve/Bypass per app and project,
-  then the helper starts `/bin/sh -c` with values only in the child's
-  environment and masks its output (`CaseOutputMasker`). The Approve prompt is a
-  non-activating panel under the island; `CaseApprovalKeyTap` (Y/N/A/Escape by
-  physical key, only while a prompt is queued; needs Accessibility, else
-  click) answers it. Registration writes the MCP entry into Claude Code,
-  Codex, Cursor or the built-in OpenCode. The decrypted payload stays in memory
-  past the idle lock so the broker can answer. Threat model: accidental leaks
-  and unregistered programs, not an AI that deliberately extracts a value. WHY:
+Case secrets manager:
+  The encrypted schema-2 vault has projects, descriptions and registered AI
+  clients with Approve/Bypass per app and project. `Contents/Helpers/whytap`
+  exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
+  names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). The app's local Unix
+  socket broker accepts only its bundled helper by audit-token cdhash and
+  resolves the caller from its process ancestry; Developer ID identities
+  require an Apple anchor. Unregistered known AI clients are refused; human
+  requests require Touch ID. Before releasing values or creating a timed
+  grant after authentication/approval, the broker revalidates the current
+  caller, registration and project. Revoking or rebinding a registration
+  invalidates its pending requests, including queued approvals.
+  Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
+  300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
+  grants. Registration configures the client's names-only MCP entry. The
+  helper injects authorized values into the child command's environment and
+  applies best-effort masking to stdout/stderr. Deliberately transformed
+  output, files and values shorter than four bytes can expose values; this is
+  protection against accidental transcript leaks, not a command sandbox.
+  The broker's decrypted vault cache outlives the panel's idle lock. WHY:
   docs/decisions/2026-10-19-case-secrets-broker.md
 
 Hover capsules and materials:
@@ -766,9 +767,8 @@ is separate from the removed app-managed speech/LLM models. Guide:
   docs/decisions/2026-07-02-escape-close-passive-monitor.md), the AX check
   of the focused field (`PasteTargetValidator`) and, empirically, the active
   `CGEventTap` in `SpaceHoldMonitor` and the optional Brightness keys tap
-  (`BrightnessKeyEventTap`) and the Case Approve key tap
-  (`CaseApprovalKeyTap`, only while an approval prompt is queued; without
-  Accessibility the prompt is answered by clicking).
+  (`BrightnessKeyEventTap`) and the Case approval tap (`CaseApprovalKeyTap`,
+  only while a prompt is queued; clicking remains available without the tap).
 - **Post Event** gates `CGEvent.post` for the synthetic Cmd+V and Backspace
   (`CGPreflightPostEventAccess` / `CGRequestPostEventAccess`, a separate TCC
   bucket from Accessibility since 10.15; Tahoe shows both in one panel).
@@ -935,9 +935,10 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    shortcuts; explicitly saved old slot keys migrate once to their current tools.
    Hints and Help read the same config; clearing/reset persists an empty map.
    WHY: docs/decisions/2026-10-19-feature-hotkeys.md
-6. **Case values never leave through any channel an AI or log can see.** A
-   Case value appears only in the environment of the command the helper starts
-   for a permitted `whytap case run`. Never in argv, MCP responses or tool
-   output, client config files, `os_log`/`print`, or the repository; the
-   broker serves only the bundled helper (cdhash) and never logs commands or
-   key names with values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+6. **Case authorizes secret use at the broker boundary.** Only the bundled
+   helper receives values for an authorized child command's environment.
+   Never put values in argv, MCP responses, client configuration, repository
+   files or app logs. Output masking is best effort, not a guarantee against
+   deliberate extraction by an approved command. Revalidate current caller
+   authority after approval/authentication before granting or releasing
+   values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md

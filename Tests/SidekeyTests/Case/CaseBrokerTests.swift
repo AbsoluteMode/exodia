@@ -98,9 +98,11 @@ private final class FakeApprovals: CaseApprovalPresenting {
 
 private final class FakeAuthenticator: CaseAuthenticating {
     var fails = false
+    var onAuthenticate: (() throws -> Void)?
     private(set) var reasons: [String] = []
     func authenticate(reason: String) async throws {
         reasons.append(reason)
+        try onAuthenticate?()
         if fails { throw CaseAuthenticationError.denied }
     }
 }
@@ -126,7 +128,12 @@ final class CaseBrokerTests: XCTestCase {
     private func makeBroker(caller: CaseCaller, payload: CaseVaultPayload? = nil) {
         var apps: [CaseAppRegistration] = []
         if case .registered(let app) = caller { apps = [app] }
-        store = BrokerMemoryStore(payload ?? fixturePayload(apps: apps))
+        var initial = payload ?? fixturePayload(apps: apps)
+        // A scripted registered caller must actually be registered in the vault.
+        for app in apps where !initial.apps.contains(where: { $0.id == app.id }) {
+            initial.apps.append(app)
+        }
+        store = BrokerMemoryStore(initial)
         service = CaseVaultService(store: store, keyProvider: BrokerKeys())
         resolver = ScriptedResolver(caller)
         approvals = FakeApprovals()
@@ -376,6 +383,169 @@ final class CaseBrokerTests: XCTestCase {
         let response = await run(project: "alpha", only: ["DB_URL"])
 
         XCTAssertEqual(response, .denied(reason: .unknownKey))
+    }
+
+    func test_unregister_during_allow_denies_values() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allow) {
+            XCTAssertNoThrow(try self.service.mutate { $0.apps.removeAll { $0.id == app.id } })
+        }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .denied(reason: .notRegistered))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    func test_unregister_during_timed_allow_creates_no_grant() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed) {
+            XCTAssertNoThrow(try self.service.mutate { $0.apps.removeAll { $0.id == app.id } })
+        }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .denied(reason: .notRegistered))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    func test_rebound_registration_during_approval_denies_values_and_grant() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed) {
+            XCTAssertNoThrow(try self.service.mutate {
+                $0.apps[0].identity = .executablePath("/fake/replacement-client")
+            })
+        }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .denied(reason: .notRegistered))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    func test_changed_peer_during_approval_denies_values_and_grant() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed) { self.resolver.caller = .human }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .denied(reason: .notRegistered))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    func test_reregistered_app_cannot_use_old_pending_approval() async {
+        let app = registration(.approve)
+        var replacement = app
+        replacement.id = UUID()
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed) {
+            XCTAssertNoThrow(try self.service.mutate { $0.apps = [replacement] })
+            self.resolver.caller = .registered(replacement)
+        }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .denied(reason: .notRegistered))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+        XCTAssertFalse(broker.grants.isGranted(appID: replacement.id, projectID: alphaID, now: clock))
+    }
+
+    func test_deleted_project_during_timed_allow_creates_no_grant() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed) {
+            XCTAssertNoThrow(try self.service.mutate { payload in
+                let ids = Set(payload.secrets.filter { $0.projectID == alphaID }.map(\.id))
+                payload.projects.removeAll { $0.id == alphaID }
+                payload.secrets.removeAll { ids.contains($0.id) }
+                payload.values.removeAll { ids.contains($0.secretID) }
+            })
+        }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .denied(reason: .unknownProject))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    func test_deleted_key_during_timed_allow_creates_no_grant() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed) {
+            XCTAssertNoThrow(try self.service.mutate { payload in
+                let ids = Set(payload.secrets.filter { $0.name == "DB_URL" }.map(\.id))
+                payload.secrets.removeAll { ids.contains($0.id) }
+                payload.values.removeAll { ids.contains($0.secretID) }
+            })
+        }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .denied(reason: .unknownKey))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    func test_timed_answer_cannot_release_queued_requests_after_unregister() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        let prompts = CaseApprovalController(keyTap: SilentApprovalKeyTap(), schedule: { _, _ in {} })
+        broker = CaseBroker(service: service, resolver: resolver, approvals: prompts, authenticator: auth,
+                            now: { [unowned self] in self.clock })
+        let first = Task { await self.run(project: "alpha", only: ["DB_URL"]) }
+        for _ in 0..<200 where prompts.queuedCount < 1 { await Task.yield() }
+        let second = Task { await self.run(project: "alpha", only: ["DB_URL"]) }
+        for _ in 0..<200 where prompts.queuedCount < 2 { await Task.yield() }
+        XCTAssertEqual(prompts.queuedCount, 2)
+        XCTAssertNoThrow(try service.mutate { $0.apps.removeAll { $0.id == app.id } })
+
+        prompts.resolve(.allowTimed)
+        let firstResponse = await first.value
+        let secondResponse = await second.value
+
+        XCTAssertEqual(firstResponse, .denied(reason: .notRegistered))
+        XCTAssertEqual(secondResponse, .denied(reason: .notRegistered))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+        XCTAssertEqual(prompts.queuedCount, 0)
+    }
+
+    func test_changed_caller_during_touch_id_gets_no_values_or_listing() async {
+        let requests: [CaseBrokerRequest] = [
+            .resolveRun(project: "alpha", only: ["DB_URL"], command: "npm test", cwd: "/tmp"),
+            .listProjects,
+            .listKeys(project: nil),
+            .resolveRun(project: nil, only: ["OPENAI_API_KEY"], command: "npm test", cwd: "/tmp"),
+        ]
+        for request in requests {
+            makeBroker(caller: .human)
+            auth.onAuthenticate = { self.resolver.caller = .knownUnregisteredAI(name: "Codex") }
+
+            let response = await broker.handle(request, peerPID: 900)
+
+            XCTAssertEqual(response, .denied(reason: .notRegistered))
+        }
+    }
+
+    func test_registration_label_change_during_approval_keeps_authorized_run() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed) {
+            XCTAssertNoThrow(try self.service.mutate { $0.apps[0].displayName = "New label" })
+        }
+
+        let response = await run(project: "alpha", only: ["DB_URL"])
+
+        XCTAssertEqual(response, .runEnvironment(["DB_URL": "fake-alpha-db-0002"]))
+        XCTAssertTrue(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    private func useMutatingApprovals(_ outcome: CaseApprovalOutcome, change: @escaping () throws -> Void) {
+        broker = CaseBroker(service: service, resolver: resolver,
+                            approvals: MutatingApprovals(outcome: outcome, change: change),
+                            authenticator: auth, now: { [unowned self] in self.clock })
     }
 
     // MARK: Vault
@@ -646,6 +816,25 @@ private final class SilentApprovalKeyTap: CaseApprovalKeyIntercepting {
                onUnarmedKeyDown: @escaping @MainActor () -> Void) throws {}
     func stop() {}
     func setArmed(_ armed: Bool) {}
+}
+
+@MainActor
+private final class MutatingApprovals: CaseApprovalPresenting {
+    let outcome: CaseApprovalOutcome
+    let change: () throws -> Void
+
+    init(outcome: CaseApprovalOutcome, change: @escaping () throws -> Void) {
+        self.outcome = outcome
+        self.change = change
+    }
+
+    func requestApproval(_ r: CaseApprovalRequest) async -> CaseApprovalOutcome {
+        do { try change() } catch {
+            XCTFail("fixture mutation failed: \(error)")
+            return .deny
+        }
+        return outcome
+    }
 }
 
 /// Deletes a key while the approval prompt is showing, then allows.

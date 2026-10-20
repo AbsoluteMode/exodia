@@ -12,9 +12,9 @@
 
 ## Global Constraints
 
-- Before starting and before any integration: read `/Users/maxim/exodia/.project-docs/processes/shared-app-development.md` and `git show origin/main:AGENTS.md`. Feature work never runs `scripts/dev-run.sh`, `swift run`, `customize.py build/run` or opens a bundle; verify with `swift build` and `swift test --filter …` only.
+- Before starting and before any integration: read `.project-docs/processes/shared-app-development.md` and `git show origin/main:AGENTS.md`. Feature work never runs `scripts/dev-run.sh`, `swift run`, `customize.py build/run` or opens a bundle; verify with `swift build` and `swift test --filter …` only.
 - Product name is **Whytap**; module/executable names stay `Sidekey`; preserve bundle IDs (`com.rootwise.sidekey`, `.beta`), Keychain services, Application Support paths, vault AAD `com.rootwise.sidekey.case-vault.v1`.
-- CLI names: prod `whytap` (symlink `~/.local/bin/whytap` → `/Applications/Whytap.app/Contents/Helpers/whytap`), beta `whytap-beta`, dev `whytap-dev`. Never `case` (shell keyword).
+- CLI names: prod `whytap` (symlink `${HOME}/.local/bin/whytap` → `/Applications/Whytap.app/Contents/Helpers/whytap`), beta `whytap-beta`, dev `whytap-dev`. Never `case` (shell keyword).
 - Values never appear in: argv, MCP traffic, client config files, `os_log`, files written by Whytap other than the encrypted vault, error messages, test fixtures with real secrets. `LocalPathLoggingInvariantTests` and `CloudRemovalTests` must stay green.
 - Values reach commands only as environment variables of the child spawned by `whytap`, never by the app process (no Whytap TCC inheritance).
 - Names: `A–Z 0–9 _`, no leading digit, max normalized 64 (existing). Project name ≤ 48 chars. Value ≤ 16 KB. Idle lock 15 min (existing).
@@ -159,9 +159,9 @@ public enum CaseBrokerResponse: Codable, Equatable {
   case ambiguous(key: String, projects: [CaseProjectInfo])
   case denied(reason: CaseDenyReason) }
 public enum CaseDenyReason: String, Codable { case notRegistered, unknownAIApp, userDeclined, timedOut, touchIDFailed, unknownProject, unknownKey, untrustedHelper, vaultUnavailable }
-public enum CaseBrokerPaths { public static func socketURL(bundleID: String) -> URL }   // ~/Library/Application Support/<bundleID>/case-broker.sock
+public enum CaseBrokerPaths { public static func socketURL(bundleID: String) -> URL }   // ${HOME}/Library/Application Support/<bundleID>/case-broker.sock
 ```
-- [ ] **Step 1:** Test `test_requests_and_responses_round_trip_as_single_json_lines` (encode → no `\n` inside → decode equal) and `test_socket_path_is_under_bundle_application_support_and_shorter_than_104_bytes` (sun_path limit; for long home dirs fall back to `~/Library/Application Support/<bundleID>/cb.sock`).
+- [ ] **Step 1:** Test `test_requests_and_responses_round_trip_as_single_json_lines` (encode → no `\n` inside → decode equal) and `test_socket_path_is_under_bundle_application_support_and_shorter_than_104_bytes` (sun_path limit; for long home dirs fall back to `${HOME}/Library/Application Support/<bundleID>/cb.sock`).
 - [ ] **Step 2–4:** fail → implement → `swift build --product whytap` and `swift test --filter WhytapCaseKitTests` pass.
 - [ ] **Step 5:** Commit `build: add WhytapCaseKit and whytap CLI targets`.
 
@@ -220,8 +220,8 @@ Exit codes: 2 denied (stderr: reason in plain English + hint «Register this app
 **Produces:**
 ```swift
 struct CaseProcessInfo: Equatable { let pid: pid_t; let parentPID: pid_t; let executablePath: String; let teamID: String?; let signingIdentifier: String? }
-protocol CaseProcessInspecting { func info(pid: pid_t) -> CaseProcessInfo?; func peer(of socket: Int32) -> (pid: pid_t, auditToken: audit_token_t)?
-  func isTrustedHelper(auditToken: audit_token_t, helperURL: URL) -> Bool }    // cdhash(peer) == cdhash(bundled helper)
+// CaseProcessInspecting reads process metadata and the socket peer audit identity.
+// isTrustedHelper pins the peer cdhash to the bundled helper; see the source protocol.
 struct CaseCallerResolver { init(inspector: CaseProcessInspecting, registrations: [CaseAppRegistration], builtInOpenCodePIDs: Set<pid_t>)
   func resolve(peerPID: pid_t) -> CaseCaller }      // walks parents up to 32 hops / pid 1
 static let knownAIApps: [(name: String, teamID: String, identifier: String)] =
@@ -265,9 +265,9 @@ View: one compact card in island width — line 1 «<App> хочет запус�
 **Produces:**
 ```swift
 protocol CaseClientConnector { var displayName: String { get }; func isInstalled() -> Bool; func install(helperPath: String) throws; func uninstall() throws }
-// Claude: `claude mcp add -s user case -- <helper> case mcp` / `claude mcp remove -s user case`; if ~/.claude/settings.json has sandbox enabled, add socket path to sandbox.network.allowUnixSockets
+// Claude: `claude mcp add -s user case -- <helper> case mcp` / `claude mcp remove -s user case`; if ${HOME}/.claude/settings.json has sandbox enabled, add socket path to sandbox.network.allowUnixSockets
 // Codex: `codex mcp add case -- <helper> case mcp` / `codex mcp remove case`; sandbox config untouched
-// Cursor: edit ~/.cursor/mcp.json mcpServers.case = {command, args}; preserve other keys
+// Cursor: edit ${HOME}/.cursor/mcp.json mcpServers.case = {command, args}; preserve other keys
 enum CaseCLIInstaller { static func install(flavorName: String, helperURL: URL, binDir: URL) throws }   // whytap / whytap-beta / whytap-dev symlink; never overwrite a non-symlink
 // CaseViewModel: registerApp(_ identity:, name:) async throws (Touch ID), setMode(_:for:project:) async throws (Touch ID only when target == .bypass), unregisterApp(_:), setTimedApprovalMinutes(_:) (1...240)
 ```

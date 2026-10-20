@@ -69,6 +69,14 @@ without ever receiving its value.
   built-in agent running `whytap case run`). `CaseApprovalKeyTap` exists only
   while a prompt is queued and swallows only those four keys (see
   docs/hotkey.md).
+- **Revocation while waiting.** After Touch ID or an approval answer, the
+  broker resolves the peer again and requires the same principal and current
+  registration UUID/identity before releasing values. Removing a registration,
+  replacing its identity or registering it again with a new UUID invalidates
+  the pending request, including queued requests resumed by a timed answer.
+  The current project and approved key IDs must still exist. A timed grant is
+  created only after these checks and successful value resolution, with no
+  suspension between validation, grant creation and release on the main actor.
 - **Touch ID text** for a person's `whytap case run` names the nearest app in
   the helper's parent chain (Terminal, iTerm2…) or "неизвестный процесс" when
   the walk reaches pid 1 without one (ssh, cron, a launchd job), and the
@@ -84,9 +92,9 @@ without ever receiving its value.
   exclusively, never overwritten); `.bak` alone held the v1 bytes only until
   the second save.
 - **Registration** also writes the MCP entry into the client's own config
-  (`claude mcp add -s user`, `codex mcp add`, `~/.cursor/mcp.json`, the built-in
+  (`claude mcp add -s user`, `codex mcp add`, `${HOME}/.cursor/mcp.json`, the built-in
   OpenCode config) with the absolute helper path (GUI-launched agents often lack
-  `~/.local/bin` on PATH). No secret is ever written there. An existing MCP
+  `${HOME}/.local/bin` on PATH). No secret is ever written there. An existing MCP
   server named `case` that is not a `whytap`/`whytap-*` helper serving
   `case mcp` is reported as a conflict and never replaced or removed. JSON
   configs that are symlinks (dotfiles repos) are written through the link: the
@@ -144,6 +152,11 @@ Masking is best effort and bytes-based; it is not a security boundary.
 
 ## What we tested
 
+- Revocation regressions (2026-10-20): removal during Allow and timed Allow,
+  identity replacement, a changed peer, and real approval-controller queued
+  requests all deny values without creating a grant. Deleted projects/keys
+  also create no grant. Human Touch ID revalidates before run, listing and
+  ambiguity responses; changing only a registration label preserves access.
 - Broker end to end over a real socket with fake inspector/resolver: untrusted
   helper, stuck and oversized clients, garbage lines, stale socket replacement,
   refusal to replace a regular file, concurrent connection cap.
@@ -213,7 +226,7 @@ Masking is best effort and bytes-based; it is not a security boundary.
   the `case_*` listing tools.
 - Deferred minors: the socket path can exceed 104 bytes for a very long home;
   Russian labels vs English errors (ask Maxim); rewrites of
-  `~/.claude/settings.json` and `~/.cursor/mcp.json` re-sort keys (content kept,
+  `${HOME}/.claude/settings.json` and `${HOME}/.cursor/mcp.json` re-sort keys (content kept,
   `.bak` saved); built-in OpenCode PIDs depend on process plumbing.
 
 2026-10-19. Commits: 0fee034..225df91 on branch claude/sad-nobel-2aaef9, final
