@@ -937,6 +937,8 @@ point (`KeycapView` is internal), labels are capitalised, keycaps stand side
 by side without `+`, modifiers are glyphs from `HotkeyGlyph`, and every
 hotkey gets a row in the Help window (`HelpWindowController`). All hints
 derive from `HotkeyConfiguration` (single source of truth for every surface).
+`HotkeyTapCombo` uses uppercase US English physical-key labels regardless of
+input layout, including live recording and previously saved non-English titles.
 
 ## Invariants
 
