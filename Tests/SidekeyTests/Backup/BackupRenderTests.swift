@@ -5,6 +5,22 @@ import XCTest
 
 @MainActor
 final class BackupRenderTests: XCTestCase {
+    private var renderModels: [BackupViewModel] = []
+    private var renderSession: URLSession?
+    private var renderRoot: URL?
+
+    override func tearDown() async throws {
+        // NSHostingView can deliver its .task after the hidden window closes.
+        // Stop rejects late deliveries; drain every retained request before
+        // invalidating the session or resetting the shared protocol fixture.
+        for model in renderModels { await model.stopAndWait() }
+        renderModels.removeAll()
+        renderSession?.invalidateAndCancel(); renderSession = nil
+        StubURLProtocol.reset()
+        if let renderRoot { try? FileManager.default.removeItem(at: renderRoot) }
+        renderRoot = nil
+    }
+
     private final class InMemoryTokenStore: TokenStore {
         var value: String?
         func save(_ token: String) throws { value = token }
@@ -41,7 +57,7 @@ final class BackupRenderTests: XCTestCase {
             },
             stage: { _, _, _ in }
         )
-        return BackupViewModel(
+        let model = BackupViewModel(
             defaults: defaults,
             keyStore: InMemoryTokenStore(),
             githubTokenStore: InMemoryTokenStore(),
@@ -51,6 +67,8 @@ final class BackupRenderTests: XCTestCase {
             changeProbe: { "" },
             idle: { true }, githubSession: session
         )
+        renderModels.append(model)
+        return model
     }
 
     func testBackupSettingsTabMetadataAndOrdering() {
@@ -76,11 +94,11 @@ final class BackupRenderTests: XCTestCase {
         let directory = URL(fileURLWithPath: output)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
+        renderRoot = root
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
         let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel(); StubURLProtocol.reset() }
+        renderSession = session
         let fixture = BackupGitHubFixture(json: { try! JSONSerialization.data(withJSONObject: $0) })
         StubURLProtocol.handler = { request in try fixture.handle(request) }
         let model = makeIsolatedModel(temporaryRoot: root, session: session)
@@ -123,7 +141,7 @@ final class BackupRenderTests: XCTestCase {
         let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        defer { window.close() }
+        defer { window.contentView = nil; window.close() }
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         host.layoutSubtreeIfNeeded()

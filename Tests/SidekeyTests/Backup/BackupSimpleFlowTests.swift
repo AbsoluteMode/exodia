@@ -120,6 +120,56 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertTrue(model.recoveryCode.isEmpty)
     }
 
+    func testStoppedModelRejectsLateChecksAfterSessionInvalidation() async throws {
+        let model = model(try profile())
+        await model.connectGitHub(token: "synthetic-token")
+        await model.stopAndWait()
+        let count = StubURLProtocol.capturedRequests.count
+        session.invalidateAndCancel()
+        // Reproduces the render teardown ordering that used to abort XCTest
+        // with NSGenericException, often during a later unrelated test suite.
+        await model.checkGitHubConnection()
+        await model.connectGitHub(token: "synthetic-token")
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, count)
+        XCTAssertFalse(model.isBusy)
+    }
+
+    func testCancelledViewCheckDoesNotStartAnotherRequest() async throws {
+        let model = model(try profile())
+        await model.connectGitHub(token: "synthetic-token")
+        let count = StubURLProtocol.capturedRequests.count
+        let check = Task { await model.checkGitHubConnection() }
+        check.cancel()
+        await check.value
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, count)
+        await model.stopAndWait()
+    }
+
+    func testCancellingAnInFlightViewCheckCancelsItsRetainedRequest() async throws {
+        session.invalidateAndCancel()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PendingGitHubCheckProtocol.self]
+        session = URLSession(configuration: configuration)
+        let model = model(try profile())
+        await model.connectGitHub(token: "synthetic-token")
+        XCTAssertTrue(model.canUseGitHubBackup)
+        let started = expectation(description: "HTTP check is pending")
+        let finished = expectation(description: "view task cancelled its retained request")
+        PendingGitHubCheckProtocol.onPendingCheck = { started.fulfill() }
+        defer { PendingGitHubCheckProtocol.onPendingCheck = nil }
+        let check = Task {
+            await model.checkGitHubConnection()
+            finished.fulfill()
+        }
+        await fulfillment(of: [started], timeout: 2)
+        check.cancel()
+        await fulfillment(of: [finished], timeout: 2)
+        await model.stopAndWait()
+        await check.value
+        XCTAssertFalse(model.isBusy)
+        XCTAssertEqual(model.githubConnectionState, .connected, "Leaving a view must not turn a valid connection into an auth error")
+    }
+
     func testWrongCodeAndMissingBackupNeverStageARestore() async throws {
         let model = model(try profile())
         await model.connectGitHub(token: "synthetic-token")
@@ -142,4 +192,28 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertEqual(remote.publishCount, 0)
         XCTAssertFalse(model.statusText.hasPrefix("Saving"))
     }
+}
+
+/// A request that stays in flight until URLSession receives task cancellation.
+private final class PendingGitHubCheckProtocol: URLProtocol {
+    static var onPendingCheck: (() -> Void)?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url!.path
+        if path.hasSuffix("/Exodia-Backup"), let onPendingCheck = Self.onPendingCheck {
+            onPendingCheck()
+            return
+        }
+        let object: Any
+        if path == "/user" { object = ["login": "developer"] }
+        else if path.hasSuffix("/Exodia-Backup") { object = ["name": "Exodia-Backup", "private": true] }
+        else { object = [] as [String] }
+        let data = try! JSONSerialization.data(withJSONObject: object)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

@@ -294,6 +294,7 @@ actor GitHubBackupTransport {
         return request
     }
     private func json(path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
+        try Task.checkCancellation()
         var req = request(path: path, method: method)
         if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body); req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await session.data(for: req)

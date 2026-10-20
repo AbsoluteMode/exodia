@@ -67,3 +67,16 @@ as an oversized backup. Use the format's 200000-entry ceiling for retained
 recording files; keep its 64 GiB total and 8 GiB per-file limits and full validation.
 Tests use synthetic profiles only, including a 5220-file backup/restore round trip.
 No user content or credentials are included in diagnostics or test artifacts.
+
+## View-task lifetime
+
+The combined render-enabled suite exposed a fixture teardown race: closing a
+hidden NSHostingView did not finish its retained GitHub checker before the
+injected URLSession was invalidated. A late checker then raised Foundation's
+session-invalidated exception during a later suite. View-owned checks now
+forward caller cancellation. Model shutdown rejects late operations and can
+drain owned work; render teardown awaits that drain before invalidating its
+network session or clearing the shared HTTP stub. Hidden hosting content is
+explicitly detached on close. Regression checks cover late calls after shutdown
+and cancelled view checks. Validation includes the full suite with backup
+renders enabled, rather than disabling renders to avoid the race.

@@ -50,6 +50,7 @@ final class BackupViewModel: ObservableObject {
     private var subscriptions = Set<AnyCancellable>()
     private var timer: Timer?
     private var started = false
+    private var stopped = false
     private var codePresentationID = UUID()
     private var keyCache: Data?
     private var needsFullBackup = true
@@ -92,13 +93,23 @@ final class BackupViewModel: ObservableObject {
     /// Runtime wiring is explicit. Merely opening a settings preview or
     /// constructing a fixture never touches credentials, disk or the network.
     func stop() {
+        stopped = true
         timer?.invalidate(); timer = nil; subscriptions.removeAll()
         operationTask?.cancel(); captureTask?.cancel(); clipboardTask?.cancel()
         started = false
     }
 
+    /// Cancel owned work and wait before disposing injected stores or networking.
+    /// The stopped gate also rejects SwiftUI tasks delivered after view teardown.
+    func stopAndWait() async {
+        stop()
+        await operationTask?.value
+        await captureTask?.value
+        await clipboardTask?.value
+    }
+
     func start() {
-        guard !started else { return }; started = true
+        guard !started else { return }; started = true; stopped = false
         // Resolve a durable management request before exposing backup actions.
         isBusy = true
         managementWarning = defaults.string(forKey: "backup.management-warning.v1")
@@ -507,7 +518,9 @@ final class BackupViewModel: ObservableObject {
     var canUseGitHubBackup: Bool { githubConnectionState == .connected && github != nil && destinationKind == "github" }
 
     func checkGitHubConnection() async {
-        await retainOperation(.connection) {
+        guard !Task.isCancelled else { return }
+        await retainOperation(.connection, cancelWithCaller: true) {
+            guard !Task.isCancelled else { return }
             self.isBusy = true
             await self.updateGitHubConnection()
             self.isBusy = false
@@ -515,17 +528,23 @@ final class BackupViewModel: ObservableObject {
     }
 
     private func updateGitHubConnection() async {
+        guard !stopped, !Task.isCancelled else { return }
         guard let github, destinationKind == "github" else {
             githubConnectionState = .disconnected; githubConnectionError = nil; return
         }
+        let previousState = githubConnectionState
         githubConnectionState = .checking; githubConnectionError = nil
         do {
             try await github.checkConnection()
             try Task.checkCancellation()
             githubConnectionState = .connected
         } catch {
+            if error is CancellationError || Task.isCancelled {
+                githubConnectionState = previousState
+                return
+            }
             githubConnectionState = .needsAttention
-            if !(error is CancellationError) { githubConnectionError = error.localizedDescription }
+            githubConnectionError = error.localizedDescription
         }
     }
 
@@ -954,12 +973,17 @@ final class BackupViewModel: ObservableObject {
         task.cancel()
         statusText = "Cancelling… Your saved data and previous backups are kept."
     }
-    private func retainOperation(_ kind: Operation, _ operation: @escaping @MainActor () async -> Void) async {
-        guard operationTask == nil, !isBusy else { return }
+    private func retainOperation(_ kind: Operation, cancelWithCaller: Bool = false,
+                                 _ operation: @escaping @MainActor () async -> Void) async {
+        guard !stopped, operationTask == nil, !isBusy else { return }
         let id = UUID(); operationID = id; operationKind = kind; canCancelOperation = kind != .maintenance
         let task = Task { @MainActor in await operation() }
         operationTask = task
-        await task.value
+        if cancelWithCaller {
+            await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
+        } else {
+            await task.value
+        }
         guard operationID == id else { return }
         operationTask = nil; operationKind = nil; canCancelOperation = false
         if task.isCancelled {
