@@ -404,8 +404,11 @@ Brightness inside hover:
   the 5 s wait for headroom and the 1.5 s hold; another user's session also gets the
   display's own table until this one is active again. Extra is a fixed boost;
   any backlight decrease ends it, including native brightness keys, automatic
-  brightness and idle dimming with the strip closed. Slider and intercepted
-  key decreases end it immediately after a successful write; outside changes
+  brightness and idle dimming with the strip closed. The first slider decrease
+  or intercepted brightness-down press only ends Extra, leaving the backlight
+  and slider unchanged for that whole drag or held press. The next adjustment
+  lowers the backlight normally, including accessibility adjustments and fine
+  key steps; outside changes
   are detected within the 0.5 s poll, after the 0.75 s write-settle window.
   Float readback round-off is ignored. Enabling Extra reads a fresh baseline;
   increasing brightness never enables it. Its switch (strip or Settings) also

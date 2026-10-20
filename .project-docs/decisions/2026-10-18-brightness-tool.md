@@ -9,6 +9,9 @@ canonical_for: [brightness-tool]
 verified_at: 2026-10-20
 sources:
   - type: user-confirmed
+    reference: On 2026-10-20 the user refined manual dimming so the first decrease with Extra on only disables Extra without changing the brightness slider. Subsequent manual adjustments lower the backlight normally.
+    confirmed_at: 2026-10-20
+  - type: user-confirmed
     reference: On 2026-10-20 the user requested that lowering brightness turn Extra off, and explicitly chose any decrease, including automatic brightness and idle dimming, over manual changes only. This supersedes the 2026-10-19 request to keep Extra through all backlight changes.
     confirmed_at: 2026-10-20
   - type: user-confirmed
@@ -188,8 +191,11 @@ back when the process exits.
 
 **Lifetime.** Extra is a fixed boost on top of the current backlight. Any
 backlight decrease ends it, including automatic brightness and idle dimming.
-The slider and intercepted brightness keys end it after a successful decrease;
-native macOS changes are detected every 0.5 seconds while Extra is on, even
+The first manual slider decrease, accessibility decrement or intercepted
+brightness-down press only ends Extra without writing the backlight or changing
+the slider. The whole first drag or held key press is consumed; the next
+adjustment lowers the backlight normally. Increasing or leaving the level
+unchanged keeps Extra on. Native macOS changes are detected every 0.5 seconds while Extra is on, even
 with the strip closed. A write's 0.75-second settle window and Float round-off
 (up to 0.000001) are ignored. Enabling Extra reads a fresh baseline, so a
 decrease made before enabling it does not end it on the next poll. Increasing
@@ -661,9 +667,12 @@ close mid-drag) and the Display capsule on one line. The battery model rests
 on assumptions: the level squared as the display's light, the 5 W prior and
 2.35 for Extra, exact at white only; a change made outside the strip enters
 the light average at the next minute's reading. The 2026-10-20 lifetime
-correction is pending a live check: lower the slider and native macOS
-brightness with the strip closed; Extra should turn off, and increasing
-brightness should leave it off. Automatic brightness and idle dimming should
+correction is pending a live check: first lower the slider or use an intercepted
+brightness-down press with Extra on; Extra should turn off while the whole
+drag or held press leaves the slider unchanged. A second action lowers it.
+Native macOS brightness changes with the strip closed should still turn Extra
+off after a decrease, and increasing brightness should leave it off.
+Automatic brightness and idle dimming should
 also end Extra if they lower the backlight. Sleep or a session switch alone
 keep it unless the backlight decreases. A live Extra check brightens the
 user's screen and needs their consent.

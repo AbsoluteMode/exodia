@@ -122,18 +122,68 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertEqual(device.events, ["boost 1", "write 1 0.7"])
     }
 
-    func testLoweringTheSliderEndsExtraWithoutRestoringTheBacklight() {
+    func testFirstSliderDecreaseOnlyEndsExtraAndTheNextOneLowersTheBacklight() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
 
         controller.setLevel(0.2)
 
         XCTAssertFalse(controller.isExtraOn)
-        XCTAssertEqual(controller.level, 0.2)
+        XCTAssertEqual(controller.level, 0.4)
+        XCTAssertEqual(device.hardware[1], 0.4)
         XCTAssertEqual(device.boosts.first?.isClosed, true)
+        XCTAssertEqual(device.events, ["boost 1"])
+
+        controller.setLevel(0.2)
+        XCTAssertEqual(controller.level, 0.2)
         XCTAssertEqual(device.events, ["boost 1", "write 1 0.2"])
 
         controller.setLevel(1)
         XCTAssertFalse(controller.isExtraOn, "Increasing brightness does not re-enable Extra.")
+    }
+
+    func testTheWholeFirstSliderDragOnlyEndsExtra() {
+        let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
+        controller.beginLevelDrag()
+        controller.setLevel(0.3)
+        controller.setLevel(0.1)
+        controller.setLevel(0.6)
+        controller.endLevelDrag()
+
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0.4)
+        XCTAssertEqual(device.hardware[1], 0.4)
+        XCTAssertEqual(device.events, ["boost 1"])
+
+        controller.beginLevelDrag()
+        controller.setLevel(0.2)
+        controller.setLevel(0.1)
+        controller.endLevelDrag()
+        XCTAssertEqual(controller.level, 0.1)
+        XCTAssertEqual(device.events, ["boost 1", "write 1 0.2", "write 1 0.1"])
+    }
+
+    func testClosingTheStripEndsAConsumedDrag() {
+        let f = Fixture(), controller = f.controllerWithExtra()
+        controller.beginLevelDrag()
+        controller.setLevel(0.2)
+        controller.endInteraction()
+        controller.beginInteraction()
+        controller.setLevel(0.2)
+
+        XCTAssertEqual(controller.level, 0.2)
+    }
+
+    func testAccessibilityDecreaseAtZeroOnlyEndsExtra() {
+        let f = Fixture(), device = f.device, controller = f.controller
+        device.hardware[1] = 0
+        controller.refresh()
+        controller.setExtra(true)
+
+        controller.setLevel(-BrightnessCapsuleSlider.accessibilityStep)
+
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0)
+        XCTAssertEqual(device.events, ["boost 1"])
     }
 
     func testUnchangedAndIncreasedSliderLevelsKeepExtra() {
@@ -230,13 +280,18 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertTrue(controller.isExtraOn)
     }
 
-    func testFailedSliderDecreaseKeepsExtra() {
+    func testFirstDecreaseNeedsNoBacklightWriteAndTheNextReportsAWriteFailure() {
         let f = Fixture(), device = f.device, controller = f.controllerWithExtra()
         device.canWrite = false
 
         controller.setLevel(0.2)
 
-        XCTAssertTrue(controller.isExtraOn)
+        XCTAssertFalse(controller.isExtraOn)
+        XCTAssertEqual(controller.level, 0.4)
+        XCTAssertNil(controller.notice)
+        XCTAssertEqual(device.events, ["boost 1"])
+
+        controller.setLevel(0.2)
         XCTAssertEqual(controller.level, 0.4)
         XCTAssertEqual(controller.notice, ScreenBrightnessController.writeFailedNotice)
     }
