@@ -1,0 +1,147 @@
+import AppKit
+import SwiftUI
+import XCTest
+@testable import Sidekey
+
+@MainActor
+final class MeetingReadyNotificationTests: XCTestCase {
+    private func fixture() -> (UserDefaults, LocalNotificationHub, URL, String) {
+        let suite = "MeetingReadyNotificationTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        return (defaults, LocalNotificationHub(directory: directory), directory, suite)
+    }
+
+    func testNewAndExistingUsersDefaultToEnabledButOptOutAndTypeSurviveRelaunch() async throws {
+        let (defaults, hub, directory, suite) = fixture()
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        defaults.set("existing-user-setting", forKey: "unrelated")
+        let source = MeetingReadyNotifications(defaults: defaults, hub: hub)
+        XCTAssertTrue(source.enabled)
+        XCTAssertEqual(source.presentation, .icon)
+        source.enabled = false
+        source.presentation = .card
+        let reloaded = MeetingReadyNotifications(defaults: defaults, hub: hub)
+        XCTAssertFalse(reloaded.enabled)
+        XCTAssertEqual(reloaded.presentation, .card)
+        let ignored = await reloaded.receive(.newMeetingAvailable(id: UUID()))
+        XCTAssertFalse(ignored)
+        XCTAssertTrue(hub.history.isEmpty)
+        reloaded.enabled = true
+        let received = await reloaded.receive(.newMeetingAvailable(id: UUID()))
+        XCTAssertTrue(received)
+        XCTAssertEqual(hub.current?.resolvedPresentation, .card)
+        XCTAssertEqual(defaults.string(forKey: "unrelated"), "existing-user-setting")
+        hub.setSuspended(true)
+    }
+
+    func testOnlySuccessfulCompletionNotifiesWithBrandAndExactMeetingAndDeduplicates() async throws {
+        let (defaults, hub, directory, suite) = fixture()
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let source = MeetingReadyNotifications(defaults: defaults, hub: hub)
+        let id = UUID()
+        let failed = await source.receive(.meetingFailed(id: id, error: "Synthetic failure"))
+        XCTAssertFalse(failed)
+        XCTAssertTrue(hub.history.isEmpty)
+        let received = await source.receive(.newMeetingAvailable(id: id))
+        XCTAssertTrue(received)
+        let event = try XCTUnwrap(hub.current)
+        XCTAssertEqual(event.meetingID, id)
+        XCTAssertNil(event.link)
+        XCTAssertTrue(event.canActivate)
+        XCTAssertEqual(event.customLogo, "whytap")
+        XCTAssertEqual(event.sourceName, "Meeting notes")
+        XCTAssertEqual(event.resolvedPresentation, .icon)
+        XCTAssertEqual(event.resolvedDuration, 5)
+        let duplicate = await source.receive(.newMeetingAvailable(id: id))
+        XCTAssertFalse(duplicate)
+        XCTAssertEqual(hub.history.count, 1)
+        hub.setSuspended(true)
+
+        let restored = LocalNotificationHub(directory: directory)
+        await restored.load()
+        XCTAssertNil(restored.current) // No old popups when the app launches.
+        XCTAssertEqual(restored.history.first?.meetingID, id)
+        let reloaded = MeetingReadyNotifications(defaults: defaults, hub: restored)
+        let replay = await reloaded.receive(.newMeetingAvailable(id: id))
+        XCTAssertFalse(replay)
+        var opened: [UUID] = []
+        restored.openMeeting = { opened.append($0) }
+        restored.activate(try XCTUnwrap(restored.history.first), openLink: { _ in XCTFail("Internal navigation must stay in the app") })
+        XCTAssertEqual(opened, [id])
+
+        let nextID = UUID()
+        _ = await reloaded.receive(.newMeetingAvailable(id: nextID))
+        XCTAssertEqual(restored.current?.meetingID, nextID)
+        XCTAssertEqual(restored.history.count, 2)
+        restored.setSuspended(true)
+    }
+
+    func testLegacyHistoryAndExternalLinksKeepTheirNavigationAndCannotSupplyMeetingTarget() throws {
+        let (_, hub, directory, suite) = fixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let script = NotifyScript(id: "fixture", name: "Fixture", command: ["/bin/echo"])
+        let data = try JSONSerialization.data(withJSONObject: [
+            "title": "Done", "link": "https://example.com", "meetingID": UUID().uuidString
+        ])
+        let payload = try JSONDecoder().decode(NotifyPayload.self, from: data)
+        let event = try LocalNotificationEvent.make(payload, script: script)
+        XCTAssertNil(event.meetingID)
+        let restored = try JSONDecoder().decode(LocalNotificationEvent.self, from: JSONEncoder().encode(event))
+        XCTAssertNil(restored.meetingID)
+        var opened: [URL] = []
+        hub.openMeeting = { _ in XCTFail("An external link must retain its destination") }
+        hub.activate(restored, openLink: { opened.append($0) })
+        XCTAssertEqual(opened, [URL(string: "https://example.com")!])
+    }
+
+    func testOffscreenMeetingNotificationAndSettings() async throws {
+        guard let output = ProcessInfo.processInfo.environment["EXODIA_NOTIFY_RENDER_DIR"] else {
+            throw XCTSkip("Set EXODIA_NOTIFY_RENDER_DIR for offscreen visual checks.")
+        }
+        let destination = URL(fileURLWithPath: output)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let (defaults, hub, directory, suite) = fixture()
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let source = MeetingReadyNotifications(defaults: defaults, hub: hub)
+        let supervisor = NotifyScriptSupervisor(directory: directory, hub: hub)
+        let checkout = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let icon = try XCTUnwrap(NSImage(contentsOf: checkout.appendingPathComponent("Resources/AppIcon.icns")))
+        let loadImage: (String) -> NSImage? = { $0 == "whytap" ? icon : nil }
+        _ = await source.receive(.newMeetingAvailable(id: UUID()))
+        let event = try XCTUnwrap(hub.current)
+        XCTAssertEqual(IslandNotificationPill.resolvedGlyph(for: event, imageExists: { loadImage($0) != nil }),
+                       .brandImage(name: "whytap"))
+        for hovered in [false, true] {
+            let view = IslandNotificationIconContent(event: event, hovered: hovered, rotation: 0,
+                onTap: {}, onDismiss: {}, imageLoader: loadImage)
+            try render(view, size: NSSize(width: 70, height: 38),
+                       to: destination.appendingPathComponent("meeting-icon-\(hovered).png"))
+        }
+        for enabled in [true, false] {
+            source.enabled = enabled
+            source.presentation = enabled ? .icon : .card
+            let view = SettingsNotificationsView(supervisor: supervisor, meetingNotifications: source, imageLoader: loadImage)
+                .background(Color(white: 0.12)).environment(\.colorScheme, .dark)
+            try render(view, size: NSSize(width: 760, height: 650),
+                       to: destination.appendingPathComponent("meeting-settings-\(enabled).png"))
+        }
+        hub.setSuspended(true)
+    }
+
+    private func render<V: View>(_ view: V, size: NSSize, to url: URL) throws {
+        let host = NSHostingView(rootView: view)
+        host.appearance = NSAppearance(named: .darkAqua)
+        host.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
+        XCTAssertFalse(window.isVisible)
+    }
+}
