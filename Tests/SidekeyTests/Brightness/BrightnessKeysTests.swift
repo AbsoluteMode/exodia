@@ -236,12 +236,18 @@ final class BrightnessKeysTests: XCTestCase {
         XCTAssertEqual(f.shown.count, 2)
     }
 
-    func testBrightnessDownEndsExtraAndLowersTheBacklight() {
+    func testFirstBrightnessDownOnlyEndsExtraAndTheNextPressLowersTheBacklight() {
         let f = KeyFixture(level: 1)
         f.controller.refresh()
         f.controller.setExtra(true)
         f.press(key(.down))
         XCTAssertFalse(f.controller.isExtraOn)
+        XCTAssertEqual(f.controller.level, 1)
+        XCTAssertEqual(f.device.writes, [])
+        f.press(key(.down, isRepeat: true))
+        XCTAssertEqual(f.device.writes, [], "Holding the first press only ends Extra.")
+
+        f.press(key(.down))
         XCTAssertEqual(f.device.writes, [0.9375])
     }
 
@@ -253,7 +259,24 @@ final class BrightnessKeysTests: XCTestCase {
         f.press(key(.down, step: .fine))
 
         XCTAssertFalse(f.controller.isExtraOn)
+        XCTAssertEqual(f.controller.level, 1)
+        XCTAssertEqual(f.device.writes, [])
+
+        f.press(key(.down, step: .fine))
         XCTAssertEqual(f.device.writes, [0.984375])
+    }
+
+    func testBrightnessDownAtZeroOnlyEndsExtra() {
+        let f = KeyFixture(level: 0)
+        f.controller.refresh()
+        f.controller.setExtra(true)
+
+        f.press(key(.down))
+
+        XCTAssertFalse(f.controller.isExtraOn)
+        XCTAssertEqual(f.controller.level, 0)
+        XCTAssertEqual(f.device.writes, [])
+        XCTAssertEqual(f.shown.count, 1)
     }
 
     func testIncreasingAfterADecreaseDoesNotReenableExtraUntilTheTwoPressGesture() {
@@ -261,8 +284,6 @@ final class BrightnessKeysTests: XCTestCase {
         f.controller.refresh()
         f.controller.setExtra(true)
         f.press(key(.down))
-        f.press(key(.up))
-        XCTAssertFalse(f.controller.isExtraOn)
         f.press(key(.up))
         XCTAssertFalse(f.controller.isExtraOn)
         f.press(key(.up))
