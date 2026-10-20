@@ -88,6 +88,29 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         }
     }
 
+    func testMoreThan4096RetainedRecordingFilesRoundTrip() async throws {
+        let source = try profile(), target = try profile()
+        let meetings = try MeetingsStore(rootDirectory: source.locations.meetingsCatalog)
+        openMeetingStores.append(meetings)
+        let id = UUID().uuidString
+        let count = 5220
+        for index in 0..<count {
+            try source.write("retained-\(index)", to: source.locations.meetingsStaging
+                .appendingPathComponent("\(id)/chunk-\(index).wav"))
+        }
+        let url = archive(in: source), key = ArtifactBackupTestKeys.make()
+        let engine = ArtifactBackupEngine(environment: source.environment(meetings: meetings))
+        let summary = try await engine.createArchive(at: url, key: key, sections: [.meetings])
+        XCTAssertGreaterThanOrEqual(summary.fileCount, count)
+        _ = try await engine.inspectArchive(at: url, key: key)
+        let environment = target.environment()
+        try await ArtifactBackupEngine(environment: environment).stageRestore(from: url, key: key, sections: [.meetings])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
+        let restored = target.locations.meetingsStaging.appendingPathComponent(id)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: restored.path).count, count)
+        XCTAssertEqual(target.contents(of: restored.appendingPathComponent("chunk-5219.wav")), "retained-5219")
+    }
+
     func testOversizedOwnedFileFailsInsteadOfBeingSkipped() async throws {
         let source = try profile()
         try source.write(Data(repeating: 1, count: 9 * 1024 * 1024),

@@ -20,10 +20,12 @@ sources:
   - type: url
     reference: https://docs.github.com/en/rest/releases/releases
     confirmed_at: 2026-10-19
-related: [2026-10-19-config-backup.md]
+related: [2026-10-20-simple-github-backup.md, 2026-10-19-config-backup.md]
 ---
 
 # Simple backup management
+
+The normal Settings UI is superseded by [the 2026-10-20 simplified GitHub flow](2026-10-20-simple-github-backup.md). Encryption and unfinished maintenance recovery remain applicable.
 
 ## Context
 

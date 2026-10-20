@@ -150,7 +150,10 @@ actor ArtifactBackupStager {
         static let workspaceDepth = 5
         static let agentMemory: Int64 = 8 * 1024 * 1024
         static let recordingFile: Int64 = 8 * 1024 * 1024 * 1024
-        static let recordingFiles = 4096
+        // Short audio chunks accumulate across retained meetings. The archive
+        // already bounds total entries and bytes; 4096 rejected normal profiles.
+        // WHY: .project-docs/decisions/2026-10-20-simple-github-backup.md
+        static let recordingFiles = ArtifactBackupManifest.maxEntries
         static let recordingDirectories = 1024
         /// A chunk rotates every 30 s (`MeetingsConfig.chunkRotationSeconds`),
         /// so a `.tmp` untouched for ten rotations is not being written: it is

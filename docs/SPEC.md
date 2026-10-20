@@ -85,27 +85,18 @@ Small — иконка без текста поверх всего правог�
 
 ## Backup
 
-Settings → Backup: локальная зашифрованная история настроек и ключей, возврат
-отдельного блока к сохранённой версии или source defaults. Облачная копия
-опциональна: приватный Exodia-Backup в GitHub пользователя либо выбранная
-папка. Один код восстановления сохраняется вне Whytap и проверяется обратной
-вставкой. В архив входят текущие настройки, ключи провайдеров, Case, встречи,
-сохранённые изображения и рабочие файлы приложения; внешние ссылки не
-подменяются обещанием сохранения оригиналов.
+Settings → Integrations: подключение GitHub через существующий CLI login или
+access token; проверка приватного Exodia-Backup. Само подключение не отправляет
+пользовательские данные. Settings → Backup показывает проверенное подключение
+и две кнопки; если подключения нет, ведёт в Integrations.
 
-Основной экран: **Back up** и **Restore backup**. Управление бэкапом и локальная
-история настроек раскрываются отдельно. **Change code** требует сохранить новый
-код, затем создаёт и проверяет независимую полную копию перед удалением прежних
-полных копий на Mac и в подключённом хранилище. **Delete backups** удаляет эти
-копии и выключает автобэкап без сохранения нового кода; рабочие данные и локальная
-история остаются. Незавершённая операция хранится на диске и возобновляется с
-автобэкапом на паузе. Скачанные копии нельзя отозвать; другие хранилища, облачная
-корзина/история и автобэкап на других Mac требуют отдельного действия пользователя.
-
-На новом Mac: подключить источник, ввести код, проверить версию и выбрать
-данные. Изменения применяются при следующем обычном запуске; чужие задания
-и скрипты не запускаются автоматически. Бэкап не объединяет параллельные
-изменения с разных Mac. [Инструкция](backup.md).
+**Back up** сохраняет все поддерживаемые данные и ключи, шифрует их, проверяет
+загрузку и выдаёт код. **Restore backup** принимает код и готовит полное
+восстановление последней завершённой копии. Нет выбора разделов, настроек,
+обратной вставки кода и подтверждений. Применение — после обычного перезапуска,
+с сохранением предыдущих данных. Восстановленные jobs и подключения остаются
+на паузе до явного включения. Существующие автобэкапы и локальная история
+сохраняются внутри механизма. [Инструкция](backup.md).
 
 ## Roadmap
 
@@ -408,6 +399,21 @@ speech-to-text (`scribe_v2`), self-hosted `/v1/audio/transcriptions` на хос
 ---
 
 ## Meeting Notes
+
+**Current continuation behavior (2026-10-20):** Each completed call starts BYOK
+processing immediately. After auto-end, Reconnect is available for three minutes;
+Notes / Reconnect / Skip and the 20-second decision timeout remain. Reconnect
+records a separate part and, when it ends, supplements the same meeting under
+Updating… while keeping the earlier note readable. Only new audio is processed;
+new summary findings and a transcript boundary are appended. Manual Stop is
+final, and neither Skip nor timeout starts recording. Recovery is idempotent,
+manual edits are preserved, and speaker labels remain scoped to each part.
+Open notes and transcripts refresh automatically in both Notes surfaces. Active
+drafts defer that refresh until Cancel or successful persistence after Done;
+merely submitting a debounced save does not reload older stored text.
+See [the continuation decision](../.project-docs/decisions/2026-10-20-meeting-continuations.md).
+The backend design below is historical; current processing uses the user's BYOK
+routes and the native notes viewer.
 
 **Live-assistant test preparation (2026-10-19):** Internal opt-in capture uses
 the local `sidekey.meetings.liveTestCapture` flag when Meeting Notes uses Soniox.

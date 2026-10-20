@@ -244,10 +244,19 @@ Meeting Notes:
   converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
   enable-prompt. Auto-end when the system mic is released for 3s (not before
-  the 30s startup grace); an auto-ended recording waits 45 seconds as
-  pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
-  resuming is always the user's decision. WHY:
-  docs/decisions/2026-07-29-reconnect-always-asks.md
+  the 30s startup grace). Every completed call starts processing immediately;
+  an auto-ended part remains a Reconnect candidate for three minutes and any
+  detector re-fire inside that window asks "Notes | Reconnect | Skip".
+  Reconnect captures a fresh part in a separate staging directory. When it ends,
+  the same meeting shows Updating… while the earlier note stays readable; only
+  fresh audio is transcribed, and its findings/transcript supplement the note.
+  Per-meeting processing order, durable recording receipts/content snapshots and
+  versioned additions protect recovery and edits. Both Notes hosts refresh the
+  selected note/transcript after the list fetch and preserve its current tab.
+  Active drafts defer refresh; Done waits for the latest store-save acknowledgment,
+  while Cancel applies the deferred refresh. Speaker labels stay scoped to each
+  part. Manual Stop is final; timeout/Skip never resume recording. WHY:
+  .project-docs/decisions/2026-10-20-meeting-continuations.md
   A BYOK key read that fails with errSecInDarkWake (no Keychain prompt
   possible: dark wake or the lid closing) defers the meeting instead of
   failing it: no failure event, the earlier failure reason is restored and
@@ -701,26 +710,22 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 
 ## User artifact backup
 
-Settings → Backup keeps encrypted local settings/key history independently of
-cloud setup. Block restore or source-default reset applies before AppDelegate
-on the next normal launch. Optional complete `.exodiabackup` archives use a
-streaming authenticated format and one recovery code saved outside Whytap.
-GitHub release assets receive ciphertext; a checked completion index is published
-last. Folder copies report verified local writes, not verified cloud upload.
+Settings → Integrations connects GitHub using an existing CLI login or an access
+token. Settings → Backup shows its checked connection state and Back up /
+Restore backup. Back up always includes all supported user data and stored keys,
+uploads and verifies ciphertext, then displays the recovery code without a
+paste-back step. Restore takes only that code and stages every included section
+from the newest completed GitHub version without a selection/confirmation wizard.
+A normal quit and relaunch applies it; the running stores are never replaced.
+There are no normal-page backup settings, management/history disclosures or
+folder picker. Existing automatic schedules, folder destinations, local encrypted
+history and unfinished maintenance recovery remain compatible internally.
+GitHub connection checks are read-only; Connect is the only action that can
+create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
-Reset leaves routes Not set; archives predating routing preserve current routes.
-The main Backup page has Back up / Restore backup; settings history and management
-are disclosures. Code replacement verifies a new standalone full copy before
-explicitly deleting old full copies locally and at the connected destination.
-Deletion without replacement leaves automatic backup off and retires the cloud
-code. Durable maintenance requests block backup/restore until cleanup finishes;
-secrets remain in Keychain. Settings history and restore checkpoints are retained.
-One idle retry resumes on reopening. Explicit Stop retains copies/keys/metadata,
-requires a fresh code for future backups and keeps a warning about remaining
-copies. Parked old-key archives never become upload candidates or delta bases.
-Downloaded copies cannot be revoked; other destinations, sync trash/version
-history and other Macs require separate cleanup. WHY:
-`.project-docs/decisions/2026-10-19-backup-management.md`.
+Short recording chunks use the archive entry ceiling rather than a separate
+4096-file limit. WHY:
+`.project-docs/decisions/2026-10-20-simple-github-backup.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore

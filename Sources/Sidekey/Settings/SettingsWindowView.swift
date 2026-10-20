@@ -248,8 +248,10 @@ struct SettingsWindowView: View {
             )
         case .notifications:
             SettingsNotificationsView()
+        case .integrations:
+            SettingsIntegrationsView()
         case .backup:
-            SettingsBackupView()
+            SettingsBackupView(openIntegrations: { selection.select(.integrations) })
         }
     }
 }
