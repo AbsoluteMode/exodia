@@ -143,7 +143,7 @@ struct CalendarConnectView: View {
         switch provider {
         case .google: return "Create a Desktop app OAuth client in Google Cloud, enable Calendar API, and configure the consent screen. For a testing app, add your Google account as a test user. Paste the client ID and desktop client secret here."
         case .microsoft: return "Register an app in Microsoft Entra with personal and work accounts enabled. Add a Mobile and desktop redirect for http://localhost/callback and allow public client flows. Enable the delegated Calendars.Read permission. Your organization may require administrator approval. No client secret is needed."
-        case .zoom: return "Create a General app in Zoom Marketplace. Enable Public Client OAuth and PKCE, and register http://127.0.0.1/callback in the OAuth allow list. Use the public client ID and enable the listed calendar read scopes. Zoom Calendar Service must be available for the account."
+        case .zoom: return "Create a General app in Zoom Marketplace. Enable Use public client OAuth; set PKCE OAuth Redirect URL and OAuth allow list to http://127.0.0.1/callback. Use its public client ID and the listed read scopes. Zoom Calendar Service must be available for the account."
         case .apple: return ""
         }
     }

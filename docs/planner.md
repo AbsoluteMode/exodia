@@ -105,10 +105,16 @@ claim provider approval or a generally available release.
    **Mobile and desktop applications → http://localhost/callback**. Whytap uses
    an ephemeral port; Microsoft's documented localhost exception ignores it.
    No client secret is embedded or required.
-3. **Zoom Marketplace:** create a General app, enable Public Client OAuth with
-   S256 PKCE and add `http://127.0.0.1/callback` to its OAuth allow list. Enable the
-   two granular read scopes above and use the **public** client ID. Eligible
-   native PKCE clients use a fresh loopback port; no client secret is required.
+3. **Zoom Marketplace:** create a user-managed General app and enable **Use public
+   client OAuth**. Set **PKCE OAuth Redirect URL** and **OAuth allow lists** to
+   `http://127.0.0.1/callback`. This is separate from the ordinary confidential
+   **OAuth redirect URL**, which rejects loopback URLs. Enable the two granular
+   read scopes above and use the **Public client ID**, not the confidential
+   Client ID or client secret. Development and Production have separate public
+   IDs and PKCE configuration; configure the intended environment. Explain that
+   the native app uses S256 PKCE and a temporary loopback listener with an
+   ephemeral port. A public distribution requires Zoom's review. No confidential
+   client secret is embedded or required.
 
 Authorization opens the default browser; a temporary receiver binds only
 127.0.0.1. Microsoft uses a localhost redirect, with that same numeric listener.
@@ -181,8 +187,24 @@ verified and published. Calendar data access is not yet verified: until approved
 Google retains its unverified-app warning and lifetime cap of 100 users for the
 requested sensitive scope. Production status and verified branding do not approve
 access to calendar events. The calendar data-access review is still pending.
-Microsoft and Zoom owner-account registration is also pending. The working app
-has not been updated by registration or website changes.
+Microsoft registration is waiting for access to the separate owner account.
+The working app has not been updated by registration or website changes.
+
+The Zoom user-managed General app has been created. Development and Production
+each have public-client OAuth enabled, the numeric loopback PKCE callback and
+allow list saved, and separate public client IDs retained privately. The two
+calendar read scopes, production PKCE justification, privacy notice and Planner
+support links are saved. The IDs are staged separately from the active packaging
+configuration; neither live consent nor public approval has been established.
+
+Zoom submission remains incomplete. Its current console requires an ordinary
+confidential redirect URL even with the separate PKCE callback configured. Resolve
+that native-only submission requirement before claiming readiness. App listing
+metadata, a current native-app terms page, Zoom-specific add/use/remove
+instructions, EU/discoverability information and technical-design review also
+remain. Public and unlisted distributions both require Zoom review; choosing an
+unlisted app does not waive those requirements. Do not fill placeholder endpoints
+or certify unverified security or legal claims to pass the form.
 
 For Google's verification form, justify each requested scope from the actual UI:
 
@@ -203,4 +225,5 @@ approval or Zoom Calendar Service availability for every account.
 Provider review requirements:
 [Google sensitive-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification),
 [Google domain verification](https://support.google.com/cloud/answer/13804266?hl=en),
-[Zoom distribution](https://developers.zoom.us/docs/distribute/).
+[Zoom app review](https://developers.zoom.us/docs/distribute/app-review-process/),
+[Zoom listing and discoverability](https://developers.zoom.us/docs/build-flow/before-you-build/).
