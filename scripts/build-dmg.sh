@@ -564,6 +564,7 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     -e "s|__APPCAST_URL__|${APPCAST_URL}|g" \
     -e "s|__SPARKLE_PUBLIC_ED_KEY__|${SPARKLE_PUBLIC_ED_KEY}|g" \
     "${INFO_PLIST_TEMPLATE}" > "${APP_BUNDLE}/Contents/Info.plist"
+python3 "${PROJECT_DIR}/scripts/configure-calendar-clients.py" "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaDistribution string ${DISTRIBUTION_MODE}" \
     "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaSourceRevision string ${BUILD_SOURCE_SHA}" \

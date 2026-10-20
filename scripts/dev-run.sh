@@ -194,6 +194,7 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     -e "s|__APPCAST_URL__|${DEV_APPCAST_URL}|g" \
     -e "s|__SPARKLE_PUBLIC_ED_KEY__|${SPARKLE_PUBLIC_ED_KEY}|g" \
     "${INFO_PLIST_TEMPLATE}" > "${APP_BUNDLE}/Contents/Info.plist"
+python3 "${PROJECT_DIR}/scripts/configure-calendar-clients.py" "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaInstanceLeaseVersion integer 1" \
     "${APP_BUNDLE}/Contents/Info.plist"
 

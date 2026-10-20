@@ -79,7 +79,7 @@ enum BackupDeltaFormat {
             throw ArtifactBackupError.needsNewerApp
         }
         guard probe.version == currentVersion,
-              probe.currentManifest.schema == ArtifactBackupManifest.currentSchema else {
+              (1...ArtifactBackupManifest.currentSchema).contains(probe.currentManifest.schema) else {
             throw ArtifactBackupError.damaged
         }
         let metadata: Metadata

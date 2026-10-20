@@ -231,7 +231,7 @@ final class CaseApprovalControllerTests: XCTestCase {
         let a = await first.value
         let b = await sameAgain.value
         let e = await sameLater.value
-        XCTAssertEqual(a, .allowTimed)
+        XCTAssertEqual(a, .allowTimed(minutes: 15))
         XCTAssertEqual([b, e], [.allow, .allow], "covered by the grant just given")
 
         XCTAssertEqual(controller.current?.projectName, "beta", "another project still asks")
@@ -262,7 +262,7 @@ final class CaseApprovalControllerTests: XCTestCase {
 
     func test_y_allows_n_denies_a_timed_escape_denies() async {
         let cases: [(CaseApprovalKey, CaseApprovalOutcome)] = [
-            (.yes, .allow), (.no, .deny), (.timed, .allowTimed), (.escape, .deny),
+            (.yes, .allow), (.no, .deny), (.timed, .allowTimed(minutes: 15)), (.escape, .deny),
         ]
         for (key, expected) in cases {
             let task = await ask(request())
@@ -362,9 +362,24 @@ final class CaseApprovalControllerTests: XCTestCase {
         XCTAssertNotNil(controller.current, "the prompt shows without Accessibility")
         XCTAssertFalse(controller.keysAvailable)
         clock.advance(by: 0.3)
-        controller.choose(.allowTimed)
+        controller.choose(.allowTimed(minutes: 15))
         let outcome = await task.value
-        XCTAssertEqual(outcome, .allowTimed)
+        XCTAssertEqual(outcome, .allowTimed(minutes: 15))
+    }
+
+    func test_editing_minutes_changes_the_keyboard_bypass_and_resets_for_next_request() async {
+        let task = await ask(request())
+        controller.setTimedMinutes(37)
+        controller.setTimedMinutes(241)
+        XCTAssertEqual(controller.selectedTimedMinutes, 37)
+        clock.advance(by: 0.3)
+        tap.press(.timed)
+        let outcome = await task.value
+        XCTAssertEqual(outcome, .allowTimed(minutes: 37))
+        let next = await ask(request())
+        XCTAssertEqual(controller.selectedTimedMinutes, 15)
+        controller.resolve(.deny)
+        _ = await next.value
     }
 
     func test_click_answers_after_arming() async {
@@ -380,7 +395,7 @@ final class CaseApprovalControllerTests: XCTestCase {
         clock.advance(by: 0.3)
         XCTAssertFalse(controller.offersTimed)
         tap.press(.timed)
-        controller.choose(.allowTimed)
+        controller.choose(.allowTimed(minutes: 15))
         XCTAssertNotNil(controller.current, "no timed grant to offer")
         tap.press(.yes)
         let outcome = await task.value
@@ -508,7 +523,7 @@ final class CaseApprovalControllerTests: XCTestCase {
         let r = request("Claude Code", project: "alpha", keys: ["KEY_A", "KEY_B"], minutes: 15)
         XCTAssertEqual(CaseApprovalView.titleText(r), "Claude Code хочет запустить команду")
         XCTAssertEqual(CaseApprovalView.keysText(r), "alpha: KEY_A, KEY_B")
-        XCTAssertEqual(CaseApprovalView.timedTitle(minutes: 15), "На 15 мин")
+        XCTAssertEqual(CaseApprovalView.timedTitle(minutes: 15), "Bypass 15 мин")
         XCTAssertEqual(CaseApprovalView.commandLine("git push\n  --force"), "git push --force",
                        "one line, whitespace collapsed")
     }
@@ -579,10 +594,10 @@ final class CaseApprovalViewRenderTests: XCTestCase {
 
         for size in [a, b, c, d] {
             XCTAssertLessThanOrEqual(size.width, 312.5)
-            XCTAssertLessThan(size.height, 140, "a compact card")
+            XCTAssertLessThan(size.height, 175, "a compact card with editable minutes")
         }
         XCTAssertEqual(a.height, b.height, accuracy: 0.5, "long text truncates instead of wrapping")
-        XCTAssertEqual(a.height, c.height, accuracy: 0.5)
+        XCTAssertGreaterThan(a.height, c.height, "timed requests include the duration control")
     }
 
     func test_prompt_sits_below_the_agent_answer_card_offscreen() throws {

@@ -41,7 +41,7 @@ enum ConfigBackupValue: Codable, Equatable {
 }
 
 struct ConfigBackupSnapshot: Codable, Equatable, Identifiable {
-    static let version = 2
+    static let version = 3
     var schemaVersion = Self.version
     var id = UUID()
     var createdAt = Date()

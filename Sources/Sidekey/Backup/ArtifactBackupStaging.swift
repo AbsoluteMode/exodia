@@ -26,6 +26,7 @@ struct ArtifactBackupLocations: Sendable {
     var monitorRoot: URL { bundleRoot.appendingPathComponent("Monitor", isDirectory: true) }
     var notifyRoot: URL { bundleRoot.appendingPathComponent("notifications", isDirectory: true) }
     var agentMemory: URL { agentWorkspace.appendingPathComponent("AGENTS.md", isDirectory: false) }
+    var plannerArchive: URL { legacyMeetingsRoot.appendingPathComponent("Planner/planner-v1.json") }
     var pendingRestoreRoot: URL { bundleRoot.appendingPathComponent("pending-restore", isDirectory: true) }
     var stagingWorkRoot: URL { bundleRoot.appendingPathComponent("backup-work", isDirectory: true) }
     /// Retained checkpoints of data a finished restore replaced.
@@ -202,6 +203,13 @@ actor ArtifactBackupStager {
             if request.sections.contains(.workspace) {
                 entries.append(contentsOf: try stageWorkspace(request, into: directory,
                                                               warnings: &warnings))
+            }
+            if request.sections.contains(.planner), fileManager.fileExists(atPath: request.locations.plannerArchive.path) {
+                let copy = directory.appendingPathComponent("planner-v1.json")
+                _ = try copyStable(request.locations.plannerArchive, to: copy,
+                                   limit: ArtifactBackupManifest.maxInlineBytes, required: true)
+                _ = try PlannerStore.decodeArchive(Data(contentsOf: copy))
+                entries.append(try entry(for: copy, path: "planner/planner-v1.json", section: .planner))
             }
             entries = try Self.ordered(entries)
             let total = entries.reduce(Int64(0)) { $0 + $1.bytes }

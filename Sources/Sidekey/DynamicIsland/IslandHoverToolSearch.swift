@@ -58,6 +58,8 @@ enum IslandHoverToolSearch {
         case .meetingRecord: return "meeting recording record запись встречи"
         case .notifs: return "notify notification notifications alerts уведомления оповещения"
         case .monitor: return "dashboard server status монитор серверы"
+        case .tasks: return "todo to-do tasks checklist task list задачи список дел туду"
+        case .calendar: return "calendar schedule events agenda google outlook apple teams zoom календарь расписание события встречи"
         case .brightness: return "screen brightness sun hdr xdr vivid extra boost battery яркость экран солнце батарея"
         case .translate: return "translator translation text llm перевод переводчик текст"
         case .subtitles: return "translator live captions system audio video перевод субтитры системный звук"

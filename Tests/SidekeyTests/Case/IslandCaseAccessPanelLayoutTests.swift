@@ -31,6 +31,7 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
             CaseAppRegistration(id: cursorID, displayName: "Cursor", identity: CaseKnownClient.cursor.identity,
                                 defaultMode: .bypass, projectModes: [:], createdAt: date),
         ]
+        payload.apps[0].allowedProjectIDs = [serversID]
         payload.timedApprovalMinutes = 25
 
         let service = CaseVaultService(store: AccessStubStore(payload: payload), keyProvider: AccessStubKeys())
@@ -40,8 +41,7 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
                                       clients: FakeClientSetup())
         try await viewModel.unlock()
 
-        let shown = [claudeID: Set([terraID])]
-        let panel = IslandCaseAccessPanel(viewModel: viewModel, onBack: {}, initiallyShownProjects: shown)
+        let panel = IslandCaseAccessPanel(viewModel: viewModel, onBack: {}, appID: claudeID)
         XCTAssertLessThanOrEqual(measuredWidth(panel, width: width), width)
 
         // Hint only for the shared-terminal editor in Bypass.
@@ -56,31 +56,73 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
                                          defaultMode: .bypass, projectModes: [:], createdAt: date)
         XCTAssertTrue(IslandCaseAccessPanel.showsSharedTerminalHint(app: custom, known: nil))
 
-        let height: CGFloat = IslandCaseVaultStyle.panelHeight
+        for width in [CGFloat(310), CGFloat(390)] {
+            for (name, appID) in [("selected", claudeID as UUID?), ("all", payload.apps[1].id as UUID?), ("connect", nil)] {
+                try renderPanel(IslandCaseAccessPanel(viewModel: viewModel, onBack: {}, appID: appID),
+                                width: width, name: "case-access-\(name)-\(Int(width))")
+            }
+        }
+    }
+
+    private func renderPanel<V: View>(_ panel: V, width: CGFloat, name: String) throws {
+        let height = IslandCaseVaultStyle.panelHeight
+        XCTAssertLessThanOrEqual(measuredWidth(panel, width: width), width)
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width, height: height),
                               styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
-        let host = NSHostingView(rootView: AnyView(
-            IslandCaseAccessPanel(viewModel: viewModel, onBack: {}, initiallyShownProjects: shown)
-                .frame(width: width, height: height)
-                .background(Color(white: 0.08))
-                .environment(\.colorScheme, .dark)))
+        let host = NSHostingView(rootView: AnyView(panel.frame(width: width, height: height)
+            .background(Color(white: 0.08)).environment(\.colorScheme, .dark)))
         host.frame = CGRect(x: 0, y: 0, width: width, height: height)
         window.contentView = host
         defer { window.contentView = nil; window.close() }
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.2))
         host.layoutSubtreeIfNeeded()
-
         if let output = ProcessInfo.processInfo.environment["EXODIA_CASE_PROOF_DIR"] {
             let directory = URL(fileURLWithPath: output, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-            try data.write(to: directory.appendingPathComponent("case-access-310.png"))
+            try data.write(to: directory.appendingPathComponent(name + ".png"))
         }
         XCTAssertFalse(window.isVisible || window.isKeyWindow)
+    }
+
+    func test_picker_ready_and_empty_states_fit_the_native_viewport() throws {
+        for width in [CGFloat(310), CGFloat(390)] {
+            for empty in [false, true] {
+                try renderPanel(IslandCaseClientPicker(clients: empty ? [] : CaseKnownClient.allCases,
+                                                      isLoading: false, onChoose: { _ in }, onChooseProgram: {})
+                    .padding(10), width: width, name: "case-picker-\(empty ? "empty" : "ready")-\(Int(width))")
+            }
+        }
+    }
+
+    func test_client_highlights_render_in_provider_colors() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("Package.swift").path) {
+            root.deleteLastPathComponent()
+        }
+        ProviderBrandIconAsset.setResourceDirectoryForTesting(root.appendingPathComponent("Resources/UsefulLinkIcons"))
+        defer {
+            ProviderBrandIconAsset.setResourceDirectoryForTesting(nil)
+            ProviderBrandIconAsset.clearCacheForTesting()
+        }
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let clients: [CaseKnownClient] = [.codex, .claudeCode, .cursor]
+        let row = HStack(spacing: 30) {
+            ForEach(clients, id: \.self) { client in
+                let app = CaseAppRegistration(id: UUID(), displayName: client.displayName, identity: client.identity,
+                                              defaultMode: .approve, projectModes: [:], createdAt: date)
+                VStack(spacing: 8) {
+                    CaseConnectedAppIcon(app: app, isHighlighted: true, isFocused: true)
+                    Text(client.displayName).font(.system(size: 10)).foregroundStyle(.white)
+                }
+            }
+        }
+        .padding(20)
+        try renderPanel(row, width: 310, name: "case-provider-highlights")
     }
 
     func test_program_choice_uses_resolved_path_and_known_identity() throws {

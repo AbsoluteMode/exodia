@@ -32,6 +32,13 @@ is a verifiable claim rather than a slogan.
   `com.rootwise.sidekey`). They never contain transcripts, prompts, replies
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`
   enforces that for the provider paths that carry this content.
+- Planner tasks and local Whytap events stay in a private atomic JSON archive
+  under Application Support/Sidekey/Planner. External calendar events are held
+  in memory while using the unified calendar, without a persistent event cache.
+  Calendar account credentials are stored in Keychain and are not logged.
+  Public native OAuth client configuration can be bundled for normal sign-in.
+  Planner content, calendar settings and saved account credentials are included
+  inside encrypted backups; external events are fetched again after recovery.
 
 The Projects feature has been removed. The app does not open the old project
 catalog or index, scan registered folders, or attach saved project notes and
@@ -78,6 +85,7 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 | OpenRouter providers | OpenRouter, with your key: the list of providers serving the model selected for an OpenRouter feature, with their latency and throughput. Only the request itself is sent, no audio or text. A pinned provider then receives that feature's requests alone, with no fallback | when an OpenRouter row is shown in API & Models (reused for 5 minutes) |
 | Model probes | the provider of the feature you are choosing a model for: 1 second of digital silence for speech models, the prompt "Reply with OK." (plus one fictitious tool for agent models) for text models. Never your audio, transcripts, prompts or notes. Costs a fraction of a cent | only when you pick a model that is not in the built-in list, or press Check now |
 | Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Whytap | after you explicitly configure and enable Backup |
+| Connected calendars | the Google, Microsoft or Zoom account provider you explicitly connect; OAuth authorization and event queries for the displayed date range | sign-in in your browser, then while the calendar view is visible or refreshing; local tasks/events are not uploaded |
 | OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
@@ -101,6 +109,10 @@ Data-use policies depend on the selected provider and its account settings.
   at stop.
 - Post Event (part of Accessibility on current macOS): the synthetic
   Command-V used to paste.
+- Calendars: only after choosing Apple Calendar in Planner's Connect account.
+  macOS requires full event access to read selected system calendars; Whytap's
+  current native calendar adapter only reads events. Direct Google, Microsoft
+  and Zoom connections use their provider's OAuth consent instead.
 
 The hold-Space detector reads keyboard events only to recognise the trigger
 key and Escape. The Brightness keys tap receives only system-defined events,
