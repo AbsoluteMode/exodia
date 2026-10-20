@@ -5,45 +5,6 @@ import XCTest
 
 @MainActor
 final class CompactMenuTests: XCTestCase {
-    private final class Frames {
-        var values: [String: CGRect] = [:]
-    }
-
-    private struct FrameKey: PreferenceKey {
-        static var defaultValue: [String: CGRect] = [:]
-        static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-            value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-        }
-    }
-
-    private func measure(_ name: String) -> some View {
-        GeometryReader { proxy in
-            Color.clear.preference(key: FrameKey.self, value: [name: proxy.frame(in: .named("row"))])
-        }
-    }
-
-    func testNotificationMenuAndSwitchShareTheRowCenterForBothSizes() throws {
-        for presentation in [NotifyPresentation.card, .icon] {
-            let frames = Frames()
-            let view = MacCard {
-                MacRow(title: "Telegram — все входящие", subtitle: "Running") {
-                    NotificationPresentationControl(selection: .constant(presentation), sourceName: "Telegram")
-                        .background(measure("menu"))
-                    MacSwitch(isOn: .constant(true)).background(measure("switch"))
-                }
-            }
-            .coordinateSpace(name: "row")
-            .onPreferenceChange(FrameKey.self) { frames.values = $0 }
-            .padding(24)
-            try render(view, size: NSSize(width: 650, height: 120), name: "notification-\(presentation.rawValue)")
-            let menu = try XCTUnwrap(frames.values["menu"])
-            let toggle = try XCTUnwrap(frames.values["switch"])
-            XCTAssertEqual(menu.height, 30, accuracy: 0.5)
-            XCTAssertEqual(menu.midY, toggle.midY, accuracy: 0.5)
-            XCTAssertLessThan(menu.maxX, toggle.minX)
-        }
-    }
-
     func testNativePopupPreservesSelectionAndTargetAction() throws {
         final class Target: NSObject {
             var selected: String?

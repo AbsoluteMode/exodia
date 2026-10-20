@@ -13,35 +13,31 @@ private final class NotifyHostingView<Content: View>: NSHostingView<Content> {
 private struct NotifyPanelRoot: View {
     @ObservedObject var hub: LocalNotificationHub
     let onRect: (CGRect) -> Void
+    @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack(alignment: .topTrailing) {
             if let event = hub.current, let deadline = hub.deadline {
-                Group {
-                    if event.resolvedPresentation == .icon {
-                        GeometryReader { geometry in
-                            IslandNotificationIcon(events: hub.iconStack, height: geometry.size.height,
-                                onTap: activate, onDismiss: dismiss,
-                                onHoverChanged: hub.setHovered)
-                        }.frame(width: IslandNotificationIconContent.width)
-                    } else {
-                        IslandNotificationPill(event: event, deadline: deadline,
-                            duration: event.resolvedDuration, onTap: { activate(event) },
-                            onHoverChanged: { hover($0, event: event) })
-                    }
-                }
+                IslandNotificationPill(event: event, deadline: deadline,
+                    duration: event.resolvedDuration, onTap: { activate(event) },
+                    onHoverChanged: { hover($0, event: event) })
                     .background(GeometryReader { geometry in
-                        Color.clear.onAppear { onRect(geometry.frame(in: .named("notify-panel"))) }
-                            .onChange(of: geometry.frame(in: .named("notify-panel"))) { _, value in onRect(value) }
+                        let layout = geometry.frame(in: .named("notify-panel"))
+                        let visual = IslandNotificationPill.visualFrame(for: layout, hovered: hovered, reduceMotion: reduceMotion)
+                        Color.clear.onAppear { onRect(visual) }
+                            .onChange(of: visual) { _, value in onRect(value) }
                     })
-                    .padding(.trailing, event.resolvedPresentation == .card ? 8 : 0)
-                    .transition(reduceMotion || event.resolvedPresentation == .icon ? .opacity
+                    .padding(.trailing, 8)
+                    .transition(reduceMotion ? .opacity
                         : .move(edge: .trailing).combined(with: .opacity))
-                    .id(event.resolvedPresentation == .icon ? "icon-stack" : event.id)
+                    .id(event.id)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .padding(.leading, IslandNotificationPill.panelLeadingOverflow)
+        .padding(.bottom, IslandNotificationPill.panelBottomOverflow)
         .coordinateSpace(name: "notify-panel")
+        .onChange(of: hub.current?.id) { _, _ in hovered = false }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: hub.current?.id)
         .ignoresSafeArea()
     }
@@ -56,11 +52,12 @@ private struct NotifyPanelRoot: View {
     }
     private func hover(_ value: Bool, event: LocalNotificationEvent) {
         guard hub.current?.id == event.id else { return }
+        hovered = value
         hub.setHovered(value)
     }
 }
 
-/// A nonactivating card to the left or an icon over the island's right wing.
+/// A nonactivating notification card to the left of the island.
 @MainActor
 final class IslandNotificationPanel: NSPanel {
     private static var storage = IslandNotificationPanel(protected: PrivacyPreferences.shared.screenshotProtectionEnabled)
@@ -114,11 +111,7 @@ final class IslandNotificationPanel: NSPanel {
     }
     @objc private func reposition() {
         let screen = IslandScreenResolver.currentDescriptor()
-        let frame = LocalNotificationHub.shared.current?.resolvedPresentation == .icon
-            ? IslandFrameLayout.notificationIconPanelFrame(on: screen)
-            : IslandFrameLayout.notificationPanelFrame(on: screen)
-        level = LocalNotificationHub.shared.current?.resolvedPresentation == .icon
-            ? NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1) : .screenSaver
+        let frame = IslandFrameLayout.notificationPanelFrame(on: screen)
         setFrame(frame, display: true); host.frame = NSRect(origin: .zero, size: frame.size)
     }
 }

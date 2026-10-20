@@ -228,3 +228,32 @@ window or uploading real data. The synchronized label and GitHub link have
 The screenshot matrix was inspected after successful render tests. Live pointer/keyboard checks remain acceptance on
 the one installed app after builder promotion. Existing Settings is a dark
 surface; a new light-theme system is outside this change.
+
+
+# Notification cards — 2026-10-20
+
+The user comes to notice a completed event and open its result. First they see
+the source, title and short message. They can click to open the destination or
+hover to keep the card visible while reading.
+
+- All sources use the existing left-side card. Small notifications and the type
+  selector are removed at the user's request; older icon sources become cards.
+- Hover retains the 3% enlargement, brightness and paused expiry. It grows left
+  and down from the top-trailing corner, preserving top alignment and the 8 pt
+  island gap. Transparent panel overflow fits the whole card; the click region
+  follows its transformed size. The inset border stays within the rounded shape.
+- Each source has a separate labeled Notification sound row using the existing
+  native menu. Off is the default; Glass, Ping and Pop preview when selected.
+  A separate row keeps long source names and the enable switch readable.
+- Existing type, spacing and colors stay in use. Keyboard and VoiceOver can
+  reach the sound selector. Reduce Motion suppresses hover growth and transition
+  animation. Live pointer/audio acceptance follows
+  promotion of the one signed installed app; offscreen renders use fixtures.
+
+Offscreen native checks cover 560 and 760 pt settings widths, enabled/disabled
+sources, idle/hover/reduced-motion card states. Pixel bounds prove that the
+card really enlarges while remaining inside its panel with rounded edges. Synthetic card text contrast is 11.44:1 for primary
+and 5.44:1 for secondary text on the sampled dark backdrop. This does not claim
+live pointer, VoiceOver or audio-output acceptance before installed promotion.
+
+Combined integration also renders notification Settings in both system appearances using the shared adaptive tokens; island cards retain their dark appearance. The earlier Backup fixture measurements above describe that original dark fixture, while current shared Settings follows the Settings appearance section.

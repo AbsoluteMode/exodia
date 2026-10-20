@@ -12,25 +12,21 @@ final class MeetingReadyNotificationTests: XCTestCase {
         return (defaults, LocalNotificationHub(directory: directory), directory, suite)
     }
 
-    func testNewAndExistingUsersDefaultToEnabledButOptOutAndTypeSurviveRelaunch() async throws {
+    func testNewAndExistingUsersDefaultToEnabledButOptOutSurvivesRelaunch() async throws {
         let (defaults, hub, directory, suite) = fixture()
         defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
         defaults.set("existing-user-setting", forKey: "unrelated")
         let source = MeetingReadyNotifications(defaults: defaults, hub: hub)
         XCTAssertTrue(source.enabled)
-        XCTAssertEqual(source.presentation, .icon)
         source.enabled = false
-        source.presentation = .card
         let reloaded = MeetingReadyNotifications(defaults: defaults, hub: hub)
         XCTAssertFalse(reloaded.enabled)
-        XCTAssertEqual(reloaded.presentation, .card)
         let ignored = await reloaded.receive(.newMeetingAvailable(id: UUID()))
         XCTAssertFalse(ignored)
         XCTAssertTrue(hub.history.isEmpty)
         reloaded.enabled = true
         let received = await reloaded.receive(.newMeetingAvailable(id: UUID()))
         XCTAssertTrue(received)
-        XCTAssertEqual(hub.current?.resolvedPresentation, .card)
         XCTAssertEqual(defaults.string(forKey: "unrelated"), "existing-user-setting")
         hub.setSuspended(true)
     }
@@ -51,8 +47,7 @@ final class MeetingReadyNotificationTests: XCTestCase {
         XCTAssertTrue(event.canActivate)
         XCTAssertEqual(event.customLogo, "whytap")
         XCTAssertEqual(event.sourceName, "Meeting notes")
-        XCTAssertEqual(event.resolvedPresentation, .icon)
-        XCTAssertEqual(event.resolvedDuration, 5)
+        XCTAssertEqual(event.resolvedDuration, 8)
         let duplicate = await source.receive(.newMeetingAvailable(id: id))
         XCTAssertFalse(duplicate)
         XCTAssertEqual(hub.history.count, 1)
@@ -113,19 +108,17 @@ final class MeetingReadyNotificationTests: XCTestCase {
         let event = try XCTUnwrap(hub.current)
         XCTAssertEqual(IslandNotificationPill.resolvedGlyph(for: event, imageExists: { loadImage($0) != nil }),
                        .brandImage(name: "whytap"))
-        for hovered in [false, true] {
-            let view = IslandNotificationIconContent(event: event, hovered: hovered, rotation: 0,
-                onTap: {}, onDismiss: {}, imageLoader: loadImage)
-            try render(view, size: NSSize(width: 70, height: 38),
-                       to: destination.appendingPathComponent("meeting-icon-\(hovered).png"))
-        }
+        let soundSettings = NotificationSoundSettings(defaults: defaults)
         for enabled in [true, false] {
             source.enabled = enabled
-            source.presentation = enabled ? .icon : .card
-            let view = SettingsNotificationsView(supervisor: supervisor, meetingNotifications: source, imageLoader: loadImage)
-                .background(Color(white: 0.12)).environment(\.colorScheme, .dark)
-            try render(view, size: NSSize(width: 760, height: 650),
-                       to: destination.appendingPathComponent("meeting-settings-\(enabled).png"))
+            soundSettings.setSound(enabled ? .glass : .none, for: MeetingReadyNotifications.sourceID)
+            for width in [560, 760] {
+                let view = SettingsNotificationsView(supervisor: supervisor, meetingNotifications: source,
+                                                    soundSettings: soundSettings, imageLoader: loadImage)
+                    .background(Color(white: 0.12)).environment(\.colorScheme, .dark)
+                try render(view, size: NSSize(width: width, height: 650),
+                           to: destination.appendingPathComponent("meeting-settings-\(enabled)-\(width).png"))
+            }
         }
         hub.setSuspended(true)
     }

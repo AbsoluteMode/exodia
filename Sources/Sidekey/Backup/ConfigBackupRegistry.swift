@@ -56,6 +56,7 @@ enum ConfigBackupRegistry {
             "sidekey.preferences.googleEnabled", "com.sidekey.meetings.enabled", "com.sidekey.volumeduck.enabled",
             "com.sidekey.nowplaying.enabled", "com.sidekey.island.idleHideEnabled"])
         add(.other, .string, ["sidekey.dynamicIsland.preferredDisplayUUID"])
+        add(.other, .propertyList, ["notifications.sourceSounds"])
         add(.agents, .string, ["agent.opencode.model", "agent.claude.model", "agent.claude.effort", "agent.codex.model", "agent.codex.effort", "agent.codex.serviceTier"])
         add(.agents, .bool, ["agent.opencode.allowActions"])
         return result

@@ -42,20 +42,20 @@ actor NotifyArchive {
     }
 }
 
-/// One queue and durable presentation metadata shared by the pill and Notify history.
+/// One queue and durable events shared by the pill and Notify history.
 @MainActor
 final class LocalNotificationHub: ObservableObject {
-    static let shared = LocalNotificationHub(directory: NotifyPaths.root)
+    static let shared = LocalNotificationHub(directory: NotifyPaths.root, onArrival: {
+        NotificationSoundPlayer.shared.play(NotificationSoundSettings.shared.sound(for: $0.source))
+    })
     @Published private(set) var history: [LocalNotificationEvent] = []
     @Published private(set) var current: LocalNotificationEvent?
-    /// Newest first. Consecutive small events share one temporary presentation,
-    /// while their independent IDs, links and history entries remain intact.
-    @Published private(set) var iconStack: [LocalNotificationEvent] = []
     @Published private(set) var deadline: Date?
     @Published private(set) var error: String?
     var unreadCount: Int { history.filter { !$0.read }.count }
     var openMeeting: ((UUID) -> Void)?
     private let archive: NotifyArchive
+    private let onArrival: (LocalNotificationEvent) -> Void
     private var historyRevision = -1
     private var queue: [LocalNotificationEvent] = []
     private var dismissTask: Task<Void, Never>?
@@ -64,7 +64,10 @@ final class LocalNotificationHub: ObservableObject {
     private var hovered = false
     private var timerGeneration = UUID()
 
-    init(directory: URL) { archive = NotifyArchive(url: directory.appendingPathComponent("history.json")) }
+    init(directory: URL, onArrival: @escaping (LocalNotificationEvent) -> Void = { _ in }) {
+        archive = NotifyArchive(url: directory.appendingPathComponent("history.json"))
+        self.onArrival = onArrival
+    }
     func load() async {
         do { updateHistory(try await archive.load()) }
         catch { self.error = "Couldn’t read notification history. Its file has been preserved." }
@@ -77,16 +80,11 @@ final class LocalNotificationHub: ObservableObject {
             // Clear All may have completed while this disk operation was in
             // flight. An older receipt must not replay an already-cleared item.
             guard history.contains(where: { $0.id == event.id }) else { return true }
-            let presentedCount = current == nil ? 0 : max(1, iconStack.count)
+            let presentedCount = current == nil ? 0 : 1
             if !suspended && presentedCount + queue.count < 33 {
-                if event.resolvedPresentation == .icon, !iconStack.isEmpty, queue.isEmpty {
-                    iconStack.insert(event, at: 0)
-                    current = event
-                    schedule(after: event.resolvedDuration)
-                } else {
-                    queue.append(event)
-                    if current == nil { advance() }
-                }
+                queue.append(event)
+                if current == nil { advance() }
+                onArrival(event)
             }
             return true
         } catch { self.error = "Couldn’t save notification history."; return false }
@@ -102,9 +100,7 @@ final class LocalNotificationHub: ObservableObject {
             // this continuation; clearing history must not swallow the next event.
             let retainedIDs = Set(history.map(\.id))
             queue.removeAll { !retainedIDs.contains($0.id) }
-            iconStack.removeAll { !retainedIDs.contains($0.id) }
-            if let next = iconStack.first { current = next }
-            else if current.map({ !retainedIDs.contains($0.id) }) ?? true { advance() }
+            if current.map({ !retainedIDs.contains($0.id) }) ?? true { advance() }
         }
         catch { self.error = "Couldn’t clear notification history." }
     }
@@ -113,7 +109,7 @@ final class LocalNotificationHub: ObservableObject {
         if value { queue.removeAll(); advance() }
     }
     func isPresented(_ id: String) -> Bool {
-        iconStack.isEmpty ? current?.id == id : iconStack.contains { $0.id == id }
+        current?.id == id
     }
     func activate(_ event: LocalNotificationEvent,
                   openLink: (URL) -> Void = { NSWorkspace.shared.open($0) }) {
@@ -126,10 +122,6 @@ final class LocalNotificationHub: ObservableObject {
     }
     func dismiss(id: String) {
         guard isPresented(id) else { return }
-        if !iconStack.isEmpty {
-            iconStack.removeAll { $0.id == id }
-            if let next = iconStack.first { current = next; return }
-        }
         advance()
     }
     func setHovered(_ value: Bool) {
@@ -150,19 +142,10 @@ final class LocalNotificationHub: ObservableObject {
     private func advance() {
         dismissTask?.cancel(); remaining = nil; hovered = false
         timerGeneration = UUID()
-        iconStack.removeAll()
         if queue.isEmpty { current = nil; deadline = nil; return }
         let event = queue.removeFirst()
-        var next = event
-        if event.resolvedPresentation == .icon {
-            iconStack = [event]
-            while queue.first?.resolvedPresentation == .icon {
-                next = queue.removeFirst()
-                iconStack.insert(next, at: 0)
-            }
-        }
-        current = next
-        schedule(after: next.resolvedDuration)
+        current = event
+        schedule(after: event.resolvedDuration)
     }
     private func schedule(after seconds: TimeInterval) {
         dismissTask?.cancel()

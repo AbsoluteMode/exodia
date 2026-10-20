@@ -4,12 +4,14 @@ import SwiftUI
 struct SettingsNotificationsView: View {
     @ObservedObject private var supervisor: NotifyScriptSupervisor
     @ObservedObject private var meetingNotifications: MeetingReadyNotifications
+    @ObservedObject private var soundSettings: NotificationSoundSettings
     private let imageLoader: (String) -> NSImage?
 
     init(supervisor: NotifyScriptSupervisor? = nil, meetingNotifications: MeetingReadyNotifications? = nil,
-         imageLoader: ((String) -> NSImage?)? = nil) {
+         soundSettings: NotificationSoundSettings? = nil, imageLoader: ((String) -> NSImage?)? = nil) {
         self.supervisor = supervisor ?? .shared
         self.meetingNotifications = meetingNotifications ?? .shared
+        self.soundSettings = soundSettings ?? .shared
         self.imageLoader = imageLoader ?? { NotifyLogoStore.image(named: $0) }
     }
 
@@ -37,11 +39,12 @@ struct SettingsNotificationsView: View {
                                                    tint: Color(hexCSS: "#785EFF"), size: 28, imageLoader: imageLoader)
                                 .accessibilityHidden(true)
                         } trailing: {
-                            NotificationPresentationControl(selection: $meetingNotifications.presentation,
-                                                            sourceName: "meeting notes")
                             MacSwitch(isOn: $meetingNotifications.enabled, label: "Meeting-ready notifications")
                                 .accessibilityLabel("Enable meeting notes notifications")
                         }
+                        MacRowSeparator()
+                        NotificationSoundControl(settings: soundSettings, sourceID: MeetingReadyNotifications.sourceID,
+                                                 sourceName: "meeting notes")
                     }
                 }
 
@@ -73,22 +76,21 @@ struct SettingsNotificationsView: View {
                                     )
                                     .accessibilityHidden(true)
                                 } trailing: {
-                                    NotificationPresentationControl(selection: Binding(
-                                        get: { supervisor.sources.first(where: { $0.id == source.id })?.script.presentation ?? .card },
-                                        set: { supervisor.setPresentation($0, id: source.id) }
-                                    ), sourceName: source.script.name)
                                     MacSwitch(isOn: Binding(
                                         get: { supervisor.sources.first(where: { $0.id == source.id })?.script.enabled ?? false },
                                         set: { supervisor.setEnabled($0, id: source.id) }
                                     ))
                                     .accessibilityLabel("Enable \(source.script.name)")
                                 }
+                                MacRowSeparator()
+                                NotificationSoundControl(settings: soundSettings, sourceID: source.id,
+                                                         sourceName: source.script.name)
                             }
                         }
                     }
                 }
 
-                Text("Large notifications show a card to the left of the island. Small notifications show only an icon in its right wing. Click a meeting notification to open its notes. Notifications appear while Whytap is open; turning a source off keeps its setup and history.")
+                Text("Notifications appear as cards to the left of the island. Click a meeting notification to open its notes. Choose a sound to hear a preview; Off keeps that source silent. Notifications appear while Whytap is open; turning a source off keeps its setup and history.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(MacSettingsTheme.text2)
             }

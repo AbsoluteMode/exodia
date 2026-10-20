@@ -196,11 +196,6 @@ final class NotifyScriptSupervisor: ObservableObject {
         script.enabled = enabled
         save(script)
     }
-    func setPresentation(_ presentation: NotifyPresentation, id: String) {
-        guard var script = sources.first(where: { $0.id == id })?.script else { return }
-        script.presentation = presentation
-        save(script)
-    }
     private func save(_ script: NotifyScript) {
         do {
             let url = directory.appendingPathComponent("sources/\(script.id).json")

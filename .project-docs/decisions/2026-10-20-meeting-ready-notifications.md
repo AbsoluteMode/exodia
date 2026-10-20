@@ -14,7 +14,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Notifications/MeetingReadyNotifications.swift
     confirmed_at: 2026-10-20
-related: [2026-10-19-script-notifications.md]
+related: [2026-10-19-script-notifications.md, 2026-10-20-notification-cards-and-sounds.md]
 ---
 
 # Meeting-ready notifications
@@ -77,3 +77,6 @@ content is added to logs or network requests.
 ## Supersedes / superseded by
 
 Extends local Notify without changing script configuration or old defaults.
+
+The Small default and type selector are superseded by
+[cards and optional sounds](2026-10-20-notification-cards-and-sounds.md).
