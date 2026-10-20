@@ -245,6 +245,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             break
         case .notifications:
             break
+        case .integrations:
+            break
         case .backup:
             break
         case .other:
