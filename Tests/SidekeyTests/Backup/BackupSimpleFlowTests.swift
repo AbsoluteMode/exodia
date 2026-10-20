@@ -31,10 +31,15 @@ final class BackupSimpleFlowTests: XCTestCase {
     }
 
     private func model(_ profile: ArtifactBackupTestProfile,
+                       keyStore: MemoryTokenStore = MemoryTokenStore(),
+                       githubTokenStore: MemoryTokenStore = MemoryTokenStore(),
+                       now: @escaping @MainActor () -> Date = { Date() },
+                       changeProbe: @escaping @Sendable () -> String = { "synthetic" },
+                       idle: @escaping @MainActor () -> Bool = { true },
                        beforeCreate: @escaping @MainActor () async -> Void = {}) -> BackupViewModel {
         let environment = profile.environment()
         let engine = ArtifactBackupEngine(environment: environment)
-        return BackupViewModel(defaults: profile.defaults, keyStore: MemoryTokenStore(), githubTokenStore: MemoryTokenStore(),
+        return BackupViewModel(defaults: profile.defaults, keyStore: keyStore, githubTokenStore: githubTokenStore,
             local: BackupLocalStore(root: profile.root.appendingPathComponent("archives")),
             settingsFiles: ConfigBackupFiles(root: profile.root.appendingPathComponent("settings-history")),
             engine: BackupEngineActions(create: { file, key in
@@ -43,9 +48,9 @@ final class BackupSimpleFlowTests: XCTestCase {
             },
                 inspect: { try await engine.inspectArchive(at: $0, key: $1) },
                 stage: { try await engine.stageRestore(from: $0, key: $1, sections: $2) }),
-            changeProbe: { "synthetic" }, idle: { true }, providerStore: environment.credentialStore,
+            changeProbe: changeProbe, idle: idle, providerStore: environment.credentialStore,
             previousRestoreOutcome: { nil }, archivedKeyStore: { _ in MemoryTokenStore() },
-            pendingKeyStore: MemoryTokenStore(), githubSession: session)
+            pendingKeyStore: MemoryTokenStore(), githubSession: session, now: now)
     }
 
     func testConnectChecksGitHubWithoutCreatingABackupOrRequestingACode() async throws {
@@ -88,7 +93,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertNotNil(backup.lastRemoteBackupAt)
         XCTAssertFalse(backup.recoveryCode.isEmpty)
         XCTAssertEqual(remote.publishCount, 1)
-        XCTAssertFalse(backup.isEnabled, "A manual action must not silently enable a schedule")
+        XCTAssertTrue(backup.isEnabled, "Creating the GitHub backup enables subsequent sync")
         let code = backup.recoveryCode
         let restore = model(target)
         await restore.connectGitHub(token: "synthetic-token")
@@ -100,6 +105,110 @@ final class BackupSimpleFlowTests: XCTestCase {
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
         XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "fast")
         XCTAssertEqual(try target.credentialStores["byok.soniox.api_key"]!.read(), "synthetic-provider-key")
+    }
+
+    func testCreatedBackupSyncsSettingsAndRetriesOfflineChangesWithoutRevealingCode() async throws {
+        let source = try profile()
+        var time = Date()
+        var idle = true
+        let model = model(source, now: { time }, idle: { idle })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.poll() // Capture the initial settings history before creation.
+        await model.backupEverything()
+        XCTAssertEqual(model.syncState, .synced)
+        XCTAssertEqual(model.githubBackupURL?.absoluteString, "https://github.com/developer/Exodia-Backup/releases")
+        let code = model.recoveryCode
+        model.hideRecoveryCode()
+        source.defaults.set("fast", forKey: "sidekey.preferences.transcriptionMode")
+        await model.poll()
+        XCTAssertEqual(model.syncState, .waiting, "The cooldown must not show a stale green check")
+        XCTAssertEqual(remote.publishCount, 1)
+        time.addTimeInterval(121)
+        idle = false
+        await model.poll()
+        XCTAssertEqual(remote.publishCount, 1, "Active work defers sync")
+        idle = true
+        remote.corruptReadback = true
+        await model.poll()
+        XCTAssertEqual(model.syncState, .needsAttention)
+        XCTAssertTrue(model.isEnabled, "Offline failures remain retryable")
+        XCTAssertEqual(remote.publishCount, 1)
+        remote.corruptReadback = false
+        time.addTimeInterval(121)
+        await model.poll()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.syncState, .synced)
+        XCTAssertEqual(remote.publishCount, 2)
+        XCTAssertTrue(model.recoveryCode.isEmpty, "Background sync never reveals the credential")
+        let target = try profile()
+        let restore = self.model(target)
+        await restore.connectGitHub(token: "synthetic-token")
+        await restore.restoreEverything(code: code)
+        XCTAssertNil(restore.errorMessage)
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
+        XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "fast")
+    }
+
+    func testExistingManualGitHubBackupAdoptsSyncOnceAndKeepsLaterPause() async throws {
+        let source = try profile()
+        let key = MemoryTokenStore(), token = MemoryTokenStore()
+        let first = model(source, keyStore: key, githubTokenStore: token)
+        await first.connectGitHub(token: "synthetic-token")
+        await first.backupEverything()
+        await first.stopAndWait()
+        source.defaults.set(false, forKey: "backup.enabled.v1")
+        source.defaults.removeObject(forKey: "backup.github-auto-sync.v1") // Previous manual-only release.
+        let next = model(source, keyStore: key, githubTokenStore: token)
+        await next.start()?.value
+        XCTAssertTrue(next.isEnabled)
+        XCTAssertTrue(source.defaults.bool(forKey: "backup.github-auto-sync.v1"))
+        next.setEnabled(false)
+        await next.stopAndWait()
+        let paused = model(source, keyStore: key, githubTokenStore: token)
+        await paused.start()?.value
+        XCTAssertFalse(paused.isEnabled, "A later explicit pause must survive restart")
+        await paused.stopAndWait()
+    }
+
+    func testCancellingSyncKeepsItPausedWithoutRevealingTheCode() async throws {
+        let source = try profile()
+        var pause = false
+        var resume: CheckedContinuation<Void, Never>?
+        let started = expectation(description: "sync started")
+        let model = model(source, beforeCreate: {
+            if pause {
+                started.fulfill()
+                await withCheckedContinuation { resume = $0 }
+            }
+        })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.backupEverything()
+        model.hideRecoveryCode()
+        pause = true
+        let operation = Task { await model.backupEverything() }
+        await fulfillment(of: [started], timeout: 2)
+        model.cancelCurrentOperation()
+        resume?.resume()
+        await operation.value
+        XCTAssertFalse(model.isEnabled)
+        XCTAssertTrue(source.defaults.bool(forKey: "backup.github-auto-sync.v1"))
+        XCTAssertTrue(model.recoveryCode.isEmpty)
+        XCTAssertEqual(model.syncState, .paused)
+        XCTAssertEqual(remote.publishCount, 1)
+    }
+
+    func testArtifactChangesDuringUploadRemainPending() async throws {
+        let source = try profile()
+        let model = model(source, changeProbe: {
+            FileManager.default.fileExists(atPath: source.root.appendingPathComponent("changed").path) ? "after" : "before"
+        }, beforeCreate: {
+            try! source.write("changed", to: source.root.appendingPathComponent("changed"))
+        })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.backupEverything()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.syncState, .waiting)
+        XCTAssertTrue(model.isEnabled)
     }
 
     func testLeavingBackupWhileUploadingDoesNotRevealCodeLater() async throws {
@@ -190,6 +299,8 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertNotNil(model.lastBackupAt)
         XCTAssertNil(model.lastRemoteBackupAt)
         XCTAssertEqual(remote.publishCount, 0)
+        XCTAssertFalse(model.isEnabled)
+        XCTAssertEqual(model.syncState, .needsAttention)
         XCTAssertFalse(model.statusText.hasPrefix("Saving"))
     }
 }
