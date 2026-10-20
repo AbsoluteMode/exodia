@@ -61,12 +61,34 @@ enum ScreenshotGeometry {
             .intersection(CGRect(origin: .zero, size: pixels))
     }
 
-    static func toolbarFrame(selection: CGRect, screen: CGRect, size: CGSize) -> CGRect {
+    static func toolbarFrame(selection: CGRect, screen: CGRect, size: CGSize, safeAreaTop: CGFloat = 0) -> CGRect {
+        let screen = CGRect(x: screen.minX, y: screen.minY, width: screen.width, height: screen.height - safeAreaTop)
         let x = min(max(screen.minX + 8, selection.maxX - size.width), screen.maxX - size.width - 8)
         let below = selection.minY - size.height - 10
         let y = below >= screen.minY + 8 ? below : selection.maxY + 10
         return CGRect(x: max(screen.minX, x), y: max(screen.minY + 8, min(y, screen.maxY - size.height - 8)),
                       width: min(size.width, screen.width), height: size.height)
+    }
+
+    static func toolSettingsFrame(toolbar: CGRect, selection: CGRect, screen: CGRect, size: CGSize, safeAreaTop: CGFloat = 0) -> CGRect {
+        let screen = CGRect(x: screen.minX, y: screen.minY, width: screen.width, height: screen.height - safeAreaTop)
+        let below = toolbar.minY - size.height - 6, above = toolbar.maxY + 6
+        let preferred = toolbar.midY < selection.midY ? below : above
+        let other = toolbar.midY < selection.midY ? above : below
+        let y = preferred >= screen.minY + 8 && preferred + size.height <= screen.maxY - 8 ? preferred : other
+        return CGRect(x: max(screen.minX + 8, min(toolbar.minX, screen.maxX - size.width - 8)),
+                      y: max(screen.minY + 8, min(y, screen.maxY - size.height - 8)),
+                      width: min(size.width, screen.width - 16), height: size.height)
+    }
+}
+
+struct ScreenshotDisplayLayout: Equatable {
+    let id: UInt32
+    let frame: CGRect
+    let scale: CGFloat
+    init(screen: NSScreen) {
+        id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+        frame = screen.frame; scale = screen.backingScaleFactor
     }
 }
 

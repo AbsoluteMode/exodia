@@ -1,5 +1,59 @@
 # Interface decisions
 
+## Screenshot toolbar and capture reliability — 2026-10-21
+
+The user comes to annotate a screenshot, discover the available tools, then
+copy or download the result. First see the crop and every tool on the main bar.
+Then change the selected tool's settings in an adjacent accessory and finish
+with the visible **Copy & exit ↩** action or Enter.
+
+- Expose Select/crop, Arrow, Shape, Pen, Text, Blur, Highlighter, Numbered steps,
+  Spotlight, OCR, Pin, Output size, Share, Undo, Redo, Download, Copy & exit and
+  Cancel on the toolbar. Remove More. Why: the user asked to see all commands.
+- Blur uses text alone; Download uses its downward arrow alone with a tooltip.
+  Why: the user explicitly removed Blur’s icon and Download’s label.
+- Keep color, width, shape, blur mode and label input in `ScreenshotToolSettings`,
+  a separate native child panel. It follows the main bar without moving its
+  targets when tools change; the label field uses a second accessory row.
+  Why: the user explicitly replaced the previous inline-settings requirement.
+- Preserve semantic AppKit typography, popover material and the accented finish
+  action. All buttons highlight their full area on hover/press; native focus
+  rings and control behavior remain. Accessory controls gain a hover outline;
+  disabled controls suppress it. Borderless buttons draw semantic foregrounds
+  without inline-cell dimming; native offscreen Blur text contrast measures
+  9.02:1 light and 6.73:1 dark. Why: interactivity and text must stay readable.
+- Wrap main-bar controls onto more rows at the width where they stop fitting,
+  retaining order, full hit areas and every command. Why: exposing more tools
+  must not hide Copy or clip controls on smaller displays.
+- Enter and the copy button both copy and exit; the initial/crop hint names
+  Enter explicitly. Cmd-Z / Shift-Cmd-Z undo/redo edits from both panels;
+  a focused text field keeps native text undo. Tab/Shift-Tab traverse enabled
+  controls in both panels. Unknown editor keys terminate locally instead of
+  bubbling back into the forwarding window. Why: outcomes and shortcuts
+  must be discoverable and match macOS editing behavior.
+- Repeated Screenshot activation preserves the current capture. Unchanged
+  screen-parameter notifications do not cancel it; actual display layout or
+  Space changes still discard stale pixels. Sanitized lifecycle logs record
+  reasons only. A 10-second capture deadline releases activity and permits retry
+  even if ScreenCaptureKit does not return; it ends before editing starts.
+  Why: repeated hotkey events must not toggle the editor off or leave it stuck.
+- Request filter content points multiplied by ScreenCaptureKit's pixel scale
+  with best capture resolution. Why: the affected Retina display reports
+  1728×1117 through the legacy display functions but has 3456×2234 source
+  pixels; exporting lossless PNG cannot recover detail already lost at capture.
+  PNG also records its original point scale, avoiding a double-sized Retina paste.
+- Keep both bars below a display's top safe-area inset. Why: full-display crops
+  must leave controls reachable on Macs with a notch.
+- Draw the primary accent fill independently of window activation, choosing
+  black/white text for the stronger contrast. Why: the floating toolbar is
+  usually not the key window, but Copy & exit must remain the leading action.
+
+The earlier single-row/More/inline-settings decisions below are historical and
+superseded by this user request. No new animation is introduced; reduced motion
+uses the same immediate layout. Offscreen fixtures and generated pixels provide
+local verification; actual hotkey delivery and capture remain single-installed-app
+acceptance after the designated builder promotes the reviewed source.
+
 ## Screenshot editor polish — 2026-10-20
 
 The person comes to mark a screenshot and copy or download it quickly. First

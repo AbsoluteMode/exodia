@@ -1,12 +1,31 @@
 import AppKit
 import ScreenCaptureKit
+import os.log
+
+enum ScreenshotCaptureConfiguration {
+    /// ScreenCaptureKit's filter describes points; its scale supplies the source pixels.
+    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+    static func make(contentRect: CGRect, pointPixelScale: Float) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.width = Int((contentRect.width * CGFloat(pointPixelScale)).rounded())
+        configuration.height = Int((contentRect.height * CGFloat(pointPixelScale)).rounded())
+        configuration.captureResolution = .best
+        configuration.showsCursor = false
+        configuration.scalesToFit = false
+        return configuration
+    }
+}
 
 @MainActor
 final class ScreenshotCapturePanel: NSPanel {
     weak var keyboardCanvas: ScreenshotCanvas?
+    var onAdvanceFocus: ((Bool) -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.keyCode == 48 && event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+            onAdvanceFocus?(event.modifierFlags.contains(.shift)); return true
+        }
         if !(firstResponder is NSTextView), keyboardCanvas?.performKeyEquivalent(with: event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
@@ -19,9 +38,11 @@ final class ScreenshotCapturePanel: NSPanel {
 final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var windows: [ScreenshotCapturePanel] = []
     private var toolbarPanel: ScreenshotCapturePanel?
+    private var settingsPanel: ScreenshotCapturePanel?
     private var toolbar: ScreenshotToolbar?
     private weak var selectedCanvas: ScreenshotCanvas?
     private var task: Task<Void, Never>?
+    private var captureDeadlineTask: Task<Void, Never>?
     private var generation: UUID?
     private var previousApp: NSRunningApplication?
     private var pins: [NSWindowController] = []
@@ -32,18 +53,33 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var copyAfterProcessing = false
     private let activityChanged: (Bool) -> Void
     private let excludedWindowIDs: () -> Set<CGWindowID>
+    private let captureOverride: (() async throws -> [(NSScreen, CGImage)])?
+    private let captureTimeout: Duration
+    private let captureFailure: (String) -> Void
+    private var displayLayout: [ScreenshotDisplayLayout] = []
+    private static let log = OSLog(subsystem: "com.rootwise.sidekey", category: "Screenshot")
     var isActive: Bool { generation != nil }
 
-    init(activityChanged: @escaping (Bool) -> Void, excludedWindowIDs: @escaping () -> Set<CGWindowID> = { [] }) {
-        self.activityChanged = activityChanged; self.excludedWindowIDs = excludedWindowIDs
+    init(activityChanged: @escaping (Bool) -> Void, excludedWindowIDs: @escaping () -> Set<CGWindowID> = { [] },
+         captureOverride: (() async throws -> [(NSScreen, CGImage)])? = nil,
+         captureTimeout: Duration = .seconds(10), captureFailure: ((String) -> Void)? = nil) {
+        self.activityChanged = activityChanged; self.excludedWindowIDs = excludedWindowIDs; self.captureOverride = captureOverride
+        self.captureTimeout = captureTimeout
+        self.captureFailure = captureFailure ?? { message in
+            let alert = NSAlert(); alert.messageText = "Screenshot unavailable"
+            alert.informativeText = message; alert.addButton(withTitle: "OK"); alert.runModal()
+        }
         super.init()
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                 object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.cancel(restoreFocus: false) }
+            MainActor.assumeIsolated {
+                guard let self, self.isActive, self.displayLayout != Self.currentDisplayLayout() else { return }
+                self.cancel(restoreFocus: false, reason: "display_changed")
+            }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                                                           object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.cancel(restoreFocus: false) }
+            MainActor.assumeIsolated { self?.cancel(restoreFocus: false, reason: "space_changed") }
         })
     }
     deinit {
@@ -54,43 +90,67 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     }
 
     func start() {
-        if isActive { cancel(); return }
+        guard !isActive else {
+            os_log("screenshot_start ignored_already_active", log: Self.log, type: .info)
+            return
+        }
         previousApp = NSWorkspace.shared.frontmostApplication
         let token = UUID(); generation = token; activityChanged(true); outputWidth = nil
+        displayLayout = Self.currentDisplayLayout()
+        os_log("screenshot_capture begin", log: Self.log, type: .info)
         task = Task { [weak self] in
-            guard let self else { return }
+            guard let self, self.generation == token, !Task.isCancelled else { return }
             do {
-                guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
-                    self.cancel(); self.showPermissionHelp(); return
-                }
-                // Capture before ordering any selection windows. Exclude only the island,
-                // not all Whytap windows: the user can also screenshot Settings.
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                let excluded = self.excludedWindowIDs()
                 var snapshots: [(NSScreen, CGImage)] = []
-                for screen in NSScreen.screens {
-                    guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
-                          let display = content.displays.first(where: { $0.displayID == id }) else { continue }
-                    let config = SCStreamConfiguration()
-                    config.width = CGDisplayPixelsWide(id); config.height = CGDisplayPixelsHigh(id)
-                    config.showsCursor = false; config.scalesToFit = false
-                    let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excluded.contains($0.windowID) })
-                    let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-                    try Task.checkCancellation()
-                    guard self.generation == token else { return }
-                    snapshots.append((screen, image))
+                if let captureOverride = self.captureOverride {
+                    self.startCaptureDeadline(token: token)
+                    snapshots = try await captureOverride()
+                } else {
+                    guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
+                        self.cancel(); self.showPermissionHelp(); return
+                    }
+                    guard self.generation == token, !Task.isCancelled else { return }
+                    self.startCaptureDeadline(token: token)
+                    // Capture before ordering any selection windows. Exclude only the island,
+                    // not all Whytap windows: the user can also screenshot Settings.
+                    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                    let excluded = self.excludedWindowIDs()
+                    for screen in NSScreen.screens {
+                        guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
+                              let display = content.displays.first(where: { $0.displayID == id }) else { continue }
+                        let filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { excluded.contains($0.windowID) })
+                        let config = ScreenshotCaptureConfiguration.make(contentRect: filter.contentRect, pointPixelScale: filter.pointPixelScale)
+                        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                        try Task.checkCancellation()
+                        guard self.generation == token else { return }
+                        snapshots.append((screen, image))
+                    }
                 }
                 guard !snapshots.isEmpty else { throw ScreenshotImageError.rendering }
                 guard self.generation == token else { return }
+                self.captureDeadlineTask?.cancel(); self.captureDeadlineTask = nil
                 self.present(snapshots)
+                os_log("screenshot_capture presented", log: Self.log, type: .info)
             } catch {
                 guard self.generation == token else { return }
-                self.cancel()
-                let alert = NSAlert(); alert.messageText = "Screenshot unavailable"
-                alert.informativeText = "Check Screen Recording access for Whytap in System Settings, then try again."
-                alert.addButton(withTitle: "OK"); alert.runModal()
+                self.cancel(reason: "capture_failed")
+                self.captureFailure("Check Screen Recording access for Whytap in System Settings, then try again.")
             }
         }
+    }
+
+    private func startCaptureDeadline(token: UUID) {
+        let timeout = captureTimeout
+        captureDeadlineTask = Task { [weak self] in
+            do { try await Task.sleep(for: timeout) } catch { return }
+            guard let self, self.generation == token, self.windows.isEmpty else { return }
+            self.cancel(reason: "capture_timeout")
+            self.captureFailure("The screen capture took too long. Press your Screenshot shortcut again to retry.")
+        }
+    }
+
+    private static func currentDisplayLayout() -> [ScreenshotDisplayLayout] {
+        NSScreen.screens.map { ScreenshotDisplayLayout(screen: $0) }
     }
 
     private func showPermissionHelp() {
@@ -109,9 +169,12 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             let canvas = ScreenshotCanvas(image: image, size: screen.frame.size)
             window.keyboardCanvas = canvas
+            window.onAdvanceFocus = { [weak self] backwards in self?.advanceFocus(backwards: backwards) }
             window.contentView = canvas
             canvas.onSelection = { [weak self, weak canvas] in
-                guard let self, let canvas, !canvas.selection.isEmpty else { self?.toolbarPanel?.orderOut(nil); return }
+                guard let self, let canvas, !canvas.selection.isEmpty else {
+                    self?.settingsPanel?.orderOut(nil); self?.toolbarPanel?.orderOut(nil); return
+                }
                 if self.selectedCanvas == nil {
                     self.selectedCanvas = canvas
                     for other in self.windows where other !== canvas.window { other.orderOut(nil) }
@@ -137,27 +200,66 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         panel.isReleasedWhenClosed = false; panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
         panel.level = .screenSaver; panel.contentView = toolbar
         panel.keyboardCanvas = canvas; panel.hidesOnDeactivate = false
+        panel.onAdvanceFocus = { [weak self] backwards in self?.advanceFocus(backwards: backwards) }
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         toolbar.onCommand = { [weak self] command in self?.perform(command) }
         toolbar.onLayout = { [weak self] in self?.positionToolbar() }
         self.toolbar = toolbar; toolbarPanel = panel
         parent.addChildWindow(panel, ordered: .above)
+        let settings = ScreenshotCapturePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        settings.isReleasedWhenClosed = false; settings.isOpaque = false; settings.backgroundColor = .clear; settings.hasShadow = true
+        settings.level = .screenSaver; settings.contentView = toolbar.toolSettings
+        settings.keyboardCanvas = canvas; settings.hidesOnDeactivate = false
+        settings.onAdvanceFocus = { [weak self] backwards in self?.advanceFocus(backwards: backwards) }
+        settings.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.addChildWindow(settings, ordered: .above); settingsPanel = settings
         positionToolbar()
     }
 
     private func positionToolbar() {
         guard let canvas = selectedCanvas, let parent = canvas.window, let panel = toolbarPanel, let toolbar else { return }
-        guard !canvas.selection.isEmpty else { panel.orderOut(nil); return }
-        let size = toolbar.fittingSize
+        guard !canvas.selection.isEmpty else { settingsPanel?.orderOut(nil); panel.orderOut(nil); return }
+        toolbar.configure(availableWidth: parent.frame.width)
+        let size = toolbar.fittingSize, safeTop = parent.screen?.safeAreaInsets.top ?? 0
         let frame = ScreenshotGeometry.toolbarFrame(selection: parent.convertToScreen(canvas.selection), screen: parent.frame,
-                                                     size: CGSize(width: max(430, size.width), height: max(43, size.height)))
+                                                     size: CGSize(width: max(240, size.width), height: max(43, size.height)), safeAreaTop: safeTop)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         if !panel.isVisible { panel.orderFrontRegardless() }
+        if let settingsPanel {
+            if toolbar.toolSettings.isHidden { settingsPanel.orderOut(nil) }
+            else {
+                let frame = ScreenshotGeometry.toolSettingsFrame(toolbar: frame, selection: parent.convertToScreen(canvas.selection), screen: parent.frame,
+                                                                   size: toolbar.toolSettings.fittingSize, safeAreaTop: safeTop)
+                if settingsPanel.frame != frame { settingsPanel.setFrame(frame, display: true) }
+                if !settingsPanel.isVisible { settingsPanel.orderFrontRegardless() }
+            }
+        }
     }
 
-    func cancel(restoreFocus: Bool = true) {
+    private func advanceFocus(backwards: Bool) {
+        guard let toolbar else { return }
+        let controls = toolbar.focusableControls + toolbar.toolSettings.focusableControls
+        guard !controls.isEmpty else { return }
+        let current = controls.firstIndex { control in
+            guard control.window?.isKeyWindow == true else { return false }
+            let responder = control.window?.firstResponder
+            if responder === control { return true }
+            if let editor = (control as? NSTextField)?.currentEditor() { return editor === responder }
+            return false
+        }
+        let index = current.map { ($0 + (backwards ? -1 : 1) + controls.count) % controls.count } ?? (backwards ? controls.count - 1 : 0)
+        let target = controls[index]
+        target.window?.makeKey(); target.window?.makeFirstResponder(target)
+    }
+
+    func cancel(restoreFocus: Bool = true, reason: StaticString = "user_or_finished") {
+        if isActive { os_log("screenshot_cancel reason=%{public}@", log: Self.log, type: .info, String(describing: reason)) }
         generation = nil; task?.cancel(); task = nil
+        captureDeadlineTask?.cancel(); captureDeadlineTask = nil
         copyWaitReason = nil; copyAfterProcessing = false
         toolbar?.closeAuxiliaryWindows()
+        if let settingsPanel { settingsPanel.parent?.removeChildWindow(settingsPanel); settingsPanel.orderOut(nil); settingsPanel.close() }
+        settingsPanel = nil
         if let toolbarPanel { toolbarPanel.parent?.removeChildWindow(toolbarPanel); toolbarPanel.orderOut(nil); toolbarPanel.close() }
         toolbarPanel = nil; toolbar = nil; selectedCanvas = nil
         for window in windows { window.orderOut(nil); window.close() }; windows.removeAll()
@@ -251,7 +353,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                     try Task.checkCancellation()
                     let raw = try ScreenshotRenderer.image(source: source, size: size, annotations: annotations, crop: crop)
                     let image = try width.map { try ScreenshotRenderer.resized(raw, width: $0) } ?? raw
-                    let bytes = try ScreenshotDownload.png(image)
+                    let bytes = try ScreenshotDownload.png(image, scale: CGFloat(source.width) / size.width)
                     try Task.checkCancellation()
                     let url = try download ? ScreenshotDownload.write(bytes, directory: FileManager.default.url(for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)) : nil
                     return (bytes, url)

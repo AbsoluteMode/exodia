@@ -6,8 +6,17 @@ summary: Explicit local capture opens a native toolbar with Blur defaulting to t
 status: confirmed
 tags: [screenshots, capture, blur, numbers, vision, toolbar, privacy]
 canonical_for: [screenshot-editor, screenshot-text-number-blur]
-verified_at: 2026-10-20
+verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 the user requested visible Copy and exit with Enter, every tool on the main toolbar without More, separate tool settings, Cmd-Z editing undo, and reported intermittent Screenshot activation and spontaneous editor dismissal.
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Sources/Sidekey/Screenshots/ScreenshotCoordinator.swift
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Tests/SidekeyTests/Screenshots/ScreenshotReliabilityTests.swift
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-20 the user requested a single toolbar row, faster and cleaner Blur, Copy plus direct Download with filename confirmation, and Enter to copy and close.
     confirmed_at: 2026-10-20
@@ -109,6 +118,36 @@ hardware-backed Core Image context replaces per-gesture software setup. Mask
 strength follows text height, with padded, subtly rounded text edges; Entire area
 covers its full rectangle. Geometry and pixel regressions preserve Retina/crop
 alignment and background pixels. See [interface decisions](../../docs/DESIGN.md).
+
+# 2026-10-21 revision
+
+The user replaced inline settings and More with an always-visible tool/action
+bar and a separate settings accessory. Copy is visibly named Copy & exit with
+its Return glyph; Enter is explained in the canvas hint. Cmd-Z and Shift-Cmd-Z
+route edits from either floating panel while text fields retain native editing.
+Narrow screens wrap the controls without hiding commands. Native focus and
+pressed behavior remain, with explicit enabled-only hover feedback.
+
+Capture now requests filter content points multiplied by its pixel scale and
+best capture resolution. Legacy display-width functions returned 1728×1117 on
+the affected 2× Retina display rather than its 3456×2234 source pixels. PNG is
+lossless, but could not recover that lost capture detail. Explicit Output size
+continues to resize proportionally; default export preserves the captured size.
+
+Repeated activation no longer toggles an in-flight or edited capture off.
+Display-parameter notifications cancel only after a real display layout/scale
+change. Space changes retain the stale-capture guard. Static lifecycle/reason
+logs aid follow-up without screen pixels, text, paths or keys. An existing responder recursion is independently confirmed in a local crash
+report: unknown keys cycled from canvas to its forwarding panel and back until
+stack overflow. Unknown editor keys now terminate locally; Tab explicitly
+advances keyboard focus across both bars. A regression sends Space, Tab and
+unassigned letters/numbers through all three panels. A capture-only ten-second
+deadline releases activity and permits retry even when the capture provider
+ignores cancellation; it never times out an editor. Both bars observe the
+screen's notch safe area. Retina PNG records its logical point size alongside
+full pixel dimensions. The primary action draws its accent independently of
+which screenshot panel is key. Other spontaneous-dismissal causes and physical
+hotkey reliability remain installed-app acceptance.
 
 # Consequences
 

@@ -40,6 +40,30 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(ScreenshotGeometry.pixelRect(CGRect(x: 2000, y: 1000, width: 10, height: 10), size: size, pixels: pixels).isNull)
     }
 
+    func testCaptureRequestsFullRetinaPixelsInsteadOfLogicalDisplayDimensions() {
+        // The affected display reports 1728×1117 from CGDisplayPixelsWide/High,
+        // while ScreenCaptureKit supplies a 2× pixel scale.
+        let retina = ScreenshotCaptureConfiguration.make(contentRect: CGRect(x: 0, y: 0, width: 1728, height: 1117), pointPixelScale: 2)
+        XCTAssertEqual(retina.width, 3456)
+        XCTAssertEqual(retina.height, 2234)
+        XCTAssertEqual(retina.captureResolution, .best)
+        XCTAssertFalse(retina.scalesToFit)
+        XCTAssertFalse(retina.showsCursor)
+        let external = ScreenshotCaptureConfiguration.make(contentRect: CGRect(x: -1920, y: 100, width: 1920, height: 1080), pointPixelScale: 1)
+        XCTAssertEqual(external.width, 1920)
+        XCTAssertEqual(external.height, 1080)
+    }
+
+    func testRetinaPNGKeepsOriginalPointSizeWithoutDroppingPixels() throws {
+        let source = try fixture(text: false)
+        let encoded = try ScreenshotDownload.png(source, scale: 2)
+        let decoded = try XCTUnwrap(NSBitmapImageRep(data: encoded))
+        XCTAssertEqual(decoded.pixelsWide, source.width); XCTAssertEqual(decoded.pixelsHigh, source.height)
+        XCTAssertEqual(decoded.size.width, CGFloat(source.width) / 2, accuracy: 0.05)
+        XCTAssertEqual(decoded.size.height, CGFloat(source.height) / 2, accuracy: 0.05)
+        XCTAssertEqual(try pixels(try XCTUnwrap(decoded.cgImage)), try pixels(source))
+    }
+
     func testToolbarFitsNegativeOriginDisplayAndMovesAboveBottomSelection() {
         let screen = CGRect(x: -1440, y: -200, width: 1440, height: 900)
         let selection = CGRect(x: -1435, y: -195, width: 50, height: 40)
@@ -315,7 +339,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(canvas.selection, canvas.bounds)
     }
 
-    func testOffscreenToolbarShowsDedicatedBlurAndBothModesWithoutOpeningApp() throws {
+    func testAllToolbarCommandsAndSeparateSettingsFitWithoutOpeningApp() throws {
         _ = NSApplication.shared
         let suite = "ScreenshotTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -324,51 +348,77 @@ final class ScreenshotTests: XCTestCase {
         canvas.selectTool(.blur)
         let toolbar = ScreenshotToolbar(canvas: canvas, defaults: defaults)
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 500, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
+        let settingsWindow = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 320, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false; window.contentView = toolbar
-        defer { window.contentView = nil; window.close() }
-        window.setContentSize(toolbar.fittingSize); toolbar.layoutSubtreeIfNeeded()
+        settingsWindow.isReleasedWhenClosed = false; settingsWindow.contentView = toolbar.toolSettings
+        defer { window.contentView = nil; window.close(); settingsWindow.contentView = nil; settingsWindow.close() }
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-        let views = descendants(toolbar)
-        XCTAssertTrue(views.compactMap { $0 as? NSButton }.contains { $0.title == "Blur" && $0.state == .on })
-        let mode = try XCTUnwrap(views.compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles.contains("Text and numbers") })
+        let buttons = descendants(toolbar).compactMap { $0 as? NSButton }
+        let settings = descendants(toolbar.toolSettings)
+        XCTAssertTrue(buttons.contains { $0.title == "Blur" && $0.state == .on && $0.image == nil })
+        XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix("Download to Downloads") == true && $0.title.isEmpty && $0.image != nil })
+        XCTAssertFalse(buttons.contains { $0.toolTip == "More tools" })
+        for tool in [ScreenshotTool.select, .arrow, .rectangle, .pen, .text, .blur, .marker, .counter, .spotlight] {
+            XCTAssertTrue(buttons.contains { $0.identifier?.rawValue == tool.rawValue })
+        }
+        for label in ["Copy text", "Pin above windows", "Output size", "Share", "Undo", "Redo", "Cancel capture"] {
+            XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix(label) == true }, label)
+        }
+        XCTAssertFalse(descendants(toolbar).contains { $0 is NSColorWell || $0 is NSPopUpButton || $0 is NSTextField })
+        let mode = try XCTUnwrap(settings.compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles.contains("Text and numbers") })
         XCTAssertEqual(mode.titleOfSelectedItem, "Text and numbers")
         XCTAssertEqual(mode.itemTitles, ["Text and numbers", "Entire area"])
-        XCTAssertLessThanOrEqual(toolbar.fittingSize.width, 800)
-        XCTAssertLessThanOrEqual(toolbar.fittingSize.height, 44)
-        let copy = try XCTUnwrap(views.compactMap { $0 as? NSButton }.first { $0.title == "Copy" })
-        let download = try XCTUnwrap(views.compactMap { $0 as? NSButton }.first { $0.title == "Download" })
-        XCTAssertFalse(views.compactMap { $0 as? NSButton }.contains { $0.toolTip?.hasPrefix("Save") == true })
-        XCTAssertEqual(toolbar.convert(mode.bounds, from: mode).midY, toolbar.convert(copy.bounds, from: copy).midY, accuracy: 1)
-        XCTAssertEqual(toolbar.convert(download.bounds, from: download).midY, toolbar.convert(copy.bounds, from: copy).midY, accuracy: 1)
+        let copy = try XCTUnwrap(buttons.first { $0.title == "Copy & exit  ↩" })
+        XCTAssertEqual(copy.accessibilityLabel(), "Copy screenshot and exit")
+        let download = try XCTUnwrap(buttons.first { $0.toolTip?.hasPrefix("Download to Downloads") == true })
         var copyRequests = 0
         toolbar.onCommand = { if case .copy = $0 { copyRequests += 1 } }
-        let label = try XCTUnwrap(views.compactMap { $0 as? NSTextField }.first { $0.placeholderString == "Label · click to place" })
+        let label = try XCTUnwrap(settings.compactMap { $0 as? NSTextField }.first { $0.placeholderString == "Label · click to place" })
         label.stringValue = "Test label"
         _ = label.sendAction(label.action, to: label.target)
-        XCTAssertEqual(canvas.labelText, "Test label")
-        XCTAssertEqual(copyRequests, 1, "Return in the label field also finishes capture")
-        XCTAssertFalse(window.isVisible); XCTAssertFalse(window.isKeyWindow)
-        if let directory = ProcessInfo.processInfo.environment["SCREENSHOT_TEST_RENDER_DIR"] {
-            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-            for tool in [ScreenshotTool.select, .arrow, .rectangle, .text, .blur] {
-              canvas.selectTool(tool); toolbar.refresh(); window.setContentSize(toolbar.fittingSize); toolbar.layoutSubtreeIfNeeded()
-              for availableWidth: CGFloat in [640, 768, 1024] {
-                window.setContentSize(CGSize(width: min(availableWidth, toolbar.fittingSize.width), height: toolbar.fittingSize.height))
-                toolbar.layoutSubtreeIfNeeded()
-                for button in [copy, download] {
+        XCTAssertEqual(canvas.labelText, "Test label"); XCTAssertEqual(copyRequests, 1)
+        let directory = ProcessInfo.processInfo.environment["SCREENSHOT_TEST_RENDER_DIR"]
+        if let directory { try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true) }
+        for tool in ScreenshotTool.allCases {
+            canvas.selectTool(tool); toolbar.refresh()
+            settingsWindow.setContentSize(toolbar.toolSettings.fittingSize); toolbar.toolSettings.layoutSubtreeIfNeeded()
+            XCTAssertLessThanOrEqual(toolbar.toolSettings.fittingSize.width, 304, "Settings must fit beside a 320 pt display")
+            for control in settings.compactMap({ $0 as? NSControl }) where !control.isHiddenOrHasHiddenAncestor {
+                let frame = control.alignmentRect(forFrame: toolbar.toolSettings.convert(control.bounds, from: control))
+                XCTAssertGreaterThanOrEqual(frame.minX, 10)
+                XCTAssertLessThanOrEqual(frame.maxX, toolbar.toolSettings.bounds.maxX - 10)
+            }
+            for availableWidth: CGFloat in [1440, 1024, 768, 640, 390, 320] {
+                toolbar.configure(availableWidth: availableWidth)
+                window.setContentSize(toolbar.fittingSize); toolbar.layoutSubtreeIfNeeded()
+                XCTAssertLessThanOrEqual(toolbar.fittingSize.width, availableWidth - 16)
+                for button in buttons {
                     let frame = toolbar.convert(button.bounds, from: button)
-                    XCTAssertTrue(toolbar.bounds.contains(frame), "Export action clipped for \(tool), width \(availableWidth)")
+                    XCTAssertTrue(toolbar.bounds.contains(frame), "Clipped control \(button.toolTip ?? button.title), width \(availableWidth), frame \(frame), bounds \(toolbar.bounds)")
                 }
-              }
-              window.setContentSize(toolbar.fittingSize); toolbar.layoutSubtreeIfNeeded()
-              for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-                window.appearance = NSAppearance(named: appearance)
-                toolbar.displayIfNeeded()
-                let bitmap = try XCTUnwrap(toolbar.bitmapImageRepForCachingDisplay(in: toolbar.bounds))
-                toolbar.cacheDisplay(in: toolbar.bounds, to: bitmap)
-                try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: directory).appendingPathComponent("screenshot-toolbar-\(tool.rawValue)-\(name).png"))
-              }
+                XCTAssertTrue(copy.isEnabled); XCTAssertTrue(download.isEnabled)
+                if let directory, tool == .select || availableWidth == 1024 {
+                    for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                        window.appearance = NSAppearance(named: appearance)
+                        settingsWindow.appearance = NSAppearance(named: appearance)
+                        try render(toolbar, to: directory, name: "toolbar-\(tool.rawValue)-\(name)-\(Int(availableWidth))")
+                        if !toolbar.toolSettings.isHidden {
+                            try render(toolbar.toolSettings, to: directory, name: "settings-\(tool.rawValue)-\(name)")
+                        }
+                    }
+                }
             }
         }
+        canvas.busy = true; toolbar.refresh()
+        XCTAssertFalse(copy.isEnabled); XCTAssertFalse(download.isEnabled)
+        XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix("Cancel capture") == true && $0.isEnabled })
+        XCTAssertFalse(window.isVisible); XCTAssertFalse(settingsWindow.isVisible)
+    }
+
+    private func render(_ view: NSView, to directory: String, name: String) throws {
+        view.displayIfNeeded()
+        let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
     }
 }

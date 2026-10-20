@@ -1,148 +1,131 @@
 import AppKit
 
 @MainActor
-private final class ScreenshotColorWell: NSColorWell {
-    private var previousLevel: NSWindow.Level?
-    override func activate(_ exclusive: Bool) {
-        if previousLevel == nil { previousLevel = NSColorPanel.shared.level }
-        NSColorPanel.shared.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
-        super.activate(exclusive)
-    }
-    override func deactivate() {
-        super.deactivate()
-        if let previousLevel { NSColorPanel.shared.level = previousLevel }
-        previousLevel = nil
-    }
-}
-
-@MainActor
 final class ScreenshotToolbar: NSView {
     weak var canvas: ScreenshotCanvas?
     var onCommand: ((ScreenshotCommand) -> Void)?
     var onLayout: (() -> Void)?
-    private let stack = NSStackView()
-    private let settings = NSStackView()
-    private let mode = MacPopupButton()
-    private let shape = MacPopupButton()
-    private let width = MacPopupButton()
-    private let color = ScreenshotColorWell()
-    private let text = NSTextField()
+    let toolSettings: ScreenshotToolSettings
+    private let rows = NSStackView()
+    private var controls: [NSView] = []
     private var tools: [ScreenshotTool: NSButton] = [:]
+    private var commands: [ScreenshotCommand: NSButton] = [:]
     private var undoButton: NSButton!
-    private var exportButtons: [NSButton] = []
-    private var currentTool = ScreenshotTool.select
+    private var redoButton: NSButton!
+    private var availableWidth: CGFloat = 0
     private var layoutTool: ScreenshotTool?
-    private let defaults: UserDefaults
+    var focusableControls: [NSControl] { controls.compactMap { $0 as? NSControl }.filter { $0.isEnabled && !$0.isHiddenOrHasHiddenAncestor } }
 
     init(canvas: ScreenshotCanvas, defaults: UserDefaults = .standard) {
-        self.canvas = canvas; self.defaults = defaults
+        self.canvas = canvas
+        toolSettings = ScreenshotToolSettings(canvas: canvas, defaults: defaults)
         super.init(frame: .zero)
-        let material = NSVisualEffectView()
-        material.material = .popover; material.blendingMode = .behindWindow; material.state = .active
-        material.wantsLayer = true; material.layer?.cornerRadius = 13
-        material.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(material)
-        stack.orientation = .horizontal; stack.spacing = 6; stack.alignment = .centerY
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 7, bottom: 6, right: 7)
-        stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
+        ScreenshotToolbarSurface.install(in: self)
+        rows.orientation = .vertical; rows.alignment = .leading; rows.spacing = 4
+        rows.edgeInsets = NSEdgeInsets(top: 6, left: 7, bottom: 6, right: 7)
+        rows.translatesAutoresizingMaskIntoConstraints = false; addSubview(rows)
         NSLayoutConstraint.activate([
-            material.leadingAnchor.constraint(equalTo: leadingAnchor), material.trailingAnchor.constraint(equalTo: trailingAnchor),
-            material.topAnchor.constraint(equalTo: topAnchor), material.bottomAnchor.constraint(equalTo: bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+            rows.leadingAnchor.constraint(equalTo: leadingAnchor), rows.trailingAnchor.constraint(equalTo: trailingAnchor),
+            rows.topAnchor.constraint(equalTo: topAnchor), rows.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
-        let row = NSStackView(); row.spacing = 3
-        for (tool, symbol, label) in [(ScreenshotTool.arrow, "arrow.up.right", "Arrow · A"),
-                                       (.rectangle, "rectangle", "Shape · R / O"), (.pen, "pencil", "Pen · P"),
-                                       (.text, "textformat", "Text · T"), (.blur, "text.viewfinder", "Blur · B")] {
-            let button = makeButton(symbol: symbol, title: tool == .blur ? "Blur" : "", help: label, action: #selector(chooseTool(_:)))
+        for (tool, symbol, title, help) in [
+            (ScreenshotTool.select, "crop", "", "Select & crop · V — move annotations or resize the crop"),
+            (.arrow, "arrow.up.right", "", "Arrow · A — point to a detail"),
+            (.rectangle, "rectangle", "", "Shape · R / O — draw a rectangle or oval"),
+            (.pen, "pencil", "", "Pen · P — draw freehand"),
+            (.text, "textformat", "", "Text · T — place a label"),
+            (.blur, "", "Blur", "Blur · B — blur text and numbers or an entire area"),
+            (.marker, "highlighter", "", "Highlighter · M — add a transparent color highlight"),
+            (.counter, "number.circle", "", "Numbered steps · N — place consecutive step numbers"),
+            (.spotlight, "circle.inset.filled", "", "Spotlight — dim everything outside a chosen area")
+        ] {
+            let button = makeButton(symbol: symbol, title: title, help: help, action: #selector(chooseTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
-            button.setButtonType(.toggle); row.addArrangedSubview(button); tools[tool] = button
+            button.setButtonType(.toggle); controls.append(button); tools[tool] = button
         }
-        row.addArrangedSubview(makeButton(symbol: "ellipsis", help: "More tools", action: #selector(showMore(_:))))
-        stack.addArrangedSubview(row)
-        settings.spacing = 6; settings.alignment = .centerY
-        stack.addArrangedSubview(settings)
-        let actions = NSStackView(); actions.spacing = 4; actions.alignment = .centerY
-        actions.addArrangedSubview(separator())
-        undoButton = makeButton(symbol: "arrow.uturn.backward", help: "Undo · ⌘Z", action: #selector(undo(_:)))
-        actions.addArrangedSubview(undoButton)
-        actions.addArrangedSubview(separator())
-        let download = makeButton(symbol: "arrow.down.to.line", title: "Download", help: "Download to Downloads · ⌘S", action: #selector(download(_:)))
-        let copy = NSButton(title: "Copy", target: self, action: #selector(copyImage(_:)))
-        copy.bezelStyle = .rounded; copy.bezelColor = .controlAccentColor
-        copy.setAccessibilityLabel("Copy screenshot"); copy.toolTip = "Copy screenshot and finish · Return / ⌘C"
-        actions.addArrangedSubview(download); actions.addArrangedSubview(copy); exportButtons = [download, copy]
-        stack.addArrangedSubview(actions)
-        color.target = self; color.action = #selector(updateSettings(_:))
-        color.setAccessibilityLabel("Annotation color")
-        color.widthAnchor.constraint(equalToConstant: 32).isActive = true
-        color.heightAnchor.constraint(equalToConstant: 24).isActive = true
-        settings.addArrangedSubview(color)
-        width.addItems(withTitles: ["2 pt", "3 pt", "5 pt", "8 pt"])
-        width.target = self; width.action = #selector(updateSettings(_:)); width.setAccessibilityLabel("Line width")
-        settings.addArrangedSubview(width)
-        shape.addItems(withTitles: ["Rectangle", "Oval"])
-        shape.target = self; shape.action = #selector(updateSettings(_:)); shape.setAccessibilityLabel("Shape")
-        settings.addArrangedSubview(shape)
-        mode.addItems(withTitles: ScreenshotBlurMode.allCases.map(\.rawValue))
-        mode.target = self; mode.action = #selector(updateSettings(_:)); mode.setAccessibilityLabel("What to blur")
-        settings.addArrangedSubview(mode)
-        text.placeholderString = "Label · click to place"; text.target = self; text.action = #selector(finishText(_:))
-        text.setAccessibilityLabel("Annotation text"); text.widthAnchor.constraint(equalToConstant: 160).isActive = true
-        text.toolTip = "Type a label, then click the screenshot to place it. Return copies placed annotations and closes; unplaced text is discarded."
-        text.setAccessibilityHelp(text.toolTip)
-        NotificationCenter.default.addObserver(self, selector: #selector(updateSettings(_:)), name: NSControl.textDidChangeNotification, object: text)
-        settings.addArrangedSubview(text)
+        controls.append(separator())
+        for (command, symbol, help) in [
+            (ScreenshotCommand.copyText, "doc.text.viewfinder", "Copy text — recognize edited pixels as text and exit"),
+            (.pin, "pin", "Pin above windows — keep the edited screenshot as a floating reference"),
+            (.resize, "arrow.up.left.and.arrow.down.right", "Output size — set exported width in pixels"),
+            (.share, "square.and.arrow.up", "Share — send the edited screenshot using macOS")
+        ] {
+            let button = makeButton(symbol: symbol, help: help, action: #selector(command(_:)))
+            button.identifier = NSUserInterfaceItemIdentifier("command.\(command)")
+            controls.append(button); commands[command] = button
+        }
+        controls.append(separator())
+        undoButton = makeButton(symbol: "arrow.uturn.backward", help: "Undo · ⌘Z — undo the last screenshot edit", action: #selector(undo(_:)))
+        redoButton = makeButton(symbol: "arrow.uturn.forward", help: "Redo · ⇧⌘Z — restore the last undone edit", action: #selector(redo(_:)))
+        controls += [undoButton, redoButton, separator()]
+        let download = makeButton(symbol: "arrow.down.to.line", help: "Download to Downloads · ⌘S — save PNG and keep editing", action: #selector(command(_:)))
+        commands[.download] = download; controls.append(download)
+        let copy = ScreenshotToolbarButton(title: "Copy & exit  ↩", target: self, action: #selector(command(_:)))
+        copy.bezelStyle = .rounded; copy.bezelColor = .controlAccentColor; copy.focusRingType = .exterior
+        copy.isPrimaryAction = true; copy.font = .systemFont(ofSize: 13, weight: .semibold)
+        copy.setAccessibilityLabel("Copy screenshot and exit"); copy.toolTip = "Copy screenshot and close editor · Enter / Return / ⌘C"
+        commands[.copy] = copy; controls.append(copy)
+        let cancel = makeButton(symbol: "xmark", help: "Cancel capture · Esc — close without copying", action: #selector(command(_:)))
+        commands[.cancel] = cancel; controls.append(cancel)
+        toolSettings.onCommand = { [weak self] command in self?.onCommand?(command) }
+        configure(availableWidth: 1200)
         refresh()
     }
     required init?(coder: NSCoder) { nil }
 
-    func closeAuxiliaryWindows() {
-        if color.isActive { color.deactivate(); NSColorPanel.shared.orderOut(nil) }
+    /// Wrap controls without hiding commands or shrinking their hit areas.
+    func configure(availableWidth: CGFloat) {
+        let width = max(240, availableWidth - 16)
+        guard self.availableWidth != width else { return }
+        self.availableWidth = width
+        for control in controls { control.removeFromSuperview() }
+        for row in rows.arrangedSubviews { rows.removeArrangedSubview(row); row.removeFromSuperview() }
+        var row = makeRow(), used: CGFloat = 0
+        for control in controls {
+            let controlWidth = ceil(control.fittingSize.width) + 1
+            let separator = control is NSBox
+            if used > 0 && used + 3 + controlWidth > width - 14 {
+                if let last = row.arrangedSubviews.last, last is NSBox {
+                    row.removeArrangedSubview(last); last.removeFromSuperview()
+                }
+                row = makeRow(); used = 0
+            }
+            if separator && used == 0 { continue }
+            row.addArrangedSubview(control)
+            used += (used == 0 ? 0 : 3) + controlWidth
+        }
     }
-
+    private func makeRow() -> NSStackView {
+        let row = NSStackView(); row.spacing = 3; row.alignment = .centerY
+        rows.addArrangedSubview(row)
+        row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -7).isActive = true
+        return row
+    }
+    func closeAuxiliaryWindows() { toolSettings.closeAuxiliaryWindows() }
     func refresh() {
         guard let canvas else { return }
-        let tool = canvas.tool
-        if tool != currentTool {
-            currentTool = tool
-            let saved = defaults.array(forKey: "sidekey.screenshot.color.\(tool.rawValue)") as? [Double]
-            color.color = saved?.count == 4 ? NSColor(srgbRed: saved![0], green: saved![1], blue: saved![2], alpha: saved![3]) : tool == .marker ? .systemYellow : .systemRed
-            width.selectItem(at: min(3, max(0, defaults.object(forKey: "sidekey.screenshot.width.\(tool.rawValue)") as? Int ?? 1)))
-            canvas.color = color.color; canvas.lineWidth = [2, 3, 5, 8][width.indexOfSelectedItem]
-        }
         for (kind, button) in tools {
-            button.state = tool == kind || (kind == .rectangle && tool == .ellipse) ? .on : .off
+            button.state = canvas.tool == kind || (kind == .rectangle && canvas.tool == .ellipse) ? .on : .off
             button.isEnabled = !canvas.busy
-            button.contentTintColor = .labelColor
-            button.wantsLayer = true
-            button.layer?.cornerRadius = 6
-            button.layer?.backgroundColor = button.state == .on ? NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor : NSColor.clear.cgColor
+            button.contentTintColor = button.isEnabled ? .labelColor : .disabledControlTextColor
+            button.wantsLayer = true; button.layer?.cornerRadius = 6
+            button.layer?.backgroundColor = button.state == .on ? NSColor.controlAccentColor.withAlphaComponent(button.isEnabled ? 0.16 : 0.06).cgColor : NSColor.clear.cgColor
         }
-        undoButton.isEnabled = canvas.canUndo
-        for button in exportButtons { button.isEnabled = !canvas.busy && !canvas.selection.isEmpty }
-        settings.isHidden = tool == .select
-        color.isHidden = [.select, .blur, .spotlight].contains(tool)
-        width.isHidden = ![.arrow, .rectangle, .ellipse, .pen, .text].contains(tool)
-        shape.isHidden = tool != .rectangle && tool != .ellipse
-        shape.selectItem(at: tool == .ellipse ? 1 : 0)
-        mode.isHidden = tool != .blur
-        mode.selectItem(withTitle: canvas.blurMode.rawValue)
-        text.isHidden = tool != .text
-        for control in [color as NSControl, width, shape, mode, text] { control.isEnabled = !canvas.busy }
-        if layoutTool != tool {
-            layoutTool = tool
-            layoutSubtreeIfNeeded(); onLayout?()
+        undoButton.isEnabled = canvas.canUndo; redoButton.isEnabled = canvas.canRedo
+        for (command, button) in commands {
+            button.isEnabled = command == .cancel || (!canvas.busy && !canvas.selection.isEmpty)
+        }
+        toolSettings.refresh()
+        if layoutTool != canvas.tool {
+            layoutTool = canvas.tool; onLayout?()
         }
     }
-
     private func makeButton(symbol: String, title: String = "", help: String, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
-        button.bezelStyle = .inline; button.isBordered = false
-        button.toolTip = help; button.setAccessibilityLabel(help.components(separatedBy: " · ")[0])
+        let button = ScreenshotToolbarButton(title: title, target: self, action: action)
+        button.image = symbol.isEmpty ? nil : NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        button.imagePosition = symbol.isEmpty ? .noImage : title.isEmpty ? .imageOnly : .imageLeading
+        button.bezelStyle = .inline; button.isBordered = false; button.focusRingType = .exterior
+        button.toolTip = help; button.setAccessibilityLabel(help.components(separatedBy: " — ")[0])
         button.widthAnchor.constraint(greaterThanOrEqualToConstant: title.isEmpty ? 30 : 60).isActive = true
         button.heightAnchor.constraint(equalToConstant: 30).isActive = true
         return button
@@ -157,56 +140,24 @@ final class ScreenshotToolbar: NSView {
         guard let value = sender.identifier?.rawValue, let tool = ScreenshotTool(rawValue: value) else { return }
         canvas?.selectTool(tool); canvas?.window?.makeKey(); canvas?.window?.makeFirstResponder(canvas)
     }
-    @objc private func updateSettings(_ sender: Any?) {
-        guard let canvas else { return }
-        canvas.color = color.color; canvas.lineWidth = [2, 3, 5, 8][max(0, width.indexOfSelectedItem)]
-        canvas.labelText = text.stringValue
-        canvas.blurMode = ScreenshotBlurMode.allCases[max(0, mode.indexOfSelectedItem)]
-        if sender as? NSPopUpButton === shape {
-            canvas.selectTool(shape.indexOfSelectedItem == 0 ? .rectangle : .ellipse)
-        }
-        if let rgb = color.color.usingColorSpace(.sRGB) {
-            defaults.set([rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent], forKey: "sidekey.screenshot.color.\(canvas.tool.rawValue)")
-        }
-        defaults.set(width.indexOfSelectedItem, forKey: "sidekey.screenshot.width.\(canvas.tool.rawValue)")
-    }
     @objc private func undo(_ sender: Any?) { canvas?.undo() }
-    @objc private func finishText(_ sender: Any?) {
-        updateSettings(sender)
-        onCommand?(.copy)
+    @objc private func redo(_ sender: Any?) { canvas?.redo() }
+    @objc private func command(_ sender: NSButton) {
+        guard let command = commands.first(where: { $0.value === sender })?.key else { return }
+        onCommand?(command)
     }
-    @objc private func download(_ sender: Any?) { onCommand?(.download) }
-    @objc private func copyImage(_ sender: Any?) { onCommand?(.copy) }
-    @objc private func menuTool(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let tool = ScreenshotTool(rawValue: raw) else { return }
-        canvas?.selectTool(tool); canvas?.window?.makeKey(); canvas?.window?.makeFirstResponder(canvas)
-    }
-    @objc private func menuCommand(_ sender: NSMenuItem) {
-        switch sender.representedObject as? String {
-        case "text": onCommand?(.copyText)
-        case "pin": onCommand?(.pin)
-        case "share": onCommand?(.share)
-        case "resize": onCommand?(.resize)
-        case "redo": canvas?.redo()
-        default: onCommand?(.cancel)
-        }
-    }
-    @objc private func showMore(_ sender: NSButton) {
-        let menu = NSMenu(); menu.autoenablesItems = false
-        for (title, tool) in [("Select & crop · V", ScreenshotTool.select), ("Highlighter · M", .marker),
-                              ("Numbered steps · N", .counter), ("Spotlight", .spotlight)] {
-            let item = NSMenuItem(title: title, action: #selector(menuTool(_:)), keyEquivalent: "")
-            item.target = self; item.representedObject = tool.rawValue; item.isEnabled = canvas?.busy == false
-            menu.addItem(item)
-        }
-        menu.addItem(.separator())
-        for (title, command) in [("Copy text", "text"), ("Pin above windows", "pin"), ("Output size…", "resize"),
-                                  ("Share…", "share"), ("Redo", "redo"), ("Cancel capture", "cancel")] {
-            let item = NSMenuItem(title: title, action: #selector(menuCommand(_:)), keyEquivalent: "")
-            item.target = self; item.representedObject = command
-            item.isEnabled = command == "cancel" || (canvas?.busy == false && (command != "redo" || canvas?.canRedo == true))
-            menu.addItem(item)
-        }
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: sender.bounds.minY), in: sender)
+}
+
+@MainActor
+enum ScreenshotToolbarSurface {
+    static func install(in view: NSView) {
+        let material = NSVisualEffectView()
+        material.material = .popover; material.blendingMode = .behindWindow; material.state = .active
+        material.wantsLayer = true; material.layer?.cornerRadius = 13
+        material.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(material)
+        NSLayoutConstraint.activate([
+            material.leadingAnchor.constraint(equalTo: view.leadingAnchor), material.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            material.topAnchor.constraint(equalTo: view.topAnchor), material.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
     }
 }

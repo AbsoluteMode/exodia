@@ -899,12 +899,21 @@ Guide: `docs/backup.md`. WHY:
 
 Screenshot is an action tool in hover search/Toolbox with an optional named
 hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
-then shows a frozen selection canvas and one horizontal native toolbar with
-inline contextual settings, Copy and Download. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
+then shows a frozen selection canvas and a wrapping native toolbar exposing all
+commands, Copy & exit ↩ and Download. Color/width and other contextual controls
+live in a separate adjacent ScreenshotToolSettings panel. Capture requests the
+filter's full Retina pixel dimensions with best resolution; PNG export keeps
+those pixels unless Output size is explicitly changed. Repeated activation
+preserves the editor; unchanged display notifications are ignored. Capture has
+its own 10-second deadline with retry, cancelled before editing. Unknown keys
+are consumed locally to avoid recursion through ScreenshotCapturePanel; Tab
+traverses both bars. Both bars avoid the display's top safe area. PNG stores
+Retina point scale as well as full-resolution pixels. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
 Shape,
-Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
-system sharing live in More. Blur defaults to Text and numbers, including
+Pen, Text, Blur, secondary tools, OCR, pin, output size and system sharing are
+all exposed on the main toolbar. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
+from either panel; focused text fields retain native text undo. Blur defaults to Text and numbers, including
 standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
 without language correction; accurate OCR belongs to Copy text. Dark crops are
 normalized only for detection; output keeps original colors. Each text region
