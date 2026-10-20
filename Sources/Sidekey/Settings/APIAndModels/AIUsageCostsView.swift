@@ -136,6 +136,8 @@ final class AIUsageCostsViewModel: ObservableObject {
 @MainActor
 struct AIUsageCostsView: View {
     @ObservedObject var model: AIUsageCostsViewModel
+    @State private var periodHovered = false
+    @FocusState private var periodFocused: Bool
     let now: () -> Date
     init(model: AIUsageCostsViewModel, now: @escaping () -> Date = Date.init) { self.model = model; self.now = now }
     private var interval: DateInterval? { model.period.interval(now: now(), start: model.start, end: model.end) }
@@ -146,9 +148,23 @@ struct AIUsageCostsView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 12) {
                         Text("Costs").font(.system(size: 15, weight: .semibold))
-                        MacPopup(items: AIUsagePeriod.allCases.map { .init(value: $0, label: $0.title) },
-                                 selection: $model.period, minWidth: 140, maxWidth: 180)
+                        Menu {
+                            ForEach(AIUsagePeriod.allCases) { period in
+                                Button { model.period = period } label: {
+                                    if model.period == period { Label(period.title, systemImage: "checkmark") }
+                                    else { Text(period.title) }
+                                }
+                            }
+                        } label: {
+                            MacPopupLabel(title: model.period.title, minWidth: 140, maxWidth: 180)
+                        }
+                            .menuStyle(.button).menuIndicator(.hidden)
+                            .buttonStyle(AIUsageControlStyle(hovered: periodHovered, focused: periodFocused))
+                            .fixedSize(horizontal: true, vertical: false)
+                            .focused($periodFocused)
+                            .onHover { periodHovered = $0 }
                             .accessibilityLabel("Cost period")
+                            .accessibilityValue(model.period.title)
                         Spacer(minLength: 0)
                         AIUsageRefreshButton(isEnabled: !model.loading && !model.billingLoading) {
                             Task { await refresh() }
@@ -171,7 +187,9 @@ struct AIUsageCostsView: View {
                 if model.failed {
                     VStack(alignment: .leading, spacing: 9) {
                         Text("Couldn’t load cost history.")
-                        Button("Retry") { Task { await refresh() } }
+                        AIUsageRefreshButton(title: "Retry", isEnabled: !model.loading && !model.billingLoading) {
+                            Task { await refresh() }
+                        }
                     }.padding(18)
                 } else if interval != nil && (model.loading || model.loadedInterval != interval) {
                     ProgressView("Loading usage…").padding(24)
@@ -265,14 +283,15 @@ struct AIUsageCostsView: View {
 
 @MainActor
 private struct AIUsageRefreshButton: View {
+    var title = "Refresh"
     let isEnabled: Bool
     let action: () -> Void
     @State private var hovered = false
     @FocusState private var focused: Bool
 
     var body: some View {
-        Button("Refresh", action: action)
-            .buttonStyle(AIUsageRefreshStyle(hovered: hovered, focused: focused))
+        Button(title, action: action)
+            .buttonStyle(AIUsageControlStyle(hovered: hovered, focused: focused, compactLabel: true))
             .focused($focused)
             .disabled(!isEnabled)
             .onHover { hovered = isEnabled && $0 }
@@ -280,17 +299,18 @@ private struct AIUsageRefreshButton: View {
     }
 }
 
-struct AIUsageRefreshStyle: ButtonStyle {
+struct AIUsageControlStyle: ButtonStyle {
     let hovered: Bool
     let focused: Bool
+    var compactLabel = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .medium))
-            .padding(.horizontal, 12).padding(.vertical, 5)
+            .padding(.horizontal, compactLabel ? 12 : 0).padding(.vertical, compactLabel ? 5 : 0)
             .foregroundStyle(MacSettingsTheme.text)
-            .background(MacSettingsTheme.controlBg, in: RoundedRectangle(cornerRadius: 6))
+            .background(compactLabel ? MacSettingsTheme.controlBg : .clear, in: RoundedRectangle(cornerRadius: 6))
             .overlay {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(MacSettingsTheme.text.opacity(isEnabled ? (configuration.isPressed ? 0.16 : (hovered ? 0.08 : 0)) : 0))
@@ -309,6 +329,7 @@ struct AIUsageRefreshStyle: ButtonStyle {
 @MainActor
 private struct AIUsageFeatureCostRow: View {
     let row: AIUsageCostRow
+    @Environment(\.isEnabled) private var isEnabled
     @State private var shown = false
     @State private var hovered = false
     @State private var pinned = false
@@ -326,10 +347,10 @@ private struct AIUsageFeatureCostRow: View {
                 }
                 .padding(.vertical, 5).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).focused($focused)
-            .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(focused ? MacSettingsTheme.accent : .clear, lineWidth: 1.5) }
+            .buttonStyle(AIUsageControlStyle(hovered: false, focused: focused)).focused($focused)
             .accessibilityLabel("\(row.title), \(row.models.count) models used. Show model costs")
             .onHover { inside in
+                let inside = inside && isEnabled
                 hovered = inside
                 closeTask?.cancel()
                 if inside { shown = true } else { scheduleClose() }
@@ -346,7 +367,10 @@ private struct AIUsageFeatureCostRow: View {
             AIUsagePriceLabel(events: row.events)
         }
         .font(.system(size: 13)).monospacedDigit().padding(.horizontal, 18).padding(.vertical, 10)
-        .background(hovered ? MacSettingsTheme.hover : .clear)
+        .background(isEnabled && hovered ? MacSettingsTheme.hover : .clear)
+        .onChange(of: isEnabled) { _, enabled in
+            if !enabled { shown = false; hovered = false; closeTask?.cancel() }
+        }
         .onChange(of: shown) { _, value in if !value { pinned = false } }
         .onExitCommand { shown = false; pinned = false }
         .onDisappear { closeTask?.cancel() }
@@ -379,6 +403,7 @@ struct AIUsageDateControl: View {
     @Binding var date: Date
     let latest: Date
     @State private var presented = false
+    @State private var hovered = false
     @FocusState private var focused: Bool
     var body: some View {
         HStack(spacing: 8) {
@@ -386,9 +411,9 @@ struct AIUsageDateControl: View {
             Button { presented.toggle() } label: {
                 MacPopupLabel(title: date.formatted(date: .numeric, time: .omitted), minWidth: 116, maxWidth: 136)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AIUsageControlStyle(hovered: hovered, focused: focused))
             .focused($focused)
-            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? MacSettingsTheme.accent : .clear, lineWidth: 1.5) }
+            .onHover { hovered = $0 }
             .accessibilityLabel("\(title) date")
             .accessibilityValue(date.formatted(date: .complete, time: .omitted))
             .popover(isPresented: $presented, arrowEdge: .bottom) {
@@ -409,7 +434,7 @@ struct AIUsageDateCalendar: View {
         VStack(alignment: .trailing, spacing: 10) {
             DatePicker(title, selection: $date, in: ...latest, displayedComponents: .date)
                 .datePickerStyle(.graphical).labelsHidden()
-            Button("Done", action: close).keyboardShortcut(.defaultAction)
+            AIUsageRefreshButton(title: "Done", isEnabled: true, action: close).keyboardShortcut(.defaultAction)
         }
         .padding(12)
         .onChange(of: date) { _, _ in close() }

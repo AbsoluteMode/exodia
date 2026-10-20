@@ -131,6 +131,13 @@ final class APIAndModelsRenderTests: XCTestCase {
             try await render(AIUsageDateCalendar(title: "From", date: .constant(fixtureNow), latest: fixtureNow, close: {}),
                 size: NSSize(width: 300, height: 310), dark: dark,
                 to: directory.appendingPathComponent("cost-date-calendar-\(dark ? "dark" : "light").png"))
+            try await render(HStack(spacing: 12) {
+                Button("Normal") {}.buttonStyle(AIUsageControlStyle(hovered: false, focused: false, compactLabel: true))
+                Button("Hover") {}.buttonStyle(AIUsageControlStyle(hovered: true, focused: false, compactLabel: true))
+                Button("Focus") {}.buttonStyle(AIUsageControlStyle(hovered: false, focused: true, compactLabel: true))
+                Button("Disabled") {}.buttonStyle(AIUsageControlStyle(hovered: true, focused: true, compactLabel: true)).disabled(true)
+            }.padding(16), size: NSSize(width: 420, height: 80), dark: dark,
+                to: directory.appendingPathComponent("cost-control-states-\(dark ? "dark" : "light").png"))
         }
         // What the Agent row's provider menu lists (a menu itself is not drawn offscreen).
         try await render(
