@@ -152,11 +152,6 @@ struct SettingsOtherView: View {
                             MacSwitch(isOn: screenshotProtectionToggleBinding, label: "Screenshot protection")
                         }
                     }
-                    MacBanner(
-                        tone: .privacy,
-                        systemImage: "lock.shield",
-                        text: "Audio and text are processed on this Mac or sent only to the providers you configure with your own keys."
-                    )
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
