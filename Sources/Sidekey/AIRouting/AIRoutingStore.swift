@@ -51,6 +51,8 @@ final class AIRoutingStore: ObservableObject {
     private let defaults: UserDefaults
     /// The stored value as loaded, when part or all of it could not be read.
     private var pendingBackup: Any?
+    /// An independent choice this build cannot decode is not an absent route.
+    private let hasUnreadSubtitleRoute: Bool
 
     /// Production uses `UserDefaults.standard`. Tests pass an isolated suite.
     init(defaults: UserDefaults = .standard) {
@@ -58,6 +60,7 @@ final class AIRoutingStore: ObservableObject {
         let loaded = Self.load(from: defaults)
         self.state = loaded.state
         self.pendingBackup = loaded.unreadValue
+        self.hasUnreadSubtitleRoute = loaded.hasUnreadSubtitleRoute
     }
 
     var isMigrated: Bool { state.migrationVersion >= 1 }
@@ -65,7 +68,10 @@ final class AIRoutingStore: ObservableObject {
     // MARK: - Routes
 
     func route(for feature: AIFeature) -> FeatureRoute? {
-        state.routes[feature.rawValue]
+        // A partial v1 document cannot be rewritten at launch. Expose the
+        // same one-time split in memory so configured subtitles keep working
+        // before the first real edit commits it (and retains the raw backup).
+        stateWithSubtitleSeparation.routes[feature.rawValue]
     }
 
     /// The route the migration chose for `feature`, if any. Not affected by
@@ -76,7 +82,7 @@ final class AIRoutingStore: ObservableObject {
 
     /// `nil` un-sets the feature.
     func setRoute(_ route: FeatureRoute?, for feature: AIFeature) {
-        var updated = stateForEditing
+        var updated = stateWithSubtitleSeparation
         guard state.routes[feature.rawValue] != route || updated.routes[feature.rawValue] != route else { return }
         updated.routes[feature.rawValue] = route
         commit(updated)
@@ -95,7 +101,7 @@ final class AIRoutingStore: ObservableObject {
     /// features were left without a model. The migration snapshot stays.
     @discardableResult
     func clearRoutes(using account: ProviderAccount) -> [AIFeature] {
-        var updated = stateForEditing
+        var updated = stateWithSubtitleSeparation
         let cleared = AIFeature.allCases.filter { updated.routes[$0.rawValue]?.account == account }
         guard !cleared.isEmpty else { return [] }
         for feature in cleared {
@@ -120,7 +126,7 @@ final class AIRoutingStore: ObservableObject {
             id: id, name: name, baseURL: baseURL,
             keyAccount: "byok.server.\(id.uuidString.lowercased()).api_key"
         )
-        var updated = stateForEditing
+        var updated = stateWithSubtitleSeparation
         updated.servers.append(server)
         commit(updated)
         return server
@@ -129,7 +135,7 @@ final class AIRoutingStore: ObservableObject {
     /// Removes the server and un-sets every feature that ran on it. Those
     /// features become Not set; none moves to another provider.
     func removeServer(_ id: UUID) {
-        var updated = stateForEditing
+        var updated = stateWithSubtitleSeparation
         guard updated.servers.contains(where: { $0.id == id })
                 || updated.routes.values.contains(where: { $0.account == .server(id) }) else { return }
         updated.servers.removeAll { $0.id == id }
@@ -155,16 +161,17 @@ final class AIRoutingStore: ObservableObject {
     // WHY: .project-docs/decisions/2026-10-20-translation-tools.md
     func separateSubtitleTranslationIfNeeded() {
         guard pendingBackup == nil else { return }
-        commit(stateForEditing)
+        commit(stateWithSubtitleSeparation)
     }
 
-    /// An explicit edit already replaces a partial document (after retaining
-    /// its raw backup). Split before applying that edit so a later clear,
-    /// provider change or server removal cannot be undone on relaunch.
-    private var stateForEditing: AIRoutingState {
+    /// The pending v1 split is also the read-only effective route until it
+    /// can be persisted. An explicit edit commits the split before applying
+    /// the change, so later clears/removals cannot be undone on relaunch.
+    private var stateWithSubtitleSeparation: AIRoutingState {
         guard state.migrationVersion == 1 else { return state }
         var updated = state
-        if updated.routes[AIFeature.subtitlesTranslation.rawValue] == nil,
+        if !hasUnreadSubtitleRoute,
+           updated.routes[AIFeature.subtitlesTranslation.rawValue] == nil,
            updated.routes[AIFeature.subtitlesAudio.rawValue] != nil,
            let previous = updated.routes[AIFeature.translation.rawValue] {
             updated.routes[AIFeature.subtitlesTranslation.rawValue] = previous
@@ -182,14 +189,14 @@ final class AIRoutingStore: ObservableObject {
     /// choices from the frozen old settings. Loading never writes; the first
     /// real change saves a copy of such a value under `backupKey`.
     // WHY: .project-docs/decisions/2026-10-19-api-and-models.md
-    private static func load(from defaults: UserDefaults) -> (state: AIRoutingState, unreadValue: Any?) {
-        guard let stored = defaults.object(forKey: defaultsKey) else { return (emptyState, nil) }
+    private static func load(from defaults: UserDefaults) -> (state: AIRoutingState, unreadValue: Any?, hasUnreadSubtitleRoute: Bool) {
+        guard let stored = defaults.object(forKey: defaultsKey) else { return (emptyState, nil, false) }
         guard let data = stored as? Data,
               let read = try? JSONDecoder().decode(LenientRoutingState.self, from: data)
         else {
-            return (AIRoutingState(routes: [:], migratedRoutes: [:], servers: [], migrationVersion: 1), stored)
+            return (AIRoutingState(routes: [:], migratedRoutes: [:], servers: [], migrationVersion: 1), stored, false)
         }
-        return (read.state, read.isComplete ? nil : data)
+        return (read.state, read.isComplete ? nil : data, read.hasUnreadSubtitleRoute)
     }
 
     /// Applies a change in one step (one `objectWillChange`) and saves the
@@ -218,6 +225,7 @@ private struct LenientRoutingState: Decodable {
     let state: AIRoutingState
     /// Nothing was skipped.
     let isComplete: Bool
+    let hasUnreadSubtitleRoute: Bool
 
     private enum CodingKeys: String, CodingKey {
         case routes, migratedRoutes, servers, migrationVersion
@@ -235,6 +243,11 @@ private struct LenientRoutingState: Decodable {
         let migrated = (try? container.decodeIfPresent([String: Entry<FeatureRoute>].self, forKey: .migratedRoutes)) ?? nil
         let servers = (try? container.decodeIfPresent([Entry<ServerEndpoint>].self, forKey: .servers)) ?? nil
         let version = (try? container.decodeIfPresent(Int.self, forKey: .migrationVersion)) ?? nil
+        if let subtitle = routes?[AIFeature.subtitlesTranslation.rawValue] {
+            hasUnreadSubtitleRoute = subtitle.value == nil
+        } else {
+            hasUnreadSubtitleRoute = false
+        }
 
         state = AIRoutingState(
             routes: (routes ?? [:]).compactMapValues(\.value),
