@@ -397,6 +397,21 @@ speech-to-text (`scribe_v2`), self-hosted `/v1/audio/transcriptions` на хос
 
 ## Meeting Notes
 
+**Current continuation behavior (2026-10-20):** Each completed call starts BYOK
+processing immediately. After auto-end, Reconnect is available for three minutes;
+Notes / Reconnect / Skip and the 20-second decision timeout remain. Reconnect
+records a separate part and, when it ends, supplements the same meeting under
+Updating… while keeping the earlier note readable. Only new audio is processed;
+new summary findings and a transcript boundary are appended. Manual Stop is
+final, and neither Skip nor timeout starts recording. Recovery is idempotent,
+manual edits are preserved, and speaker labels remain scoped to each part.
+Open notes and transcripts refresh automatically in both Notes surfaces. Active
+drafts defer that refresh until Cancel or successful persistence after Done;
+merely submitting a debounced save does not reload older stored text.
+See [the continuation decision](../.project-docs/decisions/2026-10-20-meeting-continuations.md).
+The backend design below is historical; current processing uses the user's BYOK
+routes and the native notes viewer.
+
 **Live-assistant test preparation (2026-10-19):** Internal opt-in capture uses
 the local `sidekey.meetings.liveTestCapture` flag when Meeting Notes uses Soniox.
 The user requested no test-mode controls or test-files row in Settings.

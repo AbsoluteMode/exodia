@@ -8,8 +8,18 @@ protocol MeetingDirectProcessing: AnyObject {
         event: MeetingRecorder.FinalizedEvent,
         startedAt: Date,
         language: String?,
-        meetingsStore: MeetingsStore?
+        meetingsStore: MeetingsStore?,
+        continuation: MeetingContinuation?,
+        endedAt: Date?
     ) async throws -> UUID
+}
+
+extension MeetingDirectProcessing {
+    func process(event: MeetingRecorder.FinalizedEvent, startedAt: Date, language: String?,
+                 meetingsStore: MeetingsStore?) async throws -> UUID {
+        try await process(event: event, startedAt: startedAt, language: language,
+                          meetingsStore: meetingsStore, continuation: nil, endedAt: nil)
+    }
 }
 
 enum MeetingBYOKProcessingError: Error, CustomStringConvertible, Equatable {
@@ -96,13 +106,26 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         event: MeetingRecorder.FinalizedEvent,
         startedAt: Date,
         language: String?,
-        meetingsStore: MeetingsStore?
+        meetingsStore: MeetingsStore?,
+        continuation: MeetingContinuation? = nil,
+        endedAt: Date? = nil
     ) async throws -> UUID {
         guard let meetingsStore else { throw MeetingBYOKProcessingError.missingStore }
+        if try await meetingsStore.hasProcessedRecording(event.meetingId) {
+            cleanupStagingDirectory(for: event)
+            return continuation?.meetingId ?? event.meetingId
+        }
+        if let continuation {
+            let previousCommitted = try await meetingsStore.hasProcessedRecording(continuation.precedingRecordingId)
+            let previousNote = try await meetingsStore.markdown(id: continuation.meetingId)
+            let legacyNote = continuation.precedingRecordingId == continuation.meetingId && previousNote != nil
+            guard previousCommitted || legacyNote else { throw MeetingContinuationError.previousPartNotReady }
+        }
         guard let route = try await notesRoute.routeIfEnabled() else {
             throw MeetingBYOKProcessingError.directLLMDisabled
         }
 
+        let endedAt = endedAt ?? startedAt.addingTimeInterval(max(0, event.totalDurationSeconds))
         let transcriptionRoute = try resolveMeetingsRoute()
         let transcript: String
         let segments: [TranscriptSegment]
@@ -116,7 +139,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
             // WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
             if result.segments.isEmpty {
                 return try await storeNoSpeechMeeting(
-                    event: event, startedAt: startedAt, meetingsStore: meetingsStore
+                    event: event, startedAt: startedAt, meetingsStore: meetingsStore, continuation: continuation, endedAt: endedAt
                 )
             }
             segments = result.segments
@@ -131,10 +154,11 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
 
         let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTranscript.isEmpty else { throw MeetingBYOKProcessingError.noTranscript }
-        _ = try await meetingsStore.updateProgress(id: event.meetingId, status: .generatingProtocol)
+        if continuation == nil {
+            _ = try await meetingsStore.updateProgress(id: event.meetingId, status: .generatingProtocol)
+        }
 
         let durationSeconds = MeetingsCoordinator.roundedDurationSeconds(event.totalDurationSeconds)
-        let endedAt = startedAt.addingTimeInterval(max(0, event.totalDurationSeconds))
         let markdown = try await generateNoteMarkdown(
             transcript: trimmedTranscript,
             route: route,
@@ -147,19 +171,10 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         let title = MeetingProtocolParser.parse(normalizedMarkdown)?.name
             ?? Self.firstMarkdownHeading(in: normalizedMarkdown)
 
-        try await meetingsStore.insert(
-            meta: MeetingMetaWithLocalState(
-                id: event.meetingId,
-                startedAt: startedAt,
-                endedAt: endedAt,
-                durationSeconds: durationSeconds,
-                title: title,
-                syncStatus: .new,
-                serverVersion: 1,
-                createdAt: Date()
-            ),
-            markdown: normalizedMarkdown,
-            transcript: segments
+        let meetingId = try await meetingsStore.storeProcessedRecording(
+            recordingId: event.meetingId, startedAt: startedAt, endedAt: endedAt,
+            duration: event.totalDurationSeconds, title: title,
+            markdown: normalizedMarkdown, transcript: segments, continuation: continuation
         )
 
         cleanupStagingDirectory(for: event)
@@ -170,7 +185,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
             event.meetingId.uuidString,
             durationSeconds
         )
-        return event.meetingId
+        return meetingId
     }
 
     /// A recording without speech is finished, not failed: store a short note
@@ -179,23 +194,17 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
     private func storeNoSpeechMeeting(
         event: MeetingRecorder.FinalizedEvent,
         startedAt: Date,
-        meetingsStore: MeetingsStore
+        meetingsStore: MeetingsStore,
+        continuation: MeetingContinuation?, endedAt: Date
     ) async throws -> UUID {
         let durationSeconds = MeetingsCoordinator.roundedDurationSeconds(event.totalDurationSeconds)
-        try await meetingsStore.insert(
-            meta: MeetingMetaWithLocalState(
-                id: event.meetingId,
-                startedAt: startedAt,
-                endedAt: startedAt.addingTimeInterval(max(0, event.totalDurationSeconds)),
-                durationSeconds: durationSeconds,
-                title: Self.noSpeechTitle,
-                syncStatus: .new,
-                serverVersion: 1,
-                createdAt: Date()
-            ),
-            markdown: Self.noSpeechMarkdown,
-            transcript: []
+        let meetingId = try await meetingsStore.storeProcessedRecording(
+            recordingId: event.meetingId, startedAt: startedAt,
+            endedAt: endedAt,
+            duration: event.totalDurationSeconds, title: Self.noSpeechTitle,
+            markdown: Self.noSpeechMarkdown, transcript: [], continuation: continuation
         )
+
         cleanupStagingDirectory(for: event)
         os_log(
             "meeting had no speech (meetingId: %{public}@, duration_s: %{public}d)",
@@ -204,7 +213,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
             event.meetingId.uuidString,
             durationSeconds
         )
-        return event.meetingId
+        return meetingId
     }
 
     /// The Meetings route and its own provider's key. A missing key never
@@ -304,9 +313,9 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         return "\(MeetingProtocolParser.marker)\n\(trimmed)"
     }
 
-    private static let noSpeechTitle = "No speech detected"
+    nonisolated static let noSpeechTitle = "No speech detected"
 
-    private static let noSpeechMarkdown = """
+    nonisolated static let noSpeechMarkdown = """
     # No speech detected
 
     The recording contained no speech, so there is nothing to summarize.
