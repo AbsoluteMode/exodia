@@ -29,6 +29,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     @Published private(set) var keysAvailable = true
     /// Changes with every prompt shown, so the view starts each one fresh.
     @Published private(set) var promptSerial = 0
+    @Published private(set) var isEditingMinutes = false
     @Published private(set) var selectedTimedMinutes = CaseVaultPayload.defaultTimedApprovalMinutes
 
     private struct Entry {
@@ -100,11 +101,19 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         selectedTimedMinutes = minutes
     }
 
+    /// Editing the duration must never consume typing as Y/N/A/Escape answers.
+    func setEditingMinutes(_ editing: Bool) {
+        guard active != nil, offersTimed else { return }
+        isEditingMinutes = editing
+        keyTap.setArmed(isArmed && !editing)
+    }
+
     /// Answers the visible prompt and shows the next one.
     func resolve(_ outcome: CaseApprovalOutcome) {
         guard let entry = active else { return }
         clearTimers()
         active = nil
+        isEditingMinutes = false
         entry.continuation.resume(returning: outcome)
         if case .allowTimed(let minutes) = outcome, CaseViewModel.timedApprovalRange.contains(minutes) {
             allowWaiting(coveredBy: entry.request)
@@ -163,6 +172,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     private var acceptsAnswer: Bool { active != nil && isArmed }
 
     private func handleKey(_ key: CaseApprovalKey) {
+        guard !isEditingMinutes else { return }
         switch key {
         case .yes: choose(.allow)
         case .no, .escape: choose(.deny)
@@ -176,6 +186,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         active = entry
         let shown = now()
         isArmed = false
+        isEditingMinutes = false
         pendingCount = queue.count
         deadline = shown.addingTimeInterval(Self.timeout)
         promptSerial += 1
@@ -199,7 +210,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         cancelArming = schedule(Self.armingDelay) { [weak self] in
             guard let self, self.active != nil, self.promptSerial == serial else { return }
             self.isArmed = true
-            self.keyTap.setArmed(true)
+            self.keyTap.setArmed(!self.isEditingMinutes)
         }
     }
 

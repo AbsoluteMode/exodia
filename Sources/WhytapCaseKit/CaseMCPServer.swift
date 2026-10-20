@@ -21,9 +21,10 @@ public final class CaseMCPServer {
     public var instructions: String {
         """
         Whytap Case keeps secrets on this Mac. You can see project and key names, never values.
-        To use keys, run in your terminal: \(Self.quoted(executablePath)) case run -p <project> '<command using $KEY_NAME>'
+        Find a needed key directly with case_list_keys(query: "name or description"); no need to list projects first.
+        To use a known key, run in your terminal: \(Self.quoted(executablePath)) case run --only KEY_NAME '<command using $KEY_NAME>'
         Use single quotes so your shell does not expand $KEY_NAME; Case injects values and hides them in output.
-        Without -p, pass --only KEY_NAME; if several projects have it, Case lists them: pick by description, or ask the user.
+        If several projects have that key, Case lists them: rerun with -p <project>, choosing by description or asking the user.
         """
     }
 
@@ -83,9 +84,10 @@ public final class CaseMCPServer {
         ],
         [
             "name": "case_list_keys",
-            "description": "List key names and descriptions, optionally for one project. Never returns values.",
+            "description": "Find keys directly with query across key names, descriptions and project names; no need to list projects first. Optionally restrict project. Never returns values.",
             "inputSchema": ["type": "object",
-                            "properties": ["project": ["type": "string", "description": "Project name (optional)"]]]
+                            "properties": ["project": ["type": "string", "description": "Project name (optional)"],
+                                           "query": ["type": "string", "description": "Words to find in key name, description or project (optional)"]]]
         ]
     ]
 
@@ -110,8 +112,17 @@ public final class CaseMCPServer {
                 "\(Self.oneLine($0.name)) — \(Self.oneLine($0.description)) (\($0.keyCount) keys)"
             }.joined(separator: "\n"), isError: false)
         case .keys(let keys):
-            if keys.isEmpty { return textResult("No keys.", isError: false) }
-            return textResult(keys.map {
+            let terms = (arguments["query"] as? String ?? "").split(whereSeparator: \.isWhitespace).map(String.init)
+            let matching = keys.filter { key in
+                let metadata = "\(key.name) \(key.description) \(key.project)"
+                return terms.allSatisfy {
+                    metadata.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                }
+            }
+            if matching.isEmpty {
+                return textResult(terms.isEmpty ? "No keys." : "No matching keys. Try another query or omit project.", isError: false)
+            }
+            return textResult(matching.map {
                 "\(Self.oneLine($0.name)) — \(Self.oneLine($0.description))"
                     + (arguments["project"] is String ? "" : " [\(Self.oneLine($0.project))]")
             }.joined(separator: "\n"), isError: false)

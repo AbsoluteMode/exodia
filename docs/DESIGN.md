@@ -579,7 +579,7 @@ rights. No alternative composition or decorative screen is needed.
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
-| Approval | The request shows the command, app, project and key names. A Stepper changes temporary Bypass to 1–240 minutes; the button and physical A use that value. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
+| Approval | The request shows the command, app, project and key names. A native editable field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical A use that value. The bottom row contains Deny/Allow only. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
 
 Display metadata and project sections are rebuilt when the vault changes and
 reused for renders. Search only filters/ranks metadata; values never enter its
@@ -705,3 +705,51 @@ Why: the user requires visible evidence of interactivity, beyond a button shape
 or tooltip. Picker rows use the same feedback family. Offscreen state fixtures
 cover normal/hover/pressed/focus/disabled at 310 pt; physical focus remains
 shared-app acceptance. No authorization or registration behavior changes.
+
+## Case approval controls — 2026-10-21
+
+The person reviews a key-use request, then declines, allows once or grants
+short temporary access. First they see the agent, project/key names and command.
+The user chose a separate temporary Bypass button beside its numeric duration,
+with only Deny and Allow in the final row. Keep the native black island card.
+
+- Keep the 310/312 pt width and system type roles (12.5 pt header, 11.5 pt keys
+  and buttons, 11 pt monospaced command). The command stays one line; native
+  hover help and accessibility expose the full original string including line
+  breaks. Why: the compact summary must remain inspectable before approval.
+- Temporary Bypass is an actual capsule button with the existing physical A
+  hint. The duration is a 34×24 pt native text field followed by мин, without
+  arrows. Default 15 and supported 1–240 stay unchanged. Why: direct typing
+  replaces repeated stepper clicks and removes the third competing bottom action.
+- Invalid/empty drafts remain editable, show warning text color and disable the
+  temporary action. They never change the grant duration; blur/Return restores
+  the last valid number. Escape restores the pre-edit number and does not deny
+  the key request. Return only finishes editing. Why: a partially typed duration
+  must neither grant access nor silently authorize a different displayed number.
+- The nonactivating panel does not take keyboard focus when it appears. An
+  explicit field click or keyboard/AX first responder enables native editing.
+  Approval hotkeys are suspended before the first typed character; clicks on
+  the other actions still work after the existing quiet period. Finish editing,
+  timeout, hide or replacement by a queued prompt releases the old field editor
+  and key status. Why: numeric entry must not trigger Y/N/A/Escape or trap later
+  typing in a panel that no longer contains the original field.
+- Buttons visibly highlight their full capsule on hover, change fill while
+  pressed and show a keyboard-focus outline. Disabled/unarmed buttons dim and
+  suppress active hover/pressed feedback. The number field shows hover and focus
+  borders. No geometry shifts or new motion are added; the existing arming fade
+  respects Reduce Motion. Why: every interactive target must show feedback.
+- Tool ergonomics: names-only `case_list_keys(query:)` matches all query words
+  across authorized key name, description and project name, ignoring case and
+  diacritics. Instructions show the existing `case run --only KEY` route for a
+  known key; ambiguity retains explicit project choice. Why: agents can find a
+  needed key directly without fetching all projects or changing value delivery.
+
+Native offscreen fixtures cover short/long/queued/no-timed/unarmed cards at
+310/312 pt. Focused controller/native-field tests cover keyboard first responder,
+editing during arming, invalid text, Return/Escape, timeout and queued replacement
+without ordering a panel front. Synthetic MCP tests confirm metadata-only search;
+broker authorization and secret delivery remain unchanged. Physical pointer,
+VoiceOver, native tooltip timing, text selection/IME and real Touch ID remain
+shared-app acceptance after promotion. A real authorized key-presence check on the
+previous installed build returned only a static presence confirmation; it does
+not validate this new UI. No secret value was printed or sent over the network.
