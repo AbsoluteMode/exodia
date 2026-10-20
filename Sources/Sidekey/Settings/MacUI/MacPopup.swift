@@ -28,35 +28,12 @@ struct MacMenu<Content: View>: View {
     var maxWidth: CGFloat? = 300
     var appearance: MacPopupAppearance = .settings
     @ViewBuilder var content: Content
-    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Menu {
             content
         } label: {
-            HStack(spacing: MacPopupMetrics.spacing) {
-                Text(title)
-                    .font(.system(size: MacPopupMetrics.fontSize, weight: .medium))
-                    .foregroundStyle(appearance.text)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(appearance.secondary)
-                    .frame(width: MacPopupMetrics.arrowWidth)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, MacPopupMetrics.horizontalPadding)
-            .frame(minWidth: minWidth, maxWidth: maxWidth, minHeight: MacPopupMetrics.height,
-                   maxHeight: MacPopupMetrics.height)
-            .background(appearance.background, in: RoundedRectangle(cornerRadius: MacPopupMetrics.radius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: MacPopupMetrics.radius, style: .continuous)
-                    .strokeBorder(appearance.border, lineWidth: 0.5)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: MacPopupMetrics.radius, style: .continuous))
-            .opacity(isEnabled ? 1 : 0.45)
+            MacPopupLabel(title: title, minWidth: minWidth, maxWidth: maxWidth, appearance: appearance)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -64,6 +41,41 @@ struct MacMenu<Content: View>: View {
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityValue(title)
         .help(title)
+    }
+}
+
+/// Also used by the searchable model popover, keeping its closed control identical.
+struct MacPopupLabel: View {
+    let title: String
+    var minWidth: CGFloat = 90
+    var maxWidth: CGFloat? = 300
+    var appearance: MacPopupAppearance = .settings
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        HStack(spacing: MacPopupMetrics.spacing) {
+            Text(title)
+                .font(.system(size: MacPopupMetrics.fontSize, weight: .medium))
+                .foregroundStyle(appearance.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(appearance.secondary)
+                .frame(width: MacPopupMetrics.arrowWidth)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, MacPopupMetrics.horizontalPadding)
+        .frame(minWidth: minWidth, maxWidth: maxWidth, minHeight: MacPopupMetrics.height,
+               maxHeight: MacPopupMetrics.height)
+        .background(appearance.background, in: RoundedRectangle(cornerRadius: MacPopupMetrics.radius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MacPopupMetrics.radius, style: .continuous)
+                .strokeBorder(appearance.border, lineWidth: 0.5)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: MacPopupMetrics.radius, style: .continuous))
+        .opacity(isEnabled ? 1 : 0.45)
     }
 }
 

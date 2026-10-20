@@ -5,7 +5,7 @@ import XCTest
 final class APIAndModelsViewTests: XCTestCase {
     private let files = [
         "APIAndModelsView.swift", "ModelMenu.swift", "KeyChipPopover.swift",
-        "AddKeySheet.swift", "AssignModelsSheet.swift", "ProviderMenu.swift",
+        "AddKeySheet.swift", "AssignModelsSheet.swift", "ProviderMenu.swift", "ModelPicker.swift",
     ]
 
     func test_tab_uses_mac_components_and_verbatim_strings() throws {
