@@ -48,8 +48,10 @@ feature sessions with regular checked integration and one working application.
 - Build a production candidate without interrupting the installed app. Verify
   its signature/identity against the installed app and require a newer build
   number without downgrading the display version. Keep the last working
-  bundle. Recording, dictation, agent work, unsaved work or
-  unknown activity defers replacement; never force-quit to install a feature.
+  bundle. The user authorized automatic normal restarts outside meetings on
+  2026-10-20, accepting interruption of other work. Check the current meeting
+  gate from the shared procedure; active/suspected meetings or an unknown
+  result defer silently without repeated saved/idle questions. Never force-quit.
 - Maintain build/CURRENT_BUILD.md in the primary checkout with separate
   ready, merged, pending and verified-running states, source SHA, included
   features and 1–3 acceptance steps. Report what actually runs and what to
