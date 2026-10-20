@@ -44,8 +44,9 @@ geometry, while translation uses the same SwiftUI menu in the system appearance.
 Segmented mode controls and action menus keep their existing roles.
 
 Notifications uses `NotificationPresentationControl` for built-in and script
-sources. Its menu, question-mark help button and enable switch share the row's
-vertical center. The overline caption moves into a tooltip and a clickable
+sources. Its question-mark help button precedes the Large/Small menu, following
+the user's final correction; both and the enable switch share the row's vertical
+center. The overline caption moves into a tooltip and a clickable
 popover describing Large and Small. The menu retains its source-specific
 accessibility label and selected value.
 

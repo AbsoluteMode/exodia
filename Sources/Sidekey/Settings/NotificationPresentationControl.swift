@@ -8,12 +8,6 @@ struct NotificationPresentationControl: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            MacPopup(items: [
-                .init(value: NotifyPresentation.card, label: "Large"),
-                .init(value: NotifyPresentation.icon, label: "Small")
-            ], selection: $selection, minWidth: 95)
-            .accessibilityLabel("Notification type for \(sourceName)")
-
             Button { showsHelp.toggle() } label: {
                 Image(systemName: "questionmark.circle")
                     .font(.system(size: 12))
@@ -35,6 +29,12 @@ struct NotificationPresentationControl: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .onExitCommand { showsHelp = false }
             }
+
+            MacPopup(items: [
+                .init(value: NotifyPresentation.card, label: "Large"),
+                .init(value: NotifyPresentation.icon, label: "Small")
+            ], selection: $selection, minWidth: 95)
+            .accessibilityLabel("Notification type for \(sourceName)")
         }
     }
 }
