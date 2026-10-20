@@ -3,7 +3,7 @@ import Foundation
 /// Portable content groups. Machine permissions and executable runtime state
 /// are intentionally outside the restore contract.
 enum ArtifactBackupSection: String, Codable, CaseIterable, Identifiable {
-    case settings, credentials, caseVault, meetings, history, workspace
+    case settings, credentials, caseVault, meetings, history, workspace, planner
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -13,6 +13,7 @@ enum ArtifactBackupSection: String, Codable, CaseIterable, Identifiable {
         case .meetings: return "Meetings & recordings"
         case .history: return "History & saved images"
         case .workspace: return "Dashboards & agent instructions"
+        case .planner: return "To-do & calendar"
         }
     }
 }

@@ -158,7 +158,7 @@ enum BackupSettingsBlockRestore {
         } else {
             path = "settings/preferences.json"
             payload = try JSONEncoder.artifactBackup.encode(BlockPayload(
-                schema: snapshot.schemaVersion >= 2 ? ArtifactSettingsPayload.currentSchema : 2,
+                schema: snapshot.schemaVersion >= 3 ? ArtifactSettingsPayload.currentSchema : (snapshot.schemaVersion == 2 ? 3 : 2),
                 values: snapshot.preferences.filter { ConfigBackupRegistry.entries[$0.key]?.section == section },
                 selectedSections: [section]))
         }

@@ -34,6 +34,13 @@ No Whytap account, backup server or GitHub Actions is used.
 
 ## What is included
 
+Planner tasks and local Whytap events have their own To-do & calendar section.
+Calendar connection settings and saved OAuth credentials travel in the settings
+and provider-key sections. Connected events are fetched again from their source
+after recovery; external event caches are not backed up. Older archives preserve
+calendar connections already on this Mac. A visible Planner or retained task
+draft blocks restore, while ordinary backups can continue.
+
 - API & Models routes for every feature, registered server addresses, languages,
   meeting preferences, hotkeys, vocabulary, Toolbox layout,
   display and feature settings, and agent preferences.

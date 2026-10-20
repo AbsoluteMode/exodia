@@ -51,6 +51,8 @@ enum HoverSlotEffect: Equatable {
     case openNotes
     case toggleMeetingRecord
     case openMonitor
+    case openTasks
+    case openCalendar
     case openTranslate
     case openSubtitles
     case openScreenshot
@@ -65,7 +67,7 @@ enum HoverSlotEffect: Equatable {
         case .openPanel:
             return true
         case .toggleDropMode, .openSettings, .openHotkeys, .openNotes,
-             .toggleMeetingRecord, .openMonitor, .openTranslate, .openSubtitles, .openScreenshot, .quit:
+             .toggleMeetingRecord, .openMonitor, .openTasks, .openCalendar, .openTranslate, .openSubtitles, .openScreenshot, .quit:
             return false
         }
     }
@@ -93,6 +95,10 @@ enum HoverSlotEffect: Equatable {
             actions.toggleMeetingRecord()
         case .openMonitor:
             actions.openMonitor()
+        case .openTasks:
+            actions.openTasks()
+        case .openCalendar:
+            actions.openCalendar()
         case .openTranslate:
             actions.openTranslate()
         case .openSubtitles:
@@ -135,6 +141,10 @@ enum HoverSlotRouter {
             return .openPanel(.monitor)
         case .brightness:
             return .openPanel(.brightness)
+        case .tasks:
+            return .openTasks
+        case .calendar:
+            return .openCalendar
         case .translate:
             return .openTranslate
         case .subtitles:

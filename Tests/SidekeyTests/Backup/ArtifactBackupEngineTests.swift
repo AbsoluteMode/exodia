@@ -127,6 +127,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
                             .appendingPathComponent("demo.png"))
         try profile.write("[]", to: profile.locations.notifyRoot.appendingPathComponent("history.json"))
         try profile.write("# Agent memory\nsynthetic instruction", to: profile.locations.agentMemory)
+        XCTAssertTrue(PlannerStore(url: profile.locations.plannerArchive).saveTask(PlannerTask(title: "Synthetic task")))
 
         return Source(profile: profile, environment: profile.environment(meetings: meetings, history: history),
                       caseKey: caseKey, meetingID: meetingID, imageUUID: imageUUID,

@@ -38,6 +38,8 @@ Knowledge workers — разработчики, продакт-менеджер�
 
 ## Что уже работает
 
+- Planner — отдельное нативное окно из инструментов To-do и Calendar: локальные задачи (добавить, найти, изменить, выполнить, вернуть, удалить) и собственные события Whytap. Месяц и повестка дня объединяют выбранные внешние календари: Apple через EventKit, Google, Outlook/Teams и Zoom Calendar Service — через прямой OAuth. Внешние события в первой версии доступны для чтения; свои события можно редактировать. Для прямых подключений нужны регистрации приложений у провайдеров; живая авторизация проверяется отдельно. См. [Planner](planner.md).
+
 - macOS 14.2+, Swift + AppKit + SwiftUI; surface — Dynamic Island (status-bar item нет)
 - Voice flow: hold Space (удержание пробела в редактируемом поле; Escape — отмена) → запись → realtime STT: «Your key» (Soniox / Deepgram / ElevenLabs / self-hosted OpenAI-compatible, напрямую ключом пользователя из Keychain) → cleanup (OpenRouter ключом пользователя / custom OpenAI-compatible endpoint / без LLM) → Cmd+V
 - Agent flow: Right Cmd tap/hold → локальный OpenCode → выбранная пользователем модель OpenRouter, рендер в окне
@@ -346,6 +348,10 @@ Anthropic (только для строки Agent) и свои OpenAI-compatible
 краткая сводка выбранных моделей и стрелка раскрытия. Нажатие открывает настройки
 прямо под строкой; одновременно раскрыта одна функция. Внутри — меню
 «Provider · model-id» на каждый маршрут и Speech/Text у парных маршрутов.
+The model picker opens a searchable popover: all query terms match in any
+order across model ID/provider, ignoring case and separators (`qwen 27` and
+`qwen27` find `qwen/qwen3.8-27b`). Up/Down and Return select; Escape clears then
+closes. Search and refresh keep the current route until an explicit verified pick.
 Подписей real-time, recorded и LLM with tools в списке нет. Функции: Drop Fast,
 Drop Smart (распознавание + очистка текста), Meetings (расшифровка + заметки),
 Agent, Agent voice, Voice search, Translation и Subtitles (Speech + отдельная LLM). Ошибки и

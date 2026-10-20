@@ -224,3 +224,14 @@ Sparkle key pair, code-signing certificate and update feed; see
 Whytap's key: delete `Resources/community-signing-certificate.pem`, then run
 `community-signing-bootstrap.sh` with the fork's own Doppler project or
 `--key-file`, or publish ad hoc.
+
+### Planner native OAuth clients
+
+`configure-calendar-clients.py` adds the owner's registered public native clients
+to the unsigned app Info.plist before either packaging path signs it. The default
+input is `whytap-calendar-clients.plist` in the Git common directory; the explicit
+`WHYTAP_CALENDAR_CLIENTS_PLIST` override is also supported. Keep this local input
+outside source commits and public logs. No account tokens or confidential web-app
+secrets belong in it. Use `--require-all` on the helper for acceptance of a candidate
+intended to offer Google, Outlook and Zoom sign-in without manual client setup.
+A build with no such input retains advanced custom-client setup and Apple access.
