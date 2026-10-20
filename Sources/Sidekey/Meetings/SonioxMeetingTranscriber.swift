@@ -15,6 +15,9 @@ actor SonioxMeetingTranscriber {
         var transcript: String?
         var segments: [TranscriptSegment]?
         var diarizationEnabled: Bool?
+        var usageModel: String?
+        var usageStartedAt: Date?
+        var usageSeconds: Double?
     }
 
     private let apiKey: String
@@ -22,14 +25,18 @@ actor SonioxMeetingTranscriber {
     private let session: URLSession
     private let pollInterval: Duration
     private let timeout: TimeInterval
+    private let audioSeconds: Double?
+    private let usageSink: (AIUsageEvent) -> Void
 
     init(apiKey: String, model: String, session: URLSession = .shared,
-         pollInterval: Duration = .seconds(3), timeout: TimeInterval = 1800) {
+         pollInterval: Duration = .seconds(3), timeout: TimeInterval = 1800,
+         audioSeconds: Double? = nil, usageSink: @escaping (AIUsageEvent) -> Void = AIUsageRecorder.record) {
         self.apiKey = apiKey
         self.model = model
         self.session = session
         self.pollInterval = pollInterval
         self.timeout = timeout
+        self.audioSeconds = audioSeconds; self.usageSink = usageSink
     }
 
     func transcribe(chunkURLs: [URL], language: String?, terms: [String]) async throws -> Result {
@@ -85,7 +92,15 @@ actor SonioxMeetingTranscriber {
             let data = try await send(path: "transcriptions", method: "POST",
                                       body: JSONSerialization.data(withJSONObject: body))
             checkpoint.transcriptionID = try Self.identifier(in: data)
+            checkpoint.usageModel = model
+            checkpoint.usageStartedAt = Date()
+            checkpoint.usageSeconds = audioSeconds
             try save(checkpoint, to: checkpointURL)
+        }
+        if let id = checkpoint.transcriptionID, let model = checkpoint.usageModel,
+           let date = checkpoint.usageStartedAt, let seconds = checkpoint.usageSeconds {
+            usageSink(.speech(.init(feature: .meetings, account: .soniox, model: model),
+                              seconds: seconds, id: "soniox-job:\(id)", at: date))
         }
         let jobPath = "transcriptions/\(checkpoint.transcriptionID!)"
         let deadline = Date().addingTimeInterval(timeout)

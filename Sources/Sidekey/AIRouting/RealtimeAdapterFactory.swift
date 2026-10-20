@@ -3,6 +3,11 @@ import Foundation
 /// Builds the real-time transcription adapter of a route's own provider. It
 /// only builds: no socket opens until the adapter does.
 enum RealtimeAdapterFactory {
+    /// Runtime only. Synthetic model probes deliberately use `make` below.
+    static func makeMetered(_ route: ResolvedRoute) throws -> BYOKTranscriptionAdapter {
+        AIUsageMeteredAdapter(adapter: try make(route), context: AIUsageContext(route))
+    }
+
     static func make(_ route: ResolvedRoute) throws -> BYOKTranscriptionAdapter {
         switch route.account {
         case .soniox:

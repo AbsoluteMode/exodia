@@ -57,6 +57,7 @@ actor SonioxBYOKSession: BYOKUpstreamSession {
     private var terminal = false
     private var endInputAt: Double?
     private var audioBytes = 0
+    private var usageFailed = false
     private let clientReferenceID = UUID().uuidString
     private static let log = OSLog(subsystem: "com.rootwise.sidekey", category: "byok-soniox")
 
@@ -163,6 +164,7 @@ actor SonioxBYOKSession: BYOKUpstreamSession {
     private func finish(_ event: BYOKStreamEvent) {
         guard !terminal else { return }
         terminal = true
+        if case .error = event { usageFailed = true }
         emit(event)
         continuation?.finish()
         transport.cancel(reason: "session complete")
@@ -207,5 +209,9 @@ actor SonioxBYOKSession: BYOKUpstreamSession {
         receiveTask?.cancel()
         continuation?.finish()
         transport.cancel(reason: "client closed")
+    }
+
+    func usageSnapshot() async -> BYOKUsageSnapshot? {
+        BYOKUsageSnapshot(acceptedAudioBytes: audioBytes, failed: usageFailed)
     }
 }

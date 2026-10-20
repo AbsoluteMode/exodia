@@ -3,6 +3,7 @@ import Foundation
 struct DirectLLMRoute {
     let endpoint: OpenAICompatibleLLMEndpoint
     let model: String
+    var usageContext: AIUsageContext? = nil
 }
 
 extension DirectLLMRoute: Equatable {
@@ -56,7 +57,8 @@ struct DirectLLMRouteResolver {
             guard let account = snapshot.keyAccount, case .key(let key) = keys.lookup(account: account) else {
                 throw OpenRouterLLMError.missingKey
             }
-            return DirectLLMRoute(endpoint: .openRouter(apiKey: key, provider: snapshot.route.provider), model: model)
+            return DirectLLMRoute(endpoint: .openRouter(apiKey: key, provider: snapshot.route.provider), model: model,
+                                  usageContext: .init(feature: feature, account: snapshot.route.account, model: model))
         case .server:
             guard let server = snapshot.server else { return nil }
             let rawBaseURL = server.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -76,7 +78,8 @@ struct DirectLLMRouteResolver {
             case .absent: key = nil
             case .unreadable: throw OpenRouterLLMError.missingKey
             }
-            return DirectLLMRoute(endpoint: .custom(baseURL: baseURL, apiKey: key), model: model)
+            return DirectLLMRoute(endpoint: .custom(baseURL: baseURL, apiKey: key), model: model,
+                                  usageContext: .init(feature: feature, account: snapshot.route.account, model: model))
         case .soniox, .deepgram, .elevenLabs, .anthropic:
             return nil
         }

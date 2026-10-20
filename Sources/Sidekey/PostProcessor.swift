@@ -53,7 +53,7 @@ struct PostProcessor {
             transcriptionMode: transcriptionMode
         )
         do {
-            let cleaned = try await openRouterClient.complete(endpoint: route.endpoint, model: route.model, messages: messages)
+            let cleaned = try await openRouterClient.complete(route: route, messages: messages)
             // The model works: an earlier refusal badge for it goes.
             await MainActor.run {
                 (checks ?? .shared).clearRefusal(feature: .dropSmartCleanup, model: route.model)

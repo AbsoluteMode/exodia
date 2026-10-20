@@ -92,7 +92,7 @@ final class LiveSubtitleModel: ObservableObject {
                let error = DeepgramLanguagePolicy.configurationError(model: route.model, language: language) {
                 throw FeatureRouteError.invalidLanguageConfiguration(.subtitlesAudio, error)
             }
-            let adapter = try RealtimeAdapterFactory.make(resolver.resolve(route, for: .subtitlesAudio))
+            let adapter = try RealtimeAdapterFactory.makeMetered(resolver.resolve(route, for: .subtitlesAudio))
             return try await adapter.open(language: language, terms: [])
         },
         makeService: @escaping () async throws -> TextTranslating = { try await TranslationService.live(for: .subtitlesTranslation) }

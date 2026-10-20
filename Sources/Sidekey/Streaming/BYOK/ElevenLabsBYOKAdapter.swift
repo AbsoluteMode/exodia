@@ -78,6 +78,7 @@ final class ElevenLabsBYOKSession: BYOKUpstreamSession, @unchecked Sendable {
     /// the receive task (different executors).
     private let lock = NSLock()
     private var _endInputSent = false
+    private var usageSessionID: String?
     /// Preroll silence (PCM16 mono @ sampleRate) prepended before the first real
     /// audio; `previousText` is model context that rides it. Sent once, on the
     /// first `sendAudio`. `firstAudioSent` is touched only from the serial audio
@@ -132,6 +133,10 @@ final class ElevenLabsBYOKSession: BYOKUpstreamSession, @unchecked Sendable {
                     // live socket. If either name is wrong the terminal is never matched
                     // and `run()` resolves to `.cancelled` (empty) on socket close.
                     switch type {
+                    case "session_started":
+                        if let id = obj["session_id"] as? String {
+                            self.lock.withLock { self.usageSessionID = id }
+                        }
                     case "partial_transcript":
                         if let text = obj["text"] as? String { self.emit(.partial(text)) }
                     case "committed_transcript", "committed_transcript_with_timestamps":
@@ -222,5 +227,10 @@ final class ElevenLabsBYOKSession: BYOKUpstreamSession, @unchecked Sendable {
         receiveTask?.cancel()
         continuation?.finish()
         transport.cancel(reason: "client closed")
+    }
+
+    func usageSnapshot() async -> BYOKUsageSnapshot? {
+        let reference = transport.responseRequestID ?? lock.withLock { usageSessionID }
+        return BYOKUsageSnapshot(acceptedAudioBytes: nil, providerReference: reference)
     }
 }
