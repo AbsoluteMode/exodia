@@ -101,9 +101,13 @@ claim provider approval or a generally available release.
    and record the real browser-consent and in-app calendar flow for reviewers.
    A client ID alone does not mean that public access has been approved.
 2. **Microsoft Entra:** register a public native app with the appropriate account
-   audience, permit public client flows and delegated Calendars.Read. Register
+   audience and delegated `Calendars.Read` and `offline_access`. Register
    **Mobile and desktop applications → http://localhost/callback**. Whytap uses
    an ephemeral port; Microsoft's documented localhost exception ignores it.
+   Leave **Allow public client flows** disabled: this browser-based authorization
+   code flow uses PKCE and the native redirect type. The additional toggle is for
+   flows such as device code and direct username/password authentication, which
+   Whytap does not use.
    No client secret is embedded or required.
 3. **Zoom Marketplace:** create a user-managed General app and enable **Use public
    client OAuth**. Set **PKCE OAuth Redirect URL** and **OAuth allow lists** to
@@ -151,6 +155,8 @@ Provider contracts checked on 2026-10-19:
 [Google Calendar scopes](https://developers.google.com/workspace/calendar/api/auth),
 [Microsoft native OAuth](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow),
 [Microsoft redirect rules](https://learn.microsoft.com/en-us/entra/identity-platform/reply-url),
+[Microsoft public-client settings](https://learn.microsoft.com/en-us/entra/identity-platform/msal-client-applications),
+[Microsoft publisher verification](https://learn.microsoft.com/en-us/entra/identity-platform/publisher-verification-overview),
 [Graph calendarView](https://learn.microsoft.com/en-us/graph/api/calendar-list-calendarview?view=graph-rest-1.0),
 [Teams meeting links](https://learn.microsoft.com/en-us/graph/outlook-calendar-online-meetings),
 [Zoom OAuth and loopback](https://developers.zoom.us/docs/integrations/oauth/),
@@ -187,7 +193,18 @@ verified and published. Calendar data access is not yet verified: until approved
 Google retains its unverified-app warning and lifetime cap of 100 users for the
 requested sensitive scope. Production status and verified branding do not approve
 access to calendar events. The calendar data-access review is still pending.
-Microsoft registration is waiting for access to the separate owner account.
+The shared Microsoft native registration has been created in the separate owner
+directory for personal Microsoft accounts and accounts in any Entra tenant. Its
+Mobile and desktop callback is `http://localhost/callback`; only delegated
+`Calendars.Read` and `offline_access` are configured. The unused default
+`User.Read` permission was removed. The browser flow uses PKCE; additional public
+client flows remain disabled. No client secret or tenant-wide admin consent was
+created. The public native client ID is saved privately for packaging, preserving
+the Google configuration. The Whytap logo, Planner homepage and calendar privacy
+URL are saved. Publisher-domain association, verified publisher prerequisites
+and live consent remain pending. Organizational policies, including risk-based
+consent restrictions for unverified publishers, can block users in other tenants;
+registration alone does not establish general public availability.
 The working app has not been updated by registration or website changes.
 
 The Zoom user-managed General app has been created. Development and Production
