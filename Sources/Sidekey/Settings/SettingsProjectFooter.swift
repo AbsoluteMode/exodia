@@ -30,6 +30,7 @@ struct SettingsProjectFooter: View {
 }
 
 private struct SettingsFooterLink: View {
+    @Environment(\.colorScheme) private var colorScheme
     let title: String
     let destination: URL
     var brand: String?
@@ -58,9 +59,8 @@ private struct SettingsFooterLink: View {
                 .renderingMode(.template)
                 .scaledToFit()
         } else {
-            Image(systemName: "globe")
-                .resizable()
-                .scaledToFit()
+            Circle()
+                .strokeBorder(colorScheme == .dark ? Color.white : Color.black, lineWidth: 1.5)
         }
     }
 }
