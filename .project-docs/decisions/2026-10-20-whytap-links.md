@@ -78,4 +78,4 @@ installs the build.
   one-running-copy lease, a second copy launched by a link offers to activate
   the running one and quits.
 
-2026-10-20 — PR: see the branch `claude/serene-diffie-e473ba`.
+2026-10-20 — Source PR: [#108](https://github.com/AbsoluteMode/whytap/pull/108).

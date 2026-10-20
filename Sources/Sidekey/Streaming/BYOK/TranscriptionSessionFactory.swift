@@ -16,7 +16,7 @@ struct TranscriptionSessionFactory {
     init(
         resolver: FeatureRouteResolver = FeatureRouteResolver(),
         vocab: VocabularyCache? = nil,
-        makeAdapter: @escaping (ResolvedRoute) throws -> BYOKTranscriptionAdapter = RealtimeAdapterFactory.make
+        makeAdapter: @escaping (ResolvedRoute) throws -> BYOKTranscriptionAdapter = RealtimeAdapterFactory.makeMetered
     ) {
         self.resolver = resolver
         self.vocab = vocab ?? .shared
