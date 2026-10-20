@@ -163,21 +163,35 @@ real provider output remain acceptance in the shared app after promotion.
 ## Screenshot permission — 2026-10-20
 
 The user requested a screenshot access entry in Settings -> Permissions.
-Keep the existing permission group, MacRow, MacPill and MacButton: this is one
-more permission in the same workflow. The person first sees Screen Recording,
-then Allowed/Not allowed, then Allow/Open. A persistent explanation names
+Keep the existing permission group, MacRow and MacButton: this is one
+more permission in the same workflow. A persistent explanation names
 screenshots and tells them to finish current work before a macOS-requested reopen.
 
-Only clicking Allow requests access. Open manages an existing grant; a denial
+Only clicking Allow requests access; a denial
 opens the system privacy pane. Returning to the app and Refresh reread access
 without prompting. A missing grant never blocks launch or Drop. Existing native
 button focus, keyboard activation, semantic colors and scroll behavior apply;
-there is no new hover-only action or animation. A denied Bool cannot distinguish
-an unasked grant from a previous denial, so use Not allowed rather than Denied.
+there is no new hover-only action or animation.
 
-Offscreen native fixtures cover allowed/missing access in light/dark at 739 and
-1059 pt content widths (the existing 960 and 1280 pt Settings shells). Real TCC
-prompts, keyboard focus and post-promotion refresh remain installed-app acceptance.
+### Permission row status — 2026-10-20
+
+The user requested one quiet indicator instead of dot chips and differently
+labelled buttons. All three permissions use the same trailing slot:
+
+- Granted: a 22 pt green `checkmark.circle.fill`, with no button or status chip.
+  The icon exposes the permission name and Allowed to accessibility.
+- Missing, not requested or denied: one Allow button, with the permission name
+  in its accessibility label. Existing request handlers still choose the native
+  permission prompt or the appropriate System Settings pane.
+- The 60 × 26 pt slot keeps row height and text wrapping stable when access
+  changes. The adaptive success color retains contrast in both appearances.
+  No motion or hover-only information is added.
+
+Offscreen native fixtures cover all granted, all missing and mixed access in
+light/dark at 739 and 1059 pt content widths (the existing 960 and 1280 pt
+Settings shells). Real TCC prompts, keyboard focus, VoiceOver and post-promotion
+refresh remain installed-app acceptance. This presentation assumes the circled
+checkmark is recognizable without a visible Allowed label.
 
 
 ## Meetings overview — 2026-10-20

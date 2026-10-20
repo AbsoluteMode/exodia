@@ -887,8 +887,10 @@ is separate from the removed app-managed speech/LLM models. Guide:
 ## Permissions
 
 - **Screen Recording** for explicit screenshot capture (Screenshot tool only).
-  Settings -> Permissions shows its optional live status and an Allow/Open
-  action. Request with `CGRequestScreenCaptureAccess` only on Screenshot
+  Settings -> Permissions shows a green circled checkmark when granted, or
+  the same Allow button used by the other permissions when missing, without
+  status chips or an action on a granted row. Request with
+  `CGRequestScreenCaptureAccess` only on Screenshot
   invocation or that Settings action, never at launch or refresh. Returning
   from System Settings refreshes the status; it never gates launch/Drop readiness.
 

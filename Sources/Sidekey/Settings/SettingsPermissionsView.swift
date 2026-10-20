@@ -14,8 +14,6 @@ struct SettingsPermissionsView: View {
                             icon: "keyboard.fill",
                             title: "Keyboard control",
                             granted: viewModel.snapshot.accessibilityGranted,
-                            status: viewModel.snapshot.accessibilityGranted ? "Allowed" : "Required",
-                            actionTitle: "Open",
                             action: viewModel.requestAccessibility
                         )
                         MacRowSeparator()
@@ -23,8 +21,6 @@ struct SettingsPermissionsView: View {
                             icon: "mic.fill",
                             title: "Microphone",
                             granted: viewModel.snapshot.microphoneGranted,
-                            status: viewModel.microphoneLabel,
-                            actionTitle: "Allow",
                             action: viewModel.requestMicrophone
                         )
                         MacRowSeparator()
@@ -33,8 +29,6 @@ struct SettingsPermissionsView: View {
                             title: "Screen Recording",
                             subtitle: "For screenshots. If macOS asks to reopen Whytap, finish your current work first.",
                             granted: viewModel.screenRecordingGranted,
-                            status: viewModel.screenRecordingGranted ? "Allowed" : "Not allowed",
-                            actionTitle: viewModel.screenRecordingGranted ? "Open" : "Allow",
                             action: viewModel.requestScreenRecording
                         )
                     }
@@ -58,8 +52,6 @@ struct SettingsPermissionsView: View {
         title: String,
         subtitle: String? = nil,
         granted: Bool,
-        status: String,
-        actionTitle: String,
         action: @escaping () -> Void
     ) -> some View {
         MacRow(
@@ -72,10 +64,18 @@ struct SettingsPermissionsView: View {
                     .frame(width: 22)
             },
             trailing: {
-                HStack(spacing: 10) {
-                    MacPill(text: status, tone: granted ? .green : .orange, showsDot: true)
-                    MacButton(title: actionTitle, style: .default, action: action)
+                Group {
+                    if granted {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(MacSettingsTheme.green)
+                            .accessibilityLabel("\(title): Allowed")
+                    } else {
+                        MacButton(title: "Allow", style: .default, action: action)
+                            .accessibilityLabel("Allow \(title)")
+                    }
                 }
+                .frame(width: 60, height: 26)
             }
         )
     }
