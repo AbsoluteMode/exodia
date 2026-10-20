@@ -43,6 +43,21 @@
     <string>Whytap captures screenshots only when you choose Screenshot, so you can annotate them and blur text and numbers on your Mac.</string>
     <key>NSAccessibilityUsageDescription</key>
     <string>Whytap uses Accessibility to detect the global hotkey and to paste transcribed text into the active window.</string>
+    <!--
+        whytap://tool/<HoverTool> and whytap://settings/<SettingsWindowTab>
+        only show a place in the app (WhytapLink); they never run an action.
+    -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>__BUNDLE_ID__.link</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>whytap</string>
+            </array>
+        </dict>
+    </array>
     <key>SUFeedURL</key>
     <string>__APPCAST_URL__</string>
     <key>SUPublicEDKey</key>
