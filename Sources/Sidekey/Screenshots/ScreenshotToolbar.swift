@@ -22,9 +22,9 @@ final class ScreenshotToolbar: NSView {
     var onLayout: (() -> Void)?
     private let stack = NSStackView()
     private let settings = NSStackView()
-    private let mode = NSPopUpButton()
-    private let shape = NSPopUpButton()
-    private let width = NSPopUpButton()
+    private let mode = MacPopupButton()
+    private let shape = MacPopupButton()
+    private let width = MacPopupButton()
     private let color = ScreenshotColorWell()
     private let text = NSTextField()
     private let toolLabel = NSTextField(labelWithString: "")

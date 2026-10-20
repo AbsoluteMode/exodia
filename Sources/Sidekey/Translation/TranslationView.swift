@@ -45,13 +45,11 @@ struct TranslationView: View {
         HStack(spacing: 10) {
             Label("Detect language", systemImage: "globe").foregroundStyle(.secondary)
             Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-            Picker("Translate to", selection: Binding(
+            MacPopup(items: [.init(value: "auto", label: "Auto · RU ↔ EN")] + languageItems, selection: Binding(
                 get: { if case .language(let code) = text.target { return code }; return "auto" },
                 set: { text.target = $0 == "auto" ? .automatic : .language($0) }
-            )) {
-                Text("Auto · RU ↔ EN").tag("auto")
-                languageOptions
-            }.labelsHidden().frame(maxWidth: 210)
+            ), maxWidth: 210, appearance: .adaptive)
+                .accessibilityLabel("Translate to")
             Spacer(minLength: 0)
             if subtitles.phase.isActive {
                 Button { presentation.mode = .subtitles } label: { Image(systemName: "waveform.circle.fill") }
@@ -63,13 +61,20 @@ struct TranslationView: View {
     private var audioControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Picker("Speech", selection: $subtitles.sourceCode) {
-                    Text("Auto-detect").tag("auto")
-                    languageOptions
-                }.disabled(subtitles.phase.isActive)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Speech").font(.system(size: 11)).foregroundStyle(.secondary)
+                    MacPopup(items: [.init(value: "auto", label: "Auto-detect")] + languageItems,
+                             selection: $subtitles.sourceCode, maxWidth: 170, appearance: .adaptive)
+                        .accessibilityLabel("Speech")
+                        .disabled(subtitles.phase.isActive)
+                }
                 Image(systemName: "arrow.right").foregroundStyle(.tertiary)
-                Picker("Translate to", selection: $subtitles.targetCode) { languageOptions }
-                    .disabled(subtitles.phase.isActive)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Translate to").font(.system(size: 11)).foregroundStyle(.secondary)
+                    MacPopup(items: languageItems, selection: $subtitles.targetCode, maxWidth: 170, appearance: .adaptive)
+                        .accessibilityLabel("Translate to")
+                        .disabled(subtitles.phase.isActive)
+                }
             }.font(.system(size: 12))
             HStack {
                 Label(status, systemImage: subtitles.phase.isActive ? "waveform" : "speaker.wave.2")
@@ -81,9 +86,9 @@ struct TranslationView: View {
         }
     }
 
-    @ViewBuilder private var languageOptions: some View {
-        ForEach(AppLanguage.all.sorted { $0.englishName < $1.englishName }, id: \.code) { language in
-            Text(language.displayName).tag(language.code)
+    private var languageItems: [MacPopup<String>.Item] {
+        AppLanguage.all.sorted { $0.englishName < $1.englishName }.map {
+            .init(value: $0.code, label: $0.displayName)
         }
     }
 

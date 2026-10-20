@@ -9,7 +9,7 @@ struct ProviderMenu: View {
     let choice: ProviderChoice
 
     var body: some View {
-        Menu {
+        MacMenu(title: choice.label, maxWidth: 160) {
             Button {
                 viewModel.selectProvider(nil, for: feature)
             } label: {
@@ -35,24 +35,7 @@ struct ProviderMenu: View {
             case .loading, nil:
                 Text("Loading providers…")
             }
-        } label: {
-            HStack(spacing: 6) {
-                Text(choice.label)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(MacSettingsTheme.text)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(MacSettingsTheme.text2)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: 160, alignment: .trailing)
-            .background(MacSettingsTheme.controlBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help("OpenRouter provider")
         .accessibilityLabel("Provider, \(choice.label)")
         .task(id: choice.model) { await viewModel.loadProviders(for: feature) }

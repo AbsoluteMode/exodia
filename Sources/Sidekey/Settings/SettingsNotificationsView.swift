@@ -37,16 +37,8 @@ struct SettingsNotificationsView: View {
                                                    tint: Color(hexCSS: "#785EFF"), size: 28, imageLoader: imageLoader)
                                 .accessibilityHidden(true)
                         } trailing: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Notification type")
-                                    .font(.system(size: 9.5))
-                                    .foregroundStyle(MacSettingsTheme.text2)
-                                Picker("Notification type for meeting notes", selection: $meetingNotifications.presentation) {
-                                    Text("Large").tag(NotifyPresentation.card)
-                                    Text("Small").tag(NotifyPresentation.icon)
-                                }
-                                .labelsHidden().pickerStyle(.menu).frame(width: 95)
-                            }
+                            NotificationPresentationControl(selection: $meetingNotifications.presentation,
+                                                            sourceName: "meeting notes")
                             MacSwitch(isOn: $meetingNotifications.enabled)
                                 .accessibilityLabel("Enable meeting notes notifications")
                         }
@@ -81,20 +73,10 @@ struct SettingsNotificationsView: View {
                                     )
                                     .accessibilityHidden(true)
                                 } trailing: {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("Notification type")
-                                            .font(.system(size: 9.5))
-                                            .foregroundStyle(MacSettingsTheme.text2)
-                                        Picker("Notification type", selection: Binding(
-                                            get: { supervisor.sources.first(where: { $0.id == source.id })?.script.presentation ?? .card },
-                                            set: { supervisor.setPresentation($0, id: source.id) }
-                                        )) {
-                                            Text("Large").tag(NotifyPresentation.card)
-                                            Text("Small").tag(NotifyPresentation.icon)
-                                        }
-                                        .labelsHidden().pickerStyle(.menu).frame(width: 95)
-                                        .accessibilityLabel("Notification type for \(source.script.name)")
-                                    }
+                                    NotificationPresentationControl(selection: Binding(
+                                        get: { supervisor.sources.first(where: { $0.id == source.id })?.script.presentation ?? .card },
+                                        set: { supervisor.setPresentation($0, id: source.id) }
+                                    ), sourceName: source.script.name)
                                     MacSwitch(isOn: Binding(
                                         get: { supervisor.sources.first(where: { $0.id == source.id })?.script.enabled ?? false },
                                         set: { supervisor.setEnabled($0, id: source.id) }

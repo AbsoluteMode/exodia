@@ -14,14 +14,9 @@ struct ConcreteSettingPicker: View {
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(.white.opacity(0.6))
             Spacer(minLength: 0)
-            Picker("", selection: $selection) {
-                ForEach(options, id: \.value) { opt in
-                    Text(opt.label).tag(opt.value)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
+            MacPopup(items: options.map { .init(value: $0.value, label: $0.label) },
+                     selection: $selection, maxWidth: 300)
+                .accessibilityLabel(title)
         }
     }
 }
