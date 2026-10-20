@@ -39,6 +39,8 @@ final class AppState: ObservableObject {
     @Published var translationActive = false
     /// A screenshot selection/editor, including in-flight local OCR and unsaved edits.
     @Published var screenshotActive = false
+    /// Visible Planner work or a retained unsent task draft.
+    @Published var plannerActive = false
 
     /// Dynamic Island idle-hide visibility, mirrored from `IslandIdleController`
     /// by `AppDelegate` (controller-owns-logic / AppState-mirrors-for-view).

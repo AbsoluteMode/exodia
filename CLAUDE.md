@@ -736,6 +736,29 @@ Agents get a resolved setup-guide path on every turn.
 Guide: docs/customization/notifications.md. WHY:
 .project-docs/decisions/2026-10-19-script-notifications.md
 
+Planner: catalog/search actions To-do and Calendar open one native planner window
+without changing saved layouts. PlannerStore atomically saves private local tasks
+and Whytap events; unreadable archives block writes. CalendarConnections combines
+selected EventKit calendars with direct Google Calendar, Microsoft Graph (including
+Teams links) and Zoom Calendar Service connections. Remote events are read-only;
+visible-range recurrence is provider-expanded, refresh runs only while the calendar
+view is visible, and matching UID/occurrence bounds collapse duplicate sources.
+OAuth uses browser S256 PKCE/state, a numeric loopback listener (Microsoft redirects
+to localhost), and Keychain credentials with durable refresh-token rotation.
+Short-lived access tokens stay in memory and are excluded from backup; only a
+refresh-token/client change updates the saved authorization. Token rotation alone
+does not create a settings version or full backup; subsequent backups capture the
+latest token, and restored sign-in can require reconnecting. No
+shared OAuth registrations are created by the app itself; the owner supplies
+registered native clients during packaging through configure-calendar-clients.py.
+Live accounts require provider setup and separate acceptance. Encrypted backups
+include local Planner content, calendar metadata and saved credentials. Old backups
+preserve current calendar settings. A visible Planner or retained task draft
+defers update restart and restore; ordinary backups still run. Closing the window
+stops calendar polling; another tool hotkey preserves an attached editor. Tests
+use fake providers and temporary stores. Guide:
+docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md
+
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change
 contracts and source entry points; `doctor --json` checks build prerequisites.
@@ -963,7 +986,8 @@ input layout, including live recording and previously saved non-English titles.
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
    and monitoring sources the user configured (including their credential store),
-   notification sources accessed by user-configured local scripts, OpenCode's own provider
+   notification sources accessed by user-configured local scripts, calendar providers
+   explicitly connected by the user (Google, Microsoft and Zoom), OpenCode's own provider
    traffic, the model catalogs and free key checks of providers the user added
    a key for, OpenRouter's provider list (latency, throughput) for a model
    selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user

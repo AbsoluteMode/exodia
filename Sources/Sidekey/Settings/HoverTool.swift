@@ -18,6 +18,8 @@ enum HoverTool: String, CaseIterable, Hashable {
     case meetingRecord
     case monitor
     case brightness
+    case tasks
+    case calendar
     case translate
     case subtitles
     case quit
@@ -94,6 +96,12 @@ enum HoverToolRegistry {
         case .brightness:
             return HoverToolInfo(title: "Display", sfSymbol: "sun.max", kind: .inlinePanel,
                                  description: "Screen brightness, Extra boost and battery time")
+        case .tasks:
+            return HoverToolInfo(title: "To-do", sfSymbol: "checklist", kind: .action,
+                                 description: "Manage your local tasks in Whytap Planner")
+        case .calendar:
+            return HoverToolInfo(title: "Calendar", sfSymbol: "calendar", kind: .action,
+                                 description: "Your schedule from Whytap, Apple, Google, Outlook and Zoom")
         case .translate:
             return HoverToolInfo(title: "Translate", sfSymbol: "character.bubble", kind: .action,
                                  description: "Translate text with your chosen LLM")

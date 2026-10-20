@@ -1237,6 +1237,8 @@ struct IslandView: View {
                             historyPasteTargetName: actions.historyPasteTargetName,
                             onOpenNotes: actions.openMeetings,
                             onOpenMonitor: actions.openMonitor,
+                            onOpenTasks: actions.openTasks,
+                            onOpenCalendar: actions.openCalendar,
                             onOpenTranslate: actions.openTranslate,
                             onOpenSubtitles: actions.openSubtitles,
                             onOpenScreenshot: actions.openScreenshot,
@@ -2519,6 +2521,8 @@ private struct IslandDropModeHoverPanel: View {
     let historyPasteTargetName: () -> String?
     let onOpenNotes: () -> Void
     var onOpenMonitor: () -> Void = {}
+    var onOpenTasks: () -> Void = {}
+    var onOpenCalendar: () -> Void = {}
     var onOpenTranslate: () -> Void = {}
     var onOpenSubtitles: () -> Void = {}
     var onOpenScreenshot: () -> Void = {}
@@ -2853,6 +2857,8 @@ private struct IslandDropModeHoverPanel: View {
         case .openNotes: onOpenNotes()
         case .toggleMeetingRecord: onToggleMeetingRecord()
         case .openMonitor: onOpenMonitor()
+        case .openTasks: onOpenTasks()
+        case .openCalendar: onOpenCalendar()
         case .openTranslate: onOpenTranslate()
         case .openSubtitles: onOpenSubtitles()
         case .openScreenshot: onOpenScreenshot()

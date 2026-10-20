@@ -33,6 +33,8 @@
     <false/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Whytap records audio to transcribe your speech.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Whytap shows your selected calendars and upcoming meetings together in Planner. Connected Apple calendars are read-only in Whytap.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>Whytap captures system audio for live translated subtitles and meeting transcripts.</string>
     <key>NSAppleEventsUsageDescription</key>

@@ -340,6 +340,56 @@ The screenshot matrix was inspected after successful render tests. Live pointer/
 the one installed app after builder promotion. Existing Settings is a dark
 surface; a new light-theme system is outside this change.
 
+## Planner: tasks and calendar — 2026-10-20
+
+The person comes to write down a task or find the next appointment. First they
+see the task list or selected day, then they can add/edit local content or join
+a connected meeting. This is a native working surface; its existing sidebar
+and detail pane remain the selected direction.
+
+- One 980×680 window, minimum 820×560, contains To-do and Calendar. Each catalog
+  action opens its matching section. Why: the month grid and agenda need desktop
+  space, and saved Toolbox layouts must remain unchanged.
+- Use the system font, native controls and semantic surfaces. Titles are 28pt
+  bold, object names 13pt, metadata 11–13pt. MacSettingsTheme.text2 keeps metadata
+  readable in both appearances; the selected date uses the shared #0064D2 fill
+  with white labels. Why: both Russian text and calendar counts remain legible.
+- Task entry stays above the active/completed list; Return adds it. Search, edit,
+  complete/reopen and delete actions are visible without hover. Delete asks first.
+  Why: this is a short repeated workflow, so secondary actions cannot shift rows.
+- Calendar retains a month grid and a scrolling day agenda. Minimum height leaves
+  at least one agenda row; remaining events scroll in place. Local event editing
+  uses a sheet, external event details offer Join/Open original. Why: the source
+  calendar remains authoritative for connected events in the first version.
+- A sheet remains attached when another tool hotkey opens Planner. Account sign-in
+  shows browser progress, cancellation and actionable error text. Closing the main
+  window ends polling. Why: navigation and closing must not lose drafts or leave
+  hidden network work running.
+- Validation errors belong to their editor and disappear with it. Moving Start
+  keeps the event duration, and All day preserves its prior times of day. Notes
+  and day counts have explicit accessibility labels. Why: correction and date
+  changes must not contaminate another editor or silently discard entered times.
+- A registered build asks the user to select a calendar provider and sign in. Native
+  client settings are advanced setup; an unregistered build exposes that setup
+  honestly. Why: owner registration is a packaging responsibility, not a repeated
+  task for every account holder.
+- Window visibility or a retained new-task draft defers update restart and restore.
+  Backups continue to capture saved data. Why: protecting edits must not pause all
+  backup synchronization while someone keeps their calendar open.
+- No additional motion is introduced; native focus, keyboard shortcuts, sheets
+  and accessibility labels remain. Why: repeated editing should stay immediate
+  under Reduce Motion as well as ordinary settings.
+
+Offscreen synthetic fixtures cover empty/populated tasks, the month/day calendar,
+connect and event editors, at 820 and 980pt in both appearances, plus calendar
+visibility-limit feedback in both appearances. Measured metadata contrast is 6.62:1 on the light surface; white selected-date
+labels on the shared blue fill are 5.59:1. Separate Codex and Claude Opus 5.5 reviews
+inspected layouts and data/backup contracts. The Claude review led to repairs in
+token backup behavior, editor errors, date editing, accessibility and packaging
+configuration discovery. Real OAuth, system permissions, VoiceOver, physical keyboard/focus and
+compositor appearance require acceptance on the one installed application. The
+priority of a unified calendar over separate provider windows remains a product
+hypothesis to revisit after ordinary use.
 
 # Notification cards — 2026-10-20
 

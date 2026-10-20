@@ -39,6 +39,7 @@ All paths below start at `Sources/Sidekey/`.
 | Embedded History, Record and translation panels | `Settings/ToolboxMiniApps.swift` |
 | App services and hotkey dispatch | `AppDelegate.swift` (`onToolHotkeyActivated`) |
 | Feature hotkey labels and hints | `Hotkeys/HotkeysSettingsView.swift`, `HelpWindowController.swift` |
+| Tasks and unified calendar window actions | `Planner/PlannerWindowController.swift`, `Planner/PlannerView.swift`, `Planner/PlannerCalendarView.swift` |
 
 ## Tool contract
 
