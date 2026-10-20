@@ -353,6 +353,9 @@ final class APIAndModelsViewModel: ObservableObject {
             guard let access = access(account) else { continue }
             await catalogs.refresh(account, apiKey: access.apiKey, server: access.server)
         }
+        // Catalog contents can change without changing any selected row/chip.
+        // Refresh the open searchable picker in that case as well.
+        objectWillChange.send()
         recompute()
     }
 
