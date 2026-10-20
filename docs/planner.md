@@ -174,8 +174,10 @@ restore. Ordinary backups continue to capture saved content while Planner is ope
 As checked on 2026-10-20, the shared Google Desktop registration exists, Calendar
 API is enabled, and the two narrow read scopes are declared. Its public native
 configuration is saved privately for packaging. The Whytap logo, homepage and
-calendar privacy URL have been prepared in Google Auth Platform. Domain ownership
-verification and the public review submission are still separate pending steps.
+calendar privacy URL are saved in Google Auth Platform. Ownership of whytap.ai is
+verified as a DNS-level Domain property in Google Search Console. The public
+publishing status and review submission remain pending; domain verification alone
+does not approve the app's access to calendar events.
 Microsoft and Zoom owner-account registration is also pending. The working app
 has not been updated by registration or website changes.
 
