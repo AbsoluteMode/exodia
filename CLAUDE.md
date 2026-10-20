@@ -298,8 +298,10 @@ Case secrets manager:
   appear as app icons; clicking one opens that client's policy. An always-visible
   Connect button opens the agent picker, then project scope and Accept/Bypass
   before registration. Codex highlights blue, Claude orange and Cursor white
-  on hover/keyboard focus. Search matches key names/descriptions only; + Key
-  opens a separate creation field. Navigation is white and explanations are
+  on hover/keyboard focus. Search matches project and key names/descriptions,
+  including empty projects and General. A matching project shows all its keys;
+  key-only matches show only those keys. + Key opens a separate creation field,
+  including from a project search result; typing/Return in search never writes. Navigation is white and explanations are
   short. Case has no Doppler integration or import screen.
   All explicitly opened hover submenus survive pointer exit until Back, an
   outside click or bare Escape. The root tools grid follows ordinary hover;

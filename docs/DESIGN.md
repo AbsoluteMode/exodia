@@ -505,7 +505,7 @@ rights. No alternative composition or decorative screen is needed.
 
 | Component | Behavior and reason |
 | --- | --- |
-| Search | Always searches key names/descriptions; Return cannot create a key. New key name/value fields appear separately after + Key, so a search cannot become a write. Empty results say Keys not found; projects are contextual headings, never search hits. |
+| Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
 | Client picker | Discovers installed clients only after Connect. Shows loading, an explicit empty message and Choose program. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. |
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
@@ -523,3 +523,14 @@ authentication. The installed application is reserved for acceptance through the
 shared builder. These fixtures do not prove live keyboard focus or glass
 contrast on every desktop; those remain runtime acceptance checks. The user's
 reported lag may have been concurrent build load, not a confirmed app fault.
+
+
+### Case search correction — 2026-10-20
+
+A newly created empty project must be findable before it has keys. The user's
+report corrects the earlier key-only interpretation: search is separate from
+creation and includes projects too. Project matches reuse cached full sections;
+key-only matches remain filtered. Search results expose + Key so the found
+project can be used without clearing the query manually. Adding explicitly
+expands that project before leaving search; existing cached metadata and
+lazy rendering remain.

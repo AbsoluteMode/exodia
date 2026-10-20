@@ -708,23 +708,46 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertEqual(vm.query, "")
     }
 
-    func test_search_only_matches_key_names_and_descriptions_and_never_creates_a_key() async throws {
+    func test_search_matches_projects_or_keys_without_turning_project_headers_into_keys() async throws {
         let projectID = UUID()
         var project = group(id: projectID, name: "billing")
         project.description = "invoices"
         var key = secret(name: "PAYMENT_TOKEN", groupID: projectID)
         key.description = "Stripe webhooks"
-        let env = TestCaseEnvironment(payload: CaseVaultPayload(projects: [.general(now: Date()), project], secrets: [key]))
+        let other = secret(name: "DATABASE_URL", groupID: projectID)
+        let env = TestCaseEnvironment(payload: CaseVaultPayload(projects: [.general(now: Date()), project], secrets: [key, other]))
         let vm = env.makeViewModel()
         try await vm.unlock()
         vm.query = "invoices"
-        XCTAssertTrue(vm.projectSections.isEmpty, "project descriptions are not key matches")
+        XCTAssertEqual(vm.projectSections.map(\.id), [projectID])
+        XCTAssertEqual(Set(vm.projectSections[0].secrets.map(\.id)), [key.id, other.id], "a project match includes all its keys")
+        XCTAssertTrue(vm.projectSections[0].secrets.allSatisfy { $0.kind == .secret })
         vm.query = "stripe"
         XCTAssertEqual(vm.projectSections.first?.secrets.map(\.id), [key.id])
         XCTAssertEqual(vm.inputMode, .name)
         XCTAssertNil(env.savedPayload, "search never writes the vault")
         vm.lock()
         XCTAssertTrue(vm.projectSections.isEmpty)
+    }
+
+    func test_new_empty_project_is_searchable_by_name_and_description_without_an_extra_save() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        vm.query = "no previous match"
+        let id = try vm.createProject(name: "Новый проект", description: "draft workspace")
+        env.savedPayload = nil
+        for query in ["новый", "НОВЫЙ ПРОЕКТ", "workspace"] {
+            vm.query = query
+            XCTAssertEqual(vm.projectSections.map(\.id), [id])
+            XCTAssertEqual(vm.projectSections[0].keyCount, 0)
+            XCTAssertTrue(vm.projectSections[0].secrets.isEmpty)
+            XCTAssertTrue(IslandCaseVaultPanel.isExpanded(vm.projectSections[0], expandedIDs: [], isSearching: true))
+        }
+        XCTAssertNil(env.savedPayload, "typing a query never saves or creates a key")
+        vm.query = "General"
+        XCTAssertEqual(vm.projectSections.map(\.id), [CaseProject.generalID])
+        XCTAssertTrue(vm.projectSections[0].secrets.isEmpty)
     }
 
     func test_large_vault_search_and_cached_sections() async throws {

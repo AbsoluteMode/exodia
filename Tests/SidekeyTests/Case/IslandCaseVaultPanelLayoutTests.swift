@@ -60,6 +60,22 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
         XCTAssertTrue(IslandCaseVaultPanel.isExpanded(sections[0], expandedIDs: viewModel.expandedProjectIDs, isSearching: true))
     }
 
+    func test_project_search_renders_empty_and_populated_projects() async throws {
+        for width in [CGFloat(310), CGFloat(390)] {
+            let fixture = try await PanelFixture(payload: samplePayload(extraProjectName: "Новый проект"),
+                                                 width: width, height: IslandCaseVaultStyle.panelHeight)
+            defer { fixture.close() }
+            for (query, name, expectedCount) in [("новый", "Новый проект", 0), ("servers", "servers", 2)] {
+                fixture.viewModel.query = query
+                fixture.settle()
+                XCTAssertEqual(fixture.viewModel.projectSections.map(\.name), [name])
+                XCTAssertEqual(fixture.viewModel.projectSections[0].secrets.count, expectedCount)
+                try fixture.saveImage("case-project-search-\(expectedCount)-\(Int(width))")
+            }
+            XCTAssertFalse(fixture.isWindowVisible)
+        }
+    }
+
     func test_no_copy_all_control() throws {
         let identifiers = IslandCaseSecretRow.actions.map(\.accessibilityIdentifier)
             + IslandCaseProjectRow.actions(isGeneral: false).map(\.accessibilityIdentifier)
