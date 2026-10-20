@@ -223,7 +223,7 @@ final class BrightnessHoverToolTests: XCTestCase {
     }
 
     /// The real pane with fake hardware, rendered in an unordered offscreen window.
-    func testSettingsPaneFitsUnderTheToolHeaderInEveryState() throws {
+    func testSettingsPaneRemainsReachableInTheToolViewportInEveryState() throws {
         for state in [StripState.extraOff, .extraOn, .noExtra, .unavailable, .notice] {
             for keys in PaneKeys.allCases {
                 let fixture = SettingsPaneFixture(state: state, keys: keys)
@@ -231,7 +231,21 @@ final class BrightnessHoverToolTests: XCTestCase {
                 fixture.settle()
                 XCTAssertLessThanOrEqual(fixture.idealHeight, SettingsPaneFixture.availableHeight,
                                          "\(state), keys \(keys)")
-                try saveProofImage(of: fixture.host, named: "settings-display-\(state)-keys-\(keys)")
+                try saveProofImage(of: fixture.host, named: "settings-display-\(state)-keys-\(keys)-top")
+                let scroll = try XCTUnwrap(fixture.scrollView)
+                let document = try XCTUnwrap(scroll.documentView)
+                let clip = scroll.contentView
+                XCTAssertGreaterThan(document.frame.height, clip.bounds.height,
+                                     "The minimum-height tool content must scroll in a short viewport.")
+                clip.scroll(to: NSPoint(x: document.bounds.minX,
+                                        y: max(document.bounds.minY, document.bounds.maxY - clip.bounds.height)))
+                scroll.reflectScrolledClipView(clip)
+                fixture.settle()
+                XCTAssertGreaterThan(clip.bounds.minY, document.bounds.minY,
+                                     "The viewport must actually move, rather than clipping a tall notice.")
+                XCTAssertGreaterThanOrEqual(document.visibleRect.maxY, document.bounds.maxY - 1,
+                                             "The bottom controls and notice remain reachable.")
+                try saveProofImage(of: fixture.host, named: "settings-display-\(state)-keys-\(keys)-bottom")
             }
         }
     }
@@ -400,18 +414,33 @@ private final class SettingsPaneFixture {
                           styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .darkAqua)
+        let displayController = controller
+        let brightnessKeys = keys
         host = NSHostingView(rootView: AnyView(
-            ToolboxDisplayPane(controller: controller, keys: keys)
-                .frame(width: Self.width)
-                .frame(maxHeight: .infinity, alignment: .top)
+            ToolboxToolViewport {
+                ToolboxDisplayPane(controller: displayController, keys: brightnessKeys)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+                .frame(width: Self.width, height: Self.availableHeight)
                 .background(Color(white: 0.13))
                 .environment(\.colorScheme, .dark)))
         host.frame = CGRect(origin: .zero, size: size)
         window.contentView = host
     }
 
-    /// The pane's own height, independent of the frame it is given.
+    /// The visible tool viewport remains bounded while its document can scroll.
     var idealHeight: CGFloat { host.fittingSize.height }
+
+    var scrollView: NSScrollView? {
+        func find(in view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView { return scroll }
+            for child in view.subviews {
+                if let scroll = find(in: child) { return scroll }
+            }
+            return nil
+        }
+        return find(in: host)
+    }
 
     func settle() {
         host.layoutSubtreeIfNeeded()
