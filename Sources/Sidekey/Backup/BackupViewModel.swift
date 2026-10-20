@@ -49,12 +49,14 @@ final class BackupViewModel: ObservableObject {
     private let delta = BackupDeltaArchive()
     private var subscriptions = Set<AnyCancellable>()
     private var timer: Timer?
+    private var initializationTask: Task<Void, Never>?
     private var started = false
     private var stopped = false
     private var codePresentationID = UUID()
     private var keyCache: Data?
-    private var needsFullBackup = true
+    @Published private(set) var needsFullBackup = true
     private var lastAttempt = Date.distantPast
+    private let now: @MainActor () -> Date
     private var sourceStamp: String?
     private var restoreFile: URL?
     private var restoreKey: Data?
@@ -82,12 +84,14 @@ final class BackupViewModel: ObservableObject {
          previousRestoreOutcome: @escaping @MainActor () -> ArtifactRestoreOutcome? = { ArtifactBackupEngine.lastRestoreOutcome() },
          archivedKeyStore: @escaping (String) -> TokenStore = { KeychainStore(account: "backup.archived-key." + $0) },
          pendingKeyStore: TokenStore = KeychainStore(account: "backup.pending-key.v1"),
-         githubSession: URLSession = GitHubBackupNetwork.session) {
+         githubSession: URLSession = GitHubBackupNetwork.session,
+         now: @escaping @MainActor () -> Date = { Date() }) {
         self.defaults = defaults; self.keyStore = keyStore
         self.githubTokenStore = githubTokenStore; self.local = local; self.settingsFiles = settingsFiles
         self.engine = engine; self.changeProbe = changeProbe; self.idle = idle; self.providerStore = providerStore; self.previousRestoreOutcome = previousRestoreOutcome; self.archivedKeyStore = archivedKeyStore
         self.pendingKeyStore = pendingKeyStore
         self.githubSession = githubSession
+        self.now = now
     }
 
     /// Runtime wiring is explicit. Merely opening a settings preview or
@@ -95,7 +99,7 @@ final class BackupViewModel: ObservableObject {
     func stop() {
         stopped = true
         timer?.invalidate(); timer = nil; subscriptions.removeAll()
-        operationTask?.cancel(); captureTask?.cancel(); clipboardTask?.cancel()
+        initializationTask?.cancel(); operationTask?.cancel(); captureTask?.cancel(); clipboardTask?.cancel()
         started = false
     }
 
@@ -103,13 +107,15 @@ final class BackupViewModel: ObservableObject {
     /// The stopped gate also rejects SwiftUI tasks delivered after view teardown.
     func stopAndWait() async {
         stop()
+        await initializationTask?.value
         await operationTask?.value
         await captureTask?.value
         await clipboardTask?.value
     }
 
-    func start() {
-        guard !started else { return }; started = true; stopped = false
+    @discardableResult
+    func start() -> Task<Void, Never>? {
+        guard !started else { return initializationTask }; started = true; stopped = false
         // Resolve a durable management request before exposing backup actions.
         isBusy = true
         managementWarning = defaults.string(forKey: "backup.management-warning.v1")
@@ -131,10 +137,13 @@ final class BackupViewModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.poll() }
         }
-        Task { await initialize() }
+        let task = Task { await initialize() }
+        initializationTask = task
+        return task
     }
 
     private func initialize() async {
+        guard !stopped, !Task.isCancelled else { isBusy = false; return }
         do {
             hasPendingMaintenance = try await local.maintenance() != nil
         } catch {
@@ -164,6 +173,13 @@ final class BackupViewModel: ObservableObject {
         }
         do { versions = try await local.versions(destinationID: defaults.string(forKey: "backup.destination-id.v1")) }
         catch { fail(error) }
+        // Existing manually created GitHub copies adopt sync once. Later
+        // cancellation, disconnection and maintenance still keep their pause.
+        // WHY: .project-docs/decisions/2026-10-20-backup-auto-sync.md
+        if !stopped, !Task.isCancelled, destinationKind == "github", recoverySaved, lastRemoteBackupAt != nil,
+           !hasPendingMaintenance, !defaults.bool(forKey: "backup.github-auto-sync.v1") {
+            enableCreatedBackupSync()
+        }
         isBusy = false
         await poll()
     }
@@ -517,6 +533,29 @@ final class BackupViewModel: ObservableObject {
 
     var canUseGitHubBackup: Bool { githubConnectionState == .connected && github != nil && destinationKind == "github" }
 
+    var githubBackupURL: URL? {
+        guard destinationKind == "github", let owner = defaults.string(forKey: "backup.github-owner.v1") else { return nil }
+        return GitHubBackupTransport.backupURL(owner: owner)
+    }
+
+    var syncState: BackupSyncState {
+        if needsRestart { return .restoreReady }
+        if hasPendingMaintenance || errorMessage != nil || githubConnectionState == .needsAttention { return .needsAttention }
+        if githubConnectionState == .checking { return .checking }
+        guard canUseGitHubBackup else { return .disconnected }
+        if isBusy { return operationKind == .restore || operationKind == .preview ? .restoring : .syncing }
+        guard lastRemoteBackupAt != nil else { return .notCreated }
+        guard isEnabled else { return .paused }
+        if needsFullBackup || versions.contains(where: \.pendingCopy) { return .waiting }
+        return .synced
+    }
+
+    private func enableCreatedBackupSync() {
+        isEnabled = true
+        defaults.set(true, forKey: "backup.enabled.v1")
+        defaults.set(true, forKey: "backup.github-auto-sync.v1")
+    }
+
     func checkGitHubConnection() async {
         guard !Task.isCancelled else { return }
         await retainOperation(.connection, cancelWithCaller: true) {
@@ -577,8 +616,10 @@ final class BackupViewModel: ObservableObject {
                 // The user receives the code as the result; no paste-back ceremony.
                 self.recoverySaved = true
                 self.defaults.set(true, forKey: "backup.recovery-verified.v1")
-                await self.performBackupNow()
-                if self.errorMessage == nil, !Task.isCancelled, self.codePresentationID == presentationID { self.recoveryCode = code }
+                if await self.performBackupNow(), !Task.isCancelled {
+                    self.enableCreatedBackupSync()
+                    if self.codePresentationID == presentationID { self.recoveryCode = code }
+                }
             } catch { self.fail(error) }
         }
     }
@@ -664,11 +705,12 @@ final class BackupViewModel: ObservableObject {
         await retainOperation(.backup) { await self.performBackupNow() }
     }
 
-    private func performBackupNow() async {
-        guard !isBusy, !needsRestart, !hasPendingMaintenance else { return }
-        guard recoverySaved, destinationKind != nil else { beginSetup(); return }
-        guard idle() else { errorMessage = ConfigBackupError.busy.localizedDescription; return }
-        isBusy = true; errorMessage = nil; lastAttempt = Date()
+    @discardableResult
+    private func performBackupNow() async -> Bool {
+        guard !isBusy, !needsRestart, !hasPendingMaintenance else { return false }
+        guard recoverySaved, destinationKind != nil else { beginSetup(); return false }
+        guard idle() else { errorMessage = ConfigBackupError.busy.localizedDescription; return false }
+        isBusy = true; errorMessage = nil; lastAttempt = now()
         statusText = "Saving an encrypted copy on this Mac…"
         var unfinished: URL?
         do {
@@ -686,12 +728,16 @@ final class BackupViewModel: ObservableObject {
             await refreshVersionsQuietly()
             try await copyPending(current: (summary.id, stored), key: key)
             await refreshVersionsQuietly()
+            let finishedStamp = await Task.detached(priority: .utility) { probe() }.value
+            if finishedStamp != capturedStamp || changeRevision != revision { needsFullBackup = true }
             errorMessage = nil
             statusText = destinationKind == "github" ? "Encrypted backup uploaded to GitHub and checked." : "Encrypted backup saved and checked in your folder. Cloud sync is managed by your sync service."
             isBusy = false
+            return true
         } catch {
             if let unfinished { try? FileManager.default.removeItem(at: unfinished) }
             isBusy = false; fail(error)
+            return false
         }
     }
 
@@ -969,7 +1015,10 @@ final class BackupViewModel: ObservableObject {
     }
     func cancelCurrentOperation() {
         guard let task = operationTask else { return }
-        if operationKind == .backup { setEnabled(false) }
+        if operationKind == .backup {
+            setEnabled(false)
+            defaults.set(true, forKey: "backup.github-auto-sync.v1")
+        }
         task.cancel()
         statusText = "Cancelling… Your saved data and previous backups are kept."
     }
@@ -1084,8 +1133,8 @@ final class BackupViewModel: ObservableObject {
         } catch { fail(error) }
     }
 
-    private func poll() async {
-        guard !isBusy, !needsRestart else { return }
+    func poll() async {
+        guard !stopped, !isBusy, !needsRestart else { return }
         await captureSettings()
         if hasPendingMaintenance {
             if !maintenanceRetryAttempted && idle() { await resumeBackupManagement() }
@@ -1094,7 +1143,7 @@ final class BackupViewModel: ObservableObject {
         let probe = changeProbe
         let stamp = await Task.detached(priority: .utility) { probe() }.value
         if stamp != sourceStamp { markDirty() }
-        guard isEnabled, recoverySaved, idle(), Date().timeIntervalSince(lastAttempt) >= 120 else { return }
+        guard isEnabled, recoverySaved, idle(), now().timeIntervalSince(lastAttempt) >= 120 else { return }
         if needsFullBackup { await backupNow() }
         else if let pending = try? await local.pendingCopies(destinationID: defaults.string(forKey: "backup.destination-id.v1") ?? ""), !pending.isEmpty {
             await retainOperation(.backup) { await self.retryPendingCopies() }
@@ -1102,7 +1151,7 @@ final class BackupViewModel: ObservableObject {
     }
 
     private func retryPendingCopies() async {
-            isBusy = true; lastAttempt = Date()
+            isBusy = true; lastAttempt = now()
             do {
                 let copied = try await copyPending(key: key())
                 if copied > 0 {

@@ -91,10 +91,9 @@ final class MeetingsContentController: NSViewController {
         rootView.addSubview(listContainer)
         rootView.addSubview(editorContainer)
 
-        let divider = NSView()
+        let divider = NSBox()
         divider.translatesAutoresizingMaskIntoConstraints = false
-        divider.wantsLayer = true
-        divider.layer?.backgroundColor = MacSettingsTheme.NS.sep.cgColor
+        divider.boxType = .separator
         rootView.addSubview(divider)
 
         topBarHeight = topBar.heightAnchor.constraint(equalToConstant: 48)

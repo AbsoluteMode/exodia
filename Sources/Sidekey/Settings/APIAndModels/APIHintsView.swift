@@ -38,7 +38,6 @@ struct APIHintsView: View {
             footer
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .preferredColorScheme(.dark)
         .onExitCommand(perform: onClose)
     }
 
@@ -47,7 +46,7 @@ struct APIHintsView: View {
             HStack(spacing: 9) {
                 ProviderBrandIcon(assetName: hint.assetName, size: 18, color: MacSettingsTheme.text)
                     .frame(width: 32, height: 32)
-                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    .background(MacSettingsTheme.hover, in: RoundedRectangle(cornerRadius: 8))
                 Text(hint.provider)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(MacSettingsTheme.text)
@@ -58,7 +57,7 @@ struct APIHintsView: View {
                         .foregroundStyle(MacSettingsTheme.text2)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 4)
-                        .background(.white.opacity(0.06), in: Capsule())
+                        .background(MacSettingsTheme.hover, in: Capsule())
                 }
             }
 
@@ -95,10 +94,10 @@ struct APIHintsView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 220, maxHeight: .infinity, alignment: .topLeading)
-        .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+        .background(MacSettingsTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
         .overlay {
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                .strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)
     }

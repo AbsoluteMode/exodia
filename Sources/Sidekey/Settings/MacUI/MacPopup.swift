@@ -10,7 +10,7 @@ enum MacPopupMetrics {
     static let fontSize: CGFloat = 12
 }
 
-/// Settings keeps its existing dark palette; floating tools follow macOS appearance.
+/// Settings and floating tools follow macOS appearance with their own surface roles.
 enum MacPopupAppearance {
     case settings, adaptive
 

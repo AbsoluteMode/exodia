@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Backup/ArtifactBackupStaging.swift
     confirmed_at: 2026-10-20
-related: [../project.md, 2026-10-19-config-backup.md, 2026-10-19-backup-management.md]
+related: [2026-10-20-backup-auto-sync.md, ../project.md, 2026-10-19-config-backup.md, 2026-10-19-backup-management.md]
 ---
 
 # GitHub integration and simple complete backup
@@ -50,7 +50,9 @@ at next launch and retains the before-state. There is no preview confirmation.
 A short ready message explains the required ordinary restart. Restored executable
 connections and recordings remain parked until explicitly enabled.
 
-Manual actions do not silently enable automatic backups. Existing automatic
+The later [automatic sync decision](2026-10-20-backup-auto-sync.md) supersedes
+the original manual-only scheduling behavior: created GitHub backups now sync
+automatically. Existing automatic
 backup preferences, local encrypted history and legacy folder destinations are
 preserved internally. Previously started maintenance has Finish / Stop recovery
 actions so removing the old controls cannot trap an existing request.

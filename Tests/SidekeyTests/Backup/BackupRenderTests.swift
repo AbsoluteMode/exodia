@@ -33,39 +33,27 @@ final class BackupRenderTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
         let localRoot = temporaryRoot.appendingPathComponent("local", isDirectory: true)
         let settingsRoot = temporaryRoot.appendingPathComponent("settings", isDirectory: true)
-        let noopEngine = BackupEngineActions(
-            create: { _, _ in
-                ArtifactBackupSummary(
-                    id: UUID(),
-                    createdAt: Date(timeIntervalSince1970: 1_792_411_200),
-                    totalBytes: 0,
-                    fileCount: 0,
-                    sections: []
-                )
-            },
-            inspect: { _, _ in
-                ArtifactBackupPreview(
-                    summary: ArtifactBackupSummary(
-                        id: UUID(),
-                        createdAt: Date(timeIntervalSince1970: 1_792_411_200),
-                        totalBytes: 0,
-                        fileCount: 0,
-                        sections: []
-                    ),
-                    warnings: []
-                )
-            },
-            stage: { _, _, _ in }
-        )
+        var environment = ArtifactBackupEnvironment()
+        environment.locations = .isolated(root: temporaryRoot)
+        environment.defaults = defaults
+        environment.credentialStore = { _ in InMemoryTokenStore() }
+        environment.caseVaultKeys = StubCaseVaultKeys()
+        environment.pendingKeyStore = InMemoryTokenStore()
+        environment.recoveryKeyStore = InMemoryTokenStore()
+        let engine = ArtifactBackupEngine(environment: environment)
+        let fixtureEngine = BackupEngineActions(
+            create: { try await engine.createArchive(at: $0, key: $1) },
+            inspect: { try await engine.inspectArchive(at: $0, key: $1) },
+            stage: { try await engine.stageRestore(from: $0, key: $1, sections: $2) })
         let model = BackupViewModel(
             defaults: defaults,
             keyStore: InMemoryTokenStore(),
             githubTokenStore: InMemoryTokenStore(),
             local: BackupLocalStore(root: localRoot),
             settingsFiles: ConfigBackupFiles(root: settingsRoot),
-            engine: noopEngine,
+            engine: fixtureEngine,
             changeProbe: { "" },
-            idle: { true }, githubSession: session
+            idle: { true }, providerStore: { _ in InMemoryTokenStore() }, previousRestoreOutcome: { nil }, githubSession: session
         )
         renderModels.append(model)
         return model
@@ -109,7 +97,14 @@ final class BackupRenderTests: XCTestCase {
                    to: directory.appendingPathComponent("backup-disconnected.png"))
         try render(hosted(SettingsIntegrationsView(model: disconnected)), size: NSSize(width: 760, height: 500),
                    to: directory.appendingPathComponent("integrations-disconnected.png"))
-        model.lastRemoteBackupAt = Date(timeIntervalSince1970: 1_792_411_200)
+        await model.backupEverything()
+        model.hideRecoveryCode()
+        XCTAssertEqual(model.syncState, .synced)
+        await model.stopAndWait() // Freeze the fixture before offscreen view tasks arrive.
+        for width in [560, 760] {
+            try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: width, height: 190),
+                       to: directory.appendingPathComponent("backup-synced-\(width).png"))
+        }
         try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 760, height: 500),
                    to: directory.appendingPathComponent("backup-connected.png"))
         try render(hosted(SettingsIntegrationsView(model: model)), size: NSSize(width: 760, height: 500),
@@ -123,7 +118,17 @@ final class BackupRenderTests: XCTestCase {
         model.errorMessage = "GitHub is unavailable. Your local backup is kept."
         try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 560, height: 500),
                    to: directory.appendingPathComponent("backup-error.png"))
-        model.errorMessage = nil; model.needsRestart = true
+        model.errorMessage = nil
+        model.setEnabled(false)
+        try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 560, height: 500),
+                   to: directory.appendingPathComponent("backup-paused.png"))
+        model.setEnabled(true)
+        try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 560, height: 500),
+                   to: directory.appendingPathComponent("backup-pending.png"))
+        model.isBusy = true
+        try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 560, height: 500),
+                   to: directory.appendingPathComponent("backup-syncing.png"))
+        model.isBusy = false; model.needsRestart = true
         try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 760, height: 500),
                    to: directory.appendingPathComponent("backup-ready.png"))
     }

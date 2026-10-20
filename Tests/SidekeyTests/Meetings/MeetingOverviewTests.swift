@@ -149,25 +149,30 @@ final class MeetingOverviewTests: XCTestCase {
     }
 
     private func render(_ model: MeetingListModel, width: Int, to url: URL) throws {
-        let size = NSSize(width: width, height: 600)
-        let view = MeetingListView(model: model, onSelect: { _ in })
-            .frame(width: size.width, height: size.height)
-            .background(Color(white: 0.12))
-            .environment(\.colorScheme, .dark)
-        let host = NSHostingView(rootView: view)
-        host.frame = NSRect(origin: .zero, size: size)
-        host.appearance = NSAppearance(named: .darkAqua)
-        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        defer { window.contentView = nil; window.close() }
-        host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
-        host.layoutSubtreeIfNeeded()
-        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
-        XCTAssertFalse(window.isVisible)
-        XCTAssertFalse(window.isKeyWindow)
+        for scheme in [ColorScheme.light, .dark] {
+            let size = NSSize(width: width, height: 600)
+            let appearanceName = scheme == .light ? "light" : "dark"
+            let targetURL = url.deletingLastPathComponent().appendingPathComponent(
+                url.deletingPathExtension().lastPathComponent + "-" + appearanceName + ".png")
+            let view = MeetingListView(model: model, onSelect: { _ in })
+                .frame(width: size.width, height: size.height)
+                .background(MacSettingsTheme.bgContent)
+                .environment(\.colorScheme, scheme)
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(origin: .zero, size: size)
+            host.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.contentView = nil; window.close() }
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: targetURL)
+            XCTAssertFalse(window.isVisible)
+            XCTAssertFalse(window.isKeyWindow)
+        }
     }
 }

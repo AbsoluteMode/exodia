@@ -13,6 +13,7 @@ struct APIAndModelsView: View {
     @State private var highlighted: Set<AIFeature> = []
     /// Bumped by "Show": the scroll reader then finds the features with no model.
     @State private var showUnsetTick = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(viewModel: APIAndModelsViewModel, focusedFeature: Binding<AIFeature?>) {
         self.viewModel = viewModel
@@ -181,10 +182,11 @@ struct APIAndModelsView: View {
                 }
             }
             .padding(.bottom, viewModel.aliasGroups.isEmpty ? 0 : 10)
-            MacCard {
-                ForEach(Array(viewModel.groups.enumerated()), id: \.element.id) { index, group in
-                    if index > 0 { MacRowSeparator() }
-                    groupRow(group)
+            VStack(spacing: 10) {
+                ForEach(viewModel.groups) { group in
+                    MacCard(needsSetup: group.rows.contains { $0.status == .notSet }) {
+                        groupRow(group)
+                    }
                 }
             }
         }
@@ -239,7 +241,7 @@ struct APIAndModelsView: View {
         }
         .background(group.rows.contains { highlighted.contains($0.feature) }
                     ? MacSettingsTheme.accent.opacity(0.16) : Color.clear)
-        .animation(.easeInOut(duration: 0.25), value: highlighted)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: highlighted)
     }
 
     private func pickers(for row: FeatureRow) -> some View {
@@ -260,6 +262,10 @@ struct APIAndModelsView: View {
                 ProviderMenu(viewModel: viewModel, feature: row.feature, choice: choice)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(row.feature.title)
+        .accessibilityValue(row.status == .notSet ? "Needs setup" : "")
+        .help(row.status == .notSet ? "Choose a model and add its provider key in API keys." : row.selectionLabel)
     }
 
     /// `prefix` names the part (`"LLM"`) when a line holds more than one route.
@@ -270,8 +276,6 @@ struct APIAndModelsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 if let status {
                     HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 10.5))
                         Text(prefix.map { "\($0): \(status.text)" } ?? status.text)
                         if let action = status.action {
                             Button(action.title, action: action.run)
@@ -282,8 +286,6 @@ struct APIAndModelsView: View {
                 }
                 if let message = row.message {
                     HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 10.5))
                         Text(prefix.map { "\($0): \(message)" } ?? message).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -311,7 +313,7 @@ struct APIAndModelsView: View {
         case .ok:
             return nil
         case .notSet:
-            return StatusLine(text: "Not set")
+            return nil
         case .keyProblem:
             return StatusLine(text: "Key problem")
         case .notVerified:
@@ -356,7 +358,9 @@ struct APIAndModelsView: View {
     /// Scrolls to `target` and tints the rows of `features` for a moment.
     private func highlight(_ features: Set<AIFeature>, scrollTo target: AIFeature,
                            scroller: ScrollViewProxy, seconds: Double = 2.5) {
-        withAnimation { scroller.scrollTo(target, anchor: .center) }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            scroller.scrollTo(target, anchor: .center)
+        }
         highlighted = features
         Task {
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))

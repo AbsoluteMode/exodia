@@ -38,6 +38,34 @@ struct ArtifactBackupPreview: Equatable {
 
 enum BackupVersionLocation: Equatable { case local, folder, github, localAndFolder, localAndGitHub }
 
+enum BackupSyncState: Equatable {
+    case disconnected, checking, notCreated, waiting, syncing, synced, paused, needsAttention, restoring, restoreReady
+
+    var title: String {
+        switch self {
+        case .disconnected: return "GitHub not connected"
+        case .checking: return "Checking backup…"
+        case .notCreated: return "No backup yet"
+        case .waiting: return "Backup sync pending"
+        case .syncing: return "Syncing backup…"
+        case .synced: return "Backup synced"
+        case .paused: return "Backup sync paused"
+        case .needsAttention: return "Backup needs attention"
+        case .restoring: return "Restoring backup…"
+        case .restoreReady: return "Restore is ready"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .synced: return "checkmark.circle.fill"
+        case .needsAttention: return "exclamationmark.triangle"
+        case .waiting, .syncing, .checking: return "arrow.triangle.2.circlepath"
+        default: return "externaldrive.badge.timemachine"
+        }
+    }
+}
+
 struct BackupVersion: Identifiable, Equatable {
     var id: String
     var createdAt: Date

@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// Grouped container: a rounded card holding stacked `MacRow`s separated by hairlines,
-/// mirroring the mockup's `.mac-card`.
+/// iOS-style inset group. Rows share one surface with quiet, inset separators.
 struct MacCard<Content: View>: View {
+    var needsSetup: Bool = false
     @ViewBuilder var content: Content
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         VStack(spacing: 0) { content }
@@ -13,9 +15,13 @@ struct MacCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: MacSettingsTheme.radiusCard, style: .continuous)
-                    .strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5)
+                    .strokeBorder(needsSetup ? MacSettingsTheme.setupOutline : MacSettingsTheme.sep,
+                                  lineWidth: needsSetup ? 1 : 0.5)
             )
             .clipShape(RoundedRectangle(cornerRadius: MacSettingsTheme.radiusCard, style: .continuous))
+            .shadow(color: needsSetup && !reduceTransparency
+                    ? MacSettingsTheme.setupGlow.opacity(colorScheme == .dark ? 0.18 : 0.12) : .clear,
+                    radius: 5)
     }
 }
 
@@ -46,17 +52,19 @@ struct MacRow<Leading: View, Trailing: View>: View {
                 Text(title)
                     .font(.system(size: 13))
                     .foregroundStyle(MacSettingsTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
                     Text(subtitle)
                         .font(.system(size: 11.5))
                         .foregroundStyle(MacSettingsTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)
             trailing
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.vertical, 12)
         .frame(minHeight: 42)
     }
 }
@@ -71,13 +79,14 @@ extension MacRow where Leading == EmptyView {
     }
 }
 
-/// Hairline separator between rows, inset to align with the title column.
+/// A full-point inset divider with breathing room between adjacent settings.
 struct MacRowSeparator: View {
     var body: some View {
         Rectangle()
-            .fill(MacSettingsTheme.sep)
-            .frame(height: 0.5)
-            .padding(.leading, 14)
+            .fill(MacSettingsTheme.rowSeparator)
+            .frame(height: 1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 2)
     }
 }
 

@@ -1,3 +1,5 @@
+import SwiftUI
+
 enum SettingsWindowTab: String, CaseIterable, Identifiable {
     case apiAndModels
     case hotkeys
@@ -51,6 +53,21 @@ enum SettingsWindowTab: String, CaseIterable, Identifiable {
 
     var systemImageName: String {
         fallbackSystemImageName
+    }
+
+    var iconTint: Color {
+        switch self {
+        case .apiAndModels: return Color(hexCSS: "#5469CC")
+        case .hotkeys: return Color(hexCSS: "#65656D")
+        case .permissions: return Color(hexCSS: "#27845A")
+        case .notes: return Color(hexCSS: "#A07513")
+        case .agentMode: return Color(hexCSS: "#8A50C6")
+        case .toolbox: return Color(hexCSS: "#237EB0")
+        case .notifications: return Color(hexCSS: "#CB4055")
+        case .integrations: return Color(hexCSS: "#5E69B8")
+        case .backup: return Color(hexCSS: "#27845A")
+        case .other: return Color(hexCSS: "#65656D")
+        }
     }
 
     var fallbackSystemImageName: String {
