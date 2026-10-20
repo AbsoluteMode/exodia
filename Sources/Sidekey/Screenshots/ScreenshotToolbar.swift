@@ -38,6 +38,7 @@ final class ScreenshotToolbar: NSView {
         ] {
             let button = makeButton(symbol: symbol, title: title, help: help, action: #selector(chooseTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
+            button.toolTip = help + ". Click again to stop drawing and adjust the selection or annotations."
             button.setButtonType(.toggle); controls.append(button); tools[tool] = button
         }
         controls.append(separator())
@@ -132,7 +133,10 @@ final class ScreenshotToolbar: NSView {
     }
     @objc private func chooseTool(_ sender: NSButton) {
         guard let value = sender.identifier?.rawValue, let tool = ScreenshotTool(rawValue: value) else { return }
-        canvas?.selectTool(tool); canvas?.window?.makeKey(); canvas?.window?.makeFirstResponder(canvas)
+        guard let canvas else { return }
+        let isCurrent = canvas.tool == tool || (tool == .rectangle && canvas.tool == .ellipse)
+        canvas.selectTool(isCurrent ? .select : tool)
+        canvas.window?.makeKey(); canvas.window?.makeFirstResponder(canvas)
     }
     @objc private func undo(_ sender: Any?) { canvas?.undo() }
     @objc private func redo(_ sender: Any?) { canvas?.redo() }

@@ -33,9 +33,9 @@ Color, width, shape, blur mode and text controls appear in a **separate adjacent
 settings panel** for the current tool; color/width are remembered per tool.
 Typing a label only prepares it: click the screenshot to place it before
 finishing. Return copies only placed annotations and discards an unplaced
-label; the field placeholder and help make that ordering explicit. Before
-choosing an annotation tool, the selection can be moved or resized by its
-corners. Arrow keys also move it; Option plus arrows resizes it. Blur patches
+label; the field placeholder and help make that ordering explicit. Click the
+active tool again to stop drawing, then move annotations or move/resize the
+selection by its corners. Arrow keys also move it; Option plus arrows resizes it. Blur patches
 can be deleted or undone; they cannot be moved because moving them would
 expose original information. Undo/redo preserves the selected region.
 

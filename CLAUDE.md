@@ -917,7 +917,9 @@ and closes, waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
 Shape, Pen, Text, Blur, Numbered steps and system sharing remain on the main
 toolbar. There is no Select/crop button or V shortcut; initial area selection
-remains a drag. Highlighter, Spotlight, Copy text, Pin above windows and
+remains a drag. Clicking the active tool again stops drawing and permits
+selection/annotation adjustment without an extra selector. Highlighter,
+Spotlight, Copy text, Pin above windows and
 Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
 from either panel; focused text fields retain native text undo. Blur defaults to Text and numbers, including
 standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas

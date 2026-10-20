@@ -9,7 +9,9 @@ with the visible **Copy & exit ↩** action or Enter.
 
 - Expose Arrow, Shape, Pen, Text, Blur, Numbered steps, Share, Undo, Redo,
   Download, Copy & exit and Cancel. Remove More and the Select/crop control;
-  keep the initial area drag. Highlighter, Spotlight, Copy text, Pin above
+  keep the initial area drag. Clicking the active tool again stops drawing
+  and restores direct selection/annotation adjustment without another button.
+  Highlighter, Spotlight, Copy text, Pin above
   windows and Output size are removed, including their hidden commands and
   shortcuts. Why: the user chose a smaller annotation-focused tool set after
   reviewing every action; full pixel resolution remains automatic.

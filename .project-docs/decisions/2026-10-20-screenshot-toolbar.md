@@ -177,7 +177,8 @@ Numbered steps and Share, plus Undo/Redo, Download, Copy & exit and Cancel.
 Remove the Select/crop button and V shortcut, Highlighter and M shortcut,
 Spotlight, Copy text, Pin above windows and Output size. Initial area selection
 still uses a drag, with the existing selection geometry and keyboard adjustment.
-No replacement menu or hidden invocation retains the removed actions.
+Clicking the active annotation tool again stops drawing, restoring direct
+selection/annotation adjustment without a Select control. No replacement menu or hidden invocation retains the removed actions.
 
 The reduced editor exports the original Retina pixels without resizing. Keep
 fast local text/number detection for Blur. Accurate OCR remains only in tests

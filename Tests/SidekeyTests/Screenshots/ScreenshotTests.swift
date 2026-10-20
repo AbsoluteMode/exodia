@@ -358,6 +358,18 @@ final class ScreenshotTests: XCTestCase {
         for label in ["Share", "Undo", "Redo", "Cancel capture"] {
             XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix(label) == true }, label)
         }
+        let arrow = try XCTUnwrap(buttons.first { $0.identifier?.rawValue == "arrow" })
+        arrow.performClick(nil); toolbar.refresh()
+        XCTAssertEqual(canvas.tool, .arrow); XCTAssertEqual(arrow.state, .on)
+        arrow.performClick(nil); toolbar.refresh()
+        XCTAssertEqual(canvas.tool, .select); XCTAssertEqual(arrow.state, .off)
+        let shape = try XCTUnwrap(buttons.first { $0.identifier?.rawValue == "rectangle" })
+        shape.performClick(nil); canvas.selectTool(.ellipse); toolbar.refresh()
+        XCTAssertEqual(shape.state, .on)
+        shape.performClick(nil); toolbar.refresh()
+        XCTAssertEqual(canvas.tool, .select); XCTAssertEqual(shape.state, .off)
+        XCTAssertEqual(canvas.selection, CGRect(x: 100, y: 100, width: 200, height: 100))
+        canvas.selectTool(.blur); toolbar.refresh()
         XCTAssertFalse(descendants(toolbar).contains { $0 is NSColorWell || $0 is NSPopUpButton || $0 is NSTextField })
         let mode = try XCTUnwrap(settings.compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles.contains("Text and numbers") })
         XCTAssertEqual(mode.titleOfSelectedItem, "Text and numbers")
