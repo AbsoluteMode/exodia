@@ -62,11 +62,17 @@ struct AIUsageDateCalendar: View {
         VStack(spacing: 10) {
             HStack(spacing: 6) {
                 navigation("chevron.left", label: "Previous month", offset: -1)
-                MacPopup(items: visible.months.map { .init(value: $0, label: formatter.standaloneMonthSymbols[$0 - 1]) },
-                         selection: Binding(get: { visible.month }, set: { visible.show(year: visible.year, month: $0) }),
-                         minWidth: 114, maxWidth: 114)
-                    .accessibilityLabel("Month")
-                    .modifier(CalendarHoverFeedback())
+                MacMenu(title: formatter.standaloneMonthSymbols[visible.month - 1], minWidth: 114, maxWidth: 114) {
+                    ForEach(visible.months, id: \.self) { month in
+                        Button { visible.show(year: visible.year, month: month) } label: {
+                            if month == visible.month { Label(formatter.standaloneMonthSymbols[month - 1], systemImage: "checkmark") }
+                            else { Text(formatter.standaloneMonthSymbols[month - 1]) }
+                        }
+                        .disabled(visible.year == visible.lastYear && month > visible.calendar.component(.month, from: visible.latest))
+                    }
+                }
+                .accessibilityLabel("Month")
+                .modifier(CalendarHoverFeedback())
                 AIUsageCalendarYear(year: visible.year, latest: visible.lastYear) { visible.show(year: $0, month: visible.month) }
                     .frame(width: 80, height: 30)
                     .modifier(CalendarHoverFeedback())
