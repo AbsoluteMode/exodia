@@ -2,12 +2,21 @@
 id: feature-costs-2026-10-20
 type: decision
 title: Feature costs preserve historical models and separate ElevenLabs credits
-summary: Costs has one Price column with explicit USD or credit units, defaults to This month and reveals historical models; calendar controls share the period menu appearance.
+summary: Costs estimates ElevenLabs feature credits from recorded time and reported model rates, with separate workspace debits grouped by API key for the selected period.
 status: confirmed
 tags: [settings, costs, models, credits, providers]
 canonical_for: [feature-costs]
-verified_at: 2026-10-20
+verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 Maxim requested a more convenient Costs calendar, objected to its large blue focus ring and asked how to choose a year.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 Maxim requested verification on existing sessions, approved separate reported usage by API key and directed feature estimates from recorded time with each model.
+    confirmed_at: 2026-10-21
+  - type: url
+    reference: https://elevenlabs.io/docs/api-reference/analytics/workspace/usage
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-20 Maxim requested one Price column, removal of the bottom explanation, This month by default, consistent control fills, no persistent date selection and repair of ElevenLabs credits.
     confirmed_at: 2026-10-20
@@ -49,9 +58,18 @@ becomes the fourth tab, retaining its offer content and existing add-key form.
 
 Costs shows Today, Last 7 days, This month or Custom dates at the heading. Each
 visit starts at This month; custom dates remain selectable within that visit.
-From/To use the same neutral control fill as the period menu and open a native
-calendar that closes after a changed date, Done/Return or Escape. No selected
-text segment remains on the closed control. Feature-row fill follows actual
+From/To use the same neutral control fill as the period menu. As amended on
+2026-10-21, their calendar has a month menu and an editable year combo with the
+recent 100 years (earlier positive years can be typed). Browsing changes only
+the visible month; choosing a day or Today commits and closes. Done/Return and
+Escape close without applying a browsed month. Future days and navigation past
+the current month are unavailable. Individual controls and days retain visible
+keyboard focus, hover and pressed feedback, replacing the native calendar’s
+large focus ring. The local native month popup draws from its actual enabled/
+highlighted state; its pressed proof does not rely on the shared plain SwiftUI
+menu. Disabled controls suppress highlight and disabled future month actions
+are rejected. Disabled days never react to hover. No selected text segment
+remains on the closed control. Feature-row fill follows actual
 pointer hover rather than the lifetime of its detail popover. Dates
 use the local calendar and include the selected end day. Only feature groups
 with activity in that period appear. Hover, click or keyboard focus reveals all
@@ -77,21 +95,39 @@ unknown price is Unavailable. Failed/interrupted work is not silently free.
 OpenCode child-agent costs that are absent from its top-level event stream leave
 an incomplete marker rather than a fabricated complete total.
 
-ElevenLabs' official SDK exposes a request analytics endpoint with explicit
-column units. The app reads it with the existing key, joins only an exact
-request/session ID captured from its own response, verifies the model when
-present, and accepts one unambiguous credit column. The documented analytics
-response includes numeric strings, which the credit parser accepts without
-relaxing inference API parsing. A search result without an ID column cannot
-establish attribution; a bounded second query uses an explicit request_id
-equality filter and accepts only one matching row. Unsupported filters or
-ambiguous responses remain unavailable. The same journal entry is
-reconciled once. Free and purchased credits remain credits. USD columns,
-account-wide balance deltas, ambiguous rows and guessed plan conversions are
-never used. Delayed analytics, missing identifiers or insufficient key scope
-leave the expense unavailable; reopening Costs retries at a bounded rate.
+Live verification on 2026-10-21 established that the request log returns request
+metadata without credit amounts. Its documented example is not the live billing
+schema. The saved session references did not resolve through the usage table's
+request/trace filters. The previous exact-request reconciliation is therefore
+replaced by the user's approved time calculation.
 
-Offscreen fixtures and stubbed network tests establish layout, attribution and
-failure handling. Live analytics availability and identifier correspondence are
-not established by those fixtures and remain normal-use acceptance after the
-shared-app builder promotes the feature. No paid test request is required.
+Costs reads `/v1/workspace/analytics/query/usage-by-product-over-time` for the
+selected date interval, grouped by API key, model and product. It validates the
+explicit `credits` and `min` column units, accepts numeric strings, and combines
+daily rows within each key/model/product. Missing or ambiguous credit columns,
+HTTP failures and unreadable keys produce an explanation with Refresh, not zero.
+A successful empty table means no reported usage. Reads occur when Costs loads
+or refreshes, not after every transcription. Tests and fixtures default to no
+real credential or network access.
+
+For an ElevenLabs STT model, reported credits divided by reported minutes gives
+an effective credit rate. Each feature's recorded audio minutes times that
+model's rate yields an estimate marked ≈. Rates are model-specific and weighted
+by reported minutes; other apps' total credits are never distributed among our
+features. Different rates, rounding, provider billing time and analytics delay
+can affect this estimate. No matching timed model, no usable duration/rate, or
+failed analytics means unavailable. Known per-request amounts are retained.
+Computed estimates never overwrite historical journal rows as reported debits.
+
+A separate ElevenLabs Reported usage section shows actual workspace charges,
+grouped by API key and model, for the same period. It explicitly includes other
+apps using this workspace's keys. Authentication does not prove that the response
+is limited to the currently stored key, so the UI labels workspace scope. This
+section is not added to feature Total: that would count some work twice. Provider
+key hashes are transient grouping IDs; credentials, hashes and full responses
+are never stored in the journal or diagnostics.
+
+Verification uses synthetic parser/network/multiple-feature fixtures and a
+read-only snapshot of the user's existing journal with the production billing
+client and estimator. No new inference or journal mutation is needed. Installed
+UI acceptance remains separate from this diagnostic and source checks.
