@@ -1,9 +1,10 @@
 import EventKit
 import SwiftUI
+import Combine
 
 @MainActor
 final class CalendarConnections: ObservableObject {
-    static let shared = CalendarConnections()
+    static let shared = CalendarConnections(backup: .shared, activityChanged: { AppState.shared.calendarConnectionActive = $0 })
     @Published private(set) var accounts: [ConnectedCalendarAccount] = []
     @Published private(set) var feeds: [CalendarFeed] = []
     @Published private(set) var events: [CalendarFeedEvent] = []
@@ -12,6 +13,16 @@ final class CalendarConnections: ObservableObject {
     @Published private(set) var refreshing = false
     @Published private(set) var hiddenFeeds: Set<String> = []
     @Published private(set) var appleEnabled = false
+    @Published private(set) var connectingProvider: CalendarProvider?
+    var isConnecting: Bool { connectingProvider != nil }
+    var connectionBlockReason: String? { backup?.calendarConnectionBlockReason }
+    var accountConnectionIssue: String? {
+        if let error = errors["accounts"] { return error }
+        return accounts.count >= 64 ? "Disconnect an unused calendar account before adding another." : nil
+    }
+    private let activityChanged: (Bool) -> Void
+    private weak var backup: BackupViewModel?
+    private var backupChanges: AnyCancellable?
     private let defaults: UserDefaults
     let oauth: CalendarOAuthClient
     private let remote: CalendarRemoteClient
@@ -21,8 +32,9 @@ final class CalendarConnections: ObservableObject {
     private static let accountsKey = CalendarAccountSettings.accountsKey
 
     init(defaults: UserDefaults = .standard, oauth: CalendarOAuthClient = CalendarOAuthClient(),
-        http: CalendarHTTP = CalendarHTTP()) {
-        self.defaults = defaults; self.oauth = oauth
+        http: CalendarHTTP = CalendarHTTP(), backup: BackupViewModel? = nil,
+        activityChanged: @escaping (Bool) -> Void = { _ in }) {
+        self.defaults = defaults; self.oauth = oauth; self.backup = backup; self.activityChanged = activityChanged
         remote = CalendarRemoteClient(http: http, oauth: oauth)
         hiddenFeeds = Set(defaults.stringArray(forKey: "planner.calendar.hiddenFeeds") ?? [])
         appleEnabled = defaults.bool(forKey: "planner.calendar.appleEnabled")
@@ -32,6 +44,20 @@ final class CalendarConnections: ObservableObject {
             }
             catch { metadataValid = false; errors["accounts"] = "Couldn’t read your calendar connections. Saved settings have been kept." }
         }
+        backupChanges = backup?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+    }
+
+    /// One calendar permission/sign-in flow across Settings and Planner.
+    func beginConnecting(provider: CalendarProvider) -> Bool {
+        guard !isConnecting, connectionBlockReason == nil else { return false }
+        connectingProvider = provider
+        activityChanged(true)
+        return true
+    }
+
+    func endConnecting() {
+        connectingProvider = nil
+        activityChanged(false)
     }
 
     func add(_ account: ConnectedCalendarAccount) throws {
@@ -76,6 +102,7 @@ final class CalendarConnections: ObservableObject {
         let store = appleStore ?? EKEventStore()
         appleStore = store
         guard try await store.requestFullAccessToEvents() else { throw CalendarConnectionError.denied }
+        try Task.checkCancellation()
         appleEnabled = true
         defaults.set(true, forKey: "planner.calendar.appleEnabled")
     }

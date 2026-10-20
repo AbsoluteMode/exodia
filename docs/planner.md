@@ -88,6 +88,13 @@ any supported source remain joinable.
 
 ## OAuth app registration
 
+Settings → **Integrations** lists **Google Calendar**, **Outlook Calendar**,
+**Apple Calendar** and **Zoom Calendar** with separate permission descriptions,
+account controls and provider-specific connection sheets. Google and Zoom show
+their pending review/publication state and do not start new shared-client sign-in
+before public approval. Existing accounts can still be disconnected. The Calendar
+window retains feed selection and advanced setup for source users' own clients.
+
 Use **Whytap** as the application name and public consent-screen brand.
 
 The application owner registers native OAuth clients once. Packaged client
@@ -98,6 +105,12 @@ that setup; it does not pretend to have a working shared sign-in.
 Live consent, organizational restrictions and provider-account compatibility
 require acceptance with real accounts. Fixture tests do not prove live sign-in.
 Provider registration and public verification remain separate external steps.
+For shared Google and Zoom clients, `publicAccessApproved` must be the string
+`"true"` in the private native-client packaging configuration after actual
+approval. An absent, false or malformed value keeps new sign-in blocked in both
+Integrations and Planner. Microsoft does not use this Google/Zoom review gate;
+its organizational restrictions still apply. Source users can supply an
+independent native client in Advanced app setup.
 
 Public integration information is available at
 [whytap.ai/planner](https://whytap.ai/planner/), with a separate
@@ -203,12 +216,15 @@ they do not restart remote-account requests. Disconnecting an account or removin
 a calendar prunes its hidden-feed IDs. Visibility supports up to 256 hidden
 calendars with the same bound in settings backup validation.
 An open editor keeps its draft when another tool hotkey brings Planner forward.
-Planner or inline To-do being visible, or a retained new-task draft, defers Sparkle
+An active calendar connection flow also defers Sparkle restart and backup restore,
+even if its Settings window closes. Planner or inline To-do being visible, or a retained new-task draft, defers Sparkle
 restart and backup restore. Ordinary backups continue to capture saved content while Planner is open.
+Backup work, a staged restore and pending backup maintenance also block new
+calendar connection changes with an explanation until that work finishes.
 
 ## Public verification preparation
 
-As checked on 2026-10-20, the shared Google Desktop registration exists, Calendar
+As checked on 2026-10-21, the shared Google Desktop registration exists, Calendar
 API is enabled, and the two narrow read scopes are declared. Its public native
 configuration is saved privately for packaging. The Whytap logo, homepage and
 calendar privacy URL are saved in Google Auth Platform. Ownership of whytap.ai is
@@ -217,7 +233,12 @@ status is **In production**, with an **External** audience. Branding has been
 verified and published. Calendar data access is not yet verified: until approved,
 Google retains its unverified-app warning and lifetime cap of 100 users for the
 requested sensitive scope. Production status and verified branding do not approve
-access to calendar events. The calendar data-access review is still pending.
+access to calendar events. The calendar data-access review has not been submitted:
+a real demonstration video is still missing. A live check on 2026-10-21 reached
+the warning and was cancelled without granting access after the user rejected it
+for public use. New shared Google sign-in is gated in the candidate implementation.
+The form text and recording storyboard are prepared in
+[Google verification](google-calendar-verification.md).
 The shared Microsoft native registration has been created in the separate owner
 directory for personal Microsoft accounts and accounts in any Entra tenant. Its
 Mobile and desktop callback is `http://localhost/callback`; only delegated

@@ -808,6 +808,15 @@ does not create a settings version or full backup; subsequent backups capture th
 latest token, and restored sign-in can require reconnecting. No
 shared OAuth registrations are created by the app itself; the owner supplies
 registered native clients during packaging through configure-calendar-clients.py.
+Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calendar
+and Zoom Calendar separately, with feature permissions and scoped connect sheets.
+Shared Google and Zoom clients cannot start new browser sign-in until actual
+provider approval is recorded by the publicAccessApproved packaging string.
+Missing or malformed approval remains closed; independent source-user clients
+remain available in Advanced setup. Connection activity is shared across Settings
+and Planner, serializes sign-in, and defers restore/update restart until completion.
+Backup work, staged restore and pending maintenance also block new connection
+changes so restore cannot overwrite a newly connected account.
 Live accounts require provider setup and separate acceptance. Encrypted backups
 include local Planner content, calendar metadata and saved credentials. Old backups
 preserve current calendar settings. A visible Planner, inline To-do, or retained task draft
@@ -815,7 +824,8 @@ defers update restart and restore; ordinary backups still run. Closing the windo
 stops calendar polling; another tool hotkey preserves an attached editor. Tests
 use fake providers and temporary stores. Guide:
 docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md,
-.project-docs/decisions/2026-10-20-todo-hover.md
+.project-docs/decisions/2026-10-20-todo-hover.md,
+.project-docs/decisions/2026-10-21-calendar-integrations.md
 
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change

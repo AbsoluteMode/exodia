@@ -43,6 +43,8 @@ final class AppState: ObservableObject {
     @Published var plannerActive = false
     /// Inline To-do visibility or a retained unsent draft.
     @Published var todoActive = false
+    /// Native calendar permission or browser OAuth in either Settings or Planner.
+    @Published var calendarConnectionActive = false
 
     /// Dynamic Island idle-hide visibility, mirrored from `IslandIdleController`
     /// by `AppDelegate` (controller-owns-logic / AppState-mirrors-for-view).

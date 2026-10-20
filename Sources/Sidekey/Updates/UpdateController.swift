@@ -484,6 +484,9 @@ final class UpdateController: NSObject, ObservableObject {
         if appState.screenshotActive {
             return "Ready. Finish the screenshot, then choose Restart."
         }
+        if appState.calendarConnectionActive {
+            return "Ready. Finish calendar sign-in, then choose Restart."
+        }
         if appState.plannerActive || appState.todoActive {
             return "Ready. Finish or clear your To-do draft and close To-do and Planner, then choose Restart."
         }

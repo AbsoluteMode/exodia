@@ -74,6 +74,15 @@ class CalendarClientsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.validated_clients(value)
 
+    def test_public_review_approval_requires_an_explicit_string(self):
+        for provider in ["google", "microsoft", "zoom"]:
+            for approval in ["true", "false"]:
+                value = {provider: {"clientID": "fixture", "publicAccessApproved": approval}}
+                self.assertEqual(module.validated_clients(value), value)
+            for approval in [True, False, 1, "TRUE", "approved", ""]:
+                with self.assertRaises(ValueError):
+                    module.validated_clients({provider: {"clientID": "fixture", "publicAccessApproved": approval}})
+
     def test_missing_registration_does_not_modify_the_plist(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

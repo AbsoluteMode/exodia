@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import XCTest
 @testable import Sidekey
 
@@ -92,5 +93,39 @@ final class BackupViewModelTests: XCTestCase {
         await model.backupNow()
         XCTAssertNotNil(model.errorMessage); XCTAssertNil(model.lastBackupAt)
         XCTAssertFalse(model.needsRestart)
+    }
+
+    func testCalendarSignInBlocksRestoreBeforeAnySettingsOrCredentialRead() async {
+        let previous = AppState.shared.calendarConnectionActive
+        defer { AppState.shared.calendarConnectionActive = previous }
+        AppState.shared.calendarConnectionActive = true
+        let model = model()
+        await model.restoreSettingsDefaults(.models)
+        XCTAssertEqual(model.errorMessage, "Finish calendar sign-in before restoring a backup.")
+        XCTAssertEqual(keyStore.reads, 0)
+        XCTAssertFalse(model.needsRestart)
+    }
+
+    func testBackupWorkAndStagedRestoreBlockNewCalendarConnections() {
+        let model = model()
+        let calendars = CalendarConnections(defaults: defaults, backup: model)
+        var changes = 0
+        let observation = calendars.objectWillChange.sink { changes += 1 }
+        defer { observation.cancel() }
+        model.isBusy = true
+        XCTAssertNotNil(calendars.connectionBlockReason)
+        XCTAssertFalse(calendars.beginConnecting(provider: .microsoft))
+        model.isBusy = false; model.needsRestart = true
+        XCTAssertNotNil(calendars.connectionBlockReason)
+        XCTAssertFalse(calendars.beginConnecting(provider: .apple))
+        model.needsRestart = false; model.hasPendingMaintenance = true
+        XCTAssertNotNil(calendars.connectionBlockReason)
+        XCTAssertFalse(calendars.beginConnecting(provider: .google))
+        model.hasPendingMaintenance = false
+        XCTAssertNil(calendars.connectionBlockReason)
+        XCTAssertTrue(calendars.beginConnecting(provider: .microsoft))
+        calendars.endConnecting()
+        XCTAssertGreaterThanOrEqual(changes, 6, "Calendar controls must observe backup state changes")
+        XCTAssertEqual(keyStore.reads, 0)
     }
 }

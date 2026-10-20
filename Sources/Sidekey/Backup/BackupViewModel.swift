@@ -32,6 +32,13 @@ final class BackupViewModel: ObservableObject {
     @Published var isReplacingCode = false
     @Published var managementWarning: String?
 
+    var calendarConnectionBlockReason: String? {
+        if needsRestart { return "Finish the pending backup restore before changing calendar connections." }
+        if hasPendingMaintenance { return "Finish backup maintenance before changing calendar connections." }
+        if isBusy { return "Wait for the backup operation to finish before changing calendar connections." }
+        return nil
+    }
+
     private let defaults: UserDefaults
     private let keyStore: TokenStore
     private let githubTokenStore: TokenStore
@@ -1166,6 +1173,10 @@ final class BackupViewModel: ObservableObject {
 
     private func canStartRestore() -> Bool {
         guard idle() else { fail(ConfigBackupError.busy); return false }
+        guard !AppState.shared.calendarConnectionActive else {
+            errorMessage = "Finish calendar sign-in before restoring a backup."
+            return false
+        }
         guard !AppState.shared.plannerActive && !AppState.shared.todoActive else {
             errorMessage = "Finish or clear your To-do draft and close To-do and Planner before restoring a backup."
             return false

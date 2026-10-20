@@ -1,0 +1,67 @@
+---
+id: whytap-calendar-integrations-2026-10-21
+type: decision
+title: Feature-specific calendar connections and public verification gate
+summary: Integrations lists each calendar feature and its permissions, while unapproved shared Google and Zoom registrations cannot start browser sign-in.
+status: confirmed
+tags: [calendar, integrations, google, outlook, apple, zoom, oauth, verification]
+canonical_for: [calendar-integration-entry, public-calendar-approval]
+verified_at: 2026-10-21
+sources:
+  - type: user-confirmed
+    reference: 2026-10-21 chat; requested calendar feature connections in Integrations, included Zoom, and rejected the Google unverified-app warning for public use.
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Sources/Sidekey/Settings/SettingsCalendarIntegrationsView.swift
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Sources/Sidekey/Planner/CalendarIntegrationFeature.swift
+    confirmed_at: 2026-10-21
+related: [2026-10-19-planner.md]
+---
+
+## Decision
+
+Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calendar
+and Zoom Calendar separately. Each entry describes the actual calendar access,
+shows its connection or approval state, and opens a provider-specific sheet.
+Ordinary users do not enter OAuth client configuration. The Calendar window
+retains its source/feed controls and advanced source-user client setup.
+
+Registration and production publishing status are not evidence of provider
+approval. Shared Google and Zoom clients require an explicit packaging approval
+flag before new browser sign-in can start, including from Planner. Missing or
+malformed approval stays closed. Existing connections and local events remain
+available; disconnection remains possible. A source user's independent native
+client is separate from Whytap's shared registration.
+
+Only set the public approval flag after the actual provider decision. Fixtures,
+branding verification and a published domain do not justify that flag. See
+[Google verification preparation](../../docs/google-calendar-verification.md).
+
+The shared connection coordinator serializes Settings and Planner sign-in.
+An active connection flow defers Sparkle restart and backup restore, including
+when the originating window closes; ordinary backups remain available.
+Conversely, backup work, a staged restore or pending maintenance blocks new
+connection changes until it finishes, so restored metadata cannot erase a new
+account. The native-client editor clears a previous client's desktop secret
+when its ID changes.
+
+## Why
+
+The user wants to connect a capability with understandable permissions.
+Provider-level account login must not suggest access to unrelated email,
+recordings or transcripts. A clear pending state inside Whytap avoids sending
+public users into the Google warning the user explicitly rejected.
+
+Scoped integration buttons and links respond across their full area to hover,
+press and keyboard focus; disabled controls stay visibly unavailable and inert.
+This follows the user's interaction feedback requirement without changing
+unrelated Settings controls.
+
+## Verification limits
+
+Synthetic tests and offscreen renders cover readiness, blocked browser launch,
+connection serialization, restore/restart deferral, long labels, errors and
+control states. Real provider approval and live consent are separate external
+acceptance. No Google access was granted during the warning-screen check.

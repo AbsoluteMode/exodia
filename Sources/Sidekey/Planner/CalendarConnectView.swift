@@ -8,9 +8,17 @@ struct CalendarSourcesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Your calendars").font(.headline); Spacer(); Button("Connect account", action: onConnect) }
+            HStack {
+                Text("Your calendars").font(.headline)
+                Spacer()
+                IntegrationAction(title: "Connect account", enabled: !connections.isConnecting && connections.connectionBlockReason == nil, action: onConnect)
+            }
             if let message = connections.errors["visibility"] {
                 Text(message).font(.caption).foregroundStyle(MacSettingsTheme.text2).fixedSize(horizontal: false, vertical: true)
+            }
+            if let message = connections.connectionBlockReason {
+                Text(message).font(.caption).foregroundStyle(MacSettingsTheme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -20,7 +28,10 @@ struct CalendarSourcesView: View {
                         HStack {
                             Text("Apple Calendar").font(.headline)
                             Spacer()
-                            Button("Disconnect") { connections.disableApple() }
+                            IntegrationAction(title: "Disconnect", enabled: !connections.isConnecting && connections.connectionBlockReason == nil) {
+                                guard !connections.isConnecting, connections.connectionBlockReason == nil else { return }
+                                connections.disableApple()
+                            }
                         }
                         status("apple")
                         ForEach(connections.feeds.filter { $0.provider == .apple }) { feed in
@@ -35,7 +46,7 @@ struct CalendarSourcesView: View {
                                 Text(account.provider.title).font(.caption).foregroundStyle(MacSettingsTheme.text2)
                             }
                             Spacer()
-                            Button("Disconnect") { removing = account }
+                            IntegrationAction(title: "Disconnect", enabled: !connections.isConnecting && connections.connectionBlockReason == nil) { removing = account }
                         }
                         status(account.id.uuidString)
                         ForEach(connections.feeds.filter { $0.accountID == account.id }) { feed in
@@ -43,21 +54,27 @@ struct CalendarSourcesView: View {
                         }
                     }
                     if let message = connections.errors["accounts"] { Text(message).foregroundStyle(.orange) }
-                }
+                }.padding(5) // Leave room for the external keyboard-focus ring inside the scroll clip.
             }
             Text("Connected calendars are read-only. Changes made in their own apps appear after refresh. Disconnection removes local sign-in; you can also revoke access in your provider’s account settings.")
                 .font(.caption).foregroundStyle(MacSettingsTheme.text2)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
         }
         .padding(20).frame(width: 410, height: 400)
-        .alert("Disconnect calendar account?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+        .alert("Disconnect calendar account?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { account in
             Button("Disconnect", role: .destructive) {
-                guard let account = removing else { return }
                 removing = nil
-                Task { do { try await connections.remove(account) } catch { self.error = error.localizedDescription } }
+                guard connections.beginConnecting(provider: account.provider) else {
+                    error = connections.connectionBlockReason ?? "Finish the other calendar operation first."
+                    return
+                }
+                Task {
+                    defer { connections.endConnecting() }
+                    do { try await connections.remove(account) } catch { self.error = error.localizedDescription }
+                }
             }
             Button("Cancel", role: .cancel) { removing = nil }
-        } message: { Text("Its events will disappear from Whytap. The original calendars and events stay with the provider.") }
+        } message: { _ in Text("Its events will disappear from Whytap. The original calendars and events stay with the provider.") }
     }
 
     private func feedToggle(id: String, title: String) -> some View {
@@ -75,7 +92,9 @@ struct CalendarSourcesView: View {
 struct CalendarConnectView: View {
     @ObservedObject var connections: CalendarConnections
     @Environment(\.dismiss) private var dismiss
-    @State private var provider: CalendarProvider = .google
+    @State private var provider: CalendarProvider
+    let allowsProviderSelection: Bool
+    private let configurationInfo: [String: Any]?
     @State private var label = ""
     @State private var clientID = ""
     @State private var clientSecret = ""
@@ -84,56 +103,90 @@ struct CalendarConnectView: View {
     @State private var browser = CalendarBrowserSignIn()
     @State private var signInTask: Task<Void, Never>?
     @State private var showSetup = false
-    private var registeredClient: CalendarClientConfiguration? { .registered(provider) }
+    private var registeredClient: CalendarClientConfiguration? { .registered(provider, info: configurationInfo) }
+    private var readiness: CalendarConnectionReadiness { .authorization(provider, clientID: clientID, info: configurationInfo) }
+    private var accountStorageAvailable: Bool { provider == .apple || connections.accountConnectionIssue == nil }
+
+    init(connections: CalendarConnections, provider: CalendarProvider = .google,
+         allowsProviderSelection: Bool = true, configurationInfo: [String: Any]? = Bundle.main.infoDictionary) {
+        self.connections = connections
+        self._provider = State(initialValue: provider)
+        self.allowsProviderSelection = allowsProviderSelection
+        self.configurationInfo = configurationInfo
+        self._browser = State(initialValue: CalendarBrowserSignIn(configurationInfo: configurationInfo))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Connect a calendar").font(.title2.bold())
+            Text(allowsProviderSelection ? "Connect a calendar" : "Connect " + provider.integrationTitle).font(.title2.bold())
             Text("Bring your schedule together in Whytap.").foregroundStyle(MacSettingsTheme.text2)
-            Picker("Provider", selection: $provider) {
-                ForEach(CalendarProvider.allCases) { Text($0.title).tag($0) }
-            }.disabled(working)
-            if provider == .apple {
-                Text("Allow Whytap to show calendars available on your Mac, including iCloud. Google, Outlook and Zoom can connect separately here without being added to macOS.")
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Text("macOS requests full calendar permission to allow reading. Whytap uses this connection only to display events.")
-                    .font(.caption).foregroundStyle(MacSettingsTheme.text2)
-            } else {
+            if allowsProviderSelection {
+                Picker("Provider", selection: $provider) {
+                    ForEach(CalendarProvider.allCases) { Text($0.title).tag($0) }
+                }.disabled(working || connections.isConnecting)
+            }
+            Text(provider.permissionSummary).font(.callout).fixedSize(horizontal: false, vertical: true)
+            if provider != .apple {
                 TextField("Account name (optional)", text: $label).textFieldStyle(.roundedBorder).disabled(working)
-                if registeredClient == nil || showSetup {
+                if allowsProviderSelection && (registeredClient == nil || showSetup) {
                     TextField("OAuth client ID", text: $clientID).textFieldStyle(.roundedBorder).disabled(working)
                     if provider == .google {
                         SecureField("Desktop client secret (if supplied by Google)", text: $clientSecret)
                             .textFieldStyle(.roundedBorder).disabled(working)
                     }
                 }
-                DisclosureGroup(registeredClient == nil ? "App setup" : "Advanced app setup", isExpanded: $showSetup) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(setupText).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        Text("Redirect: http://\(provider == .microsoft ? "localhost" : "127.0.0.1")/callback (the port varies)")
-                            .font(.caption.monospaced()).textSelection(.enabled)
-                        Text("Permissions: " + provider.scopes).font(.caption).textSelection(.enabled)
-                        if let url = setupURL { Link("Open provider setup", destination: url) }
-                    }.padding(.top, 8)
+                if allowsProviderSelection {
+                    DisclosureGroup(registeredClient == nil ? "App setup" : "Advanced app setup", isExpanded: $showSetup) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(setupText).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            Text("Redirect: http://\(provider == .microsoft ? "localhost" : "127.0.0.1")/callback (the port varies)")
+                                .font(.caption.monospaced()).textSelection(.enabled)
+                            Text("Permissions: " + provider.scopes).font(.caption).textSelection(.enabled)
+                            if let url = setupURL { IntegrationLink(title: "Open provider setup", destination: url) }
+                        }.padding(.top, 8)
+                    }
                 }
                 Text("Sign-in opens your browser. Whytap receives calendar access; your account password stays with the provider. Tokens are saved in Keychain.")
                     .font(.caption).foregroundStyle(MacSettingsTheme.text2).fixedSize(horizontal: false, vertical: true)
             }
+            if let message = readiness.message {
+                Text(message).font(.callout).foregroundStyle(MacSettingsTheme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if provider != .apple, let message = connections.accountConnectionIssue {
+                Text(message).font(.callout).foregroundStyle(MacSettingsTheme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let message = connections.connectionBlockReason {
+                Text(message).font(.callout).foregroundStyle(MacSettingsTheme.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if connections.isConnecting && !working {
+                Text("Finish the calendar sign-in already open in another window.")
+                    .font(.callout).foregroundStyle(MacSettingsTheme.orange)
+            }
             if working { HStack { ProgressView().controlSize(.small); Text("Finish sign-in in your browser…").font(.callout) } }
             if let error { Text(error).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             HStack {
-                Link("Calendar privacy", destination: URL(string: "https://whytap.ai/calendar-privacy/")!)
+                IntegrationLink(title: "Calendar privacy", destination: URL(string: "https://whytap.ai/calendar-privacy/")!)
                     .font(.caption)
                 Spacer()
-                Button("Cancel") { signInTask?.cancel(); browser.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
-                Button(provider == .apple ? "Allow calendar access" : "Sign in") { connect() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(working || (provider != .apple && clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                IntegrationAction(title: "Cancel") {
+                    signInTask?.cancel(); browser.cancel(); dismiss()
+                }.keyboardShortcut(.cancelAction)
+                IntegrationAction(title: provider == .apple ? "Allow calendar access" : "Sign in",
+                    primary: true, enabled: readiness == .available && accountStorageAvailable && connections.connectionBlockReason == nil && !working && !connections.isConnecting &&
+                        (provider == .apple || !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)) { connect() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(26).frame(width: 480).background(Color(nsColor: .windowBackgroundColor))
         .onAppear { loadRegisteredClient() }
         .onChange(of: provider) { _, _ in loadRegisteredClient(); error = nil; showSetup = false }
+        .onChange(of: clientID) { oldID, newID in
+            clientSecret = CalendarClientConfiguration.secretAfterClientIDChange(from: oldID, to: newID,
+                currentSecret: clientSecret, registered: registeredClient)
+        }
         .onDisappear { signInTask?.cancel(); browser.cancel() }
     }
 
@@ -159,13 +212,14 @@ struct CalendarConnectView: View {
         }
     }
     private func connect() {
+        guard readiness == .available, accountStorageAvailable, !working, connections.beginConnecting(provider: provider) else { return }
         working = true; error = nil
         let chosenProvider = provider
         let chosenID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenSecret = clientSecret
         let chosenLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         signInTask = Task {
-            defer { working = false }
+            defer { working = false; connections.endConnecting() }
             do {
                 if chosenProvider == .apple { try await connections.enableApple() }
                 else {

@@ -41,7 +41,7 @@ struct SettingsBackupView: View {
                                 .foregroundStyle(model.syncState == .synced ? MacSettingsTheme.green : MacSettingsTheme.text)
                             Spacer()
                             if let url = model.githubBackupURL {
-                                Link(destination: url) { Text("GitHub ↗").underline() }
+                                IntegrationLink(title: "GitHub ↗", destination: url)
                                     .font(.system(size: 12))
                                     .foregroundStyle(MacSettingsTheme.text)
                                     .accessibilityLabel("Open backup on GitHub")
