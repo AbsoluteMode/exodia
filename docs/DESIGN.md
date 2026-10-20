@@ -1,5 +1,25 @@
 # Interface decisions
 
+## Screenshot permission — 2026-10-20
+
+The user requested a screenshot access entry in Settings -> Permissions.
+Keep the existing permission group, MacRow, MacPill and MacButton: this is one
+more permission in the same workflow. The person first sees Screen Recording,
+then Allowed/Not allowed, then Allow/Open. A persistent explanation names
+screenshots and tells them to finish current work before a macOS-requested reopen.
+
+Only clicking Allow requests access. Open manages an existing grant; a denial
+opens the system privacy pane. Returning to the app and Refresh reread access
+without prompting. A missing grant never blocks launch or Drop. Existing native
+button focus, keyboard activation, semantic colors and scroll behavior apply;
+there is no new hover-only action or animation. A denied Bool cannot distinguish
+an unasked grant from a previous denial, so use Not allowed rather than Denied.
+
+Offscreen native fixtures cover allowed/missing access in light/dark at 739 and
+1059 pt content widths (the existing 960 and 1280 pt Settings shells). Real TCC
+prompts, keyboard focus and post-promotion refresh remain installed-app acceptance.
+
+
 ## Meetings overview — 2026-10-20
 
 The user approved the Overview composition: recent meetings first, History

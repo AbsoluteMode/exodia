@@ -130,4 +130,26 @@ final class NativeSettingsRenderTests: XCTestCase {
         XCTAssertFalse(window.isVisible)
         XCTAssertFalse(window.isKeyWindow)
     }
+
+    func testRenderScreenshotPermissionStates() throws {
+        guard let output = ProcessInfo.processInfo.environment["EXODIA_NATIVE_SETTINGS_RENDER_DIR"] else {
+            throw XCTSkip("Set EXODIA_NATIVE_SETTINGS_RENDER_DIR to save offscreen review images")
+        }
+        let directory = URL(fileURLWithPath: output, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for granted in [false, true] {
+            let model = PermissionsSettingsViewModel(onComplete: {}, autoComplete: false,
+                snapshotProvider: { .init(accessibilityGranted: true, microphoneStatus: .authorized) },
+                screenRecordingAccessProvider: { granted }, screenRecordingRequester: {},
+                runtimeRefresh: { _, _ in })
+            for dark in [false, true] {
+                // Content widths in the existing 960 pt minimum and 1280 pt Settings shell.
+                for width in [739.0, 1059.0] {
+                    try render(SettingsPermissionsView(viewModel: model).background(MacSettingsTheme.bgContent),
+                               size: NSSize(width: width, height: 560), dark: dark,
+                               to: directory.appendingPathComponent("permissions-\(granted ? "allowed" : "not-allowed")-\(dark ? "dark" : "light")-\(Int(width)).png"))
+                }
+            }
+        }
+    }
 }

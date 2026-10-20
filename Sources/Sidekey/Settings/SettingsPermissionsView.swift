@@ -27,6 +27,16 @@ struct SettingsPermissionsView: View {
                             actionTitle: "Allow",
                             action: viewModel.requestMicrophone
                         )
+                        MacRowSeparator()
+                        permissionRow(
+                            icon: "rectangle.dashed.badge.record",
+                            title: "Screen Recording",
+                            subtitle: "For screenshots. If macOS asks to reopen Whytap, finish your current work first.",
+                            granted: viewModel.screenRecordingGranted,
+                            status: viewModel.screenRecordingGranted ? "Allowed" : "Not allowed",
+                            actionTitle: viewModel.screenRecordingGranted ? "Open" : "Allow",
+                            action: viewModel.requestScreenRecording
+                        )
                     }
                 }
 
@@ -38,11 +48,15 @@ struct SettingsPermissionsView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .onAppear { viewModel.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            viewModel.refresh(restartRecoveryPolling: false)
+        }
     }
 
     private func permissionRow(
         icon: String,
         title: String,
+        subtitle: String? = nil,
         granted: Bool,
         status: String,
         actionTitle: String,
@@ -50,6 +64,7 @@ struct SettingsPermissionsView: View {
     ) -> some View {
         MacRow(
             title: title,
+            subtitle: subtitle,
             leading: {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .medium))

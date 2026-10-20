@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-20
 sources:
   - type: user-confirmed
+    reference: On 2026-10-20 the user requested a Screen Recording entry for screenshots in Settings Permissions.
+    confirmed_at: 2026-10-20
+  - type: user-confirmed
     reference: On 2026-10-20 the user requested implementation of the approved compact screenshot toolbar, explicitly including text and numbers in the default Blur mode.
     confirmed_at: 2026-10-20
   - type: repository
@@ -68,7 +71,10 @@ crop gesture. Clicking, dragging or deleting it preserves the crop and leaves
 undo/redo attached to actual edits. Dedicated unshown-canvas regressions cover
 these interactions alongside normal crop creation, movement and resizing.
 The old ScreenRecordingRemoval guards predate explicit screenshots. Their
-exception is restricted to ScreenshotCoordinator's still-frame entry; launch,
+capture exception is restricted to ScreenshotCoordinator's still-frame entry.
+The user's later request adds a Screen Recording status and explicit Allow/Open
+action in Settings Permissions; PermissionsHelper owns that action's request
+and system-settings link. Passive refresh never requests access. Launch,
 the orb and meeting audio retain the no-screen-capture/no-prompt contract.
 
 # Consequences
