@@ -30,26 +30,37 @@ final class NotifyRenderTests: XCTestCase {
                 customTint: tint, customLogo: logo)
             events.append(event)
             let pill = IslandNotificationPill(event: event, deadline: Date().addingTimeInterval(6), duration: 8)
+            let size = NSSize(width: 300 + IslandNotificationPill.panelLeadingOverflow,
+                              height: 32 + IslandNotificationPill.panelBottomOverflow)
             for hovered in [false, true] {
                 let view = pill.content(progress: 0.75, hovered: hovered)
                     .padding(.trailing, 8)
                     .frame(width: 300, height: 32, alignment: .topTrailing)
-                try render(view, size: NSSize(width: 300, height: 32),
+                    .padding(.leading, IslandNotificationPill.panelLeadingOverflow)
+                    .padding(.bottom, IslandNotificationPill.panelBottomOverflow)
+                try render(view, size: size,
                            to: directory.appendingPathComponent("card-\(id)-\(hovered).png"))
             }
-            let idle = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: directory.appendingPathComponent("card-\(id)-false.png"))))
-            let hovered = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: directory.appendingPathComponent("card-\(id)-true.png"))))
-            XCTAssertEqual(idle.pixelsWide, hovered.pixelsWide)
-            XCTAssertEqual(idle.pixelsHigh, hovered.pixelsHigh)
-            // Compare actual silhouette, including the formerly clipped corner.
-            // Hover may brighten pixels but must never grow past the idle card.
-            for y in 0..<idle.pixelsHigh {
-                for x in 0..<idle.pixelsWide {
-                    let idleAlpha = try XCTUnwrap(idle.colorAt(x: x, y: y)).alphaComponent
-                    let hoverAlpha = try XCTUnwrap(hovered.colorAt(x: x, y: y)).alphaComponent
-                    XCTAssertEqual(idleAlpha > 0.05, hoverAlpha > 0.05, "Hover changed the card silhouette at \(x),\(y)")
-                }
-            }
+            let reduced = pill.content(progress: 0.75, hovered: true, reduceMotion: true)
+                .padding(.trailing, 8)
+                .frame(width: 300, height: 32, alignment: .topTrailing)
+                .padding(.leading, IslandNotificationPill.panelLeadingOverflow)
+                .padding(.bottom, IslandNotificationPill.panelBottomOverflow)
+            try render(reduced, size: size, to: directory.appendingPathComponent("card-\(id)-reduced.png"))
+            let idle = try pixelBounds(directory.appendingPathComponent("card-\(id)-false.png"))
+            let hover = try pixelBounds(directory.appendingPathComponent("card-\(id)-true.png"))
+            let reducedBounds = try pixelBounds(directory.appendingPathComponent("card-\(id)-reduced.png"))
+            // Enlargement is required. Check the rendered silhouette actually grows
+            // while remaining inside the native panel, with intact rounded edges.
+            XCTAssertGreaterThan(hover.bounds.width, idle.bounds.width)
+            XCTAssertGreaterThan(hover.bounds.height, idle.bounds.height)
+            XCTAssertEqual(hover.bounds.maxX, idle.bounds.maxX, accuracy: 1)
+            XCTAssertEqual(hover.bounds.minY, idle.bounds.minY, accuracy: 1)
+            XCTAssertGreaterThan(hover.bounds.minX, 0)
+            XCTAssertLessThan(hover.bounds.maxX, hover.size.width)
+            XCTAssertLessThan(hover.bounds.maxY, hover.size.height)
+            XCTAssertEqual(reducedBounds.bounds, idle.bounds)
+
         }
         let tools = HStack {
             IslandHoverPanelControl(title: "Notify", systemImage: "bell", pdfResource: nil, label: nil,
@@ -93,6 +104,22 @@ final class NotifyRenderTests: XCTestCase {
         try render(settings(supervisor), size: NSSize(width: 760, height: 560),
                    to: directory.appendingPathComponent("settings-disabled.png"))
     }
+    private func pixelBounds(_ url: URL) throws -> (bounds: CGRect, size: CGSize) {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: url)))
+        var minX = bitmap.pixelsWide, minY = bitmap.pixelsHigh, maxX = -1, maxY = -1
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                if try XCTUnwrap(bitmap.colorAt(x: x, y: y)).alphaComponent > 0.05 {
+                    minX = min(minX, x); minY = min(minY, y)
+                    maxX = max(maxX, x); maxY = max(maxY, y)
+                }
+            }
+        }
+        XCTAssertGreaterThanOrEqual(maxX, minX)
+        return (CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1),
+                CGSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+    }
+
     private func settings(_ supervisor: NotifyScriptSupervisor) -> some View {
         SettingsNotificationsView(supervisor: supervisor)
             .background(Color(white: 0.12)).environment(\.colorScheme, .dark)

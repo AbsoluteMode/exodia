@@ -671,8 +671,10 @@ group and ends it when the app is killed or crashes. WHY:
 IslandNotificationPill / nonactivating panel sits left of the island, using the
 selected screen and screenshot-protection preference. All notifications use
 cards (8 seconds by default), queued in arrival order with at most 33 presented
-or queued events. Hover pauses dismissal and brightens without scaling; the
-panel height fits the 32 pt card even on unnotched displays. Small notification
+or queued events. Hover pauses dismissal, brightens and enlarges the card by 3% from its
+top-trailing corner (except with Reduce Motion). Transparent panel overflow
+fits the transformed card on notched and unnotched displays, and the hosting
+hit region follows its visible size. The 8 pt island gap stays fixed. Small notification
 rendering, stacks and type controls are removed. Legacy presentation fields are
 ignored; missing titles use the source name, preserving former icon-only sources.
 Notify retains 500 history events. Unseen events show a red dot only on Notify in

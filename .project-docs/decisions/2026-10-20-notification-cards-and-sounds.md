@@ -2,14 +2,14 @@
 id: notification-cards-and-sounds-2026-10-20
 type: decision
 title: Keep notification cards, remove Small and offer optional sounds
-summary: All notifications use stable-size cards with a persistent optional system sound per source.
+summary: All notifications use cards with unclipped hover enlargement and a persistent optional system sound per source.
 status: confirmed
 tags: [notifications, settings, sound, hover, compatibility]
 canonical_for: [notification-presentation, notification-sounds]
 verified_at: 2026-10-20
 sources:
   - type: user-confirmed
-    reference: On 2026-10-20 the user requested notification sounds, then asked to remove Small entirely and reported that card growth on hover clipped its rounded edge.
+    reference: On 2026-10-20 the user requested notification sounds, then asked to remove Small entirely and reported that card growth on hover clipped its rounded edge, then explicitly clarified that enlargement must remain.
     confirmed_at: 2026-10-20
   - type: repository
     reference: Sources/Sidekey/Notifications/NotificationSounds.swift
@@ -29,8 +29,8 @@ The supplied crop also showed the rounded card edge clipped during hover.
 
 ## Alternatives
 
-Retaining the Small selector would keep an unwanted presentation. Increasing
-the panel to accommodate hover scaling adds geometry and hit-region changes.
+Retaining the Small selector would keep an unwanted presentation. Disabling
+hover growth removes the intended feedback and contradicts the clarified request.
 
 ## Decision
 
@@ -39,8 +39,11 @@ use the existing left-side card. Ignore legacy presentation fields in source
 manifests, payloads and history; a missing title uses the source name. Preserve
 IDs, links, meeting targets, history and source enable choices.
 
-Remove hover scaling, retain brightness feedback and paused dismissal, inset
-the stroke and fit the panel to the card's height even on unnotched displays.
+Retain 3% hover enlargement, brightness feedback and paused dismissal. Anchor
+scale at the top-trailing corner so it grows left/down, preserving the island
+gap and keeping the card on screen. Reserve transparent leading/bottom overflow
+in the native panel, inset the stroke and extend the hosting click region to
+the actual transformed bounds. Reduce Motion keeps the unscaled card.
 
 Offer Off, Glass, Ping and Pop in a labeled sound row per source. Keep sound
 off by default and preview an explicit selection. Only fresh accepted arrivals
@@ -50,7 +53,7 @@ scripts cannot turn sound on. Sound uses macOS output and volume.
 
 ## Rationale
 
-A stable footprint preserves the rounded shape and pointer target. Local
+Enough panel space preserves the rounded shape while the pointer target follows the visible enlargement. Local
 preferences give the user control of sound without changing script contracts.
 
 ## Sources

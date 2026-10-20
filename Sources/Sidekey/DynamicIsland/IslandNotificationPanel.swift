@@ -13,6 +13,7 @@ private final class NotifyHostingView<Content: View>: NSHostingView<Content> {
 private struct NotifyPanelRoot: View {
     @ObservedObject var hub: LocalNotificationHub
     let onRect: (CGRect) -> Void
+    @State private var hovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -21,8 +22,10 @@ private struct NotifyPanelRoot: View {
                     duration: event.resolvedDuration, onTap: { activate(event) },
                     onHoverChanged: { hover($0, event: event) })
                     .background(GeometryReader { geometry in
-                        Color.clear.onAppear { onRect(geometry.frame(in: .named("notify-panel"))) }
-                            .onChange(of: geometry.frame(in: .named("notify-panel"))) { _, value in onRect(value) }
+                        let layout = geometry.frame(in: .named("notify-panel"))
+                        let visual = IslandNotificationPill.visualFrame(for: layout, hovered: hovered, reduceMotion: reduceMotion)
+                        Color.clear.onAppear { onRect(visual) }
+                            .onChange(of: visual) { _, value in onRect(value) }
                     })
                     .padding(.trailing, 8)
                     .transition(reduceMotion ? .opacity
@@ -31,7 +34,10 @@ private struct NotifyPanelRoot: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .padding(.leading, IslandNotificationPill.panelLeadingOverflow)
+        .padding(.bottom, IslandNotificationPill.panelBottomOverflow)
         .coordinateSpace(name: "notify-panel")
+        .onChange(of: hub.current?.id) { _, _ in hovered = false }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: hub.current?.id)
         .ignoresSafeArea()
     }
@@ -46,6 +52,7 @@ private struct NotifyPanelRoot: View {
     }
     private func hover(_ value: Bool, event: LocalNotificationEvent) {
         guard hub.current?.id == event.id else { return }
+        hovered = value
         hub.setHovered(value)
     }
 }

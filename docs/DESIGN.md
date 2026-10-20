@@ -69,19 +69,20 @@ hover to keep the card visible while reading.
 
 - All sources use the existing left-side card. Small notifications and the type
   selector are removed at the user's request; older icon sources become cards.
-- Hover brightens the card and pauses expiry without resizing. The previous 3%
-  scale overflowed the fixed panel and clipped the rounded edge. The border is
-  inset, and the panel always fits the 32 pt card on unnotched displays too.
+- Hover retains the 3% enlargement, brightness and paused expiry. It grows left
+  and down from the top-trailing corner, preserving top alignment and the 8 pt
+  island gap. Transparent panel overflow fits the whole card; the click region
+  follows its transformed size. The inset border stays within the rounded shape.
 - Each source has a separate labeled Notification sound row using the existing
   native menu. Off is the default; Glass, Ping and Pop preview when selected.
   A separate row keeps long source names and the enable switch readable.
 - Existing type, spacing and colors stay in use. Keyboard and VoiceOver can
-  reach the sound selector; no new movement is introduced. Reduced Motion
-  still suppresses transition animation. Live pointer/audio acceptance follows
+  reach the sound selector. Reduce Motion suppresses hover growth and transition
+  animation. Live pointer/audio acceptance follows
   promotion of the one signed installed app; offscreen renders use fixtures.
 
 Offscreen native checks cover 560 and 760 pt settings widths, enabled/disabled
-sources and both card hover states. A pixel silhouette comparison prevents
-hover growth from returning. Synthetic card text contrast is 11.44:1 for primary
+sources, idle/hover/reduced-motion card states. Pixel bounds prove that the
+card really enlarges while remaining inside its panel with rounded edges. Synthetic card text contrast is 11.44:1 for primary
 and 5.44:1 for secondary text on the sampled dark backdrop. This does not claim
 live pointer, VoiceOver or audio-output acceptance before installed promotion.

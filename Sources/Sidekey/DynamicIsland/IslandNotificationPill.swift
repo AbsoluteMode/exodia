@@ -52,6 +52,11 @@ struct IslandNotificationPill: View {
     }
 
     static let pillHeight: CGFloat = 32
+    static let hoverScale: CGFloat = 1.03
+    /// The card grows left/down from its top-trailing anchor. Reserve its full
+    /// transformed footprint plus an antialiasing pixel in the native panel.
+    static var panelLeadingOverflow: CGFloat { ceil(pillMaxWidth * (hoverScale - 1)) + 1 }
+    static var panelBottomOverflow: CGFloat { ceil(pillHeight * (hoverScale - 1)) + 1 }
     // WHY: .project-docs/decisions/2026-10-20-notification-cards-and-sounds.md
     private static let cornerRadius: CGFloat = 12
 
@@ -114,7 +119,7 @@ struct IslandNotificationPill: View {
             let liveProgress = NotificationCountdown.progress(
                 now: context.date, deadline: deadline, duration: duration)
             let progress = hovering ? (frozenProgress ?? liveProgress) : liveProgress
-            content(progress: progress, hovered: hovering)
+            content(progress: progress, hovered: hovering, reduceMotion: reduceMotion)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovering)
             .onHover { isHovering in
                 // Capture the wash position at the moment hover begins so
@@ -137,7 +142,7 @@ struct IslandNotificationPill: View {
     }
 
     /// Shared native content lets offscreen checks exercise the actual hover state.
-    func content(progress: Double, hovered: Bool) -> some View {
+    func content(progress: Double, hovered: Bool, reduceMotion: Bool = false) -> some View {
         let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
 
         return HStack(spacing: Self.contentSpacing) {
@@ -170,7 +175,16 @@ struct IslandNotificationPill: View {
         .background(IslandVisualEffectBackground().clipShape(shape))
         .overlay(borders(shape: shape))
         .contentShape(shape)
+        .scaleEffect(hovered && !reduceMotion ? Self.hoverScale : 1, anchor: .topTrailing)
         .brightness(hovered ? 0.06 : 0)
+    }
+
+    /// GeometryReader reports layout bounds, before scaleEffect. The hosting
+    /// view must accept clicks in the transformed area while the card is grown.
+    static func visualFrame(for layout: CGRect, hovered: Bool, reduceMotion: Bool) -> CGRect {
+        let scale = hovered && !reduceMotion ? hoverScale : 1
+        return CGRect(x: layout.maxX - layout.width * scale, y: layout.minY,
+                      width: layout.width * scale, height: layout.height * scale)
     }
 
     /// Wash position captured at hover-start, held steady while hovered.

@@ -10,13 +10,31 @@ final class NotificationCompatibilityTests: XCTestCase {
                     auxiliaryTopLeftArea: nil, auxiliaryTopRightArea: nil)
                 let panel = IslandFrameLayout.notificationPanelFrame(on: screen)
                 let island = IslandFrameLayout.islandFrame(on: screen)
-                XCTAssertGreaterThanOrEqual(panel.height, IslandNotificationPill.pillHeight)
+                XCTAssertGreaterThanOrEqual(panel.height, IslandNotificationPill.pillHeight * IslandNotificationPill.hoverScale)
                 XCTAssertEqual(panel.maxY, island.maxY)
                 XCTAssertEqual(panel.maxX, island.minX)
-                XCTAssertEqual(panel.width, IslandFrameLayout.leftNotificationWidth)
+                XCTAssertEqual(panel.width, IslandFrameLayout.leftNotificationWidth + IslandNotificationPill.panelLeadingOverflow)
                 XCTAssertTrue(screen.frame.contains(panel))
             }
         }
+    }
+
+    func testEnlargedCardAndClickAreaFitInsidePanelAndReduceMotionKeepsOriginalSize() {
+        let layout = CGRect(x: IslandNotificationPill.panelLeadingOverflow, y: 0,
+                            width: IslandNotificationPill.pillMaxWidth, height: IslandNotificationPill.pillHeight)
+        let panel = CGRect(x: 0, y: 0,
+                           width: IslandFrameLayout.leftNotificationWidth + IslandNotificationPill.panelLeadingOverflow,
+                           height: IslandNotificationPill.pillHeight + IslandNotificationPill.panelBottomOverflow)
+        let enlarged = IslandNotificationPill.visualFrame(for: layout, hovered: true, reduceMotion: false)
+        XCTAssertEqual(enlarged.width, layout.width * 1.03, accuracy: 0.001)
+        XCTAssertEqual(enlarged.height, layout.height * 1.03, accuracy: 0.001)
+        XCTAssertEqual(enlarged.maxX, layout.maxX)
+        XCTAssertEqual(enlarged.minY, layout.minY)
+        XCTAssertTrue(panel.contains(enlarged))
+        XCTAssertTrue(enlarged.contains(CGPoint(x: layout.minX - 1, y: layout.midY)),
+                      "The visible enlarged edge must remain clickable")
+        XCTAssertEqual(IslandNotificationPill.visualFrame(for: layout, hovered: false, reduceMotion: false), layout)
+        XCTAssertEqual(IslandNotificationPill.visualFrame(for: layout, hovered: true, reduceMotion: true), layout)
     }
 
     func testClaudeDesktopOnlyOpensAnExactExistingCodeSession() throws {

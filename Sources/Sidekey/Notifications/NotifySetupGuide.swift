@@ -6,8 +6,9 @@ enum NotifySetupGuide {
         # Whytap Notify: local script sources
 
         Notifications appear as the existing compact pill LEFT of the island.
-        All notifications use a text card. Hover pauses dismissal and brightens
-        the card without changing its size. Cards retain arrival order; the
+        All notifications use a text card. Hover pauses dismissal, brightens
+        and enlarges the card by 3% without clipping its rounded edges. Reduce
+        Motion disables enlargement. Cards retain arrival order; the
         presentation is bounded to 33 events. Legacy presentation fields in source
         manifests, payloads and history are ignored. A missing title uses the source
         name, so former icon-only sources still work as cards.

@@ -7,8 +7,10 @@ Notify has persistent history and source controls. It is available from hover
 search and Settings → Toolbox; saved tool layouts are preserved.
 
 All notifications use a **text card** to the left of the island, with an
-8-second default lifetime. Hover pauses dismissal and brightens the card
-without resizing it. Cards keep arrival order; at most 33 are presented or
+8-second default lifetime. Hover pauses dismissal, brightens the card and
+enlarges it by 3% without clipping its rounded edges. Its right/top anchor
+and gap from the island stay fixed; Reduce Motion disables enlargement.
+Cards keep arrival order; at most 33 are presented or
 queued, while every accepted event is saved to history. Small icon notifications
 and the notification type selector have been removed. Legacy `presentation`
 fields are ignored; sources that omit a title use their source name on the card.

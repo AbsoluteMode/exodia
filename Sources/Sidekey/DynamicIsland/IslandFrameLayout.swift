@@ -517,9 +517,9 @@ enum IslandFrameLayout {
     }
     /// Frame for the STANDALONE notification window that sits to the LEFT of
     /// the island. Unlike `leftNotificationFrame` (island + slot as one rect),
-    /// this is ONLY the slot zone, so it can back a separate `NSPanel` whose
+    /// this is the slot plus transparent hover overflow, so it can back a `NSPanel` whose
     /// screenshot capture behavior is user-toggleable. Right edge abuts the
-    /// island's left edge; top matches the compact island and height fits the card. The 8pt
+    /// island's left edge; top matches the compact island and height fits the grown card. The 8pt
     /// visual gap is applied inside the window by the pill, exactly as the
     /// in-island slot did.
     static func notificationPanelFrame(
@@ -537,11 +537,13 @@ enum IslandFrameLayout {
             auxiliaryTopRightArea: auxiliaryTopRightArea
         )
         let height = max(island.height, IslandNotificationPill.pillHeight)
+        let leading = IslandNotificationPill.panelLeadingOverflow
+        let bottom = IslandNotificationPill.panelBottomOverflow
         return NSRect(
-            x: island.minX - leftNotificationWidth,
-            y: island.maxY - height,
-            width: leftNotificationWidth,
-            height: height
+            x: island.minX - leftNotificationWidth - leading,
+            y: island.maxY - height - bottom,
+            width: leftNotificationWidth + leading,
+            height: height + bottom
         )
     }
 
