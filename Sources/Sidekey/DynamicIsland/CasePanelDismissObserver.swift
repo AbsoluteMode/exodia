@@ -1,6 +1,21 @@
 import AppKit
 import SwiftUI
 
+/// The UI may share a hold for authentication and a long import. Only the
+/// former should reacquire the keyboard after its system sheet finishes.
+struct CasePanelFocusRestoration {
+    private var restoreAfterCurrentInteraction = false
+
+    mutating func interactionChanged(active: Bool, isImporting: Bool) -> Bool {
+        if active {
+            restoreAfterCurrentInteraction = !isImporting
+            return false
+        }
+        defer { restoreAfterCurrentInteraction = false }
+        return restoreAfterCurrentInteraction
+    }
+}
+
 /// After a system sheet, hover can remain absent until the pointer returns.
 /// An outside click must still dismiss the held panel without swallowing it.
 struct CasePanelDismissObserver: NSViewRepresentable {

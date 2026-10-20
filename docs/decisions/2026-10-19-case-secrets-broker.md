@@ -275,3 +275,6 @@ cancellation and conflict failures do not commit partial imports.
 Physical Touch ID, keyboard restoration and real import are acceptance on the
 installed shared app. Synthetic tests and offscreen native renders do not
 establish those live results. UI choices are recorded in [DESIGN.md](../DESIGN.md).
+
+Import completion, failure and cancellation do not request keyboard focus. Only
+authentication restores it; a user may be typing elsewhere during a long import.

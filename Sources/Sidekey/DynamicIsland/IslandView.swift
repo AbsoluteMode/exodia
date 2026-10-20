@@ -280,6 +280,7 @@ struct IslandView: View {
     // NSTextView can hide the cursor during typing and end SwiftUI hover tracking.
     // Hold Vocab open until its actual responder/window focus ends.
     @State private var hoverVocabularyFocused = false
+    @State private var casePanelFocusRestoration = CasePanelFocusRestoration()
     /// Invalidation token for the programmatic-expansion auto-collapse timer:
     /// each change to `programmaticHoverExpansion` AND each ⌥N panel request
     /// bumps it (`armProgrammaticExpansionCollapse`), so a stale deferred
@@ -1361,11 +1362,14 @@ struct IslandView: View {
             }
         }
         .onChange(of: caseViewModel.isSystemInteractionActive) { _, active in
+            let restoresFocus = casePanelFocusRestoration.interactionChanged(
+                active: active, isImporting: caseViewModel.isImporting
+            )
             guard !active else { return }
             if hoverPanelMode != .caseVault {
                 caseViewModel.releasePanelHold()
             }
-            if hoverPanelMode == .caseVault && isHoverExpanded {
+            if restoresFocus && hoverPanelMode == .caseVault && isHoverExpanded {
                 // Restore keyboard use only after the system sheet has finished.
                 requestPanelKeyboardFocus(.caseVault, glance: false)
             }

@@ -56,3 +56,6 @@ Automated authentication tests simulate both success and denial, without
 invoking Touch ID. Physical Touch ID, returned keyboard focus and real import
 remain acceptance on the one installed signed app, after builder promotion.
 These are acceptance gaps, not claims of completed live verification.
+
+Import completion, failure and cancellation do not request keyboard focus. Only
+authentication restores it; a user may be typing elsewhere during a long import.

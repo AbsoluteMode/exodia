@@ -1,9 +1,37 @@
+import Combine
 import CryptoKit
 import XCTest
 @testable import Sidekey
 
 @MainActor
 final class CaseDopplerViewModelTests: XCTestCase {
+    func test_import_success_failure_and_cancel_do_not_request_keyboard_focus() async throws {
+        for outcome in [ImportFixture.Outcome.success, .failed, .cancelled] {
+            let importer = ImportFixture()
+            importer.outcome = outcome
+            let vm = CaseViewModel(service: CaseVaultService(store: ImportStore(), keyProvider: ImportKeys()),
+                                   authenticator: ImportAuth(), doppler: importer)
+            try await vm.unlock()
+            var policy = CasePanelFocusRestoration()
+            var keyboardRequests = 0
+            let observation = vm.$isSystemInteractionActive.dropFirst().sink { active in
+                if policy.interactionChanged(active: active, isImporting: vm.isImporting) {
+                    keyboardRequests += 1
+                }
+            }
+            do {
+                _ = try await vm.importFromDoppler()
+                XCTAssertEqual(outcome, .success)
+            } catch {
+                XCTAssertNotEqual(outcome, .success)
+            }
+            XCTAssertEqual(keyboardRequests, 0, "A background import must leave the user's keyboard alone")
+            XCTAssertFalse(vm.isImporting)
+            XCTAssertFalse(vm.isSystemInteractionActive)
+            withExtendedLifetime(observation) {}
+        }
+    }
+
     func test_import_is_one_encrypted_save_and_failure_keeps_service_payload() async throws {
         let store = ImportStore()
         let importer = ImportFixture()
@@ -50,9 +78,16 @@ final class CaseDopplerViewModelTests: XCTestCase {
 
 @MainActor
 private final class ImportFixture: CaseDopplerImporting {
+    enum Outcome: Equatable { case success, failed, cancelled }
+    var outcome: Outcome = .success
     var duringFetch: () -> Void = {}
     func fetch() async throws -> CaseDopplerSnapshot {
         duringFetch()
+        switch outcome {
+        case .success: break
+        case .failed: throw CaseDopplerImportError.fetchFailed
+        case .cancelled: throw CancellationError()
+        }
         return .init(configurations: [.init(project: "demo", config: "dev", secrets: ["KEY": "synthetic-fixture"])])
     }
 }
