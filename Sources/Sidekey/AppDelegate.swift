@@ -56,6 +56,7 @@ enum DropCancelRoute: Equatable {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var translationWindowController: TranslationWindowController?
+    private var screenshotCoordinator: ScreenshotCoordinator?
     private let recorder = AudioRecorder()
     /// Batch transcriber for the Drop recorder fallback, the resilient-delivery
     /// batch rung and Retry: the provider, model and key of the route the take
@@ -477,6 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        screenshotCoordinator?.cancel(restoreFocus: false)
         translationWindowController?.cancel()
         BackupViewModel.shared.stop()
         // Give the display its own transfer table back; Extra never changes the backlight.
@@ -831,6 +833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// { animation = nil }`); either fix alone would close most of
     /// the hang surface, both together close the corner cases.
     private func pauseRuntimeForSleep() {
+        screenshotCoordinator?.cancel(restoreFocus: false)
         os_log("power_will_sleep pausing runtime", log: Self.log, type: .info)
         stopPermissionRecoveryPolling()
         translationWindowController?.cancel()
@@ -1122,6 +1125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             openTranslate: { [weak self] in self?.openTranslation(.text) },
             openSubtitles: { [weak self] in self?.openTranslation(.subtitles) },
+            openScreenshot: { [weak self] in self?.openScreenshot() },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .apiAndModels)
             },
@@ -1656,7 +1660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // invisible and reads as "the hotkey does nothing".
             let newMode = IslandPanel.shared.actions.toggleDropMode()
             AppState.shared.publishDropModeHotkeyToggle(newMode)
-        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .openTranslate, .openSubtitles, .quit:
+        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .openTranslate, .openSubtitles, .openScreenshot, .quit:
             // Action/navigate tools open their own surfaces (window / toggle)
             // instantly — forcing the drawer open here would flash an empty
             // Hover for ~4s (Stage 3 review fix). Run the effect directly
@@ -1674,6 +1678,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         translationWindowController?.show(mode)
+    }
+
+    private func openScreenshot() {
+        registerIslandHotkeyActivity()
+        AppState.shared.programmaticHoverExpansion = false
+        if screenshotCoordinator == nil {
+            screenshotCoordinator = ScreenshotCoordinator(
+                activityChanged: { AppState.shared.screenshotActive = $0 },
+                excludedWindowIDs: {
+                    Set([IslandPanel.shared.windowNumber, IslandNotificationPanel.shared.windowNumber].compactMap {
+                        $0 > 0 ? CGWindowID($0) : nil
+                    })
+                }
+            )
+        }
+        screenshotCoordinator?.start()
     }
 
     private func openHelpWindow() {

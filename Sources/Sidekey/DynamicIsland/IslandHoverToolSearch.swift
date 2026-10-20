@@ -61,6 +61,7 @@ enum IslandHoverToolSearch {
         case .brightness: return "screen brightness sun hdr xdr vivid extra boost battery яркость экран солнце батарея"
         case .translate: return "translator translation text llm перевод переводчик текст"
         case .subtitles: return "translator live captions system audio video перевод субтитры системный звук"
+        case .screenshot: return "screenshot capture area crop blur text numbers redact annotation screen скриншот снимок область размытие текст числа блюр"
         case .quit: return "exit выход"
         case .settings: return "preferences настройки"
         }

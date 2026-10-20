@@ -141,7 +141,7 @@ enum HelpWindowContent {
                 prefix: nil,
                 contents: configuration.usefulLinksPreviousShortcut.contents
             )
-        ] + toolHotkeyRows(for: configuration)
+        ] + toolHotkeyRows(for: configuration) + screenshotEditorRows
         guard !includeAgent else { return rows }
         return rows.filter { !$0.title.hasPrefix("Agent") }
     }
@@ -153,6 +153,22 @@ enum HelpWindowContent {
             return HelpHotkeyRowSpec(title: "Tool — \(info.title)", detail: info.description,
                                      iconName: info.sfSymbol, prefix: nil, contents: shortcut.contents)
         }
+    }
+
+    private static var screenshotEditorRows: [HelpHotkeyRowSpec] {
+        ScreenshotEditorKeys.tools.map { entry in
+            HelpHotkeyRowSpec(title: "Screenshot — \(entry.title)", detail: "While the screenshot editor is open.",
+                              iconName: "viewfinder", prefix: nil, contents: [.text(entry.key.uppercased())])
+        } + [
+            HelpHotkeyRowSpec(title: "Screenshot — copy", detail: "Copy the edited image and finish capture.", iconName: "doc.on.doc", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("C")]),
+            HelpHotkeyRowSpec(title: "Screenshot — save", detail: "Save as PNG or JPEG.", iconName: "square.and.arrow.down", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("S")]),
+            HelpHotkeyRowSpec(title: "Screenshot — undo", detail: "Undo a crop or annotation.", iconName: "arrow.uturn.backward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("Z")]),
+            HelpHotkeyRowSpec(title: "Screenshot — redo", detail: "Redo the last undone change.", iconName: "arrow.uturn.forward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text(HotkeyGlyph.shift), .text("Z")]),
+            HelpHotkeyRowSpec(title: "Screenshot — move crop", detail: "Arrow keys move the crop; Shift moves 10 points; Option resizes.", iconName: "arrow.up.left.and.arrow.down.right", prefix: nil, contents: [.text("←"), .text("↑"), .text("↓"), .text("→")]),
+            HelpHotkeyRowSpec(title: "Screenshot — cancel", detail: "Cancel the current drawing, then cancel capture.", iconName: "escape", prefix: nil, contents: [.text("Esc")]),
+            HelpHotkeyRowSpec(title: "Screenshot — full display", detail: "Select the entire display before drawing a crop.", iconName: "viewfinder", prefix: nil, contents: [.text("Return")]),
+            HelpHotkeyRowSpec(title: "Screenshot — delete annotation", detail: "Remove the selected annotation.", iconName: "delete.left", prefix: nil, contents: [.text("Delete")])
+        ]
     }
 }
 
