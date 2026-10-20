@@ -156,6 +156,11 @@ final class CaseViewModel: ObservableObject {
 
     @Published private(set) var unlockState: CaseUnlockState = .locked
     @Published private(set) var rows: [CaseDisplayRow] = []
+    @Published private(set) var projectSections: [CaseProjectSection] = []
+    private var allSections: [CaseProjectSection] = []
+    private var indexedSecrets: [CaseSecret] = []
+    private var indexedProjects: [CaseProject] = []
+    private var indexedRows: [UUID: CaseDisplayRow] = [:]
     @Published private(set) var inputMode: CaseInputMode = .name
     /// Suspend explicit menu dismissal while a system authentication is active.
     @Published private(set) var isSystemInteractionActive = false
@@ -171,7 +176,8 @@ final class CaseViewModel: ObservableObject {
     @Published var expandedProjectIDs: Set<UUID> = [CaseProject.generalID]
     @Published var query = "" {
         didSet {
-            refreshRows()
+            guard query != oldValue else { return }
+            filterRows()
             if unlockState == .unlocked {
                 scheduleIdleLock()
             }
@@ -296,7 +302,7 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        rows = []
+        clearDisplayIndex()
         inputMode = .name
         clientSetupProblems = []
         unlockState = .locked
@@ -384,47 +390,6 @@ final class CaseViewModel: ObservableObject {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// General first, then the other projects by name. Without a query every
-    /// project is listed with all its keys (by name); a query keeps projects
-    /// with matching keys (in ranked order) or a matching name/description.
-    var projectSections: [CaseProjectSection] {
-        guard let payload, unlockState == .unlocked else {
-            return []
-        }
-        let ordered = payload.projects.sorted { lhs, rhs in
-            if lhs.id == CaseProject.generalID { return rhs.id != CaseProject.generalID }
-            if rhs.id == CaseProject.generalID { return false }
-            let comparison = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
-            return comparison == .orderedSame ? lhs.name < rhs.name : comparison == .orderedAscending
-        }
-        let searching = isSearching
-        let matchedProjectIDs = Set(rows.filter { $0.kind == .project }.map(\.id))
-        let matchedSecrets = rows.filter { $0.kind == .secret }
-
-        return ordered.compactMap { project in
-            let all = payload.secrets
-                .filter { $0.projectID == project.id }
-                .map { Self.secretRow($0, in: payload) }
-                .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
-            var shown = all
-            if searching {
-                let matches = matchedSecrets.filter { $0.projectID == project.id }
-                if !matches.isEmpty {
-                    shown = matches
-                } else if !matchedProjectIDs.contains(project.id) {
-                    return nil
-                }
-            }
-            return CaseProjectSection(
-                id: project.id,
-                name: project.name,
-                description: project.description,
-                keyCount: all.count,
-                secrets: shown
-            )
-        }
-    }
-
     /// Display names of the apps registered for key access (access screen).
     var registeredAppNames: [String] {
         guard unlockState == .unlocked else { return [] }
@@ -465,7 +430,8 @@ final class CaseViewModel: ObservableObject {
     /// MCP entry to its client config. A client failure is reported in
     /// `clientSetupProblems` and the result, never undoing the registration.
     @discardableResult
-    func registerApp(_ identity: CaseAppIdentity, name: String) async throws -> CaseRegistrationResult {
+    func registerApp(_ identity: CaseAppIdentity, name: String,
+                     mode: CaseAccessMode = .approve, projects: Set<UUID>? = nil) async throws -> CaseRegistrationResult {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= Self.maxAppNameCharacters else {
             throw CaseViewModelError.invalidAppName
@@ -474,6 +440,7 @@ final class CaseViewModel: ObservableObject {
             guard path.hasPrefix("/"), path != "/" else { throw CaseViewModelError.invalidAppName }
         }
         let current = try unlockedPayload()
+        try Self.validateScope(projects, in: current)
         guard !current.apps.contains(where: { $0.identity == identity }) else {
             throw CaseViewModelError.alreadyRegistered
         }
@@ -483,18 +450,62 @@ final class CaseViewModel: ObservableObject {
         let appID = UUID()
         let timestamp = now()
         try service.mutate { payload in
+            try Self.validateScope(projects, in: payload)
             guard !payload.apps.contains(where: { $0.identity == identity }) else {
                 throw CaseViewModelError.alreadyRegistered
             }
             payload.apps.append(CaseAppRegistration(
                 id: appID, displayName: trimmed, identity: identity,
-                defaultMode: .approve, projectModes: [:], createdAt: timestamp))
+                defaultMode: mode, projectModes: [:], createdAt: timestamp, allowedProjectIDs: projects))
         }
         refreshRows()
         scheduleIdleLock()
         let report = await clients.connect(identity)
         clientSetupProblems = report.problems
         return CaseRegistrationResult(appID: appID, problems: report.problems)
+    }
+
+    /// Save the selected app's policy as one transaction. Broadening scope or
+    /// enabling Bypass requires presence; restricting access does not.
+    func setAccess(for appID: UUID, mode: CaseAccessMode, projects: Set<UUID>?,
+                   projectModes: [UUID: CaseAccessMode]) async throws {
+        let current = try unlockedPayload()
+        try Self.validateScope(projects, in: current)
+        guard let app = current.apps.first(where: { $0.id == appID }) else {
+            throw CaseViewModelError.missingApp
+        }
+        let expandsScope: Bool
+        if let previous = app.allowedProjectIDs {
+            expandsScope = projects.map { !$0.isSubset(of: previous) } ?? true
+        } else {
+            expandsScope = false
+        }
+        let opensBypass = mode == .bypass && app.defaultMode != .bypass
+            || projectModes.contains { app.projectModes[$0.key] != .bypass && $0.value == .bypass }
+            || app.projectModes.contains { $0.value == .approve && projectModes[$0.key] == nil && mode == .bypass }
+        if expandsScope || opensBypass {
+            try await authenticateAccessChange(reason: "Изменить доступ \(app.displayName) к Case")
+        }
+        _ = try unlockedPayload()
+        try service.mutate { payload in
+            try Self.validateScope(projects, in: payload)
+            guard let index = payload.apps.firstIndex(where: { $0.id == appID }),
+                  payload.apps[index].identity == app.identity else { throw CaseViewModelError.missingApp }
+            guard projectModes.keys.allSatisfy({ payload.project($0) != nil }) else {
+                throw CaseViewModelError.missingProject
+            }
+            payload.apps[index].defaultMode = mode
+            payload.apps[index].allowedProjectIDs = projects
+            payload.apps[index].projectModes = projectModes
+        }
+        refreshRows()
+        scheduleIdleLock()
+    }
+
+    private static func validateScope(_ projects: Set<UUID>?, in payload: CaseVaultPayload) throws {
+        if let projects, !projects.isSubset(of: Set(payload.projects.map(\.id))) {
+            throw CaseViewModelError.missingProject
+        }
     }
 
     /// `project == nil` sets the app's mode; for a project, `mode == nil` is
@@ -565,6 +576,23 @@ final class CaseViewModel: ObservableObject {
 
     func dismissClientSetupProblems() {
         clientSetupProblems = []
+    }
+
+    /// Retry only the connector setup, without creating a second registration
+    /// or changing the rights that were already saved.
+    @discardableResult
+    func retryClientSetup(for appID: UUID) async throws -> CaseClientSetupReport {
+        let current = try unlockedPayload()
+        guard let app = current.apps.first(where: { $0.id == appID }) else {
+            throw CaseViewModelError.missingApp
+        }
+        let report = await clients.connect(app.identity)
+        guard service.payload?.apps.contains(where: { $0.id == app.id && $0.identity == app.identity }) == true else {
+            throw CaseViewModelError.missingApp
+        }
+        clientSetupProblems = report.problems
+        scheduleIdleLock()
+        return report
     }
 
     /// Only a change that can let an app run commands without asking needs
@@ -701,6 +729,7 @@ final class CaseViewModel: ObservableObject {
             payload.projects.removeAll { $0.id == id }
             for index in payload.apps.indices {
                 payload.apps[index].projectModes[id] = nil
+                payload.apps[index].allowedProjectIDs?.remove(id)
             }
         }
         expandedProjectIDs.remove(id)
@@ -872,26 +901,63 @@ final class CaseViewModel: ObservableObject {
 
     private func refreshRows(with payload: CaseVaultPayload?) {
         guard let payload, unlockState == .unlocked else {
-            rows = []
+            clearDisplayIndex()
             return
         }
-
-        rows = CaseRanker.sortedEntries(
-            secrets: payload.secrets,
-            projects: payload.projects,
-            query: query,
-            now: now()
-        )
-        .map { entry in
-            CaseDisplayRow(
-                id: entry.id,
-                kind: entry.kind == .secret ? .secret : .project,
-                displayName: entry.displayName,
-                description: entry.description,
-                projectID: entry.projectID,
-                valueNotMasked: entry.kind == .secret && Self.valueNotMasked(entry.id, in: payload)
-            )
+        // Build names-only metadata once per vault change, never per render or
+        // typed character. Values contribute only the short-value warning flag.
+        let shortIDs = Set(payload.values.filter {
+            $0.value.utf8.count < CaseOutputMasker.minimumMaskedLength
+        }.map(\.secretID))
+        let displayRows = payload.secrets.map { secret in
+            CaseDisplayRow(id: secret.id, kind: .secret, displayName: secret.name, description: secret.description,
+                           projectID: secret.projectID, valueNotMasked: shortIDs.contains(secret.id))
         }
+        indexedRows = Dictionary(displayRows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        indexedSecrets = payload.secrets
+        indexedProjects = payload.projects
+        let grouped = Dictionary(grouping: displayRows, by: \.projectID)
+        let ordered = payload.projects.sorted { lhs, rhs in
+            if lhs.id == CaseProject.generalID { return rhs.id != CaseProject.generalID }
+            if rhs.id == CaseProject.generalID { return false }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+        allSections = ordered.map { project in
+            let keys = (grouped[project.id] ?? []).sorted {
+                $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+            }
+            return CaseProjectSection(id: project.id, name: project.name, description: project.description,
+                                      keyCount: keys.count, secrets: keys)
+        }
+        filterRows()
+    }
+
+    private func filterRows() {
+        guard unlockState == .unlocked else { return }
+        rows = CaseRanker.sortedEntries(secrets: indexedSecrets, projects: isSearching ? [] : indexedProjects,
+                                       query: query, now: now()).map { entry in
+            indexedRows[entry.id] ?? CaseDisplayRow(id: entry.id, kind: .project, displayName: entry.displayName,
+                                                  description: entry.description, projectID: entry.projectID)
+        }
+        if isSearching {
+            let matches = Dictionary(grouping: rows, by: \.projectID)
+            projectSections = allSections.compactMap { section in
+                guard let keys = matches[section.id], !keys.isEmpty else { return nil }
+                return CaseProjectSection(id: section.id, name: section.name, description: section.description,
+                                          keyCount: section.keyCount, secrets: keys)
+            }
+        } else {
+            projectSections = allSections
+        }
+    }
+
+    private func clearDisplayIndex() {
+        rows = []
+        projectSections = []
+        allSections = []
+        indexedSecrets = []
+        indexedProjects = []
+        indexedRows = [:]
     }
 
     private func scheduleIdleLock() {
@@ -914,7 +980,7 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        rows = []
+        clearDisplayIndex()
         inputMode = .name
         unlockState = .failed(Self.sanitizedUnlockFailureMessage)
     }
@@ -923,7 +989,7 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        rows = []
+        clearDisplayIndex()
         inputMode = .name
         unlockState = .needsReset(Self.needsResetMessage)
     }
@@ -932,7 +998,7 @@ final class CaseViewModel: ObservableObject {
         idleLockGeneration += 1
         idleLockCancellable?.cancel()
         idleLockCancellable = nil
-        rows = []
+        clearDisplayIndex()
         inputMode = .name
         unlockState = .needsNewerApp(Self.needsNewerAppMessage)
     }

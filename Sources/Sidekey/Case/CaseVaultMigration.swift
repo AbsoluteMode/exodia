@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads a decrypted vault of any supported schema and returns schema 2.
+/// Reads a decrypted vault of any supported schema and returns the current schema.
 ///
 /// Schema 1 had secrets and groups; schema 2 has projects. Migration never
 /// drops a key or a value: ungrouped keys go to the built-in General, each
@@ -14,8 +14,9 @@ enum CaseVaultMigration {
         switch probe.schemaVersion {
         case 1:
             return migrate(try decoder.decode(LegacyPayload.self, from: plaintext))
-        case 2:
+        case 2, 3:
             var payload = try decoder.decode(CaseVaultPayload.self, from: plaintext)
+            payload.schemaVersion = CaseVaultPayload.currentSchemaVersion
             if !payload.projects.contains(where: { $0.id == CaseProject.generalID }) {
                 payload.projects.insert(.general(now: payload.secrets.map(\.createdAt).min()
                     ?? Date(timeIntervalSinceReferenceDate: 0)), at: 0)

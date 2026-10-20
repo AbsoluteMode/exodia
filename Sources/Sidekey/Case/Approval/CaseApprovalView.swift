@@ -11,6 +11,8 @@ struct CaseApprovalView: View {
     let pendingCount: Int
     let isArmed: Bool
     let onChoose: (CaseApprovalOutcome) -> Void
+    var timedMinutes: Int? = nil
+    var onTimedMinutesChange: (Int) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,7 +30,7 @@ struct CaseApprovalView: View {
     }
 
     static func timedTitle(minutes: Int) -> String {
-        "На \(minutes) мин"
+        "Bypass \(minutes) мин"
     }
 
     /// The command on a single line: line breaks and runs of whitespace collapse to
@@ -45,6 +47,21 @@ struct CaseApprovalView: View {
             VStack(alignment: .leading, spacing: 6) {
                 keysLine
                 commandBox
+            }
+            if request.timedMinutes > 0 {
+                HStack(spacing: 8) {
+                    Text("Временный Bypass")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.white.opacity(0.78))
+                    Spacer(minLength: 4)
+                    Stepper(value: Binding(get: { selectedMinutes }, set: onTimedMinutesChange), in: 1...240) {
+                        Text("\(selectedMinutes) мин")
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.92))
+                    }
+                    .fixedSize()
+                    .accessibilityIdentifier("case.approval.minutes")
+                }
             }
             buttons
         }
@@ -126,8 +143,10 @@ struct CaseApprovalView: View {
         HStack(spacing: 6) {
             CaseApprovalButton(title: "Отклонить", key: "N", prominent: false) { onChoose(.deny) }
             if request.timedMinutes > 0 {
-                CaseApprovalButton(title: Self.timedTitle(minutes: request.timedMinutes), key: "A",
-                                   prominent: false) { onChoose(.allowTimed) }
+                CaseApprovalButton(title: "Bypass", key: "A",
+                                   prominent: false) { onChoose(.allowTimed(minutes: selectedMinutes)) }
+                    .accessibilityLabel(Self.timedTitle(minutes: selectedMinutes))
+                    .help("Без повторного запроса для этого агента и проекта на \(selectedMinutes) мин")
             }
             CaseApprovalButton(title: "Разрешить", key: "Y", prominent: true) { onChoose(.allow) }
         }
@@ -135,6 +154,8 @@ struct CaseApprovalView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isArmed)
         .allowsHitTesting(isArmed)
     }
+
+    private var selectedMinutes: Int { timedMinutes ?? request.timedMinutes }
 }
 
 /// One answer: a capsule with its title and its key, the key drawn by `HotkeyHintView`.
@@ -185,7 +206,9 @@ struct CaseApprovalHostView: View {
                 width: width,
                 pendingCount: controller.pendingCount,
                 isArmed: controller.isArmed,
-                onChoose: { controller.choose($0) }
+                onChoose: { controller.choose($0) },
+                timedMinutes: controller.selectedTimedMinutes,
+                onTimedMinutesChange: { controller.setTimedMinutes($0) }
             )
             // A new prompt is a new card (resets hover and the countdown).
             .id(controller.promptSerial)

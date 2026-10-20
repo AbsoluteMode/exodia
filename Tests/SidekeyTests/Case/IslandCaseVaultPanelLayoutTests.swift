@@ -107,6 +107,12 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
         XCTAssertEqual(IslandCaseConnectedApps.brandAsset(for: CaseKnownClient.codex.identity), "codex")
     }
 
+    func test_client_hover_uses_provider_colors() {
+        XCTAssertEqual(IslandCaseConnectedApps.highlight(for: CaseKnownClient.codex.identity), .blue)
+        XCTAssertEqual(IslandCaseConnectedApps.highlight(for: CaseKnownClient.claudeCode.identity), .orange)
+        XCTAssertEqual(IslandCaseConnectedApps.highlight(for: CaseKnownClient.cursor.identity), .neutral)
+    }
+
     func test_renders_at_310pt_without_horizontal_overflow() async throws {
         let width: CGFloat = 310
         // Control: the measurement does report a row that cannot fit.
