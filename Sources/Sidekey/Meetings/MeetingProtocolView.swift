@@ -205,9 +205,10 @@ private struct TaskRow: View {
     private func chip(_ text: String, systemImage: String, tint: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage).font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(tint)
             Text(text).font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(MacSettingsTheme.text)
         }
-        .foregroundStyle(tint)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(Capsule().fill(MacSettingsTheme.controlBg))

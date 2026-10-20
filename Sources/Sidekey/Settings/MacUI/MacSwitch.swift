@@ -117,9 +117,12 @@ private struct GlassSwitchButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeBody(configuration: Configuration) -> some View {
-        Capsule()
+        RoundedRectangle(cornerRadius: size.track.height / 2, style: .continuous)
             .fill(isOn ? (size == .compact ? MacSettingsTheme.accentFill : MacSettingsTheme.switchOn) : MacSettingsTheme.switchOff)
-            .overlay { Capsule().strokeBorder(MacSettingsTheme.switchBorder, lineWidth: 0.75) }
+            .overlay {
+                RoundedRectangle(cornerRadius: size.track.height / 2, style: .continuous)
+                    .strokeBorder(MacSettingsTheme.switchBorder, lineWidth: 0.75)
+            }
             .overlay(alignment: .leading) {
                 thumb
                     .frame(width: size.thumb.width, height: size.thumb.height)
