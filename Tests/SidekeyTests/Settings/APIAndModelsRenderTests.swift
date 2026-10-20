@@ -50,6 +50,8 @@ final class APIAndModelsRenderTests: XCTestCase {
         routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .dropSmartCleanup)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .meetingNotes)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "anthropic/claude-sonnet-5.5", provider: "anthropic"), for: .agent)
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "qwen/qwen3.8-27b"), for: .translation)
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .agentVoice)
 
         let vm = APIAndModelsViewModel(
             routing: routing, keys: keys,
@@ -59,11 +61,19 @@ final class APIAndModelsRenderTests: XCTestCase {
         )
         for feature in [AIFeature.agent, .meetingNotes, .dropSmartCleanup] { await vm.loadProviders(for: feature) }
 
-        try render(
-            APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil)).frame(width: 760, height: 980),
-            size: NSSize(width: 760, height: 980),
-            to: directory.appendingPathComponent("api-and-models.png")
-        )
+        for dark in [false, true] {
+            for width in [600.0, 900.0] {
+                for expanded in [nil, "Drop Smart"] as [String?] {
+                    let state = expanded == nil ? "collapsed" : "expanded"
+                    try render(
+                        APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
+                                         initiallyExpandedGroup: expanded),
+                        size: NSSize(width: width, height: 980), dark: dark,
+                        to: directory.appendingPathComponent("models-\(state)-\(dark ? "dark" : "light")-\(Int(width)).png")
+                    )
+                }
+            }
+        }
         // What the Agent row's provider menu lists (a menu itself is not drawn offscreen).
         try render(
             VStack(alignment: .leading, spacing: 6) {
@@ -81,17 +91,23 @@ final class APIAndModelsRenderTests: XCTestCase {
         )
     }
 
-    private func render<V: View>(_ view: V, size: NSSize, to url: URL) throws {
-        let host = NSHostingView(rootView: view.background(Color(white: 0.12)).environment(\.colorScheme, .dark))
-        host.appearance = NSAppearance(named: .darkAqua)
+    private func render<V: View>(_ view: V, size: NSSize, dark: Bool = true, to url: URL) throws {
+        let host = NSHostingView(rootView: view.background(MacSettingsTheme.bgContent)
+            .environment(\.colorScheme, dark ? .dark : .light))
+        host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         host.frame = NSRect(origin: .zero, size: size)
-        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: size.width, height: size.height),
+                              styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        defer { window.close() }
+        defer { window.contentView = nil; window.close() }
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
         host.layoutSubtreeIfNeeded()
         let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
+        XCTAssertFalse(window.isVisible)
+        XCTAssertFalse(window.isKeyWindow)
     }
 }

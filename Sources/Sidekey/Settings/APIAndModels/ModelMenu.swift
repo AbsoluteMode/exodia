@@ -10,10 +10,11 @@ struct ModelMenu: View {
     let label: String
     let onAddKey: () -> Void
     let onOtherModel: () -> Void
+    var width: CGFloat? = nil
 
     var body: some View {
         let sections = viewModel.sections(for: feature)
-        MacMenu(title: label, maxWidth: 300) {
+        MacMenu(title: label, minWidth: width ?? 90, maxWidth: width ?? 300) {
             if sections.isEmpty {
                 if let hint = viewModel.missingProviderHint(for: feature) {
                     Button(hint, action: onAddKey)

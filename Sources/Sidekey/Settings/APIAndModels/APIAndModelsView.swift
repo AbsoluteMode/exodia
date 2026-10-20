@@ -11,13 +11,17 @@ struct APIAndModelsView: View {
     @State private var activeSheet: ActiveSheet?
     @State private var popoverAccount: ProviderAccount?
     @State private var highlighted: Set<AIFeature> = []
+    @State private var expandedGroup: String?
+    @FocusState private var focusedGroup: String?
     /// Bumped by "Show": the scroll reader then finds the features with no model.
     @State private var showUnsetTick = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(viewModel: APIAndModelsViewModel, focusedFeature: Binding<AIFeature?>) {
+    init(viewModel: APIAndModelsViewModel, focusedFeature: Binding<AIFeature?>,
+         initiallyExpandedGroup: String? = nil) {
         self.viewModel = viewModel
         self._focusedFeature = focusedFeature
+        self._expandedGroup = State(initialValue: initiallyExpandedGroup)
     }
 
     /// What the one sheet of the tab shows. The proposal wins: after Save the
@@ -187,6 +191,7 @@ struct APIAndModelsView: View {
                     MacCard(needsSetup: group.rows.contains { $0.status == .notSet }) {
                         groupRow(group)
                     }
+                    .id(group.id)
                 }
             }
         }
@@ -223,52 +228,122 @@ struct APIAndModelsView: View {
         .buttonStyle(.plain)
     }
 
-    /// One function per line; Drop Smart and Meetings stack their speech and
-    /// LLM pickers, each labelled with its mode.
+    /// A stable, compact summary opens its settings in place. Transport modes
+    /// stay in routing policy rather than appearing beside every model.
+    // WHY: docs/DESIGN.md — Model disclosure, 2026-10-20.
     private func groupRow(_ group: FeatureGroup) -> some View {
         let paired = group.rows.count > 1
+        let expanded = expandedGroup == group.id
         return VStack(alignment: .leading, spacing: 0) {
-            MacRow(title: group.title) {
-                VStack(alignment: .trailing, spacing: 6) {
+            Button {
+                expandedGroup = expanded ? nil : group.id
+            } label: {
+                HStack(spacing: 12) {
+                    Text(group.title)
+                        .font(.system(size: 13))
+                        .foregroundStyle(MacSettingsTheme.text)
+                        .frame(width: 116, alignment: .leading)
+                    HStack(spacing: 7) {
+                        ForEach(Array(group.rows.enumerated()), id: \.element.feature) { index, row in
+                            if index > 0 {
+                                Text("·").accessibilityHidden(true)
+                            }
+                            Text(row.modelSummary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(MacSettingsTheme.text2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(MacSettingsTheme.text2)
+                        .frame(width: 12)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 48)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focused($focusedGroup, equals: group.id)
+            .accessibilityLabel(group.title)
+            .accessibilityValue(disclosureValue(group, expanded: expanded))
+            .accessibilityHint(expanded ? "Hide model settings" : "Show model settings")
+            .help(group.rows.map(\.selectionLabel).joined(separator: "\n"))
+            .onKeyPress(.return) {
+                expandedGroup = expanded ? nil : group.id
+                return .handled
+            }
+
+            if expanded {
+                MacRowSeparator()
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(group.rows) { row in
-                        pickers(for: row).id(row.feature)
+                        pickers(for: row, paired: paired)
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
+
             ForEach(group.rows) { row in
-                statusLines(for: row, prefix: paired ? row.feature.mode.label : nil)
+                statusLines(for: row, prefix: paired ? row.fieldLabel : nil)
             }
+        }
+        .onKeyPress(.escape) {
+            guard expanded else { return .ignored }
+            expandedGroup = nil
+            focusedGroup = group.id
+            return .handled
         }
         .background(group.rows.contains { highlighted.contains($0.feature) }
                     ? MacSettingsTheme.accent.opacity(0.16) : Color.clear)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: highlighted)
     }
 
-    private func pickers(for row: FeatureRow) -> some View {
-        HStack(spacing: 10) {
-            if row.isChecking { ProgressView().controlSize(.small) }
-            Text(row.feature.mode.label)
-                .font(.system(size: 11.5))
-                .foregroundStyle(MacSettingsTheme.text2)
-                .frame(minWidth: 70, alignment: .trailing)
-            ModelMenu(
-                viewModel: viewModel,
-                feature: row.feature,
-                label: row.selectionLabel,
-                onAddKey: { activeSheet = .addKey },
-                onOtherModel: { activeSheet = .otherModel(row.feature) }
-            )
-            if let choice = row.provider {
-                ProviderMenu(viewModel: viewModel, feature: row.feature, choice: choice)
+    private func disclosureValue(_ group: FeatureGroup, expanded: Bool) -> String {
+        let setup = group.rows.contains { $0.status == .notSet } ? ", Needs setup" : ""
+        return "\(expanded ? "Expanded" : "Collapsed"), \(group.summary)\(setup)"
+    }
+
+    private func pickers(for row: FeatureRow, paired: Bool) -> some View {
+        GeometryReader { geometry in
+            let providerWidth: CGFloat = 132
+            let modelWidth = max(90, geometry.size.width - 52 - 20 - providerWidth)
+            HStack(spacing: 10) {
+                Text(paired ? row.fieldLabel : "Model")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(MacSettingsTheme.text2)
+                    .frame(width: 52, alignment: .leading)
+                ModelMenu(
+                    viewModel: viewModel,
+                    feature: row.feature,
+                    label: row.selectionLabel,
+                    onAddKey: { activeSheet = .addKey },
+                    onOtherModel: { activeSheet = .otherModel(row.feature) },
+                    width: modelWidth
+                )
+                Group {
+                    if let choice = row.provider {
+                        ProviderMenu(viewModel: viewModel, feature: row.feature, choice: choice,
+                                     width: providerWidth)
+                    } else {
+                        Color.clear.frame(width: providerWidth, height: 1)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
         }
+        .frame(height: MacPopupMetrics.height)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(row.feature.title)
         .accessibilityValue(row.status == .notSet ? "Needs setup" : "")
         .help(row.status == .notSet ? "Choose a model and add its provider key in API keys." : row.selectionLabel)
     }
 
-    /// `prefix` names the part (`"LLM"`) when a line holds more than one route.
+    /// `prefix` names the part when a function has more than one route.
     @ViewBuilder
     private func statusLines(for row: FeatureRow, prefix: String? = nil) -> some View {
         let status = statusLine(for: row)
@@ -276,6 +351,7 @@ struct APIAndModelsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 if let status {
                     HStack(spacing: 6) {
+                        if row.isChecking { ProgressView().controlSize(.mini) }
                         Text(prefix.map { "\($0): \(status.text)" } ?? status.text)
                         if let action = status.action {
                             Button(action.title, action: action.run)
@@ -291,7 +367,7 @@ struct APIAndModelsView: View {
                 }
             }
             .font(.system(size: 11.5))
-            .foregroundStyle(MacSettingsTheme.orange)
+            .foregroundStyle(row.isChecking ? MacSettingsTheme.text2 : MacSettingsTheme.orange)
             .padding(.horizontal, 14)
             .padding(.top, -3)
             .padding(.bottom, 9)
@@ -309,6 +385,7 @@ struct APIAndModelsView: View {
 
     /// The row's problem as text with its one action; `nil` when it is fine.
     private func statusLine(for row: FeatureRow) -> StatusLine? {
+        if row.isChecking { return StatusLine(text: "Checking…") }
         switch row.status {
         case .ok:
             return nil
@@ -358,8 +435,10 @@ struct APIAndModelsView: View {
     /// Scrolls to `target` and tints the rows of `features` for a moment.
     private func highlight(_ features: Set<AIFeature>, scrollTo target: AIFeature,
                            scroller: ScrollViewProxy, seconds: Double = 2.5) {
+        guard let group = viewModel.groups.first(where: { $0.rows.contains { $0.feature == target } }) else { return }
+        expandedGroup = group.id
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-            scroller.scrollTo(target, anchor: .center)
+            scroller.scrollTo(group.id, anchor: .center)
         }
         highlighted = features
         Task {

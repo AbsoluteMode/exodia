@@ -66,6 +66,21 @@ final class APIAndModelsViewModelTests: XCTestCase {
         func delete() throws {}
     }
 
+    private actor PausedProbe: ModelProbing {
+        private(set) var calls = 0
+        private var pending: CheckedContinuation<ProbeOutcome, Never>?
+
+        func probe(_ route: ResolvedRoute, use: ModelUse, catalog: CatalogModel?) async -> ProbeOutcome {
+            calls += 1
+            return await withCheckedContinuation { pending = $0 }
+        }
+
+        func finish() {
+            pending?.resume(returning: .passed)
+            pending = nil
+        }
+    }
+
     @MainActor private final class Env {
         let routing: AIRoutingStore
         let keys: ProviderKeyStore
@@ -94,11 +109,11 @@ final class APIAndModelsViewModelTests: XCTestCase {
             account.keychainAccount(in: routing).map { keys.lookup(account: $0) }
         }
 
-        func makeViewModel() -> APIAndModelsViewModel {
+        func makeViewModel(probeOverride: (any ModelProbing)? = nil) -> APIAndModelsViewModel {
             let now = self.now
             return APIAndModelsViewModel(
                 routing: routing, keys: keys, catalogs: catalogs, checks: checks, keyStatuses: keyStatuses,
-                keyChecker: checker, probe: probe, now: { now },
+                keyChecker: checker, probe: probeOverride ?? probe, now: { now },
                 inputLanguage: { [unowned self] in self.language }
             )
         }
@@ -264,6 +279,7 @@ final class APIAndModelsViewModelTests: XCTestCase {
         XCTAssertNil(vm.proposal)
         XCTAssertEqual(row(.dropFast, in: vm)?.status, .notSet)
         XCTAssertEqual(row(.dropFast, in: vm)?.selectionLabel, "Choose a model")
+        XCTAssertEqual(row(.dropFast, in: vm)?.modelSummary, "Choose a model")
         XCTAssertEqual(vm.chips.map(\.account), [.deepgram])
     }
 
@@ -285,14 +301,36 @@ final class APIAndModelsViewModelTests: XCTestCase {
         let env = try sonioxWithNewModel()
         let vm = env.makeViewModel()
         XCTAssertEqual(row(.dropFast, in: vm)?.selectionLabel, "Soniox · stt-rt-v5")
+        XCTAssertEqual(row(.dropFast, in: vm)?.modelSummary, "stt-rt-v5")
 
         await vm.select(model: "stt-rt-v6", account: .soniox, for: .dropFast)
 
         XCTAssertEqual(env.probe.probedModels, ["stt-rt-v6"])
         XCTAssertEqual(env.routing.route(for: .dropFast), FeatureRoute(account: .soniox, model: "stt-rt-v6"))
+        XCTAssertEqual(row(.dropFast, in: vm)?.modelSummary, "stt-rt-v6")
         XCTAssertEqual(row(.dropFast, in: vm)?.status, .ok)
         XCTAssertEqual(row(.dropFast, in: vm)?.isChecking, false)
         XCTAssertNil(row(.dropFast, in: vm)?.message)
+    }
+
+    func test_check_now_exposes_pending_state_and_does_not_repeat_a_running_probe() async throws {
+        let env = try sonioxWithNewModel()
+        let probe = PausedProbe()
+        let vm = env.makeViewModel(probeOverride: probe)
+        let first = Task { await vm.checkNow(.dropFast) }
+        for _ in 0..<1_000 {
+            if await probe.calls > 0 { break }
+            await Task.yield()
+        }
+        XCTAssertEqual(row(.dropFast, in: vm)?.isChecking, true)
+        XCTAssertEqual(row(.dropFast, in: vm)?.modelSummary, "stt-rt-v5")
+        await vm.checkNow(.dropFast)
+        let count = await probe.calls
+        XCTAssertEqual(count, 1)
+        await probe.finish()
+        await first.value
+        XCTAssertEqual(row(.dropFast, in: vm)?.isChecking, false)
+        XCTAssertEqual(env.routing.route(for: .dropFast)?.model, "stt-rt-v5")
     }
 
     func test_failed_probe_keeps_the_previous_model_and_says_why() async throws {
