@@ -266,8 +266,9 @@ and detail pane remain the selected direction.
   under Reduce Motion as well as ordinary settings.
 
 Offscreen synthetic fixtures cover empty/populated tasks, the month/day calendar,
-connect and event editors, at 820 and 980pt in both appearances. A separate Codex
-review inspected layouts and data/backup contracts; it is not a second-engine
+connect and event editors, at 820 and 980pt in both appearances. Measured metadata contrast is 6.62:1 on the light surface; white selected-date
+labels on the shared blue fill are 5.59:1. A separate Codex review inspected layouts
+and data/backup contracts with no unresolved findings; it is not a second-engine
 review. Real OAuth, system permissions, VoiceOver, physical keyboard/focus and
 compositor appearance require acceptance on the one installed application. The
 priority of a unified calendar over separate provider windows remains a product
