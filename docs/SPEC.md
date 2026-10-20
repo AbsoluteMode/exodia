@@ -340,6 +340,10 @@ Anthropic (только для строки Agent) и свои OpenAI-compatible
 краткая сводка выбранных моделей и стрелка раскрытия. Нажатие открывает настройки
 прямо под строкой; одновременно раскрыта одна функция. Внутри — меню
 «Provider · model-id» на каждый маршрут и Speech/Text у парных маршрутов.
+The model picker opens a searchable popover: all query terms match in any
+order across model ID/provider, ignoring case and separators (`qwen 27` and
+`qwen27` find `qwen/qwen3.8-27b`). Up/Down and Return select; Escape clears then
+closes. Search and refresh keep the current route until an explicit verified pick.
 Подписей real-time, recorded и LLM with tools в списке нет. Функции: Drop Fast,
 Drop Smart (распознавание + очистка текста), Meetings (расшифровка + заметки),
 Agent, Agent voice, Voice search, Translation и Subtitles (Speech + отдельная LLM). Ошибки и

@@ -645,8 +645,14 @@ Done/Return/Escape close it, and Add API key opens the existing sheet. It never
 checks balances or changes routes. WHY:
 .project-docs/decisions/2026-10-19-api-hints.md
 
-Selection menus use MacMenu/MacPopup: a 30 pt neutral control with 8 pt corners
-and one down chevron, retaining native menu tracking. Model/provider menus,
+Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
+MacPopupLabel. Name/size terms match in any order (`qwen 27`, `qwen27`), ignoring
+case/separators. Search never changes routes; explicit picks retain verification.
+Up/Down and Return choose enabled results; Escape clears then closes. WHY:
+.project-docs/decisions/2026-10-20-model-search.md
+
+Other selection menus use MacMenu/MacPopup: a 30 pt neutral control with 8 pt corners
+and one down chevron, retaining native menu tracking. Provider menus,
 Backup, display, account/key sheets and translation share this label; the
 screenshot toolbar uses its AppKit counterpart MacPopupButton. Notifications
 centers the menu and enable switch, moving Notification type into the adjacent

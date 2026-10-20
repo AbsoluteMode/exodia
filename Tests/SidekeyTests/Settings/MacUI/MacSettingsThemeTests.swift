@@ -42,6 +42,11 @@ final class MacSettingsThemeTests: XCTestCase {
             let field = try resolve(NSColor(MacSettingsTheme.fieldBg), in: appearance)
             XCTAssertGreaterThanOrEqual(contrast(border, field), 3)
             let blue = try resolve(NSColor(MacSettingsTheme.accent), in: appearance)
+            let modelHighlight = try XCTUnwrap(card.blended(withFraction: 0.15, of: blue))
+            for foreground in [MacSettingsTheme.text, MacSettingsTheme.text2] {
+                XCTAssertGreaterThanOrEqual(contrast(try resolve(NSColor(foreground), in: appearance), modelHighlight), 4.5,
+                                            "Model search highlight must retain readable text in \(name)")
+            }
             let tintedAction = try XCTUnwrap(card.blended(withFraction: 0.06, of: blue))
             XCTAssertGreaterThanOrEqual(contrast(blue, tintedAction), 4.5)
             for status in [MacSettingsTheme.green, MacSettingsTheme.red, MacSettingsTheme.orange, MacSettingsTheme.accent] {
