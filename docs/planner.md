@@ -10,7 +10,10 @@ Tasks support add/Return, search, edit, complete/reopen and confirmed deletion.
 The Active and Completed lists keep finished work available. Whytap events support
 titles, start/end times, all-day spans, locations, notes, https meeting links and
 confirmed deletion. All-day end dates in the editor are inclusive; storage uses
-an exclusive boundary. Civil all-day dates survive a time-zone change.
+an exclusive boundary. Civil all-day dates survive a time-zone change. Incoming
+all-day ranges accept both midnight-exclusive ends and a final-day time. Moving
+an event's start preserves its duration; toggling All day restores its previous
+times of day while retaining the selected dates. Validation stays in its editor.
 
 The local planner is stored privately in Application Support/Sidekey/Planner.
 Changes persist atomically before appearing in the interface. Unreadable or
@@ -124,7 +127,9 @@ Authorization opens the default browser; a temporary receiver binds only
 127.0.0.1. Microsoft uses a localhost redirect, with that same numeric listener.
 State validation, S256 PKCE, a three-minute timeout, cancellation, bounded request
 sizes and listener cleanup apply. Account tokens and the configuration used for each connected account are
-stored in the login Keychain under the existing channel's service. Rotated refresh
+stored in the login Keychain under the existing channel's service. Short-lived
+access tokens stay in memory and are excluded from backup. An access-only refresh
+does not create a settings version or request a full backup; rotated refresh
 tokens are persisted before an API call resumes. Disconnect cancels pending
 refreshes so they cannot restore a deleted credential. Private responses use an
 ephemeral URLSession without cookies/cache; requests reject redirects, and API
@@ -175,8 +180,15 @@ Both packaging scripts run `scripts/configure-calendar-clients.py` before signin
 `--require-all` on that helper to verify a candidate intended for all three direct
 connections. Its output names providers only. Registration values never belong
 in logs, public PRs or source documentation.
+Discovery is relative to the helper's source checkout, independent of the shell's
+current directory. A source ZIP without Git metadata can build with custom client
+setup or an explicit configuration; `--require-all` still fails without registration.
 
 Closing Planner stops calendar polling. Reopening refreshes the visible range.
+EventKit change notifications are debounced and refresh only Apple calendars;
+they do not restart remote-account requests. Disconnecting an account or removing
+a calendar prunes its hidden-feed IDs. Visibility supports up to 256 hidden
+calendars with the same bound in settings backup validation.
 An open editor keeps its draft when another tool hotkey brings Planner forward.
 The visible window or a retained new-task draft defers Sparkle restart and backup
 restore. Ordinary backups continue to capture saved content while Planner is open.

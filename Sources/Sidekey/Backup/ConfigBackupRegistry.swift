@@ -200,7 +200,8 @@ enum ConfigBackupRegistry {
                 guard data.count <= 524_288 else { throw ConfigBackupError.tooLarge }
                 _ = try value.propertyListValue()
             case (.strings, .strings(let values)):
-                guard values.count <= 256, values.allSatisfy({ $0.utf8.count <= 1024 && !$0.contains("\0") }) else {
+                let maximumCount = key == CalendarAccountSettings.hiddenFeedsKey ? CalendarAccountSettings.maximumHiddenFeeds : 256
+                guard values.count <= maximumCount, values.allSatisfy({ $0.utf8.count <= 1024 && !$0.contains("\0") }) else {
                     throw ConfigBackupError.invalidArchive
                 }
             default: throw ConfigBackupError.invalidArchive
@@ -216,7 +217,7 @@ enum ConfigBackupRegistry {
                 guard let data = value.data(using: .utf8),
                       let credential = try? JSONDecoder().decode(CalendarCredential.self, from: data),
                       credential.provider != .apple, !credential.clientID.isEmpty,
-                      !credential.accessToken.isEmpty, !credential.refreshToken.isEmpty,
+                      !credential.refreshToken.isEmpty,
                       credential.expiresAt.timeIntervalSince1970.isFinite else { throw ConfigBackupError.invalidArchive }
             }
         }

@@ -3,13 +3,46 @@ import CryptoKit
 import Network
 import Security
 
-struct CalendarCredential: Codable {
+struct CalendarCredential: Codable, Sendable {
     var provider: CalendarProvider
     var clientID: String
     var clientSecret: String?
     var accessToken: String
     var refreshToken: String
     var expiresAt: Date
+
+    func hasSameAuthorization(as other: Self) -> Bool {
+        provider == other.provider && clientID == other.clientID &&
+        clientSecret == other.clientSecret && refreshToken == other.refreshToken
+    }
+}
+
+extension CalendarCredential {
+    private enum CodingKeys: String, CodingKey {
+        case provider, clientID, clientSecret, refreshToken, accessToken, expiresAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try values.decode(CalendarProvider.self, forKey: .provider)
+        clientID = try values.decode(String.self, forKey: .clientID)
+        clientSecret = try values.decodeIfPresent(String.self, forKey: .clientSecret)
+        refreshToken = try values.decode(String.self, forKey: .refreshToken)
+        // Accept earlier Planner archives; new records retain only durable authorization.
+        accessToken = try values.decodeIfPresent(String.self, forKey: .accessToken) ?? ""
+        expiresAt = try values.decodeIfPresent(Date.self, forKey: .expiresAt) ?? .distantPast
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(provider, forKey: .provider)
+        try values.encode(clientID, forKey: .clientID)
+        try values.encodeIfPresent(clientSecret, forKey: .clientSecret)
+        try values.encode(refreshToken, forKey: .refreshToken)
+        // Short-lived access tokens stay in CalendarOAuthClient memory. They must
+        // not displace settings rollback points or trigger full archive uploads.
+        // WHY: .project-docs/decisions/2026-10-19-planner.md
+    }
 }
 
 protocol CalendarCredentialStorage: Sendable {
@@ -191,6 +224,7 @@ actor CalendarOAuthClient {
     private let http: CalendarHTTP
     private let storage: any CalendarCredentialStorage
     private var refreshes: [UUID: Task<CalendarCredential, Error>] = [:]
+    private var cached: [UUID: CalendarCredential] = [:]
     private var removed: Set<UUID> = []
 
     init(http: CalendarHTTP = CalendarHTTP(), storage: any CalendarCredentialStorage = CalendarKeychain()) {
@@ -207,19 +241,28 @@ actor CalendarOAuthClient {
         try Task.checkCancellation()
         guard !removed.contains(id) else { throw CancellationError() }
         do { try storage.save(credential, id: id) } catch { throw CalendarConnectionError.keychain }
+        cached[id] = credential
     }
 
     func accessToken(_ id: UUID, forceRefresh: Bool = false, expectedProvider: CalendarProvider? = nil) async throws -> String {
         guard !removed.contains(id) else { throw CalendarConnectionError.signInRequired }
         let credential: CalendarCredential
         do {
-            guard let value = try storage.read(id) else { throw CalendarConnectionError.signInRequired }
+            guard let value = try cached[id] ?? storage.read(id) else { throw CalendarConnectionError.signInRequired }
             credential = value
         } catch let error as CalendarConnectionError { throw error }
         catch { throw CalendarConnectionError.keychain }
         if let expectedProvider, credential.provider != expectedProvider { throw CalendarConnectionError.configuration }
-        if !forceRefresh, credential.expiresAt.timeIntervalSinceNow > 90 { return credential.accessToken }
-        if let existing = refreshes[id] { return try await existing.value.accessToken }
+        if !forceRefresh, credential.expiresAt.timeIntervalSinceNow > 90, !credential.accessToken.isEmpty {
+            cached[id] = credential
+            return credential.accessToken
+        }
+        if let existing = refreshes[id] {
+            let updated = try await existing.value
+            try Task.checkCancellation()
+            guard !removed.contains(id) else { throw CancellationError() }
+            return updated.accessToken
+        }
         let task = Task<CalendarCredential, Error> {
                 defer { self.refreshes[id] = nil }
                 var values = ["client_id": credential.clientID, "grant_type": "refresh_token", "refresh_token": credential.refreshToken]
@@ -228,7 +271,10 @@ actor CalendarOAuthClient {
                     clientSecret: credential.clientSecret, values: values, previousRefresh: credential.refreshToken)
                 try Task.checkCancellation()
                 guard !self.removed.contains(id) else { throw CancellationError() }
-                do { try self.storage.save(updated, id: id) } catch { throw CalendarConnectionError.keychain }
+                if !credential.hasSameAuthorization(as: updated) {
+                    do { try self.storage.save(updated, id: id) } catch { throw CalendarConnectionError.keychain }
+                }
+                self.cached[id] = updated
                 return updated
         }
         refreshes[id] = task
@@ -240,6 +286,7 @@ actor CalendarOAuthClient {
 
     func disconnect(_ id: UUID) throws {
         removed.insert(id)
+        cached.removeValue(forKey: id)
         refreshes.removeValue(forKey: id)?.cancel()
         do { try storage.delete(id) } catch { removed.remove(id); throw CalendarConnectionError.keychain }
     }
@@ -253,7 +300,13 @@ actor CalendarOAuthClient {
         request.httpBody = CalendarHTTP.form(values)
         let result: [String: Any]
         do { result = try await http.json(request) }
-        catch CalendarConnectionError.http(400) { throw CalendarConnectionError.signInRequired }
+        catch let error as CalendarConnectionError {
+            switch error {
+            case .http(400), .signInRequired:
+                throw previousRefresh == nil ? CalendarConnectionError.configuration : CalendarConnectionError.signInRequired
+            default: throw error
+            }
+        }
         guard let access = result["access_token"] as? String, !access.isEmpty,
               let refresh = (result["refresh_token"] as? String) ?? previousRefresh, !refresh.isEmpty,
               let expires = result["expires_in"] as? Double, expires > 0,

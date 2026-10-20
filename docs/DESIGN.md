@@ -332,6 +332,10 @@ and detail pane remain the selected direction.
   shows browser progress, cancellation and actionable error text. Closing the main
   window ends polling. Why: navigation and closing must not lose drafts or leave
   hidden network work running.
+- Validation errors belong to their editor and disappear with it. Moving Start
+  keeps the event duration, and All day preserves its prior times of day. Notes
+  and day counts have explicit accessibility labels. Why: correction and date
+  changes must not contaminate another editor or silently discard entered times.
 - A registered build asks the user to select a calendar provider and sign in. Native
   client settings are advanced setup; an unregistered build exposes that setup
   honestly. Why: owner registration is a packaging responsibility, not a repeated
@@ -345,9 +349,10 @@ and detail pane remain the selected direction.
 
 Offscreen synthetic fixtures cover empty/populated tasks, the month/day calendar,
 connect and event editors, at 820 and 980pt in both appearances. Measured metadata contrast is 6.62:1 on the light surface; white selected-date
-labels on the shared blue fill are 5.59:1. A separate Codex review inspected layouts
-and data/backup contracts with no unresolved findings; it is not a second-engine
-review. Real OAuth, system permissions, VoiceOver, physical keyboard/focus and
+labels on the shared blue fill are 5.59:1. Separate Codex and Claude Opus 5.5 reviews
+inspected layouts and data/backup contracts. The Claude review led to repairs in
+token backup behavior, editor errors, date editing, accessibility and packaging
+configuration discovery. Real OAuth, system permissions, VoiceOver, physical keyboard/focus and
 compositor appearance require acceptance on the one installed application. The
 priority of a unified calendar over separate provider windows remains a product
 hypothesis to revisit after ordinary use.

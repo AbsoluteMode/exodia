@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import EventKit
 import SwiftUI
 
@@ -104,7 +105,12 @@ struct PlannerCalendarView: View {
         }
         .onChange(of: connections.accounts) { _, _ in refreshToken += 1 }
         .onChange(of: connections.appleEnabled) { _, _ in refreshToken += 1 }
-        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in refreshToken += 1 }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)) { _ in
+            guard navigation.windowVisible, let first = days.first,
+                  let end = calendar.date(byAdding: .day, value: 42, to: first) else { return }
+            connections.refreshAppleIfEnabled(interval: DateInterval(start: first, end: end))
+        }
     }
 
     private var header: some View {
@@ -150,7 +156,7 @@ struct PlannerCalendarView: View {
                         .background(selected ? MacSettingsTheme.accentFill : Color(nsColor: .controlBackgroundColor),
                             in: RoundedRectangle(cornerRadius: 7))
                     }.buttonStyle(.plain)
-                    .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted)), \(count) events")
+                    .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted)), \(count) \(count == 1 ? "event" : "events")")
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
@@ -201,6 +207,7 @@ struct PlannerEventEditor: View {
     @ObservedObject var store: PlannerStore
     @State private var meetingLink = ""
     @State private var validationMessage: String?
+    @State private var timedRange: DateInterval?
     @Environment(\.dismiss) private var dismiss
 
     init(event: PlannerEvent, store: PlannerStore) {
@@ -225,14 +232,15 @@ struct PlannerEventEditor: View {
             TextField("Event title", text: $event.title).textFieldStyle(.roundedBorder).accessibilityLabel("Event title")
             Form {
                 Toggle("All day", isOn: $event.allDay)
-                DatePicker("Start", selection: $event.start, displayedComponents: event.allDay ? [.date] : [.date, .hourAndMinute])
+                DatePicker("Start", selection: Binding(get: { event.start }, set: { event.moveStart(to: $0) }),
+                    displayedComponents: event.allDay ? [.date] : [.date, .hourAndMinute])
                 if event.allDay { DatePicker("Last day", selection: lastDay, displayedComponents: [.date]) }
                 else { DatePicker("End", selection: $event.end, displayedComponents: [.date, .hourAndMinute]) }
                 TextField("Location", text: $event.location)
                 TextField("Meeting link (https)", text: $meetingLink)
             }
             Text("Notes").font(.callout.weight(.medium))
-            TextEditor(text: $event.notes).frame(height: 85).border(Color.secondary.opacity(0.2))
+            TextEditor(text: $event.notes).frame(height: 85).border(Color.secondary.opacity(0.2)).accessibilityLabel("Notes")
             Text("Saved in Whytap on this Mac. Connected calendars are shown alongside it; they are read-only.")
                 .font(.caption).foregroundStyle(MacSettingsTheme.text2)
             if let message = validationMessage ?? store.errorMessage { Text(message).font(.caption).foregroundStyle(.red) }
@@ -245,11 +253,7 @@ struct PlannerEventEditor: View {
         }.padding(24).frame(width: 490).background(Color(nsColor: .windowBackgroundColor))
         .onAppear { meetingLink = event.meetingURL?.absoluteString ?? "" }
         .onChange(of: event.allDay) { _, allDay in
-            if allDay {
-                event.timeZoneIdentifier = TimeZone.current.identifier
-                event.start = Calendar.current.startOfDay(for: event.start)
-                event.end = Calendar.current.date(byAdding: .day, value: 1, to: event.start) ?? event.start.addingTimeInterval(86400)
-            }
+            event.convertAllDay(allDay, timedRange: &timedRange)
         }
     }
 
@@ -258,7 +262,8 @@ struct PlannerEventEditor: View {
         guard link.isEmpty || CalendarDateCodec.safeURL(link) != nil else { validationMessage = "Enter a valid https meeting link."; return }
         event.meetingURL = CalendarDateCodec.safeURL(link)
         if event.allDay { event.start = Calendar.current.startOfDay(for: event.start); event.end = Calendar.current.startOfDay(for: event.end) }
-        if store.saveEvent(event) { dismiss() }
+        validationMessage = PlannerStore.validationMessage(for: event)
+        if validationMessage == nil, store.saveEvent(event) { dismiss() }
     }
 }
 

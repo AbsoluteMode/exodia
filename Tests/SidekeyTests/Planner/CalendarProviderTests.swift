@@ -2,6 +2,24 @@ import XCTest
 @testable import Sidekey
 
 final class CalendarProviderTests: XCTestCase {
+    func testAllDayInclusiveAndExclusiveEndsMergeAcrossTimeZones() throws {
+        var origin = Calendar(identifier: .gregorian)
+        origin.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let start = try XCTUnwrap(origin.date(from: DateComponents(year: 2026, month: 3, day: 8)))
+        let end = try XCTUnwrap(origin.date(byAdding: .day, value: 1, to: start))
+        var first = PlannerEvent(title: "Day off", start: start, end: end.addingTimeInterval(-1), allDay: true)
+        first.timeZoneIdentifier = origin.timeZone.identifier
+        var second = first; second.end = end
+        var viewer = Calendar(identifier: .gregorian)
+        viewer.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Berlin"))
+        XCTAssertEqual(first.displayBounds(calendar: viewer), second.displayBounds(calendar: viewer))
+        let merged = CalendarEventMerger.merge([
+            CalendarFeedEvent(id: "apple", feedID: "apple:one", event: first, externalUID: "fixture"),
+            CalendarFeedEvent(id: "google", feedID: "google:one", event: second, externalUID: "fixture")])
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged.first?.additionalFeedIDs, ["google:one"])
+        XCTAssertTrue(first.occurs(on: first.displayBounds(calendar: viewer).start, calendar: viewer))
+    }
     func testPKCEUsesRFC7636VectorAndRandomState() throws {
         XCTAssertEqual(CalendarPKCE.challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
         let first = try CalendarPKCE.random(), second = try CalendarPKCE.random()

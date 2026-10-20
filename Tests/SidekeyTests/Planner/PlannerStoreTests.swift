@@ -4,6 +4,41 @@ import XCTest
 
 @MainActor
 final class PlannerStoreTests: XCTestCase {
+    func testInputValidationDoesNotLeakIntoPersistenceErrors() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = PlannerStore(url: root.appendingPathComponent("planner.json"))
+        let task = PlannerTask(title: String(repeating: "x", count: 501))
+        let event = PlannerEvent(title: "Meeting", start: Date(), end: .distantPast)
+        XCTAssertNotNil(PlannerStore.validationMessage(for: task))
+        XCTAssertNotNil(PlannerStore.validationMessage(for: event))
+        XCTAssertFalse(store.saveTask(task)); XCTAssertFalse(store.saveEvent(event))
+        XCTAssertNil(store.errorMessage)
+        XCTAssertTrue(store.archive.tasks.isEmpty); XCTAssertTrue(store.archive.events.isEmpty)
+        XCTAssertTrue(store.canWrite)
+    }
+
+    func testEditingDatesPreservesDurationAndTimesAcrossAllDayAndDST() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        for (startHour, endDay, endHour) in [(10, 7, 11), (23, 8, 1), (10, 8, 0)] {
+            let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: startHour)))
+            let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: endDay, hour: endHour)))
+            var event = PlannerEvent(title: "Fixture", start: start, end: end)
+            var timed: DateInterval?
+            event.convertAllDay(true, timedRange: &timed, calendar: calendar)
+            event.convertAllDay(false, timedRange: &timed, calendar: calendar)
+            XCTAssertEqual(event.start, start); XCTAssertEqual(event.end, end)
+            let duration = event.end.timeIntervalSince(event.start)
+            let moved = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: event.start))
+            event.moveStart(to: moved, calendar: calendar)
+            XCTAssertEqual(event.end.timeIntervalSince(event.start), duration)
+            event.convertAllDay(true, timedRange: &timed, calendar: calendar)
+            let dayCount = calendar.dateComponents([.day], from: event.start, to: event.end).day
+            event.moveStart(to: calendar.date(byAdding: .day, value: 1, to: event.start)!, calendar: calendar)
+            XCTAssertEqual(calendar.dateComponents([.day], from: event.start, to: event.end).day, dayCount)
+        }
+    }
     private var directory: URL!
     override func setUp() async throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("planner-tests-" + UUID().uuidString)
@@ -32,7 +67,7 @@ final class PlannerStoreTests: XCTestCase {
         XCTAssertFalse(store.saveTask(PlannerTask(title: " \n ")))
         XCTAssertFalse(store.saveTask(PlannerTask(title: String(repeating: "x", count: 501))))
         XCTAssertTrue(store.archive.tasks.isEmpty)
-        XCTAssertNotNil(store.errorMessage)
+        XCTAssertNil(store.errorMessage, "Input validation belongs to the editor")
     }
 
     func testCorruptArchiveIsNeverOverwrittenAndRetryRecovers() throws {
@@ -88,7 +123,8 @@ final class PlannerStoreTests: XCTestCase {
         let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 8)))
         let end = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: start))
         XCTAssertEqual(end.timeIntervalSince(start), 23 * 3600)
-        let event = PlannerEvent(title: "Day off", start: start, end: end, allDay: true)
+        var event = PlannerEvent(title: "Day off", start: start, end: end, allDay: true)
+        event.timeZoneIdentifier = calendar.timeZone.identifier
         XCTAssertTrue(event.occurs(on: start, calendar: calendar))
         XCTAssertFalse(event.occurs(on: end, calendar: calendar))
         let overnight = PlannerEvent(title: "Night shift", start: start.addingTimeInterval(-1800), end: start.addingTimeInterval(1800))

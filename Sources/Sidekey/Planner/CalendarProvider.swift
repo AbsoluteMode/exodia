@@ -1,6 +1,6 @@
 import Foundation
 
-enum CalendarProvider: String, Codable, CaseIterable, Identifiable {
+enum CalendarProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case apple, google, microsoft, zoom
     var id: String { rawValue }
     var title: String {

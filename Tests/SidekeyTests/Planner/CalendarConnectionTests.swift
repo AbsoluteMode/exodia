@@ -73,6 +73,74 @@ final class CalendarConnectionTests: XCTestCase {
         XCTAssertEqual(try storage.read(id)?.refreshToken, "fixture-rotated")
     }
 
+    func testAccessOnlyRefreshIsCachedWithoutChangingBackupCredentials() async throws {
+        let id = UUID()
+        let original = credential(.google, expires: .distantPast)
+        try storage.save(original, id: id)
+        var requests = 0
+        PlannerURLProtocol.handler = { _ in
+            requests += 1
+            return (200, ["access_token": "fixture-new-access", "expires_in": 3600, "token_type": "Bearer"])
+        }
+        let first = try await oauth.accessToken(id)
+        let second = try await oauth.accessToken(id)
+        XCTAssertEqual(first, "fixture-new-access")
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(storage.saveCount, 1, "An access-only change must not notify backup or replace its credential")
+        XCTAssertEqual(try storage.read(id)?.refreshToken, original.refreshToken)
+        let data = try JSONEncoder().encode(original)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(json["accessToken"]); XCTAssertNil(json["expiresAt"])
+        let restored = try JSONDecoder().decode(CalendarCredential.self, from: data)
+        XCTAssertTrue(restored.accessToken.isEmpty)
+        XCTAssertEqual(restored.expiresAt, .distantPast)
+        XCTAssertTrue(original.hasSameAuthorization(as: restored))
+    }
+
+    func testFirstConnectTokenErrorsExplainConfigurationInsteadOfDisconnect() async throws {
+        for status in [400, 401] {
+            PlannerURLProtocol.handler = { _ in (status, ["error": "invalid_client"]) }
+            do {
+                try await oauth.connect(provider: .google, clientID: "fixture", clientSecret: nil,
+                    code: "fixture-code", redirect: "http://127.0.0.1/callback", verifier: "fixture", id: UUID())
+                XCTFail("Invalid client must fail")
+            } catch {
+                XCTAssertEqual((error as? CalendarConnectionError)?.errorDescription, CalendarConnectionError.configuration.errorDescription)
+            }
+        }
+        XCTAssertEqual(storage.saveCount, 0)
+        let id = UUID()
+        try storage.save(credential(.google, expires: .distantPast), id: id)
+        do { _ = try await oauth.accessToken(id); XCTFail("Expired authorization must fail") }
+        catch { XCTAssertEqual((error as? CalendarConnectionError)?.errorDescription, CalendarConnectionError.signInRequired.errorDescription) }
+    }
+
+    func testRemovingAnAccountPrunesHiddenIDsEvenBeforeItsFeedsLoad() async throws {
+        let suite = "planner.visibility." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let removed = ConnectedCalendarAccount(id: UUID(), provider: .google, label: "Remove")
+        let kept = ConnectedCalendarAccount(id: UUID(), provider: .microsoft, label: "Keep")
+        defaults.set(try JSONEncoder().encode([removed, kept]), forKey: CalendarAccountSettings.accountsKey)
+        let wanted: Set<String> = ["local", kept.id.uuidString + ":work"]
+        defaults.set(Array(wanted.union([removed.id.uuidString + ":old", "apple:old"])), forKey: CalendarAccountSettings.hiddenFeedsKey)
+        let connections = CalendarConnections(defaults: defaults, oauth: oauth, http: http)
+        try await connections.remove(removed)
+        connections.disableApple()
+        XCTAssertEqual(connections.hiddenFeeds, wanted)
+        XCTAssertEqual(Set(defaults.stringArray(forKey: CalendarAccountSettings.hiddenFeedsKey) ?? []), wanted)
+        let hidden = (0..<CalendarAccountSettings.maximumHiddenFeeds).map { "fixture:\($0)" }
+        defaults.set(hidden, forKey: CalendarAccountSettings.hiddenFeedsKey)
+        let capped = CalendarConnections(defaults: defaults, oauth: oauth, http: http)
+        capped.setVisible(false, feedID: "fixture:extra")
+        XCTAssertEqual(capped.hiddenFeeds.count, hidden.count)
+        XCTAssertNotNil(capped.errors["visibility"])
+        XCTAssertNoThrow(try ConfigBackupRegistry.validate([CalendarAccountSettings.hiddenFeedsKey: .strings(Array(capped.hiddenFeeds))]))
+        capped.setVisible(true, feedID: hidden[0])
+        XCTAssertNil(capped.errors["visibility"])
+    }
+
     func testDisconnectDuringRefreshCannotRecreateCredentials() async throws {
         let id = UUID()
         try storage.save(credential(.google, expires: .distantPast), id: id)

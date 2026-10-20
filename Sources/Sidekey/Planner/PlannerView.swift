@@ -62,6 +62,7 @@ struct PlannerTasksView: View {
     @State private var showCompleted = false
     @State private var editing: PlannerTask?
     @State private var deleting: PlannerTask?
+    @State private var validationMessage: String?
     @FocusState private var inputFocused: Bool
 
     private var tasks: [PlannerTask] {
@@ -93,6 +94,7 @@ struct PlannerTasksView: View {
                 Button("Add", action: addTask)
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.canWrite)
             }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+            if let validationMessage { Text(validationMessage).font(.caption).foregroundStyle(.red) }
             HStack {
                 Text("\(tasks.count) \(showCompleted ? "completed" : "active")")
                     .font(.callout.weight(.medium)).foregroundStyle(MacSettingsTheme.text2)
@@ -146,13 +148,17 @@ struct PlannerTasksView: View {
     }
 
     private func addTask() {
-        if store.saveTask(PlannerTask(title: draft)) { draft = ""; showCompleted = false; inputFocused = true }
+        let task = PlannerTask(title: draft)
+        validationMessage = PlannerStore.validationMessage(for: task)
+        guard validationMessage == nil else { return }
+        if store.saveTask(task) { draft = ""; showCompleted = false; inputFocused = true }
     }
 }
 
 private struct PlannerTaskEditor: View {
     @State var task: PlannerTask
     @ObservedObject var store: PlannerStore
+    @State private var validationMessage: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -160,7 +166,7 @@ private struct PlannerTaskEditor: View {
             Text("Edit task").font(.title2.bold())
             TextField("Task", text: $task.title).textFieldStyle(.roundedBorder)
                 .onSubmit(save)
-            if let message = store.errorMessage { Text(message).font(.caption).foregroundStyle(.red) }
+            if let message = validationMessage ?? store.errorMessage { Text(message).font(.caption).foregroundStyle(.red) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -170,7 +176,10 @@ private struct PlannerTaskEditor: View {
         }.padding(24).frame(width: 420)
     }
 
-    private func save() { if store.saveTask(task) { dismiss() } }
+    private func save() {
+        validationMessage = PlannerStore.validationMessage(for: task)
+        if validationMessage == nil, store.saveTask(task) { dismiss() }
+    }
 }
 
 struct PlannerEmptyState: View {

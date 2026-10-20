@@ -51,11 +51,24 @@ final class CalendarConnections: ObservableObject {
         refreshing = false
         let ids = Set(feeds.filter { $0.accountID == account.id }.map(\.id))
         feeds.removeAll { ids.contains($0.id) }; events.removeAll { ids.contains($0.feedID) }
+        hiddenFeeds = hiddenFeeds.filter { !$0.hasPrefix(account.id.uuidString + ":") }
+        saveHiddenFeeds()
         errors.removeValue(forKey: account.id.uuidString); lastSynced.removeValue(forKey: account.id.uuidString)
     }
 
     func setVisible(_ visible: Bool, feedID: String) {
+        guard visible || hiddenFeeds.contains(feedID) || hiddenFeeds.count < CalendarAccountSettings.maximumHiddenFeeds else {
+            errors["visibility"] = "Too many hidden calendars. Show a calendar or disconnect an unused account first."
+            return
+        }
+        guard feedID.utf8.count <= 1024, !feedID.contains("\0") else { return }
         if visible { hiddenFeeds.remove(feedID) } else { hiddenFeeds.insert(feedID) }
+        errors.removeValue(forKey: "visibility")
+        saveHiddenFeeds()
+    }
+
+    private func saveHiddenFeeds() {
+        if hiddenFeeds.count < CalendarAccountSettings.maximumHiddenFeeds { errors.removeValue(forKey: "visibility") }
         defaults.set(Array(hiddenFeeds), forKey: "planner.calendar.hiddenFeeds")
     }
 
@@ -74,6 +87,8 @@ final class CalendarConnections: ObservableObject {
         defaults.set(false, forKey: "planner.calendar.appleEnabled")
         feeds.removeAll { $0.provider == .apple }
         events.removeAll { $0.feedID.hasPrefix("apple:") }
+        hiddenFeeds = hiddenFeeds.filter { !$0.hasPrefix("apple:") }
+        saveHiddenFeeds()
         errors.removeValue(forKey: "apple"); lastSynced.removeValue(forKey: "apple")
     }
 
@@ -82,10 +97,7 @@ final class CalendarConnections: ObservableObject {
         let current = generation
         refreshing = true
         defer { if generation == current { refreshing = false } }
-        if appleEnabled {
-            do { try refreshApple(interval: interval); errors.removeValue(forKey: "apple"); lastSynced["apple"] = Date() }
-            catch { errors["apple"] = error.localizedDescription }
-        }
+        refreshAppleIfEnabled(interval: interval)
         for account in accounts {
             guard !Task.isCancelled, generation == current else { return }
             let key = account.id.uuidString
@@ -96,10 +108,19 @@ final class CalendarConnections: ObservableObject {
                 feeds.removeAll { previous.contains($0.id) }
                 events.removeAll { previous.contains($0.feedID) }
                 feeds += snapshot.feeds; events += snapshot.events
+                let currentIDs = Set(snapshot.feeds.map(\.id))
+                let retained = hiddenFeeds.filter { !$0.hasPrefix(key + ":") || currentIDs.contains($0) }
+                if retained != hiddenFeeds { hiddenFeeds = retained; saveHiddenFeeds() }
                 lastSynced[key] = Date(); errors.removeValue(forKey: key)
             } catch is CancellationError { return }
             catch { if generation == current { errors[key] = error.localizedDescription } }
         }
+    }
+
+    func refreshAppleIfEnabled(interval: DateInterval) {
+        guard appleEnabled else { return }
+        do { try refreshApple(interval: interval); errors.removeValue(forKey: "apple"); lastSynced["apple"] = Date() }
+        catch { errors["apple"] = error.localizedDescription }
     }
 
     private func refreshApple(interval: DateInterval) throws {
@@ -125,5 +146,8 @@ final class CalendarConnections: ObservableObject {
         }
         feeds.removeAll { $0.provider == .apple }; events.removeAll { $0.feedID.hasPrefix("apple:") }
         feeds += foundFeeds; events += foundEvents
+        let currentIDs = Set(foundFeeds.map(\.id))
+        let retained = hiddenFeeds.filter { !$0.hasPrefix("apple:") || currentIDs.contains($0) }
+        if retained != hiddenFeeds { hiddenFeeds = retained; saveHiddenFeeds() }
     }
 }

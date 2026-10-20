@@ -31,7 +31,7 @@ def validated_clients(value):
 
 
 def configure(info_path, config_path, require_all=False):
-    if not config_path.exists():
+    if config_path is None or not config_path.exists():
         if require_all:
             raise ValueError("Register Google, Microsoft and Zoom native OAuth clients before packaging this candidate.")
         print("Calendar sign-in: no shared client configuration; custom client setup remains available.")
@@ -50,6 +50,21 @@ def configure(info_path, config_path, require_all=False):
     print("Calendar sign-in configured: " + ", ".join(sorted(clients)))
 
 
+def client_config_path(explicit=None):
+    if explicit is not None:
+        return explicit
+    if configured := os.environ.get("WHYTAP_CALENDAR_CLIENTS_PLIST"):
+        return Path(configured)
+    try:
+        common = subprocess.check_output(
+            ["git", "-C", str(Path(__file__).resolve().parent.parent), "rev-parse",
+             "--path-format=absolute", "--git-common-dir"], text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.CalledProcessError):
+        # A source ZIP has no shared registration. Custom client setup still works.
+        return None
+    return Path(common) / "whytap-calendar-clients.plist"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("info_plist", type=Path)
@@ -57,8 +72,7 @@ def main():
     parser.add_argument("--require-all", action="store_true")
     args = parser.parse_args()
     try:
-        common = Path(subprocess.check_output(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], text=True).strip())
-        config = args.clients or Path(os.environ.get("WHYTAP_CALENDAR_CLIENTS_PLIST", str(common / "whytap-calendar-clients.plist")))
+        config = client_config_path(args.clients)
         configure(args.info_plist, config, args.require_all)
     except (OSError, ValueError, plistlib.InvalidFileException, subprocess.CalledProcessError):
         print("Calendar client configuration could not be validated; the app was not signed. Check the local native-client plist.", file=sys.stderr)

@@ -2,6 +2,7 @@ import Foundation
 
 /// The live store and the encrypted backup use the same bounded account document.
 enum CalendarAccountSettings {
+    static let maximumHiddenFeeds = 256
     static let accountsKey = "planner.calendar.accounts.v1"
     static let hiddenFeedsKey = "planner.calendar.hiddenFeeds"
     static let appleEnabledKey = "planner.calendar.appleEnabled"
