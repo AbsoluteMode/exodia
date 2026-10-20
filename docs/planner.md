@@ -175,9 +175,12 @@ As checked on 2026-10-20, the shared Google Desktop registration exists, Calenda
 API is enabled, and the two narrow read scopes are declared. Its public native
 configuration is saved privately for packaging. The Whytap logo, homepage and
 calendar privacy URL are saved in Google Auth Platform. Ownership of whytap.ai is
-verified as a DNS-level Domain property in Google Search Console. The public
-publishing status and review submission remain pending; domain verification alone
-does not approve the app's access to calendar events.
+verified as a DNS-level Domain property in Google Search Console. Google publishing
+status is **In production**, with an **External** audience. Branding has been
+verified and published. Calendar data access is not yet verified: until approved,
+Google retains its unverified-app warning and lifetime cap of 100 users for the
+requested sensitive scope. Production status and verified branding do not approve
+access to calendar events. The calendar data-access review is still pending.
 Microsoft and Zoom owner-account registration is also pending. The working app
 has not been updated by registration or website changes.
 
