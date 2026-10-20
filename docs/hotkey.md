@@ -242,7 +242,20 @@ saved once; an intentionally empty dictionary prevents old slots from returning
 after a clear, reset or backup restore. Existing legacy keys remain untouched
 for compatibility. Configuration backups include the new dictionary.
 
-WHY: [Feature hotkeys](decisions/2026-10-19-feature-hotkeys.md).
+### Assigning from a link
+
+`whytap://hotkey/<HoverTool rawValue>?keys=<modifiers>+<key>` (for example
+`option+shift+s`) proposes one tool hotkey. Modifiers are `ctrl`/`control`,
+`opt`/`option`/`alt`, `shift` and `cmd`/`command`; ⌃ or ⌥ is required so a link
+cannot take app shortcuts or typed capitals. Keys are A–Z, 0–9, US punctuation
+and F1–F20. Quit cannot be assigned. Whytap shows its own dialog with Cancel as
+the default and Assign enabled after one second; Assign saves through
+`HotkeyPreferences.apply`, like Settings Save, then shows Settings → Hotkeys.
+Keys owned by another action show a conflict and change nothing. An open
+Hotkeys pane without unsaved edits picks up the new binding.
+
+WHY: [Feature hotkeys](decisions/2026-10-19-feature-hotkeys.md),
+[Hotkeys from links](../.project-docs/decisions/2026-10-21-whytap-link-hotkeys.md).
 
 ## Meeting-record hotkey
 

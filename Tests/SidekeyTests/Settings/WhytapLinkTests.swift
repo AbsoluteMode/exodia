@@ -4,9 +4,33 @@ import XCTest
 
 final class WhytapLinkTests: XCTestCase {
 
-    private func destination(_ string: String) -> WhytapLinkDestination? {
+    private func request(_ string: String) -> WhytapLinkRequest? {
         guard let url = URL(string: string) else { return nil }
-        return WhytapLink.destination(for: url)
+        return WhytapLink.request(for: url)
+    }
+
+    private func destination(_ string: String) -> WhytapLinkDestination? {
+        switch request(string) {
+        case .show(let destination): return destination
+        case .propose(let change): XCTFail("\(string) proposed \(change)"); return nil
+        case nil: return nil
+        }
+    }
+
+    private static var root: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    /// Source of one function, up to the next sibling declaration.
+    private func body(of signature: String, in file: String) throws -> Substring {
+        let source = try String(contentsOf: Self.root.appendingPathComponent(file), encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: signature), signature)
+        let rest = source[start.upperBound...]
+        let end = rest.range(of: "\n    (private |@objc private )?(static )?func ", options: .regularExpression)?
+            .lowerBound ?? rest.endIndex
+        return rest[..<end]
     }
 
     // MARK: - Every tile and tab
@@ -93,19 +117,36 @@ final class WhytapLinkTests: XCTestCase {
     }
 
     func test_link_handler_never_calls_an_action() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: root.appendingPathComponent("Sources/Sidekey/AppDelegate.swift"),
-                                encoding: .utf8)
-        let start = try XCTUnwrap(source.range(of: "private func show(_ destination: WhytapLinkDestination)"))
-        let rest = source[start.upperBound...]
-        let end = rest.range(of: "\n    private func ", options: .regularExpression)?.lowerBound ?? rest.endIndex
-        let body = rest[..<end]
+        let file = "Sources/Sidekey/AppDelegate.swift"
+        let show = try body(of: "private func show(_ destination: WhytapLinkDestination)", in: file)
         for forbidden in ["invoke(", "actions.", "toggle", "quit", "Quit", "paste", "Pasteboard", "copy",
-                          "record", "Record", "unlock", "openScreenshot", "start(", "terminate"] {
-            XCTAssertFalse(body.contains(forbidden), "The whytap:// handler must only show places: found \(forbidden)")
+                          "record", "Record", "unlock", "openScreenshot", "start(", "terminate", "apply("] {
+            XCTAssertFalse(show.contains(forbidden), "The whytap:// handler must only show places: found \(forbidden)")
         }
+        for entry in ["@objc private func handleGetURLEvent(", "private func handle(_ request: WhytapLinkRequest)"] {
+            let source = try body(of: entry, in: file)
+            XCTAssertFalse(source.contains("apply("), "\(entry) applies a change without confirmation")
+        }
+    }
+
+    /// A proposed change reaches `HotkeyPreferences.apply` only after the
+    /// user's Assign in Whytap's own dialog.
+    func test_a_link_change_is_applied_only_after_confirmation() throws {
+        let propose = try body(of: "private func propose(_ change: WhytapLinkChange)",
+                               in: "Sources/Sidekey/AppDelegate.swift")
+        let confirm = try XCTUnwrap(propose.range(of: "WhytapLinkConfirmation.confirm("))
+        let apply = try XCTUnwrap(propose.range(of: ".apply("))
+        XCTAssertLessThan(confirm.lowerBound, apply.lowerBound)
+        XCTAssertEqual(propose.components(separatedBy: ".apply(").count, 2, "one apply call")
+
+        let dialog = try body(of: "static func confirm(_ change: WhytapLinkChange",
+                              in: "Sources/Sidekey/Settings/WhytapLinkConfirmation.swift")
+        let cancel = try XCTUnwrap(dialog.range(of: "addButton(withTitle: \"Cancel\")"))
+        let assign = try XCTUnwrap(dialog.range(of: "addButton(withTitle: \"Assign\")"))
+        XCTAssertLessThan(cancel.lowerBound, assign.lowerBound, "Cancel must be the default button")
+        XCTAssertTrue(dialog.contains("assign.isEnabled = false"))
+        XCTAssertTrue(dialog.contains("assign.keyEquivalent = \"\""))
+        XCTAssertGreaterThanOrEqual(WhytapLinkConfirmation.armingDelay, 1.0)
     }
 
     func test_scheme_and_kind_are_case_insensitive_but_ids_are_not() {
@@ -178,10 +219,7 @@ final class WhytapLinkTests: XCTestCase {
     }
 
     func test_info_plist_registers_the_whytap_scheme() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: root.appendingPathComponent("Resources/Info.plist.template"),
+        let source = try String(contentsOf: Self.root.appendingPathComponent("Resources/Info.plist.template"),
                                 encoding: .utf8)
         let pattern = "<key>CFBundleURLTypes</key>\\s*<array>\\s*<dict>[\\s\\S]*?"
             + "<key>CFBundleURLSchemes</key>\\s*<array>\\s*<string>whytap</string>"

@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Resources/Info.plist.template
     confirmed_at: 2026-10-20
-related: [2026-10-17-hover-tool-search.md, 2026-10-20-toolbox-mini-apps.md]
+related: [2026-10-17-hover-tool-search.md, 2026-10-20-toolbox-mini-apps.md, 2026-10-21-whytap-link-hotkeys.md]
 ---
 
 ## Context
@@ -50,6 +50,8 @@ fixed on the site.
   assigning a hotkey) needs its own decision with in-app confirmation and an
   allowlist that excludes reading data (keys, Case, meetings, clipboard,
   backups) and network destinations (provider endpoints, notification scripts).
+  Tool hotkeys became the first such change:
+  [2026-10-21-whytap-link-hotkeys.md](2026-10-21-whytap-link-hotkeys.md).
 - A well-formed link with an unknown id or kind (a newer site, an older app)
   only wakes the island. Other schemes, credentials, ports, empty or extra path
   segments and ids outside the ASCII alphanumeric raw-value alphabet (`..`,
