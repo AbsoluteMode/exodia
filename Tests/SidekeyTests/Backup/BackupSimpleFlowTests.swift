@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import Sidekey
 
@@ -36,6 +37,7 @@ final class BackupSimpleFlowTests: XCTestCase {
                        now: @escaping @MainActor () -> Date = { Date() },
                        changeProbe: @escaping @Sendable () -> String = { "synthetic" },
                        idle: @escaping @MainActor () -> Bool = { true },
+                       recoveryAuthentication: @escaping @MainActor () async throws -> Bool = { true },
                        beforeCreate: @escaping @MainActor () async -> Void = {}) -> BackupViewModel {
         let environment = profile.environment()
         let engine = ArtifactBackupEngine(environment: environment)
@@ -50,7 +52,8 @@ final class BackupSimpleFlowTests: XCTestCase {
                 stage: { try await engine.stageRestore(from: $0, key: $1, sections: $2) }),
             changeProbe: changeProbe, idle: idle, providerStore: environment.credentialStore,
             previousRestoreOutcome: { nil }, archivedKeyStore: { _ in MemoryTokenStore() },
-            pendingKeyStore: MemoryTokenStore(), githubSession: session, now: now)
+            pendingKeyStore: MemoryTokenStore(), githubSession: session, now: now,
+            recoveryAuthentication: recoveryAuthentication)
     }
 
     func testConnectChecksGitHubWithoutCreatingABackupOrRequestingACode() async throws {
@@ -85,6 +88,8 @@ final class BackupSimpleFlowTests: XCTestCase {
     func testOneActionBacksUpAllDataAndCodeRestoresOnACleanMacWithoutConfirmation() async throws {
         let source = try profile(), target = try profile()
         source.defaults.set("fast", forKey: "sidekey.preferences.transcriptionMode")
+        source.defaults.set(false, forKey: "notifications.meetingReady.enabled")
+        target.defaults.set(true, forKey: "notifications.meetingReady.enabled")
         try source.credentialStores["byok.soniox.api_key"]!.save("synthetic-provider-key")
         let backup = model(source)
         await backup.connectGitHub(token: "synthetic-token")
@@ -104,6 +109,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertNil(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "Do not apply over open stores")
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
         XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "fast")
+        XCTAssertFalse(target.defaults.bool(forKey: "notifications.meetingReady.enabled"))
         XCTAssertEqual(try target.credentialStores["byok.soniox.api_key"]!.read(), "synthetic-provider-key")
     }
 
@@ -170,6 +176,149 @@ final class BackupSimpleFlowTests: XCTestCase {
         await paused.stopAndWait()
     }
 
+    func testCredentialOnlyChangeAutomaticallySyncsAndRestoresWithTheSameCode() async throws {
+        let source = try profile(), target = try profile()
+        let account = "byok.soniox.api_key"
+        try source.credentialStores[account]!.save("synthetic-old-key")
+        var time = Date()
+        let model = model(source, now: { time })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.poll()
+        await model.backupEverything()
+        let code = model.recoveryCode
+        model.hideRecoveryCode()
+        XCTAssertEqual(remote.publishCount, 1)
+
+        // No setting or artifact notification accompanies a Keychain-only edit.
+        try source.credentialStores[account]!.save("synthetic-new-key")
+        time.addTimeInterval(121)
+        await model.poll()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.syncState, .synced)
+        XCTAssertEqual(remote.publishCount, 2)
+        XCTAssertTrue(model.recoveryCode.isEmpty)
+
+        let restore = self.model(target)
+        await restore.connectGitHub(token: "synthetic-token")
+        await restore.restoreEverything(code: code)
+        XCTAssertNil(restore.errorMessage)
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
+        XCTAssertEqual(try target.credentialStores[account]!.read(), "synthetic-new-key")
+    }
+
+    func testOfflineEditsDoNotAccumulateFullArchivesAndNewestSettingsRestore() async throws {
+        let source = try profile(), target = try profile()
+        var time = Date(), offline = false
+        StubURLProtocol.handler = { [remote] request in
+            if offline { throw URLError(.notConnectedToInternet) }
+            return try remote!.handle(request)
+        }
+        let model = model(source, now: { time })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.poll()
+        await model.backupEverything()
+        let code = model.recoveryCode
+        model.hideRecoveryCode()
+        offline = true
+        for index in 0..<6 {
+            source.defaults.set("offline-\(index)", forKey: "sidekey.preferences.transcriptionMode")
+            time.addTimeInterval(1_000)
+            await model.poll()
+        }
+        let archives = try FileManager.default.contentsOfDirectory(atPath: source.root.appendingPathComponent("archives").path)
+            .filter { $0.hasSuffix(".exodiabackup") }
+        XCTAssertEqual(archives.count, 2, "Retain the working generation and one pending generation without copying every edit")
+        XCTAssertEqual(remote.publishCount, 1)
+        offline = false
+        time.addTimeInterval(1_000)
+        await model.poll()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.syncState, .synced)
+
+        let restore = self.model(target)
+        await restore.connectGitHub(token: "synthetic-token")
+        await restore.restoreEverything(code: code)
+        XCTAssertNil(restore.errorMessage)
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
+        XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "offline-5")
+    }
+
+    func testNewMacCannotAccidentallyReplaceTheRecoveryCodeBeforeRestore() async throws {
+        let source = try profile(), target = try profile()
+        source.defaults.set("saved", forKey: "sidekey.preferences.transcriptionMode")
+        let first = model(source)
+        await first.connectGitHub(token: "synthetic-token")
+        await first.backupEverything()
+        let code = first.recoveryCode
+        let second = model(target)
+        await second.connectGitHub(token: "synthetic-token")
+        await second.backupEverything()
+        XCTAssertEqual(remote.publishCount, 1)
+        XCTAssertNotNil(second.errorMessage)
+        XCTAssertTrue(second.recoveryCode.isEmpty)
+        await second.restoreEverything(code: code)
+        XCTAssertNil(second.errorMessage)
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
+        XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "saved")
+    }
+
+    func testRestoreFindsTheNewestSnapshotThatMatchesItsRecoveryCode() async throws {
+        let source = try profile(), other = try profile(), target = try profile()
+        source.defaults.set("original-key-generation", forKey: "sidekey.preferences.transcriptionMode")
+        let first = model(source)
+        await first.connectGitHub(token: "synthetic-token")
+        await first.backupEverything()
+        let code = first.recoveryCode
+        let otherKey = ArtifactBackupTestKeys.make()
+        let otherFile = other.root.appendingPathComponent("other.exodiabackup")
+        let summary = try await ArtifactBackupEngine(environment: other.environment())
+            .createArchive(at: otherFile, key: otherKey, sections: [.settings])
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        _ = try await transport.upload(file: otherFile, summary: summary, key: otherKey)
+        let restore = model(target)
+        await restore.connectGitHub(token: "synthetic-token")
+        await restore.restoreEverything(code: code)
+        XCTAssertNil(restore.errorMessage)
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
+        XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "original-key-generation")
+    }
+
+    func testAuthenticatedSnapshotDatesOrderNewAndLegacyCopiesIndependentlyOfUploadOrder() async throws {
+        for legacy in [false, true] {
+            let fixture = BackupGitHubFixture(json: { try! JSONSerialization.data(withJSONObject: $0) })
+            StubURLProtocol.handler = { try fixture.handle($0) }
+            let source = try profile(), key = ArtifactBackupTestKeys.make()
+            let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+            var ids: [String] = []
+            for timestamp in [1_792_411_400.0, 1_792_411_200.0] { // Newest uploaded FIRST.
+                var environment = source.environment()
+                environment.now = { Date(timeIntervalSince1970: timestamp) }
+                let file = source.root.appendingPathComponent(UUID().uuidString + ".exodiabackup")
+                let summary = try await ArtifactBackupEngine(environment: environment)
+                    .createArchive(at: file, key: key, sections: [.settings])
+                ids.append(summary.id.uuidString)
+                _ = try await transport.upload(file: file, summary: summary, key: key)
+                if legacy {
+                    let position = try XCTUnwrap(fixture.assets.firstIndex { $0["name"] as? String == "complete.exodia-index" })
+                    let assetID = try XCTUnwrap(fixture.assets[position]["id"] as? Int)
+                    let sealed = try XCTUnwrap(fixture.bytes[assetID])
+                    let data = try AES.GCM.open(AES.GCM.SealedBox(combined: sealed), using: SymmetricKey(data: key),
+                                                authenticating: Data("exodia.encrypted-backup.v1".utf8))
+                    var index = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                    index.removeValue(forKey: "createdAt")
+                    let replacement = try XCTUnwrap(AES.GCM.seal(JSONSerialization.data(withJSONObject: index),
+                        using: SymmetricKey(data: key), authenticating: Data("exodia.encrypted-backup.v1".utf8)).combined)
+                    fixture.bytes[assetID] = replacement
+                    fixture.assets[position]["size"] = replacement.count
+                }
+            }
+            let versions = try await transport.versions(key: key)
+            XCTAssertEqual(versions.map(\.id), ids, "Authenticated capture time must win over reversed release dates, legacy=\(legacy)")
+            let unrelated = try await transport.versions(key: ArtifactBackupTestKeys.make())
+            XCTAssertTrue(unrelated.isEmpty)
+        }
+    }
+
     func testCancellingSyncKeepsItPausedWithoutRevealingTheCode() async throws {
         let source = try profile()
         var pause = false
@@ -227,6 +376,58 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
         XCTAssertNotNil(model.lastRemoteBackupAt)
         XCTAssertTrue(model.recoveryCode.isEmpty)
+        XCTAssertEqual(model.syncState, .recoveryCodeNeeded, "A never-shown code must not report protected recovery as complete")
+        await model.showRecoveryCode()
+        XCTAssertFalse(model.recoveryCode.isEmpty)
+        XCTAssertEqual(model.syncState, .synced)
+    }
+
+    func testRepeatedBackupDoesNotRevealRecoveryCodeWithoutAuthentication() async throws {
+        var authorized = false, prompts = 0
+        let model = model(try profile(), recoveryAuthentication: {
+            prompts += 1
+            return authorized
+        })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.backupEverything()
+        let code = model.recoveryCode
+        XCTAssertFalse(code.isEmpty)
+        model.hideRecoveryCode()
+        await model.backupEverything()
+        XCTAssertTrue(model.recoveryCode.isEmpty)
+        XCTAssertEqual(prompts, 0, "Ordinary backups do not prompt or reveal credentials")
+        await model.showRecoveryCode()
+        XCTAssertEqual(prompts, 1)
+        XCTAssertTrue(model.recoveryCode.isEmpty)
+        authorized = true
+        await model.showRecoveryCode()
+        XCTAssertEqual(prompts, 2)
+        XCTAssertEqual(model.recoveryCode, code)
+    }
+
+    func testPermanentSourceFailureWaitsForAChangedSourceBeforeRetrying() async throws {
+        let source = try profile()
+        var time = Date(), attempts = 0
+        let model = model(source, now: { time }, changeProbe: {
+            BackupChangeProbe.stamp(locations: source.locations)
+        }, beforeCreate: { attempts += 1 })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.backupEverything()
+        let initial = attempts
+        let unsupported = source.locations.notifyRoot.appendingPathComponent(".env")
+        try source.write("synthetic config", to: unsupported)
+        time.addTimeInterval(121)
+        await model.poll()
+        XCTAssertEqual(attempts, initial + 1)
+        XCTAssertTrue(model.errorMessage?.contains("Notifications/.env") == true)
+        time.addTimeInterval(1_000)
+        await model.poll()
+        XCTAssertEqual(attempts, initial + 1, "A deterministic source error must not repeatedly export recordings")
+        try FileManager.default.removeItem(at: unsupported)
+        time.addTimeInterval(1_000)
+        await model.poll()
+        XCTAssertEqual(attempts, initial + 2)
+        XCTAssertNil(model.errorMessage)
     }
 
     func testStoppedModelRejectsLateChecksAfterSessionInvalidation() async throws {

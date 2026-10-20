@@ -102,8 +102,16 @@ final class BackupRenderTests: XCTestCase {
         XCTAssertEqual(model.syncState, .synced)
         await model.stopAndWait() // Freeze the fixture before offscreen view tasks arrive.
         for width in [560, 760] {
-            try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: width, height: 190),
+            try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: width, height: 270),
                        to: directory.appendingPathComponent("backup-synced-\(width).png"))
+            try render(hosted(SettingsBackupView(model: model), scheme: .light), size: NSSize(width: width, height: 270),
+                       to: directory.appendingPathComponent("backup-synced-light-\(width).png"), appearance: .aqua)
+        }
+        for scheme in [ColorScheme.dark, .light] {
+            let label = scheme == .dark ? "dark" : "light"
+            try render(hosted(interactionSamples, scheme: scheme), size: NSSize(width: 760, height: 230),
+                       to: directory.appendingPathComponent("backup-control-states-\(label).png"),
+                       appearance: scheme == .dark ? .darkAqua : .aqua)
         }
         try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 760, height: 500),
                    to: directory.appendingPathComponent("backup-connected.png"))
@@ -119,6 +127,10 @@ final class BackupRenderTests: XCTestCase {
         try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 560, height: 500),
                    to: directory.appendingPathComponent("backup-error.png"))
         model.errorMessage = nil
+        model.requireRecoveryCodePresentation()
+        XCTAssertEqual(model.syncState, .recoveryCodeNeeded)
+        try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 560, height: 500),
+                   to: directory.appendingPathComponent("backup-save-code.png"))
         model.setEnabled(false)
         try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: 560, height: 500),
                    to: directory.appendingPathComponent("backup-paused.png"))
@@ -133,15 +145,43 @@ final class BackupRenderTests: XCTestCase {
                    to: directory.appendingPathComponent("backup-ready.png"))
     }
 
-    private func hosted<V: View>(_ view: V) -> some View {
-        view
-            .background(Color(white: 0.12))
-            .environment(\.colorScheme, .dark)
+    private var interactionSamples: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(0..<3) { kind in
+                HStack(spacing: 14) {
+                    ForEach(0..<5) { state in
+                        VStack(spacing: 8) {
+                            Text(["Normal", "Hover", "Pressed", "Focus", "Disabled"][state])
+                                .font(.system(size: 11)).foregroundStyle(MacSettingsTheme.text2)
+                            Text(["Back up", "Restore backup", "GitHub ↗"][kind])
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(kind == 0 ? Color.white : MacSettingsTheme.text)
+                                .padding(.horizontal, 13).padding(.vertical, 5)
+                                .background {
+                                    MacButtonInteractionSurface(
+                                        background: kind == 0 ? MacSettingsTheme.accentFill : kind == 1 ? MacSettingsTheme.controlBg : .clear,
+                                        highlight: kind == 0 ? .black : MacSettingsTheme.text,
+                                        hovered: state == 1 || state == 4, pressed: state == 2 || state == 4,
+                                        focused: state == 3 || state == 4, enabled: state != 4)
+                                }
+                                .opacity(state == 4 ? 0.42 : 1)
+                        }
+                    }
+                }
+            }
+        }.padding(16)
     }
 
-    private func render<V: View>(_ view: V, size: NSSize, to url: URL) throws {
+    private func hosted<V: View>(_ view: V, scheme: ColorScheme = .dark) -> some View {
+        view
+            .background(MacSettingsTheme.bgContent)
+            .environment(\.colorScheme, scheme)
+    }
+
+    private func render<V: View>(_ view: V, size: NSSize, to url: URL,
+                                 appearance: NSAppearance.Name = .darkAqua) throws {
         let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height, alignment: .topLeading))
-        host.appearance = NSAppearance(named: .darkAqua)
+        host.appearance = NSAppearance(named: appearance)
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false

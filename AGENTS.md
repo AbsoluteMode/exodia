@@ -862,7 +862,10 @@ token. Settings → Backup shows its synchronization status, a GitHub Releases l
 Restore backup. Back up always includes all supported user data and stored keys,
 uploads and verifies ciphertext, then displays the recovery code without a
 paste-back step. Restore takes only that code and stages every included section
-from the newest completed GitHub version without a selection/confirmation wizard.
+from the newest completed matching-key GitHub snapshot by authenticated capture
+date, without a selection/confirmation wizard. A new Mac restores existing
+copies before creating another recovery key. Repeat code display requires Mac
+authentication; a never-presented first code keeps a save-code status visible.
 A normal quit and relaunch applies it; the running stores are never replaced.
 There are no normal-page backup settings, management/history disclosures or
 folder picker. Existing automatic schedules, folder destinations, local encrypted
@@ -874,12 +877,24 @@ and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
 pauses and maintenance never show Backup synced. Background sync keeps the same
 recovery credential without revealing it. WHY:
 `.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
+Pending transfers are retried before creating another full archive. Network
+failures back off; unchanged unsupported inputs suspend automatic export retries.
+Schema 3 preserves inactive configurations across repeated restores, including
+coexisting older copies; schemas 1 and 2 remain readable. Local Case application
+policies precede imports, including matching identities with different UUIDs.
+WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
 Short recording chunks use the archive entry ceiling rather than a separate
 4096-file limit. WHY:
 `.project-docs/decisions/2026-10-20-simple-github-backup.md`.
+Workspace traversal and change detection honor valid regular `CACHEDIR.TAG`
+markers on nested Monitor/Notify directories. Tagged runtime dependencies are
+excluded with an archive warning; nearby scripts, configuration and working
+data remain included. Names alone never exclude a directory, links are not
+followed and retained recordings never honor cache tags. WHY:
+`.project-docs/decisions/2026-10-21-backup-tagged-caches.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore
