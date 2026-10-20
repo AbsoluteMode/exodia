@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 import os.log
 
-/// Reusable Meeting Notes surface. Two screens, like the reference:
-/// **list** (pick a meeting) → **editor** (full-window note with a back button).
+/// Shared Meetings overview → history or editor. The list host preserves its
+/// current page while a note is open, so Back returns to the caller's context.
 /// The `NotesTopBar` + navigation live here, so the Settings > Notes tab and the
 /// standalone Meetings window get the same experience. `onExit` is injected by
 /// the host (Settings → leave Notes; standalone → close window).
@@ -46,6 +46,7 @@ final class MeetingsContentController: NSViewController {
     private var sidebarRefreshGeneration: UInt64 = 0
 
     var currentMeetingId: UUID? { detailView.currentMeetingId }
+    var listPage: MeetingListModel.Page { sidebarController.page }
 
     init(
         source: MeetingsSidebarSource,
@@ -135,7 +136,7 @@ final class MeetingsContentController: NSViewController {
         sidebar.delegate = self
 
         topBar.onBack = { [weak self] in
-            self?.showList()
+            self?.returnToMeetingList()
         }
         topBar.onSelectTab = { [weak self] index in
             self?.detailView.showTab(MeetingsDetailView.Tab(rawValue: index) ?? .note)
@@ -178,6 +179,16 @@ final class MeetingsContentController: NSViewController {
         dividerHeight.constant = 0
     }
 
+    func returnToMeetingList() {
+        showList()
+        sidebarController.restoreFocus()
+    }
+
+    func showHistoryScreen() {
+        sidebarController.showHistory()
+        returnToMeetingList()
+    }
+
     private func showEditor(title: String) {
         currentTitle = title
         mode = .editor
@@ -213,6 +224,7 @@ final class MeetingsContentController: NSViewController {
     /// list of meetings, never re-opens the last note.
     func showListScreen() {
         sidebarController.refresh()
+        sidebarController.showOverview()
         showList()
         refreshAllOnShow()
     }
@@ -220,6 +232,9 @@ final class MeetingsContentController: NSViewController {
     /// Open a specific meeting straight in the editor (Dynamic Island Notes tile,
     /// menu entries). Refreshes the list underneath so back lands on fresh data.
     func selectMeeting(id: UUID) {
+        // Notifications and the island open a note directly, with Meetings as
+        // their parent rather than an archive left open during an earlier visit.
+        sidebarController.showOverview()
         let generation = prepareDetailForSelection(id: id)
         sidebarController.refresh()
         Task { [weak self] in

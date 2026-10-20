@@ -420,6 +420,13 @@ speech-to-text (`scribe_v2`), self-hosted `/v1/audio/transcriptions` на хос
 
 ## Meeting Notes
 
+The Meetings entry opens an overview with the five newest meetings and History.
+History retains the complete date-grouped list. Opening a note preserves its
+origin for Back; choosing Meetings again or following a direct note link uses
+the overview. Both lists retain processing states and confirmed deletion.
+Load failures offer Retry without discarding the last loaded list. The overview
+can grow with future Meeting Assistant sections; no preset controls ship yet.
+
 **Current continuation behavior (2026-10-20):** Each completed call starts BYOK
 processing immediately. After auto-end, Reconnect is available for three minutes;
 Notes / Reconnect / Skip and the 20-second decision timeout remain. Reconnect
