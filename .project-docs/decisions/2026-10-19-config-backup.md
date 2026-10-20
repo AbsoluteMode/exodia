@@ -41,7 +41,7 @@ The normal Settings UI is superseded by [the 2026-10-20 simplified GitHub flow](
 
 ## Context
 
-The user wants Exodia's working data to remain on their Mac and an optional
+The user wants Whytap's working data to remain on their Mac and an optional
 off-device backup that can recover settings, provider credentials, Case secrets,
 meeting notes and managed attachments after the original Mac is unavailable.
 Connecting a second Mac should also be straightforward. GitHub is the preferred
@@ -50,7 +50,7 @@ accurate status, safe cancellation and recovery from errors.
 
 The user approved implementation on 2026-10-19 after the joint recommendation.
 The implementation uses a random 256-bit recovery credential saved once outside
-Exodia, a local Keychain cache, GitHub release assets and an alternative folder
+Whytap, a local Keychain cache, GitHub release assets and an alternative folder
 destination. No connector has been enabled for the maintainer and no real user
 data has been exported. Source verification and integration follow the shared
 application procedure; the local build receipt records the running version.
@@ -134,7 +134,7 @@ saved once in the user's existing password manager is the practical baseline.
 Do not request it for every background backup. Do not promise silent native
 "Save to Apple Passwords" integration without a verified API and entitlement
 path; deliberate copy/export plus a confirmation is the established baseline.
-Copying must also suppress Exodia's own clipboard history, not merely attach
+Copying must also suppress Whytap's own clipboard history, not merely attach
 pasteboard privacy markers and assume the watcher respects them.
 
 Preserve GitHub as a storage candidate, but do not append a newly encrypted
@@ -277,7 +277,7 @@ Merging or installing the feature does not configure or upload a user backup.
 This is broader than a text configuration export. A successful status requires
 coherent store exports and complete authenticated recovery, not only successful
 HTTP requests. Legacy settings, paths and Keychain services are preserved.
-Exodia's own clipboard watcher suppresses copied recovery credentials. Other
+Whytap's own clipboard watcher suppresses copied recovery credentials. Other
 clipboard applications decide how they handle private pasteboard markers.
 
 ## Supersedes / superseded by

@@ -5,13 +5,21 @@ user's provider keys or their own OpenAI-compatible endpoints, no on-device
 models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
 OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
-no telemetry. The user-facing name is Whytap (briefly named Exodia); the module and most internal
+no telemetry. The project and product name is **Whytap**, reaffirmed by the user
+on 2026-10-21; use it in replies, current documentation and new features.
+The module and most internal
 identifiers are still `Sidekey`. The public source repository is
 `https://github.com/AbsoluteMode/whytap`. Preserve legacy bundle IDs, Keychain
 services and Application Support paths so existing settings and permissions
 survive the rename. Keep the existing community certificate, EXODIA_* release
 variables, build metadata keys and backup formats/destinations as compatibility
 contracts. WHY: .project-docs/decisions/2026-10-19-whytap-name.md
+
+The canonical primary checkout folder is named `whytap`; an older `exodia`
+path can remain a compatibility symlink for existing chats and worktrees.
+It is not the project name. Older checkouts can contain unmerged source and WIP.
+Consult current `origin/main` guidance and the primary build receipt before
+treating an older checkout's naming or feature descriptions as the current app.
 
 ## Parallel development and the shared application
 
@@ -585,9 +593,10 @@ whytap:// links:
   are exhaustive, so a new tile or tab needs a destination to compile. The enums
   are the public registry of linkable places: never rename raw values. A link
   only shows a place: inline tools open their HoverPanelRequest, navigate tools
-  and tabs open Settings with setHighlight, Planner/Translate/Subtitles windows
-  open idle, Drop Mode/Record/Screenshot select their Toolbox pane
-  (SettingsWindowSelection.focus) and Quit highlights the Quit row. Unknown ids
+  and tabs open Settings with setHighlight, Calendar/Translate/Subtitles
+  windows open idle, Drop Mode/Record/Screenshot select their Toolbox pane
+  (SettingsWindowSelection.focus), Case opens Toolbox without selecting its
+  Touch ID pane and Quit highlights the Quit row (Invariant 7). Unknown ids
   or kinds only wake the island; other schemes, credentials, ports, empty or
   extra segments and non-alphanumeric ids are rejected and not logged. WHY:
   .project-docs/decisions/2026-10-20-whytap-links.md
@@ -681,10 +690,16 @@ rewrite past usage. Only used feature groups appear for the selected local-date
 period; hover/click/keyboard focus reveals their models. One Price column
 retains explicit USD and ElevenLabs credit units, both when mixed. Each visit
 starts at This month; matching neutral From/To controls open a dismissing native
-calendar. No permanent bottom explanation or sticky text-segment highlight. OpenRouter response costs and exact matched ElevenLabs
-analytics debits are reported; Soniox public hourly equivalents and OpenCode's
-computed step prices are estimates. Missing prices stay unavailable, never zero;
-partial totals show +. No account-wide balance deltas or USD-to-credit conversion.
+calendar. No permanent bottom explanation or sticky text-segment highlight.
+OpenRouter response costs are reported; Soniox public hourly equivalents and
+OpenCode's computed step prices are estimates. ElevenLabs feature estimates use
+recorded audio minutes times the matching STT model's reported credits/minute,
+marked ≈ without rewriting journal amounts. A separate Reported usage section
+reads the workspace usage API for the same dates, grouped by API key/model;
+it explicitly includes other apps and is never added to feature Total. The live
+request log has no credit column; do not restore speculative request-ID billing.
+Missing rates or billing failures stay unavailable with a retryable explanation,
+never zero. Partial totals show +. No balance deltas or USD-to-credit conversion.
 Tracking starts with this update; synthetic model checks are excluded. WHY:
 .project-docs/decisions/2026-10-20-feature-costs.md
 
@@ -1131,3 +1146,11 @@ input layout, including live recording and previously saved non-English titles.
    deliberate extraction by an approved command. Revalidate current caller
    authority after approval/authentication before granting or releasing
    values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+7. **whytap:// links only show.** Any web page can open a link, so a link
+   never records, captures, toggles, changes settings, copies, pastes,
+   authenticates (no Touch ID: Case links stop at Toolbox) or quits, and
+   reports nothing back. Every `WhytapLinkDestination` is classified
+   show-only in `WhytapLinkTests`; the handler is source-checked for action
+   calls. A link that changes anything needs its own decision first, with
+   in-app confirmation and an allowlist that excludes reading data and
+   network destinations. WHY: .project-docs/decisions/2026-10-20-whytap-links.md
