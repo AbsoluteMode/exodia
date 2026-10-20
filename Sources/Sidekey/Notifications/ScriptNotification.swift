@@ -10,12 +10,6 @@ enum NotifyPaths {
     static var logos: URL { root.appendingPathComponent("logos", isDirectory: true) }
 }
 
-enum NotifyPresentation: String, Codable, Sendable {
-    case card, icon
-
-    var defaultDuration: TimeInterval { self == .icon ? 5 : 8 }
-}
-
 /// Local executable configuration, written by the user's chosen coding agent.
 /// Credentials belong in Keychain and are read by the script, never this file.
 struct NotifyScript: Codable, Equatable, Identifiable {
@@ -27,17 +21,15 @@ struct NotifyScript: Codable, Equatable, Identifiable {
     var tint: String? = nil
     var logo: String? = nil
     var duration: Double? = nil
-    var presentation: NotifyPresentation? = nil
 
     init(id: String, name: String, command: [String], enabled: Bool = true,
          intervalSeconds: Double? = nil, tint: String? = nil, logo: String? = nil,
-         duration: Double? = nil, presentation: NotifyPresentation? = nil) {
+         duration: Double? = nil) {
         self.id = id; self.name = name; self.command = command; self.enabled = enabled
         self.intervalSeconds = intervalSeconds; self.tint = tint; self.logo = logo; self.duration = duration
-        self.presentation = presentation
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, command, enabled, intervalSeconds, tint, logo, duration, presentation }
+    enum CodingKeys: String, CodingKey { case id, name, command, enabled, intervalSeconds, tint, logo, duration }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -48,7 +40,6 @@ struct NotifyScript: Codable, Equatable, Identifiable {
         tint = try c.decodeIfPresent(String.self, forKey: .tint)
         logo = try c.decodeIfPresent(String.self, forKey: .logo)
         duration = try c.decodeIfPresent(Double.self, forKey: .duration)
-        presentation = try c.decodeIfPresent(NotifyPresentation.self, forKey: .presentation)
     }
 
     func validate() throws {
@@ -69,7 +60,6 @@ struct NotifyPayload: Decodable {
     var logo: String?
     var duration: Double?
     var link: String?
-    var presentation: NotifyPresentation?
 }
 
 struct LocalNotificationEvent: Codable, Identifiable, Equatable, Sendable {
@@ -84,28 +74,24 @@ struct LocalNotificationEvent: Codable, Identifiable, Equatable, Sendable {
     var customTint: String?
     var customLogo: String?
     var read: Bool = false
-    // Optional for compatibility with histories written before icon notifications.
-    var presentation: NotifyPresentation? = nil
     /// Internal navigation, never accepted from script output or an OS URL.
     /// Optional so older notification histories still decode.
     var meetingID: UUID? = nil
 
     var canActivate: Bool { meetingID != nil || link != nil }
 
-    var resolvedPresentation: NotifyPresentation { presentation ?? .card }
-    var resolvedDuration: TimeInterval { customDuration ?? resolvedPresentation.defaultDuration }
+    var resolvedDuration: TimeInterval { customDuration ?? 8 }
 
     static func make(_ payload: NotifyPayload, script: NotifyScript, now: Date = Date()) throws -> Self {
-        let presentation = payload.presentation ?? script.presentation ?? .card
-        // Icon notifications need no visible text, but keep a meaningful label in
-        // VoiceOver and history. Cards still require an explicit title.
-        let title = (payload.title ?? (presentation == .icon ? script.name : ""))
+        // Old icon-only scripts may omit text. Keep those sources working as
+        // cards using their source name; legacy presentation fields are ignored.
+        let title = (payload.title ?? script.name)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title.count <= 200, (payload.body?.count ?? 0) <= 8000,
               (payload.id?.utf8.count ?? 0) <= 256 else { throw NotifyError.invalidOutput }
         let tint = payload.tint ?? script.tint ?? "#299FD6"
         guard tint.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil else { throw NotifyError.invalidOutput }
-        let duration = payload.duration ?? script.duration ?? presentation.defaultDuration
+        let duration = payload.duration ?? script.duration ?? 8
         guard duration.isFinite else { throw NotifyError.invalidOutput }
         let logo = payload.logo ?? script.logo ?? "bell.fill"
         guard logo.count <= 80, !logo.contains("/"), !logo.hasPrefix("."), !logo.contains("\0") else { throw NotifyError.invalidOutput }
@@ -122,8 +108,7 @@ struct LocalNotificationEvent: Codable, Identifiable, Equatable, Sendable {
         }
         return Self(id: script.id + ":" + (payload.id ?? UUID().uuidString), source: script.id,
                     sourceName: script.name, title: title, body: payload.body ?? "", link: link,
-                    timestamp: now, customDuration: min(60, max(2, duration)), customTint: tint, customLogo: logo,
-                    presentation: presentation)
+                    timestamp: now, customDuration: min(60, max(2, duration)), customTint: tint, customLogo: logo)
     }
 
     private static func isCodexSessionLink(_ url: URL) -> Bool {

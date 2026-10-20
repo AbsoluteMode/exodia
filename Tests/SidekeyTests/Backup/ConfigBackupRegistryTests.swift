@@ -52,4 +52,16 @@ final class ConfigBackupRegistryTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "com.sidekey.meetings.preferredLanguage"), "ru")
     }
 
+    func testPerSourceNotificationSoundsSurviveSettingsBackupAndRestore() throws {
+        let suite = "ConfigBackupTests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let sounds = ["builtin.meeting-ready": "glass", "fixture": "none"]
+        defaults.set(sounds, forKey: "notifications.sourceSounds")
+        let captured = try ConfigBackupRegistry.capture(defaults)
+        defaults.removeObject(forKey: "notifications.sourceSounds")
+        try ConfigBackupRegistry.apply(captured, sections: [.other], to: defaults)
+        XCTAssertEqual(defaults.dictionary(forKey: "notifications.sourceSounds") as? [String: String], sounds)
+    }
+
 }

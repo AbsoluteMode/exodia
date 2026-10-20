@@ -28,7 +28,10 @@ final class MeetingLiveTestCaptureTests: XCTestCase {
         let deadline = Date().addingTimeInterval(2)
         var liveAudioSeen = false
         while Date() < deadline {
-            if let dir = try? onlyDirectory(root),
+            // Polling an asynchronously created directory must not assert before
+            // it exists. Keep the asserting helper for the finished capture below.
+            if let children = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil),
+               let dir = children.first,
                let rows = try? jsonLines(dir.appendingPathComponent("activity.jsonl")),
                rows.contains(where: { (($0["mic_rms"] as? Double) ?? 0) > 0.1 }) {
                 liveAudioSeen = true; break

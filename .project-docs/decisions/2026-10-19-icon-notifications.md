@@ -11,8 +11,8 @@ sources:
   - type: user-confirmed
     reference: User requested two notification types, automatic disappearance after five seconds, hover enlargement and a small close button; clarified that small icons cover the right wing above hints, meetings and music.
     confirmed_at: 2026-10-19
-  - type: repository
-    reference: Sources/Sidekey/DynamicIsland/IslandNotificationIcon.swift
+  - type: commit
+    reference: 5512d55b75321be28b34acf3ec52622fb8ba3ee6 (Sources/Sidekey/DynamicIsland/IslandNotificationIcon.swift)
     confirmed_at: 2026-10-19
   - type: user-confirmed
     reference: On 2026-10-19 the user requested a count for consecutive events, overlapping icons that fan apart on hover, Clear All, and a red attention dot only on Notify when returning to the hover drawer.
@@ -20,7 +20,7 @@ sources:
   - type: user-confirmed
     reference: On 2026-10-20 the user requested removing the trash icon and Clear All confirmation because the dimmed dialog was difficult to click and the hover closed.
     confirmed_at: 2026-10-20
-related: [2026-10-19-script-notifications.md]
+related: [2026-10-19-script-notifications.md, 2026-10-20-notification-cards-and-sounds.md]
 ---
 
 # Small notifications
@@ -106,3 +106,6 @@ their own supported destination; clicks never execute arbitrary commands.
 ## Supersedes / superseded by
 
 Extends the card-only contract without replacing existing source files or history.
+
+The Small presentation and selector are superseded by
+[cards and optional sounds](2026-10-20-notification-cards-and-sounds.md).
