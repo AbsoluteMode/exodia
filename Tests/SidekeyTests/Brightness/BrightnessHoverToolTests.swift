@@ -71,7 +71,11 @@ final class BrightnessHoverToolTests: XCTestCase {
         XCTAssertTrue(source.contains(".frame(width: compactWidth, height: activeHoverPanelHeight, alignment: .top)"),
                       "The drawer stays top-aligned; the held height extends below it.")
         let release = try XCTUnwrap(source.range(of: ".onContinuousHover { phase in"))
-        let releaseBody = source[release.upperBound...].prefix(500)
+        let releaseEnd = try XCTUnwrap(source.range(
+            of: ".frame(width: compactWidth, height: activeHoverPanelHeight, alignment: .top)",
+            range: release.upperBound..<source.endIndex
+        ))
+        let releaseBody = source[release.upperBound..<releaseEnd.lowerBound]
         XCTAssertTrue(releaseBody.contains("hoverPanelHeightHold = nil"),
                       "Reaching the visible strip releases the held zone.")
         XCTAssertTrue(releaseBody.contains("releasesHeldHoverZone(pointerY: location.y"),
