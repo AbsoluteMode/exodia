@@ -28,6 +28,7 @@ final class ScreenshotCanvas: NSView {
     private var movingAnnotation: UUID?
     private var selectedAnnotation: UUID?
     private var movingSelection = false
+    private var creatingSelection = false
     private var resizeCorner: CGPoint?
     private var tracking: NSTrackingArea?
     var canUndo: Bool { !busy && !undoStates.isEmpty }
@@ -134,7 +135,7 @@ final class ScreenshotCanvas: NSView {
         if selection.isEmpty { tool = .select }
         window?.makeFirstResponder(self)
         start = bounded(convert(event.locationInWindow, from: nil), to: bounds)
-        beforeDrag = snapshot(); movingSelection = false; movingAnnotation = nil; resizeCorner = nil
+        beforeDrag = snapshot(); movingSelection = false; creatingSelection = false; movingAnnotation = nil; resizeCorner = nil
         if event.clickCount == 2 && tool == .select && annotations.isEmpty {
             selection = bounds; checkpoint(beforeDrag!); beforeDrag = nil
             needsDisplay = true; onSelection?(); return
@@ -148,7 +149,7 @@ final class ScreenshotCanvas: NSView {
                 if annotation.tool != .blur { movingAnnotation = annotation.id }
                 else { message = "Blur selected · Delete to remove, or ⌘Z to undo" }
             } else if selection.contains(start) { movingSelection = true; selectedAnnotation = nil }
-            else { selection = CGRect(origin: start, size: .zero); selectedAnnotation = nil }
+            else { selection = CGRect(origin: start, size: .zero); creatingSelection = true; selectedAnnotation = nil }
         } else if selection.contains(start) {
             if tool == .text {
                 let text = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -180,7 +181,10 @@ final class ScreenshotCanvas: NSView {
             let origin = CGPoint(x: min(max(0, original.minX + point.x - start.x), bounds.width - original.width),
                                  y: min(max(0, original.minY + point.y - start.y), bounds.height - original.height))
             selection = CGRect(origin: origin, size: original.size)
-        } else if tool == .select || selection.isEmpty { selection = ScreenshotGeometry.rect(from: start, to: point) }
+        } else if creatingSelection {
+            // An immovable Blur is selection-only. Only an explicit crop gesture may replace the crop.
+            selection = ScreenshotGeometry.rect(from: start, to: point)
+        }
         needsDisplay = true
     }
 
@@ -196,7 +200,7 @@ final class ScreenshotCanvas: NSView {
             }
         } else if movingAnnotation != nil || before.selection != selection { checkpoint(before) }
         if selection.width < 2 || selection.height < 2 { selection = .zero }
-        movingAnnotation = nil; movingSelection = false; resizeCorner = nil
+        movingAnnotation = nil; movingSelection = false; creatingSelection = false; resizeCorner = nil
         needsDisplay = true; onSelection?(); onChange?()
     }
 

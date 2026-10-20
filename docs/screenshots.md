@@ -19,6 +19,8 @@ are remembered per tool. Enter a text label in the toolbar, then click to place
 it. Select & crop (More or V) moves annotations, deletes a selected annotation,
 moves the crop and resizes its corners. Blur patches can be deleted or undone,
 but cannot be moved because moving them would expose original information.
+Selecting or dragging an existing Blur keeps both its pixels and the crop in
+place. Delete removes only that blur; undo/redo preserves the crop.
 
 **Blur → Text and numbers** is the default. Select a zone; on-device Vision
 finds text, including standalone numbers, dates, amounts and codes. Language

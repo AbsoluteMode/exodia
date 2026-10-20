@@ -20,6 +20,9 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Screenshots/ScreenshotTests.swift
     confirmed_at: 2026-10-20
+  - type: repository
+    reference: Tests/SidekeyTests/Screenshots/ScreenshotSelectionTests.swift
+    confirmed_at: 2026-10-20
 related: [../project.md]
 ---
 
@@ -60,6 +63,10 @@ OCR and blur do not guarantee finding every glyph or irreversible anonymization.
 
 Keep the result visible, both modes explicit, and analysis errors non-destructive.
 Export waits for local processing; cancellation invalidates late results.
+Selecting an existing immovable Blur is a selection-only gesture, not a new
+crop gesture. Clicking, dragging or deleting it preserves the crop and leaves
+undo/redo attached to actual edits. Dedicated unshown-canvas regressions cover
+these interactions alongside normal crop creation, movement and resizing.
 The old ScreenRecordingRemoval guards predate explicit screenshots. Their
 exception is restricted to ScreenshotCoordinator's still-frame entry; launch,
 the orb and meeting audio retain the no-screen-capture/no-prompt contract.
