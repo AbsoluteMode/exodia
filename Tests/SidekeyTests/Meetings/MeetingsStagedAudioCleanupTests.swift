@@ -331,7 +331,7 @@ private final class SpyDirectProcessor: MeetingDirectProcessing {
         event: MeetingRecorder.FinalizedEvent,
         startedAt: Date,
         language: String?,
-        meetingsStore: MeetingsStore?
+        meetingsStore: MeetingsStore?, continuation: MeetingContinuation?, endedAt: Date?
     ) async throws -> UUID {
         processedIds.append(event.meetingId)
         return event.meetingId

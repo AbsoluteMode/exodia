@@ -117,6 +117,28 @@ final class MeetingFinalizeManifestStoreTests: XCTestCase {
         XCTAssertEqual(store.scan(stagingRoot: missing).count, 0)
     }
 
+    func testInterruptedContinuationDiscoversFlushedAudioAndPreservesItsParent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID(), parent = UUID()
+        let chunk = root.appendingPathComponent("chunk-000.wav")
+        try Data(repeating: 1, count: 32000).write(to: chunk)
+        var manifest = MeetingFinalizeManifest(recorderMeetingId: id, startedAt: Date(), endedAt: Date(),
+            durationSeconds: 0, language: "ru", chunkFileNames: [], isFinal: false)
+        manifest.continuation = .init(meetingId: parent, precedingRecordingId: parent,
+            startedAt: Date(), audioOffsetSeconds: 42, gapSeconds: 120)
+        let store = MeetingFinalizeManifestStore()
+        try store.write(manifest, to: root)
+        let event = MeetingsCoordinator.finalizedEvent(from: manifest, in: root)
+        XCTAssertEqual(event?.meetingId, id)
+        XCTAssertEqual(event?.chunkURLs, [chunk])
+        XCTAssertEqual(event?.totalDurationSeconds, 1)
+        let decoded = try JSONDecoder().decode(MeetingFinalizeManifest.self,
+            from: Data(contentsOf: root.appendingPathComponent(MeetingFinalizeManifest.fileName)))
+        XCTAssertEqual(decoded.continuation, manifest.continuation)
+    }
+
     // MARK: - Reconnect markers on the manifest
 
     /// Manifests written by clients that predate reconnect never had a
