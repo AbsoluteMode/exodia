@@ -41,6 +41,42 @@ checks do not establish live capture permission, real clipboard delivery, physic
 keyboard focus or perceived smoothness in the installed application. Those remain
 acceptance after the designated builder promotes the reviewed source.
 
+## Provider key tiles — 2026-10-21
+
+The person comes to connect a provider. First they see every available provider,
+including OpenAI and Anthropic, then open its square to enter and check a key.
+The chosen direction is the user's tile-to-inline-form request.
+
+- Use square provider buttons in a responsive 2/3/4-column grid, with a 12 pt
+  gap and 12 pt corners. Each tile is an independent provider connection, so
+  its boundary has a purpose. Show the brand, provider name, speech/language
+  purpose and key status even before a key exists. No decorative statistics.
+- Clicking a tile expands a full-width form immediately below that tile's row.
+  One form is open at a time; a thin accent outline marks it. Native keyboard
+  focus has an outline too. Cancel, Escape or repeating the tile closes it;
+  closing returns focus to that tile. Input receives focus on expansion.
+- Keep the shared system typography and adaptive Settings colors: 13 pt title,
+  11.5 pt explanation and 11 pt tile status. Hover never changes geometry.
+  Expansion is immediate, including Reduce Motion. At narrow widths the grid
+  reduces columns and the form retains the full row width.
+- Check & save validates before persisting. Checking disables competing actions
+  and shows progress; a failed/unreachable check keeps the form and old key.
+  A successful check clears the typed value and shows the recorded provider
+  result. Existing keys are never read back into the field. Removal keeps the
+  existing confirmation and lists affected features. Custom endpoints retain
+  their name, URL and optional-key fields.
+- OpenAI and Anthropic are ordinary LLM providers for all text modes. Adding a
+  key never assigns routes silently; model selection retains its own synthetic
+  check. Why: the user rejected limiting API setup by individual features.
+
+Native offscreen fixtures cover collapsed tiles and OpenAI, saved OpenRouter and
+custom-server forms at 600/900 pt in both appearances. Shared token contrast on
+tile surfaces is 17.01:1/14.58:1 for primary text (light/dark), 6.62:1/7.98:1
+for secondary text and at least 5.59:1 for key-entry actions; selected-state
+status text retains at least 5.98:1. Physical keyboard focus,
+VoiceOver, actual key entry and live provider responses remain installed-app
+acceptance; all automated transport checks use synthetic keys and stub servers.
+
 ## Searchable model selection — 2026-10-20
 
 The user comes to choose a model without scrolling a long catalog. First they
@@ -48,8 +84,8 @@ see a focused search field, then matching model IDs under their provider.
 The closed control retains the shared 30 pt popup label and existing widths.
 
 - Open a 440 pt native popover with a fixed search band, 300 pt scrolling list
-  and fixed result-count/Refresh models/Other model ID footer. Why: typing and
-  recovery actions must remain reachable in a large catalog.
+  and a fixed result count. Why: searching and browsing need no maintenance
+  commands; the user removed Refresh models and Other model ID on 2026-10-21.
 - Match every query term in any order, ignoring case, diacritics, width and
   separators. Split letters/digits: `qwen 27` and `qwen27` find
   `qwen/qwen3.8-27b`. Prefer contiguous matches within each provider, preserving
@@ -61,8 +97,10 @@ The closed control retains the shared 30 pt popup label and existing widths.
   moves through enabled results and scrolls them into view; Return selects.
   Escape clears the query, then closes; outside click dismisses. Focus returns
   to the originating control. There is no new animation.
-- Empty results offer Clear search and exact-ID entry; absent providers offer
-  Add API key. Refresh is single-flight and keeps the query. Search/arrow
+- Empty results offer Clear search; absent providers offer Add API key. Opening
+  the picker automatically refreshes stale/failed catalogs, keeping the query
+  and cached models. Successful catalogs are cached for one day; requests are
+  single-flight per account. Search/arrow
   movement alone never selects or checks a model. An explicit pick uses the
   existing verification and route-preservation path.
 

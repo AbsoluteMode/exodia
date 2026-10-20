@@ -81,6 +81,8 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
             return TranscriptionProviderBrand(assetName: "elevenlabs", label: "ElevenLabs")
         case .openRouter:
             return .openRouter
+        case .openAI:
+            return TranscriptionProviderBrand(assetName: "openai", label: "OpenAI")
         case .anthropic:
             return .anthropic
         case .server(let id):

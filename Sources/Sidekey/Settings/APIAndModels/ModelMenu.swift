@@ -10,7 +10,6 @@ struct ModelMenu: View {
     let feature: AIFeature
     let label: String
     let onAddKey: () -> Void
-    let onOtherModel: () -> Void
     var width: CGFloat? = nil
     @State private var isPresented = false
     @FocusState private var focused: Bool
@@ -36,7 +35,6 @@ struct ModelMenu: View {
                 },
                 onRefresh: { await viewModel.refreshModels() },
                 onAddKey: { close(); onAddKey() },
-                onOtherModel: { close(); onOtherModel() },
                 onClose: close
             )
         }

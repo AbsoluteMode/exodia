@@ -65,6 +65,11 @@ enum OpenCodeEnvironment {
         if let caseMCPCommand {
             config["mcp"] = ["case": ["type": "local", "command": caseMCPCommand, "enabled": true]]
         }
+        if provider == .openAI, modelSpec == nil {
+            // /v1/models does not report limits. Let OpenCode use its own model
+            // metadata instead of overriding it with an empty declaration.
+            config["provider"] = [id: ["options": ["apiKey": "{env:\(provider.keyEnvironmentName)}"]]]
+        }
         env["OPENCODE_CONFIG_CONTENT"] = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
         return env
     }

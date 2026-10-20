@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// A fixed search band and footer keep both reachable while the catalog scrolls.
+/// A fixed search band and result count stay visible while the catalog scrolls.
 @MainActor
 struct ModelPicker: View {
     let sections: [PickerSection]
@@ -9,30 +9,33 @@ struct ModelPicker: View {
     let onSelect: (ProviderAccount, String) -> Void
     let onRefresh: () async -> Void
     let onAddKey: () -> Void
-    let onOtherModel: () -> Void
     let onClose: () -> Void
 
     @State private var query: String
     @State private var activeID: ModelPickerSearch.ID?
     @State private var hoveredID: ModelPickerSearch.ID?
     @State private var refreshing = false
+    @State private var serverModelNames: [ProviderAccount: String] = [:]
 
     init(sections: [PickerSection], missingProviderHint: String?,
          initialQuery: String = "", onSelect: @escaping (ProviderAccount, String) -> Void,
          onRefresh: @escaping () async -> Void, onAddKey: @escaping () -> Void,
-         onOtherModel: @escaping () -> Void, onClose: @escaping () -> Void) {
+         onClose: @escaping () -> Void) {
         self.sections = sections
         self.missingProviderHint = missingProviderHint
         self.onSelect = onSelect
         self.onRefresh = onRefresh
         self.onAddKey = onAddKey
-        self.onOtherModel = onOtherModel
         self.onClose = onClose
         _query = State(initialValue: initialQuery)
     }
 
     private var results: [ModelPickerSearch.Result] {
         ModelPickerSearch.results(in: sections, query: query)
+    }
+
+    private var unlistedServers: [PickerSection] {
+        sections.filter(\.acceptsModelName)
     }
 
     var body: some View {
@@ -47,7 +50,7 @@ struct ModelPicker: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         if matches.isEmpty {
-                            emptyState
+                            if unlistedServers.isEmpty || !query.isEmpty { emptyState }
                         } else {
                             ForEach(Array(matches.enumerated()), id: \.element.id) { index, result in
                                 if index == 0 || matches[index - 1].account != result.account {
@@ -63,6 +66,9 @@ struct ModelPicker: View {
                                 resultRow(result)
                                     .id(result.id)
                             }
+                        }
+                        ForEach(unlistedServers, id: \.account) { section in
+                            serverModelField(section)
                         }
                     }
                     .padding(6)
@@ -87,23 +93,22 @@ struct ModelPicker: View {
                     .foregroundStyle(MacSettingsTheme.text2)
                     .accessibilityLabel("\(matches.count) matching models")
                 Spacer(minLength: 0)
-                Button(refreshing ? "Refreshing…" : "Refresh models") {
-                    refreshing = true
-                    Task {
-                        await onRefresh()
-                        refreshing = false
-                    }
+                if refreshing {
+                    ProgressView().controlSize(.mini)
+                    Text("Updating models…")
+                        .foregroundStyle(MacSettingsTheme.text2)
                 }
-                .disabled(refreshing || sections.isEmpty)
-                Button("Other model ID…", action: onOtherModel)
-                    .disabled(sections.isEmpty)
             }
             .font(.system(size: 11.5))
-            .buttonStyle(.link)
             .padding(12)
         }
         .frame(width: 440)
         .background(MacSettingsTheme.bgCard)
+        .task {
+            refreshing = true
+            await onRefresh()
+            refreshing = false
+        }
         .onKeyPress(.escape) { escape(); return .handled }
     }
 
@@ -116,7 +121,7 @@ struct ModelPicker: View {
                 Button(missingProviderHint ?? "Add API key", action: onAddKey)
                     .buttonStyle(.link)
             } else {
-                Text("Try a name and size, like qwen 27, or enter an exact model ID below.")
+                Text("Try a name and size, like qwen 27.")
                     .font(.system(size: 12))
                     .foregroundStyle(MacSettingsTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -126,6 +131,27 @@ struct ModelPicker: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A custom server may intentionally omit /models. Give that specific
+    /// endpoint a named input instead of a global "Other model" command.
+    private func serverModelField(_ section: PickerSection) -> some View {
+        let name = Binding(get: { serverModelNames[section.account] ?? "" },
+                           set: { serverModelNames[section.account] = $0 })
+        let trimmed = name.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(section.title).font(.system(size: 12, weight: .semibold))
+            Text("This server doesn't provide a model list. Enter the model name configured on it.")
+                .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
+            HStack {
+                TextField("Model name on this server", text: name)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { if !trimmed.isEmpty { onSelect(section.account, trimmed) } }
+                Button("Choose") { onSelect(section.account, trimmed) }
+                    .disabled(trimmed.isEmpty)
+            }
+        }
+        .padding(12)
     }
 
     private func resultRow(_ result: ModelPickerSearch.Result) -> some View {
