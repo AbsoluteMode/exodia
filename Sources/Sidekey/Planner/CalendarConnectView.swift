@@ -29,7 +29,7 @@ struct CalendarSourcesView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(account.label).font(.headline)
-                                Text(account.provider.title).font(.caption).foregroundStyle(.secondary)
+                                Text(account.provider.title).font(.caption).foregroundStyle(MacSettingsTheme.text2)
                             }
                             Spacer()
                             Button("Disconnect") { removing = account }
@@ -43,7 +43,7 @@ struct CalendarSourcesView: View {
                 }
             }
             Text("Connected calendars are read-only. Changes made in their own apps appear after refresh. Disconnection removes local sign-in; you can also revoke access in your provider’s account settings.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(MacSettingsTheme.text2)
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
         }
         .padding(20).frame(width: 410, height: 400)
@@ -64,8 +64,8 @@ struct CalendarSourcesView: View {
     @ViewBuilder private func status(_ key: String) -> some View {
         if let error = connections.errors[key] { Text(error).font(.caption).foregroundStyle(.orange) }
         else if let date = connections.lastSynced[key] {
-            Text("Updated " + date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
-        } else { Text("Waiting for first sync").font(.caption).foregroundStyle(.secondary) }
+            Text("Updated " + date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(MacSettingsTheme.text2)
+        } else { Text("Waiting for first sync").font(.caption).foregroundStyle(MacSettingsTheme.text2) }
     }
 }
 
@@ -81,11 +81,12 @@ struct CalendarConnectView: View {
     @State private var browser = CalendarBrowserSignIn()
     @State private var signInTask: Task<Void, Never>?
     @State private var showSetup = false
+    private var registeredClient: CalendarClientConfiguration? { .registered(provider) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Connect a calendar").font(.title2.bold())
-            Text("Bring your schedule together in Whytap.").foregroundStyle(.secondary)
+            Text("Bring your schedule together in Whytap.").foregroundStyle(MacSettingsTheme.text2)
             Picker("Provider", selection: $provider) {
                 ForEach(CalendarProvider.allCases) { Text($0.title).tag($0) }
             }.disabled(working)
@@ -93,15 +94,17 @@ struct CalendarConnectView: View {
                 Text("Allow Whytap to show calendars available on your Mac, including iCloud. Google, Outlook and Zoom can connect separately here without being added to macOS.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
                 Text("macOS requests full calendar permission to allow reading. Whytap uses this connection only to display events.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(MacSettingsTheme.text2)
             } else {
                 TextField("Account name (optional)", text: $label).textFieldStyle(.roundedBorder).disabled(working)
-                TextField("OAuth client ID", text: $clientID).textFieldStyle(.roundedBorder).disabled(working)
-                if provider == .google {
-                    SecureField("Desktop client secret (if supplied by Google)", text: $clientSecret)
-                        .textFieldStyle(.roundedBorder).disabled(working)
+                if registeredClient == nil || showSetup {
+                    TextField("OAuth client ID", text: $clientID).textFieldStyle(.roundedBorder).disabled(working)
+                    if provider == .google {
+                        SecureField("Desktop client secret (if supplied by Google)", text: $clientSecret)
+                            .textFieldStyle(.roundedBorder).disabled(working)
+                    }
                 }
-                DisclosureGroup("App setup", isExpanded: $showSetup) {
+                DisclosureGroup(registeredClient == nil ? "App setup" : "Advanced app setup", isExpanded: $showSetup) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(setupText).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         Text("Redirect: http://\(provider == .microsoft ? "localhost" : "127.0.0.1")/callback (the port varies)")
@@ -111,7 +114,7 @@ struct CalendarConnectView: View {
                     }.padding(.top, 8)
                 }
                 Text("Sign-in opens your browser. Whytap receives calendar access; your account password stays with the provider. Tokens are saved in Keychain.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(MacSettingsTheme.text2).fixedSize(horizontal: false, vertical: true)
             }
             if working { HStack { ProgressView().controlSize(.small); Text("Finish sign-in in your browser…").font(.callout) } }
             if let error { Text(error).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
@@ -124,8 +127,14 @@ struct CalendarConnectView: View {
             }
         }
         .padding(26).frame(width: 480).background(Color(nsColor: .windowBackgroundColor))
-        .onChange(of: provider) { _, _ in clientID = ""; clientSecret = ""; error = nil }
+        .onAppear { loadRegisteredClient() }
+        .onChange(of: provider) { _, _ in loadRegisteredClient(); error = nil; showSetup = false }
         .onDisappear { signInTask?.cancel(); browser.cancel() }
+    }
+
+    private func loadRegisteredClient() {
+        clientID = registeredClient?.clientID ?? ""
+        clientSecret = registeredClient?.clientSecret ?? ""
     }
 
     private var setupText: String {

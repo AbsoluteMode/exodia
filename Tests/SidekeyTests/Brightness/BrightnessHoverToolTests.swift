@@ -71,9 +71,26 @@ final class BrightnessHoverToolTests: XCTestCase {
         XCTAssertTrue(source.contains(".frame(width: compactWidth, height: activeHoverPanelHeight, alignment: .top)"),
                       "The drawer stays top-aligned; the held height extends below it.")
         let release = try XCTUnwrap(source.range(of: ".onContinuousHover { phase in"))
-        let releaseBody = source[release.upperBound...].prefix(300)
+        let releaseEnd = try XCTUnwrap(source.range(
+            of: ".frame(width: compactWidth, height: activeHoverPanelHeight, alignment: .top)",
+            range: release.upperBound..<source.endIndex
+        ))
+        let releaseBody = source[release.upperBound..<releaseEnd.lowerBound]
         XCTAssertTrue(releaseBody.contains("hoverPanelHeightHold = nil"),
                       "Reaching the visible strip releases the held zone.")
+        XCTAssertTrue(releaseBody.contains("releasesHeldHoverZone(pointerY: location.y"),
+                      "Only a pointer over the drawer's final frame releases it.")
+    }
+
+    func testHeldZoneIsReleasedOnlyOverTheDrawersFinalFrame() {
+        // While the drawer shrinks to the strip, its animated frame still covers the held
+        // zone; releasing there closed the drawer under a pointer moving up from the third row.
+        let strip = IslandBrightnessStrip.contentHeight
+        XCTAssertTrue(IslandView.releasesHeldHoverZone(pointerY: 0, drawerHeight: strip))
+        XCTAssertTrue(IslandView.releasesHeldHoverZone(pointerY: strip, drawerHeight: strip))
+        XCTAssertFalse(IslandView.releasesHeldHoverZone(pointerY: strip + 1, drawerHeight: strip))
+        XCTAssertFalse(IslandView.releasesHeldHoverZone(pointerY: 194, drawerHeight: strip),
+                       "The third row's pointer is still in the held zone.")
     }
 
     func testStripTakesKeyStatusForItsControls() {
@@ -104,6 +121,7 @@ final class BrightnessHoverToolTests: XCTestCase {
         let iconAndSpacing: CGFloat = 19
         let notices = [ScreenBrightnessController.writeFailedNotice,
                        ScreenBrightnessController.extraUnavailableNotice,
+                       ScreenBrightnessController.otherAppNotice,
                        ScreenBrightnessController.coolingNotice]
         for notice in notices {
             XCTAssertLessThanOrEqual(Self.width(notice, size: 10) + iconAndSpacing, lineWidth, notice)
@@ -135,6 +153,25 @@ final class BrightnessHoverToolTests: XCTestCase {
         }
     }
 
+    /// The island never becomes the active app's key window, and there the native switch drew
+    /// Extra's on state gray (user screenshot, 2026-10-19). The unordered fixture window is not key.
+    func testExtraSwitchShowsTheAccentColorOnlyWhenOnInAnInactiveWindow() throws {
+        for state in [StripState.extraOn, .extraOff] {
+            let fixture = StripFixture(state: state, width: 310)
+            defer { fixture.close() }
+            fixture.settle()
+            XCTAssertFalse(fixture.window.isKeyWindow)
+            // The switch ends the control row: 10 pt padding, then the 24 pt row.
+            let accent = try fixture.pixelCount(in: CGRect(x: 310 - 10 - 44, y: 10, width: 44, height: 24),
+                                                near: MacSettingsTheme.NS.accent)
+            if state == .extraOn {
+                XCTAssertGreaterThan(accent, 40, "On draws the accent color without key status.")
+            } else {
+                XCTAssertEqual(accent, 0, "Off stays neutral.")
+            }
+        }
+    }
+
     func testOnlyAShownStripPollsTheDisplayAndBattery() {
         let fixture = StripFixture(state: .extraOff, width: 310)
         defer { fixture.close() }
@@ -145,6 +182,18 @@ final class BrightnessHoverToolTests: XCTestCase {
         fixture.removeStrip()
         XCTAssertFalse(fixture.controller.isPolling)
         XCTAssertFalse(fixture.battery.isSampling)
+    }
+
+    /// The time left follows the slider at once, without waiting for the next battery reading.
+    func testTheTimeLeftFollowsTheSlider() {
+        let fixture = StripFixture(state: .extraOff, width: 310, followsDisplay: true)
+        defer { fixture.close() }
+        fixture.settle()
+        XCTAssertEqual(fixture.battery.status, .remaining(percent: 84, minutes: 260))
+
+        fixture.controller.setLevel(0.2)
+        fixture.settle()
+        XCTAssertEqual(fixture.battery.status, .remaining(percent: 84, minutes: 320))
     }
 
     // MARK: Settings
@@ -174,7 +223,7 @@ final class BrightnessHoverToolTests: XCTestCase {
     }
 
     /// The real pane with fake hardware, rendered in an unordered offscreen window.
-    func testSettingsPaneFitsUnderTheToolHeaderInEveryState() throws {
+    func testSettingsPaneRemainsReachableInTheToolViewportInEveryState() throws {
         for state in [StripState.extraOff, .extraOn, .noExtra, .unavailable, .notice] {
             for keys in PaneKeys.allCases {
                 let fixture = SettingsPaneFixture(state: state, keys: keys)
@@ -182,7 +231,21 @@ final class BrightnessHoverToolTests: XCTestCase {
                 fixture.settle()
                 XCTAssertLessThanOrEqual(fixture.idealHeight, SettingsPaneFixture.availableHeight,
                                          "\(state), keys \(keys)")
-                try saveProofImage(of: fixture.host, named: "settings-display-\(state)-keys-\(keys)")
+                try saveProofImage(of: fixture.host, named: "settings-display-\(state)-keys-\(keys)-top")
+                let scroll = try XCTUnwrap(fixture.scrollView)
+                let document = try XCTUnwrap(scroll.documentView)
+                let clip = scroll.contentView
+                XCTAssertGreaterThan(document.frame.height, clip.bounds.height,
+                                     "The minimum-height tool content must scroll in a short viewport.")
+                clip.scroll(to: NSPoint(x: document.bounds.minX,
+                                        y: max(document.bounds.minY, document.bounds.maxY - clip.bounds.height)))
+                scroll.reflectScrolledClipView(clip)
+                fixture.settle()
+                XCTAssertGreaterThan(clip.bounds.minY, document.bounds.minY,
+                                     "The viewport must actually move, rather than clipping a tall notice.")
+                XCTAssertGreaterThanOrEqual(document.visibleRect.maxY, document.bounds.maxY - 1,
+                                             "The bottom controls and notice remain reachable.")
+                try saveProofImage(of: fixture.host, named: "settings-display-\(state)-keys-\(keys)-bottom")
             }
         }
     }
@@ -237,14 +300,24 @@ private final class StripFixture {
     let window: NSWindow
     let host: NSHostingView<AnyView>
 
-    init(state: StripState, width: CGFloat) {
-        controller = state.makeController()
+    /// With `followsDisplay`, the battery estimate sees the fake display's level and Extra.
+    init(state: StripState, width: CGFloat, followsDisplay: Bool = false) {
+        let controller = state.makeController()
+        self.controller = controller
         let snapshot: BatterySnapshot? = switch state {
         case .noBattery: nil
         case .onPower: BatterySnapshot(percent: 100, isOnAC: true, isCharging: false)
-        default: BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, systemMinutesToEmpty: 260)
+        default: BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, systemMinutesToEmpty: 260,
+                                 remainingWattHours: followsDisplay ? 40 : nil,
+                                 instantLoadWatts: followsDisplay ? 20 : nil)
         }
-        battery = BatteryRuntimeMonitor(read: { snapshot })
+        battery = BatteryRuntimeMonitor(read: { snapshot }, displayLoad: {
+            followsDisplay
+                ? ScreenBrightnessScale.displayLoad(
+                    level: controller.level,
+                    gammaFactor: controller.isExtraOn ? ScreenBrightnessScale.maximumExtraGamma : 1)
+                : nil
+        })
         state.prepare(controller)
 
         window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width,
@@ -270,6 +343,25 @@ private final class StripFixture {
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.06))
         host.layoutSubtreeIfNeeded()
+    }
+
+    /// Rendered pixels within `rect` (points, top-left origin) close to `color` in sRGB.
+    func pixelCount(in rect: CGRect, near color: NSColor) throws -> Int {
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let target = try XCTUnwrap(color.usingColorSpace(.sRGB))
+        let scale = CGFloat(bitmap.pixelsWide) / host.bounds.width
+        var count = 0
+        for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+            for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
+                guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                let distance = abs(pixel.redComponent - target.redComponent)
+                    + abs(pixel.greenComponent - target.greenComponent)
+                    + abs(pixel.blueComponent - target.blueComponent)
+                if distance < 0.15 { count += 1 }
+            }
+        }
+        return count
     }
 
     func removeStrip() {
@@ -322,18 +414,33 @@ private final class SettingsPaneFixture {
                           styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .darkAqua)
+        let displayController = controller
+        let brightnessKeys = keys
         host = NSHostingView(rootView: AnyView(
-            ToolboxDisplayPane(controller: controller, keys: keys)
-                .frame(width: Self.width)
-                .frame(maxHeight: .infinity, alignment: .top)
+            ToolboxToolViewport {
+                ToolboxDisplayPane(controller: displayController, keys: brightnessKeys)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+                .frame(width: Self.width, height: Self.availableHeight)
                 .background(Color(white: 0.13))
                 .environment(\.colorScheme, .dark)))
         host.frame = CGRect(origin: .zero, size: size)
         window.contentView = host
     }
 
-    /// The pane's own height, independent of the frame it is given.
+    /// The visible tool viewport remains bounded while its document can scroll.
     var idealHeight: CGFloat { host.fittingSize.height }
+
+    var scrollView: NSScrollView? {
+        func find(in view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView { return scroll }
+            for child in view.subviews {
+                if let scroll = find(in: child) { return scroll }
+            }
+            return nil
+        }
+        return find(in: host)
+    }
 
     func settle() {
         host.layoutSubtreeIfNeeded()
@@ -374,12 +481,14 @@ private final class StaticBrightnessDevice: ScreenBrightnessDevice {
         return true
     }
 
-    func makeOverlay(for id: CGDirectDisplayID, multiplier: Double,
-                     onFailure: @escaping () -> Void) -> BrightnessOverlay? { NoOverlay() }
+    func makeBoost(for id: CGDirectDisplayID, onEnd: @escaping (BrightnessBoostEnd) -> Void) -> BrightnessBoost? {
+        NoBoost()
+    }
 }
 
 @MainActor
-private final class NoOverlay: BrightnessOverlay {
-    func update(multiplier: Double) {}
+private final class NoBoost: BrightnessBoost {
+    var gammaFactor: Double { 1 }
+    func refresh() {}
     func close() {}
 }

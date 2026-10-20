@@ -62,11 +62,17 @@ struct AgentRunOptions: Equatable {
     var allowActions: Bool
     var openCodeModelSpec: OpenCodeModelSpec?
     var openCodeProvider: OpenCodeModelProvider
+    /// `<helper> case mcp` when the built-in agent is registered in Case.
+    var caseMCPCommand: [String]?
+    /// OpenRouter endpoint tag the agent's model is pinned to; `nil` is Auto.
+    var openRouterProvider: String?
 
     init(model: String? = nil, effort: String? = nil, serviceTier: String? = nil,
          workingDirectory: URL? = nil, allowActions: Bool = true,
          openCodeModelSpec: OpenCodeModelSpec? = nil,
-         openCodeProvider: OpenCodeModelProvider = .openRouter) {
+         openCodeProvider: OpenCodeModelProvider = .openRouter,
+         caseMCPCommand: [String]? = nil,
+         openRouterProvider: String? = nil) {
         self.model = model
         self.effort = effort
         self.serviceTier = serviceTier
@@ -74,5 +80,7 @@ struct AgentRunOptions: Equatable {
         self.allowActions = allowActions
         self.openCodeModelSpec = openCodeModelSpec
         self.openCodeProvider = openCodeProvider
+        self.caseMCPCommand = caseMCPCommand
+        self.openRouterProvider = openRouterProvider
     }
 }

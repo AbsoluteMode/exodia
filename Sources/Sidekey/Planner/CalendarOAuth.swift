@@ -19,15 +19,20 @@ protocol CalendarCredentialStorage: Sendable {
 }
 
 struct CalendarKeychain: CalendarCredentialStorage {
-    private func store(_ id: UUID) -> KeychainStore { KeychainStore(account: "calendar.\(id.uuidString)") }
+    static func account(_ id: UUID) -> String { "calendar.\(id.uuidString)" }
+    private func store(_ id: UUID) -> KeychainStore { KeychainStore(account: Self.account(id)) }
     func read(_ id: UUID) throws -> CalendarCredential? {
         guard let text = try store(id).read(), let data = text.data(using: .utf8) else { return nil }
         return try JSONDecoder().decode(CalendarCredential.self, from: data)
     }
     func save(_ credential: CalendarCredential, id: UUID) throws {
         try store(id).save(String(decoding: JSONEncoder().encode(credential), as: UTF8.self))
+        Task { @MainActor in NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil) }
     }
-    func delete(_ id: UUID) throws { try store(id).delete() }
+    func delete(_ id: UUID) throws {
+        try store(id).delete()
+        Task { @MainActor in NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil) }
+    }
 }
 
 enum CalendarPKCE {

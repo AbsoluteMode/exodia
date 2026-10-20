@@ -71,6 +71,9 @@ struct IslandActions {
     var openMonitor: () -> Void = {}
     var openTasks: () -> Void = {}
     var openCalendar: () -> Void = {}
+    var openTranslate: () -> Void = {}
+    var openSubtitles: () -> Void = {}
+    var openScreenshot: () -> Void = {}
     /// Open Settings on its default tab.
     var openSettings: () -> Void
     /// Open the Help / Hotkeys window

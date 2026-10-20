@@ -2,32 +2,54 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum IslandCaseVaultStyle {
+enum IslandCaseVaultStyle {
+    // WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+    static let panelHeight: CGFloat = 320
     static let horizontalPadding: CGFloat = 10
     static let topPadding: CGFloat = 8
     static let rowSpacing: CGFloat = 5
-    static let inputHeight: CGFloat = 28
-    static let rowHeight: CGFloat = 26
-    static let childRowHeight: CGFloat = 24
-    static let iconButtonSize: CGFloat = 18
-    static let inputFontSize: CGFloat = 11
-    static let nameFontSize: CGFloat = 10
+    static let inputHeight: CGFloat = 32
+    static let rowHeight: CGFloat = 30
+    static let childRowHeight: CGFloat = 28
+    static let iconButtonSize: CGFloat = 22
+    static let inputFontSize: CGFloat = 12
+    static let nameFontSize: CGFloat = 11
     static let errorFontSize: CGFloat = 9
+    static let descriptionFontSize: CGFloat = 9
+    static let rowCornerRadius: CGFloat = 9
+    static let childIndent: CGFloat = 12
 }
 
 struct IslandCaseVaultPanel: View {
     @ObservedObject var viewModel: CaseViewModel
 
+    /// The «ИИ … / Подключить ›» row opens «Доступ приложений» in place.
+    static let isAccessScreenAvailable = true
+
+    /// While searching every matching project is shown expanded.
+    static func isExpanded(_ section: CaseProjectSection, expandedIDs: Set<UUID>, isSearching: Bool) -> Bool {
+        isSearching || expandedIDs.contains(section.id)
+    }
+
+    var onDismiss: () -> Void = {}
+    var onOpenAccessScreen: (() -> Void)?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var valueDraft = ""
     @State private var editSecretID: UUID?
     @State private var editName = ""
     @State private var editValue = ""
-    @State private var addingGroupID: UUID?
-    @State private var expandedGroupIDs: Set<UUID> = []
-    @State private var pendingGroupCreation: PendingGroupCreation?
-    @State private var groupNameDraft = ""
-    @State private var dragContext: DragContext?
+    @State private var editDescription = ""
+    @State private var addingProjectID: UUID?
+    @State private var projectEditor: ProjectEditor?
+    @State private var projectNameDraft = ""
+    @State private var projectDescriptionDraft = ""
+    @State private var pendingDeleteProjectID: UUID?
+    @State private var dragState = CaseDragState()
     @State private var lastError: String?
+    @State private var showingAccess = false
+    @State private var showingImport = false
     @FocusState private var inputFocused: Bool
 
     private let topScrollID = "case-list-top"
@@ -38,10 +60,24 @@ struct IslandCaseVaultPanel: View {
     var body: some View {
         Group {
             if viewModel.isUnlocked {
-                unlockedPanel
+                if showingImport {
+                    IslandCaseDopplerImportPanel(viewModel: viewModel, onBack: { showingImport = false })
+                } else if showingAccess {
+                    IslandCaseAccessPanel(viewModel: viewModel, onBack: {
+                        viewModel.dismissClientSetupProblems()
+                        showingAccess = false
+                    })
+                } else {
+                    unlockedPanel
+                }
             } else {
                 lockedPanel
             }
+        }
+        .background(CasePanelDismissObserver(enabled: viewModel.holdsPanelOpen && !viewModel.isSystemInteractionActive,
+                                             onDismiss: onDismiss))
+        .onExitCommand {
+            if !viewModel.isSystemInteractionActive { onDismiss() }
         }
         .onAppear {
             DispatchQueue.main.async {
@@ -60,14 +96,14 @@ struct IslandCaseVaultPanel: View {
 
             if case let .needsReset(message) = viewModel.unlockState {
                 Button(action: resetCase) {
-                    unlockPill(title: viewModel.isResetArmed ? "Confirm Reset" : "Reset Case")
+                    unlockPill(title: viewModel.isResetArmed ? "Подтвердить сброс" : "Сбросить Case")
                 }
                 .buttonStyle(.plain)
                 .disabled(isUnlocking)
 
                 // Armed: spell out the stakes — the second press is irreversible.
                 Text(viewModel.isResetArmed
-                    ? "This permanently deletes this Case. Press again to confirm."
+                    ? "Case будет удалён навсегда. Нажмите ещё раз для подтверждения."
                     : message)
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.52))
@@ -76,7 +112,7 @@ struct IslandCaseVaultPanel: View {
                     .minimumScaleFactor(0.8)
                     .padding(.horizontal, 14)
             } else if case let .needsNewerApp(message) = viewModel.unlockState {
-                unlockPill(title: "Update Required")
+                unlockPill(title: "Нужно обновление")
 
                 Text(message)
                     .font(.system(size: 9.5, weight: .medium))
@@ -87,16 +123,16 @@ struct IslandCaseVaultPanel: View {
                     .padding(.horizontal, 14)
             } else {
                 if isUnlocking || !hasTriggeredInitialUnlock {
-                    unlockPill(title: "Unlocking...")
+                    unlockPill(title: "Открываю…")
                 } else {
                     Button(action: unlock) {
-                        unlockPill(title: "Retry Unlock")
+                        unlockPill(title: "Открыть ещё раз")
                     }
                     .buttonStyle(.plain)
                     .disabled(isUnlocking)
                 }
 
-                Text("Touch ID / macOS password")
+                Text("Touch ID или пароль macOS")
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.46))
 
@@ -135,10 +171,12 @@ struct IslandCaseVaultPanel: View {
                 .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
                 .padding(.top, IslandCaseVaultStyle.topPadding)
 
-            if let pendingGroupCreation {
-                groupCreationPrompt(pendingGroupCreation)
+            if projectEditor == .create {
+                projectEditorControls(isGeneral: false)
                     .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
-            } else if let lastError {
+            }
+
+            if let lastError {
                 Text(lastError)
                     .font(.system(size: IslandCaseVaultStyle.errorFontSize, weight: .medium))
                     .foregroundStyle(Color.red.opacity(0.78))
@@ -148,10 +186,24 @@ struct IslandCaseVaultPanel: View {
                     .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding + 2)
             }
 
+            Button("Импорт из Doppler") { showingImport = true }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding + 2)
+                .accessibilityIdentifier("case.doppler.open")
+
             caseList
                 .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
-                .padding(.bottom, 7)
+
+            if Self.isAccessScreenAvailable {
+                accessRow
+                    .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
+            }
         }
+        .padding(.bottom, 7)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
@@ -161,8 +213,10 @@ struct IslandCaseVaultPanel: View {
                 if activeInputText.isEmpty {
                     Text(inputPlaceholder)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.40))
-                        .padding(.leading, 10)
+                        .foregroundStyle(.white.opacity(0.70))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 10)
                         .allowsHitTesting(false)
                 }
 
@@ -178,16 +232,36 @@ struct IslandCaseVaultPanel: View {
             .background(Capsule().fill(Color.white.opacity(0.13)))
             .overlay(Capsule().stroke(inputBorderColor, lineWidth: 0.8))
 
-            if viewModel.inputMode != .name || addingGroupID != nil {
-                iconButton(systemImage: "xmark", accessibilityLabel: "Cancel key input") {
+            if viewModel.inputMode != .name || addingProjectID != nil {
+                IslandCaseIconButton(action: Self.cancelInputAction) {
                     valueDraft = ""
-                    addingGroupID = nil
+                    addingProjectID = nil
                     viewModel.cancelInput()
                     lastError = nil
                 }
             }
+
+            Button(action: startCreatingProject) {
+                Text("+ Проект")
+                    .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 9)
+                    .frame(height: IslandCaseVaultStyle.inputHeight)
+                    .background(Capsule().fill(Color.white.opacity(0.10)))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("case.project.create")
         }
     }
+
+    private static let cancelInputAction = IslandCaseRowAction(
+        systemImage: "xmark",
+        accessibilityIdentifier: "case.input.cancel",
+        accessibilityLabel: "Отменить ввод ключа"
+    )
 
     @ViewBuilder
     private var inputField: some View {
@@ -211,13 +285,14 @@ struct IslandCaseVaultPanel: View {
     private var inputPlaceholder: String {
         switch viewModel.inputMode {
         case .name:
-            if let addingGroupID {
-                let groupName = viewModel.rows.first { $0.id == addingGroupID }?.displayName ?? "group"
-                return "Add key to \(groupName)"
+            if let addingProjectID {
+                let name = viewModel.projectSections.first { $0.id == addingProjectID }?.name
+                    ?? CaseProject.generalName
+                return "Новый ключ в \(name)"
             }
-            return "Search or add key"
+            return "Имя ключа или поиск"
         case .value:
-            return "Enter value"
+            return "Введите значение"
         }
     }
 
@@ -226,33 +301,27 @@ struct IslandCaseVaultPanel: View {
     }
 
     private var caseList: some View {
-        ScrollViewReader { proxy in
+        let sections = viewModel.projectSections
+        let searching = viewModel.isSearching
+        return ScrollViewReader { proxy in
             GeometryReader { geometry in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 4) {
                         Color.clear.frame(height: 1).id(topScrollID)
 
-                        ForEach(viewModel.rows) { row in
-                            switch row.kind {
-                            case .secret:
-                                secretRow(row, groupID: nil)
-                                    .onDrop(of: [UTType.text], isTargeted: nil) { _ in
-                                        handleSecretDrop(on: row.id)
-                                    }
-                            case .group:
-                                groupRow(row)
-                            }
+                        ForEach(sections) { section in
+                            projectSection(
+                                section,
+                                isExpanded: Self.isExpanded(section, expandedIDs: viewModel.expandedProjectIDs, isSearching: searching)
+                            )
                         }
 
                         Color.clear.frame(height: 1).id(bottomScrollID)
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .onDrop(of: [UTType.text], isTargeted: nil) { _ in
-                    handleBackgroundDrop()
-                }
                 .onContinuousHover { phase in
-                    guard dragContext != nil else { return }
+                    // Never reset here: the pointer can leave and re-enter mid-drag.
                     if case let .active(location) = phase {
                         scrollIfNeeded(
                             pointerY: location.y,
@@ -261,196 +330,191 @@ struct IslandCaseVaultPanel: View {
                         )
                     }
                 }
+                // A drag released on empty list space (or cancelled) never reaches a
+                // project row's drop handler; clear it here so auto-scroll stops.
+                .onDrop(of: [UTType.text], isTargeted: nil) { _ in
+                    dragState.reset()
+                    return false
+                }
+                .onDisappear { dragState.reset() }
             }
         }
     }
 
-    private func groupRow(_ row: CaseDisplayRow) -> some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 6) {
-                Image(systemName: expandedGroupIDs.contains(row.id) ? "folder.fill" : "folder")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.72))
-                    .frame(width: 14)
-
-                Text(row.displayName)
-                    .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.90))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Spacer(minLength: 4)
-
-                iconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy all keys in group") {
-                    runCaseAction { try viewModel.copyAll(row.id) }
-                }
-                .help("Copy all")
-
-                iconButton(systemImage: "plus", accessibilityLabel: "Add key to group") {
-                    addingGroupID = row.id
-                    valueDraft = ""
-                    viewModel.cancelInput()
-                    inputFocused = true
-                }
-                .help("Add key")
-
-                Image(systemName: expandedGroupIDs.contains(row.id) ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.42))
-                    .frame(width: 12)
+    @ViewBuilder
+    private func projectSection(_ section: CaseProjectSection, isExpanded: Bool) -> some View {
+        IslandCaseProjectRow(
+            section: section,
+            isExpanded: isExpanded,
+            isDropTargeted: dragState.dropTargetProjectID == section.id,
+            onToggle: { toggleProject(section.id) },
+            onEdit: { startEditingProject(section) },
+            onDelete: {
+                pendingDeleteProjectID = pendingDeleteProjectID == section.id ? nil : section.id
+                lastError = nil
             }
-            .padding(.horizontal, 8)
-            .frame(height: IslandCaseVaultStyle.rowHeight)
-            .background(Capsule().fill(Color.white.opacity(0.10)))
-            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 0.7))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                toggleGroup(row.id)
-            }
-            .onDrop(of: [UTType.text], isTargeted: nil) { _ in
-                handleGroupDrop(on: row.id)
-            }
+        )
+        .onDrop(of: [UTType.text], isTargeted: dropTargetBinding(section.id)) { _ in
+            handleDrop(onProject: section.id)
+        }
 
-            if expandedGroupIDs.contains(row.id) {
+        if pendingDeleteProjectID == section.id, !section.isGeneral {
+            IslandCaseProjectDeleteConfirmation(
+                name: section.name,
+                keyCount: section.keyCount,
+                onConfirm: { confirmDeleteProject(section.id) },
+                onCancel: { pendingDeleteProjectID = nil }
+            )
+        }
+
+        if projectEditor == .edit(section.id) {
+            projectEditorControls(isGeneral: section.isGeneral)
+        }
+
+        if isExpanded {
+            ForEach(section.secrets) { secret in
                 VStack(spacing: 3) {
-                    ForEach(viewModel.childRows(forGroupID: row.id)) { child in
-                        secretRow(child, groupID: row.id)
-                            .padding(.leading, 12)
-                            .onDrop(of: [UTType.text], isTargeted: nil) { _ in
-                                handleSecretDrop(on: child.id)
-                            }
+                    IslandCaseSecretRow(
+                        row: secret,
+                        onEdit: { startEditingSecret(secret) },
+                        onCopy: { runCaseAction { try viewModel.copySecret(secret.id) } },
+                        onDelete: { runCaseAction { try viewModel.deleteSecret(secret.id) } }
+                    )
+                    .onDrag {
+                        dragState.begin(secretID: secret.id, sourceProjectID: secret.projectID)
+                        return NSItemProvider(object: secret.id.uuidString as NSString)
+                    }
+                    .onDrop(of: [UTType.text], isTargeted: nil) { _ in
+                        handleDrop(onProject: secret.projectID)
+                    }
+
+                    if editSecretID == secret.id {
+                        secretEditControls(secret)
                     }
                 }
+                .padding(.leading, IslandCaseVaultStyle.childIndent)
             }
+
+            IslandCaseAddKeyRow(projectName: section.name) {
+                startAddingKey(to: section.id)
+            }
+            .padding(.leading, IslandCaseVaultStyle.childIndent)
         }
     }
 
-    private func secretRow(_ row: CaseDisplayRow, groupID: UUID?) -> some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 6) {
-                Image(systemName: "key.horizontal")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.64))
-                    .frame(width: 14)
-
-                Text(row.displayName)
-                    .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Spacer(minLength: 4)
-
-                iconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy key") {
-                    runCaseAction { try viewModel.copySecret(row.id) }
-                }
-                .help("Copy")
-
-                iconButton(systemImage: "pencil", accessibilityLabel: "Edit key") {
-                    editSecretID = row.id
-                    editName = row.displayName
+    private func secretEditControls(_ row: CaseDisplayRow) -> some View {
+        VStack(spacing: 4) {
+            editField {
+                TextField("Имя", text: $editName)
+                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+            }
+            editField {
+                SecureField("Новое значение", text: $editValue)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .onSubmit { saveSecretEdit(row) }
+            }
+            editField {
+                TextField("Описание", text: $editDescription)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .onSubmit { saveSecretEdit(row) }
+            }
+            editButtons(
+                onSave: { saveSecretEdit(row) },
+                onCancel: {
+                    editSecretID = nil
                     editValue = ""
                     lastError = nil
                 }
-                .help("Edit")
+            )
+        }
+        .padding(.leading, 6)
+    }
 
-                iconButton(systemImage: "trash", accessibilityLabel: "Delete key") {
-                    runCaseAction { try viewModel.deleteSecret(row.id) }
+    private func projectEditorControls(isGeneral: Bool) -> some View {
+        VStack(spacing: 4) {
+            if !isGeneral {
+                editField {
+                    TextField("Название проекта", text: $projectNameDraft)
+                        .font(.system(size: 9.5, weight: .medium))
+                        .onSubmit(saveProjectEditor)
                 }
-                .help("Delete")
             }
-            .padding(.horizontal, 8)
-            .frame(height: groupID == nil ? IslandCaseVaultStyle.rowHeight : IslandCaseVaultStyle.childRowHeight)
-            .background(Capsule().fill(Color.white.opacity(groupID == nil ? 0.08 : 0.06)))
-            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 0.7))
-            .contentShape(Rectangle())
-            .onDrag {
-                dragContext = DragContext(secretID: row.id, startedInsideGroup: groupID != nil)
-                return NSItemProvider(object: row.id.uuidString as NSString)
+            editField {
+                TextField("Описание", text: $projectDescriptionDraft)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .onSubmit(saveProjectEditor)
             }
-
-            if editSecretID == row.id {
-                editControls(row)
-            }
+            editButtons(
+                onSave: saveProjectEditor,
+                onCancel: {
+                    projectEditor = nil
+                    lastError = nil
+                }
+            )
         }
     }
 
-    private func editControls(_ row: CaseDisplayRow) -> some View {
-        HStack(spacing: 5) {
-            TextField("Name", text: $editName)
-                .textFieldStyle(.plain)
-                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.90))
-                .padding(.horizontal, 7)
-                .frame(height: 22)
-                .background(Capsule().fill(Color.white.opacity(0.10)))
-
-            SecureField("New value", text: $editValue)
-                .textFieldStyle(.plain)
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.90))
-                .padding(.horizontal, 7)
-                .frame(height: 22)
-                .background(Capsule().fill(Color.white.opacity(0.10)))
-                .onSubmit {
-                    saveEdit(row.id)
-                }
-
-            iconButton(systemImage: "checkmark", accessibilityLabel: "Save key") {
-                saveEdit(row.id)
-            }
-
-            iconButton(systemImage: "xmark", accessibilityLabel: "Cancel edit") {
-                editSecretID = nil
-                editValue = ""
-                lastError = nil
-            }
-        }
-        .padding(.leading, 18)
+    private func editField<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .textFieldStyle(.plain)
+            .foregroundStyle(.white.opacity(0.90))
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
     }
 
-    private func groupCreationPrompt(_ pending: PendingGroupCreation) -> some View {
-        HStack(spacing: 6) {
-            TextField("Group name", text: $groupNameDraft)
-                .textFieldStyle(.plain)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.90))
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(Capsule().fill(Color.white.opacity(0.11)))
-                .onSubmit {
-                    confirmGroupCreation(pending)
-                }
-
-            iconButton(systemImage: "checkmark", accessibilityLabel: "Create group") {
-                confirmGroupCreation(pending)
-            }
-
-            iconButton(systemImage: "xmark", accessibilityLabel: "Cancel group") {
-                pendingGroupCreation = nil
-                groupNameDraft = ""
-                lastError = nil
-            }
+    private func editButtons(onSave: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            IslandCaseIconButton(action: Self.cancelEditAction, perform: onCancel)
+            IslandCaseIconButton(action: Self.saveEditAction, perform: onSave)
         }
     }
 
-    private func iconButton(
-        systemImage: String,
-        accessibilityLabel: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 8.5, weight: .bold))
-                .foregroundStyle(.white.opacity(0.74))
-                .frame(
-                    width: IslandCaseVaultStyle.iconButtonSize,
-                    height: IslandCaseVaultStyle.iconButtonSize
-                )
-                .background(Circle().fill(Color.white.opacity(0.08)))
+    private static let saveEditAction = IslandCaseRowAction(
+        systemImage: "checkmark",
+        accessibilityIdentifier: "case.edit.save",
+        accessibilityLabel: "Сохранить"
+    )
+
+    private static let cancelEditAction = IslandCaseRowAction(
+        systemImage: "xmark",
+        accessibilityIdentifier: "case.edit.cancel",
+        accessibilityLabel: "Отменить правку"
+    )
+
+    private var accessRow: some View {
+        let names = viewModel.registeredAppNames
+        return HStack(spacing: 6) {
+            Circle()
+                .fill(names.isEmpty ? Color.white.opacity(0.30) : Color.green.opacity(0.85))
+                .frame(width: 6, height: 6)
+            Text(names.isEmpty ? "Нет приложений" : names.joined(separator: ", "))
+                .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .medium))
+                .foregroundStyle(.white.opacity(0.70))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(-1)
+            Spacer(minLength: 4)
+            Button {
+                showingAccess = true
+                onOpenAccessScreen?()
+            } label: {
+                Text("Доступ к ключам ›")
+                    .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .fixedSize()
+                    .padding(.horizontal, 9)
+                    .frame(height: 22)
+                    .background(Capsule().fill(Color.white.opacity(0.10)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("case.access.open")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
+        .padding(.top, 6)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.white.opacity(0.10)).frame(height: 0.5)
+        }
     }
 
     private func unlock() {
@@ -500,7 +564,7 @@ struct IslandCaseVaultPanel: View {
         do {
             switch viewModel.inputMode {
             case .name:
-                try viewModel.submitName(viewModel.query, groupID: addingGroupID)
+                try viewModel.submitName(viewModel.query, projectID: addingProjectID ?? CaseProject.generalID)
                 valueDraft = ""
                 // Name accepted -> inputMode flips to .value and the field
                 // rebuilds as a SecureField. Re-assert focus on the next runloop
@@ -509,7 +573,7 @@ struct IslandCaseVaultPanel: View {
             case .value:
                 try viewModel.submitValue(valueDraft)
                 valueDraft = ""
-                addingGroupID = nil
+                addingProjectID = nil
             }
             lastError = nil
         } catch {
@@ -517,76 +581,117 @@ struct IslandCaseVaultPanel: View {
         }
     }
 
-    private func saveEdit(_ secretID: UUID) {
+    private func startAddingKey(to projectID: UUID) {
+        addingProjectID = projectID
+        valueDraft = ""
+        viewModel.cancelInput()
+        lastError = nil
+        inputFocused = true
+    }
+
+    private func startEditingSecret(_ row: CaseDisplayRow) {
+        editSecretID = editSecretID == row.id ? nil : row.id
+        editName = row.displayName
+        editValue = ""
+        editDescription = row.description
+        lastError = nil
+    }
+
+    private func saveSecretEdit(_ row: CaseDisplayRow) {
         runCaseAction {
             if editValue.isEmpty {
-                try viewModel.renameSecret(secretID, rawName: editName)
+                if editName != row.displayName {
+                    try viewModel.renameSecret(row.id, rawName: editName)
+                }
             } else {
-                try viewModel.replaceSecret(secretID, rawName: editName, newValue: editValue)
+                try viewModel.replaceSecret(row.id, rawName: editName, newValue: editValue)
+            }
+            if editDescription != row.description {
+                try viewModel.setSecretDescription(row.id, editDescription)
             }
             editSecretID = nil
             editValue = ""
         }
     }
 
-    private func confirmGroupCreation(_ pending: PendingGroupCreation) {
-        runCaseAction {
-            let groupID = try viewModel.createGroup(
-                sourceSecretID: pending.sourceSecretID,
-                targetSecretID: pending.targetSecretID,
-                name: groupNameDraft
-            )
-            expandedGroupIDs.insert(groupID)
-            pendingGroupCreation = nil
-            groupNameDraft = ""
+    private func startCreatingProject() {
+        if projectEditor == .create {
+            projectEditor = nil
+            return
         }
-    }
-
-    private func handleSecretDrop(on targetSecretID: UUID) -> Bool {
-        defer { dragContext = nil }
-        guard let dragContext, dragContext.secretID != targetSecretID else {
-            return false
-        }
-
-        if dragContext.startedInsideGroup {
-            runCaseAction { try viewModel.removeSecretFromGroup(dragContext.secretID) }
-            return true
-        }
-
-        pendingGroupCreation = PendingGroupCreation(
-            sourceSecretID: dragContext.secretID,
-            targetSecretID: targetSecretID
-        )
-        groupNameDraft = ""
+        projectEditor = .create
+        projectNameDraft = ""
+        projectDescriptionDraft = ""
+        pendingDeleteProjectID = nil
         lastError = nil
-        return true
     }
 
-    private func handleGroupDrop(on groupID: UUID) -> Bool {
-        defer { dragContext = nil }
-        guard let dragContext else {
-            return false
+    private func startEditingProject(_ section: CaseProjectSection) {
+        if projectEditor == .edit(section.id) {
+            projectEditor = nil
+            return
         }
+        projectEditor = .edit(section.id)
+        projectNameDraft = section.name
+        projectDescriptionDraft = section.description
+        pendingDeleteProjectID = nil
+        lastError = nil
+    }
 
-        if dragContext.startedInsideGroup {
-            runCaseAction { try viewModel.removeSecretFromGroup(dragContext.secretID) }
-            return true
+    private func saveProjectEditor() {
+        guard let projectEditor else { return }
+        runCaseAction(isProjectAction: true) {
+            switch projectEditor {
+            case .create:
+                try viewModel.createProject(name: projectNameDraft, description: projectDescriptionDraft)
+            case let .edit(projectID):
+                let current = viewModel.projectSections.first { $0.id == projectID }
+                if projectID != CaseProject.generalID, projectNameDraft != current?.name {
+                    try viewModel.renameProject(projectID, name: projectNameDraft)
+                }
+                if projectDescriptionDraft != current?.description {
+                    try viewModel.setProjectDescription(projectID, projectDescriptionDraft)
+                }
+            }
+            self.projectEditor = nil
         }
+    }
 
+    private func confirmDeleteProject(_ projectID: UUID) {
         runCaseAction {
-            try viewModel.addSecretToGroup(secretID: dragContext.secretID, groupID: groupID)
-            expandedGroupIDs.insert(groupID)
+            try viewModel.deleteProject(projectID)
+            pendingDeleteProjectID = nil
+            if addingProjectID == projectID {
+                addingProjectID = nil
+            }
         }
-        return true
     }
 
-    private func handleBackgroundDrop() -> Bool {
-        defer { dragContext = nil }
-        guard let dragContext, dragContext.startedInsideGroup else {
+    private func dropTargetBinding(_ projectID: UUID) -> Binding<Bool> {
+        Binding(
+            get: { dragState.dropTargetProjectID == projectID },
+            set: { targeted in
+                if targeted {
+                    dragState.dropTargetProjectID = projectID
+                } else if dragState.dropTargetProjectID == projectID {
+                    dragState.dropTargetProjectID = nil
+                }
+            }
+        )
+    }
+
+    /// Dropping a dragged key on a project header (or on one of its keys)
+    /// moves the key into that project. A name clash there is refused.
+    private func handleDrop(onProject projectID: UUID) -> Bool {
+        let context = dragState.context
+        defer { dragState.reset() }
+        guard let dragContext = context, dragContext.sourceProjectID != projectID else {
             return false
         }
-
-        runCaseAction { try viewModel.removeSecretFromGroup(dragContext.secretID) }
+        runCaseAction {
+            try viewModel.moveSecret(dragContext.secretID, toProject: projectID)
+            viewModel.expandedProjectIDs.insert(projectID)
+        }
         return true
     }
 
@@ -595,7 +700,7 @@ struct IslandCaseVaultPanel: View {
         viewportHeight: CGFloat,
         proxy: ScrollViewProxy
     ) {
-        let velocity = CaseDragAutoScrollPolicy.velocity(
+        let velocity = dragState.scrollVelocity(
             pointerY: pointerY,
             viewportHeight: viewportHeight
         )
@@ -603,62 +708,63 @@ struct IslandCaseVaultPanel: View {
             return
         }
 
-        withAnimation(.linear(duration: 0.12)) {
+        withAnimation(reduceMotion ? nil : .linear(duration: 0.12)) {
             proxy.scrollTo(velocity < 0 ? topScrollID : bottomScrollID, anchor: velocity < 0 ? .top : .bottom)
         }
     }
 
-    private func toggleGroup(_ groupID: UUID) {
-        if expandedGroupIDs.contains(groupID) {
-            expandedGroupIDs.remove(groupID)
-        } else {
-            expandedGroupIDs.insert(groupID)
+    private func toggleProject(_ projectID: UUID) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+            if viewModel.expandedProjectIDs.contains(projectID) {
+                viewModel.expandedProjectIDs.remove(projectID)
+            } else {
+                viewModel.expandedProjectIDs.insert(projectID)
+            }
         }
     }
 
-    private func runCaseAction(_ action: () throws -> Void) {
+    private func runCaseAction(isProjectAction: Bool = false, _ action: () throws -> Void) {
         do {
             try action()
             lastError = nil
         } catch {
-            lastError = caseErrorMessage(for: error)
+            lastError = caseErrorMessage(for: error, isProjectAction: isProjectAction)
         }
     }
 
-    private func caseErrorMessage(for error: Error) -> String {
+    private func caseErrorMessage(for error: Error, isProjectAction: Bool = false) -> String {
         switch error {
         case CaseNameValidationError.empty:
-            return "Name is required"
+            return "Введите имя"
         case CaseNameValidationError.rawTooLong:
-            return "Name is too long"
+            return "Имя слишком длинное"
         case CaseNameValidationError.nonASCII:
-            return "Use A-Z, 0-9 and separators"
+            return "Только A-Z, 0-9 и разделители"
         case CaseNameValidationError.normalizedTooLong:
-            return "Normalized name is too long"
+            return "Имя после приведения слишком длинное"
         case CaseViewModelError.duplicateName:
-            return "Key already exists"
+            return isProjectAction ? "Такой проект уже есть" : "Такой ключ уже есть"
         case CaseViewModelError.emptyValue:
-            return "Value is required"
+            return "Введите значение"
         case CaseViewModelError.valueTooLong:
-            return "Value is too long"
-        case CaseViewModelError.invalidGroupName:
-            return "Group name is invalid"
-        case CaseViewModelError.invalidGroupOperation:
-            return "Cannot move this key"
+            return "Значение слишком длинное"
+        case CaseViewModelError.invalidProjectName:
+            return "Недопустимое имя проекта"
+        case CaseViewModelError.invalidProjectOperation:
+            return "Этот проект нельзя изменить"
+        case CaseViewModelError.descriptionTooLong:
+            return "Описание слишком длинное"
+        case CaseViewModelError.missingProject:
+            return "Проект не найден"
         case CaseViewModelError.locked:
-            return "Case is locked"
+            return "Case заблокирован"
         default:
-            return "Action failed"
+            return "Не получилось"
         }
     }
 }
 
-private struct PendingGroupCreation: Equatable {
-    let sourceSecretID: UUID
-    let targetSecretID: UUID
-}
-
-private struct DragContext: Equatable {
-    let secretID: UUID
-    let startedInsideGroup: Bool
+private enum ProjectEditor: Equatable {
+    case create
+    case edit(UUID)
 }

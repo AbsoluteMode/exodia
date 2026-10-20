@@ -21,7 +21,7 @@ Start the harness in the Whytap checkout and give it a concrete request, for exa
 For an existing tool:
 
 > Change the hover toolbar to show three columns. Find the shared layout and
-> height calculations, preserve the user's selected tools and positional hotkeys,
+> height calculations, preserve the user's selected tools and feature hotkeys,
 > run focused checks and launch the development app so I can inspect it.
 
 ## Start here

@@ -92,7 +92,7 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
 /// Logical, section-scoped entry paths. The restore side maps every path
 /// explicitly; anything it does not recognise is refused rather than written.
 struct ArtifactBackupManifest: Codable, Equatable, Sendable {
-    static let currentSchema = 1
+    static let currentSchema = 2
     static let maxBytes = 16 * 1024 * 1024
     static let maxEntries = 200_000
     static let maxEntryBytes: Int64 = 8 * 1024 * 1024 * 1024
@@ -129,7 +129,7 @@ struct ArtifactBackupManifest: Codable, Equatable, Sendable {
         do { probe = try JSONDecoder.artifactBackup.decode(SchemaProbe.self, from: data) }
         catch { throw ArtifactBackupError.damaged }
         guard probe.schema <= currentSchema else { throw ArtifactBackupError.needsNewerApp }
-        guard probe.schema == currentSchema else { throw ArtifactBackupError.damaged }
+        guard (1...currentSchema).contains(probe.schema) else { throw ArtifactBackupError.damaged }
         let manifest: Self
         do { manifest = try JSONDecoder.artifactBackup.decode(Self.self, from: data) }
         catch { throw ArtifactBackupError.damaged }
@@ -145,11 +145,15 @@ struct ArtifactBackupManifest: Codable, Equatable, Sendable {
     }
 
     func validate() throws {
+        guard schema >= 2 || !sections.contains(.planner) else { throw ArtifactBackupError.damaged }
         guard entries.count <= Self.maxEntries, !sections.isEmpty,
               Set(sections).count == sections.count else { throw ArtifactBackupError.damaged }
         var total: Int64 = 0
         var seen = Set<String>()
         for entry in entries {
+            guard (entry.section == .planner) == entry.path.hasPrefix("planner/") else {
+                throw ArtifactBackupError.unsafeContent
+            }
             try ArtifactBackupPath.validate(entry.path)
             guard seen.insert(entry.path).inserted else { throw ArtifactBackupError.damaged }
             guard sections.contains(entry.section) else { throw ArtifactBackupError.damaged }
@@ -178,7 +182,7 @@ struct ArtifactBackupManifest: Codable, Equatable, Sendable {
 enum ArtifactBackupPath {
     static let maxLength = 512
     static let maxComponents = 8
-    static let roots: Set<String> = ["settings", "credentials", "case", "meetings", "history", "workspace"]
+    static let roots: Set<String> = ["settings", "credentials", "case", "meetings", "history", "workspace", "planner"]
 
     static func validate(_ path: String) throws {
         guard !path.isEmpty, path.utf8.count <= maxLength, !path.contains("\0"),

@@ -1,13 +1,13 @@
 import Foundation
 
-struct PlannerTask: Codable, Identifiable, Equatable {
+struct PlannerTask: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var title: String
     var completed = false
     var createdAt = Date()
 }
 
-struct PlannerEvent: Codable, Identifiable, Equatable {
+struct PlannerEvent: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var title: String
     var start: Date
@@ -40,7 +40,7 @@ final class PlannerStore: ObservableObject {
     static let shared = PlannerStore(url: FileManager.default.urls(for: .applicationSupportDirectory,
         in: .userDomainMask)[0].appendingPathComponent("Sidekey/Planner/planner-v1.json"))
 
-    struct Archive: Codable, Equatable {
+    struct Archive: Codable, Equatable, Sendable {
         var version = 1
         var tasks: [PlannerTask] = []
         var events: [PlannerEvent] = []
@@ -69,15 +69,10 @@ final class PlannerStore: ObservableObject {
         do {
             let loaded: Archive
             do {
-                loaded = try JSONDecoder().decode(Archive.self, from: Data(contentsOf: url))
+                loaded = try Self.decodeArchive(Data(contentsOf: url, options: .mappedIfSafe))
             } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
                 loaded = Archive()
             }
-            guard loaded.version == 1,
-                  Set(loaded.tasks.map(\.id)).count == loaded.tasks.count,
-                  Set(loaded.events.map(\.id)).count == loaded.events.count,
-                  loaded.tasks.allSatisfy({ Self.validTitle($0.title) }),
-                  loaded.events.allSatisfy(Self.validEvent) else { throw StoreError.invalid }
             archive = loaded
             canWrite = true
             errorMessage = nil
@@ -126,9 +121,12 @@ final class PlannerStore: ObservableObject {
         var candidate = archive
         change(&candidate)
         do {
-            try write(JSONEncoder().encode(candidate), url)
+            let data = try JSONEncoder().encode(candidate)
+            _ = try Self.decodeArchive(data)
+            try write(data, url)
             archive = candidate
             errorMessage = nil
+            NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil)
             return true
         } catch {
             errorMessage = "Couldn’t save your changes. Check available storage and folder access, then try again."
@@ -136,11 +134,22 @@ final class PlannerStore: ObservableObject {
         }
     }
 
-    private static func validTitle(_ title: String) -> Bool {
+    nonisolated static func decodeArchive(_ data: Data) throws -> Archive {
+        guard data.count <= 8 * 1024 * 1024 else { throw StoreError.invalid }
+        let loaded = try JSONDecoder().decode(Archive.self, from: data)
+        guard loaded.version == 1, loaded.tasks.count <= 10_000, loaded.events.count <= 10_000,
+              Set(loaded.tasks.map(\.id)).count == loaded.tasks.count,
+              Set(loaded.events.map(\.id)).count == loaded.events.count,
+              loaded.tasks.allSatisfy({ validTitle($0.title) && $0.createdAt.timeIntervalSince1970.isFinite }),
+              loaded.events.allSatisfy(validEvent) else { throw StoreError.invalid }
+        return loaded
+    }
+
+    nonisolated private static func validTitle(_ title: String) -> Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && title.count <= 500
     }
 
-    private static func validEvent(_ event: PlannerEvent) -> Bool {
+    nonisolated private static func validEvent(_ event: PlannerEvent) -> Bool {
         validTitle(event.title) && event.start.timeIntervalSince1970.isFinite &&
         event.end.timeIntervalSince1970.isFinite && event.end > event.start &&
         event.location.count <= 2000 && event.notes.count <= 20_000 &&

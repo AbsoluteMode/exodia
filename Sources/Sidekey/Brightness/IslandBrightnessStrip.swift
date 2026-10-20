@@ -36,19 +36,26 @@ struct IslandBrightnessStrip: View {
                 .accessibilityLabel("Back to tools")
 
                 BrightnessCapsuleSlider(level: controller.level, isEnabled: controller.isAvailable,
-                                        onChange: controller.setLevel)
+                                        onChange: controller.setLevel,
+                                        onEditingChanged: { editing in
+                                            if editing { controller.beginLevelDrag() }
+                                            else { controller.endLevelDrag() }
+                                        })
 
                 if controller.supportsExtra {
-                    Toggle(isOn: Binding(get: { controller.isExtraOn }, set: { controller.setExtra($0) })) {
+                    // The island is never the active app's key window, where the native switch
+                    // draws its on state gray; MacSwitch keeps its blue.
+                    HStack(spacing: 8) {
                         Text("Extra")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.85))
+                            .accessibilityHidden(true)
+                        MacSwitch(isOn: Binding(get: { controller.isExtraOn }, set: { controller.setExtra($0) }),
+                                  size: .compact)
+                            .accessibilityLabel("Extra brightness")
                     }
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
                     .fixedSize()
                     .help("Adds brightness on top of the current level. Uses more battery.")
-                    .accessibilityLabel("Extra brightness")
                 }
             }
             .frame(height: BrightnessCapsuleSlider.height)
@@ -82,6 +89,9 @@ struct IslandBrightnessStrip: View {
             controller.endInteraction()
             battery.stop()
         }
+        // The time left follows the display at once, between battery readings.
+        .onChange(of: controller.level) { _, _ in battery.displayDidChange() }
+        .onChange(of: controller.isExtraOn) { _, _ in battery.displayDidChange() }
     }
 
     private var statusLine: (text: String, systemImage: String?, isNotice: Bool)? {
@@ -102,9 +112,11 @@ struct BrightnessCapsuleSlider: View {
     let level: Double
     let isEnabled: Bool
     let onChange: @MainActor (Double) -> Void
+    var onEditingChanged: @MainActor (Bool) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dragging = false
+    @GestureState private var dragActive = false
 
     /// The fill always covers the sun at the start, so the pointer maps from
     /// the middle of that start to the middle of the end.
@@ -136,16 +148,36 @@ struct BrightnessCapsuleSlider: View {
             .contentShape(Capsule())
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($dragActive) { _, active, _ in active = true }
                     .onChanged { value in
-                        dragging = true
+                        if !dragging {
+                            dragging = true
+                            onEditingChanged(true)
+                        }
                         onChange(Self.level(atX: value.location.x, width: width))
                     }
-                    .onEnded { _ in dragging = false }
+                    .onEnded { _ in
+                        dragging = false
+                        onEditingChanged(false)
+                    }
             )
         }
         .frame(height: Self.height)
         .opacity(isEnabled ? 1 : 0.6)
         .allowsHitTesting(isEnabled)
+        .onChange(of: dragActive) { _, active in
+            // GestureState also resets when macOS cancels a drag without an onEnded.
+            if !active, dragging {
+                dragging = false
+                onEditingChanged(false)
+            }
+        }
+        .onDisappear {
+            if dragging {
+                dragging = false
+                onEditingChanged(false)
+            }
+        }
         .accessibilityElement()
         .accessibilityLabel("Brightness")
         .accessibilityValue("\(Int((ScreenBrightnessScale.clampedLevel(level) * 100).rounded())) percent")

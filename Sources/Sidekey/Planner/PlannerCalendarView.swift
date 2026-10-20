@@ -70,7 +70,7 @@ struct PlannerCalendarView: View {
                 Text(navigation.selectedDay.formatted(.dateTime.weekday(.wide).day().month(.wide)))
                     .font(.headline)
                 Spacer()
-                Text(TimeZone.current.identifier).font(.caption).foregroundStyle(.secondary)
+                Text(TimeZone.current.identifier).font(.caption).foregroundStyle(MacSettingsTheme.text2)
             }
             if selectedEvents.isEmpty {
                 PlannerEmptyState(symbol: "calendar", title: "Your day is open",
@@ -94,8 +94,9 @@ struct PlannerCalendarView: View {
             Button("Delete", role: .destructive) { if let event = deleting { _ = store.deleteEvent(event.id) }; deleting = nil }
             Button("Cancel", role: .cancel) { deleting = nil }
         } message: { Text("This removes the event from your local Whytap calendar.") }
-        .task(id: "\(days.first?.timeIntervalSince1970 ?? 0):\(refreshToken)") {
-            guard let first = days.first, let end = calendar.date(byAdding: .day, value: 42, to: first) else { return }
+        .task(id: "\(navigation.windowVisible):\(days.first?.timeIntervalSince1970 ?? 0):\(refreshToken)") {
+            guard navigation.windowVisible, let first = days.first,
+                  let end = calendar.date(byAdding: .day, value: 42, to: first) else { return }
             repeat {
                 await connections.refresh(interval: DateInterval(start: first, end: end))
                 do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { return }
@@ -119,7 +120,7 @@ struct PlannerCalendarView: View {
             }
             Spacer()
             Button { editing = newEvent() } label: { Label("New event", systemImage: "plus") }
-                .buttonStyle(.borderedProminent).disabled(!store.canWrite)
+                .buttonStyle(.borderedProminent).tint(MacSettingsTheme.accentFill).disabled(!store.canWrite)
         }
     }
 
@@ -129,24 +130,24 @@ struct PlannerCalendarView: View {
             HStack(spacing: 4) {
                 ForEach(0..<7) { index in
                     Text(calendar.veryShortStandaloneWeekdaySymbols[(index + calendar.firstWeekday - 1) % 7])
-                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                        .font(.caption.weight(.semibold)).foregroundStyle(MacSettingsTheme.text2).frame(maxWidth: .infinity)
                 }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
                 ForEach(days, id: \.self) { day in
                     let selected = calendar.isDate(day, inSameDayAs: navigation.selectedDay)
+                    let inMonth = calendar.isDate(day, equalTo: navigation.selectedDay, toGranularity: .month)
                     let count = counts[day, default: 0]
                     Button { navigation.selectedDay = day } label: {
                         VStack(spacing: 3) {
                             Text("\(calendar.component(.day, from: day))")
                                 .font(.system(size: 13, weight: calendar.isDateInToday(day) ? .bold : .regular))
                             Text(count > 0 ? "\(count)" : " ").font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(selected ? .white.opacity(0.8) : Color.accentColor)
+                                .foregroundStyle(selected ? .white : MacSettingsTheme.accent)
                         }
                         .frame(maxWidth: .infinity).frame(height: 36)
-                        .foregroundStyle(selected ? .white : .primary)
-                        .opacity(calendar.isDate(day, equalTo: navigation.selectedDay, toGranularity: .month) ? 1 : 0.4)
-                        .background(selected ? Color.accentColor : Color(nsColor: .controlBackgroundColor),
+                        .foregroundStyle(selected ? .white : (inMonth ? MacSettingsTheme.text : MacSettingsTheme.text2))
+                        .background(selected ? MacSettingsTheme.accentFill : Color(nsColor: .controlBackgroundColor),
                             in: RoundedRectangle(cornerRadius: 7))
                     }.buttonStyle(.plain)
                     .accessibilityLabel("\(day.formatted(date: .complete, time: .omitted)), \(count) events")
@@ -161,13 +162,13 @@ struct PlannerCalendarView: View {
             RoundedRectangle(cornerRadius: 2).fill(item.feedID == "local" ? Color.accentColor : .purple).frame(width: 3)
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.event.allDay ? "All day" : item.event.start.formatted(date: .omitted, time: .shortened))
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold)).foregroundStyle(MacSettingsTheme.text2)
                 Button { if item.feedID == "local" { editing = item.event } else { selectedRemote = item } } label: {
                     Text(item.event.title).font(.body.weight(.semibold)).multilineTextAlignment(.leading)
                 }.buttonStyle(.plain)
                 Text(sourceTitle(item.feedID) + (item.additionalFeedIDs.isEmpty ? "" : " (+\(item.additionalFeedIDs.count))"))
-                    .font(.caption).foregroundStyle(.secondary)
-                if !item.event.location.isEmpty { Text(item.event.location).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                    .font(.caption).foregroundStyle(MacSettingsTheme.text2)
+                if !item.event.location.isEmpty { Text(item.event.location).font(.caption).foregroundStyle(MacSettingsTheme.text2).lineLimit(2) }
             }
             Spacer()
             if let url = item.event.meetingURL { Link("Join", destination: url).buttonStyle(.borderedProminent) }
@@ -233,7 +234,7 @@ struct PlannerEventEditor: View {
             Text("Notes").font(.callout.weight(.medium))
             TextEditor(text: $event.notes).frame(height: 85).border(Color.secondary.opacity(0.2))
             Text("Saved in Whytap on this Mac. Connected calendars are shown alongside it; they are read-only.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(MacSettingsTheme.text2)
             if let message = validationMessage ?? store.errorMessage { Text(message).font(.caption).foregroundStyle(.red) }
             HStack {
                 Spacer()
@@ -268,12 +269,12 @@ private struct CalendarEventDetails: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text(item.event.title).font(.title2.bold()).textSelection(.enabled)
-            Text(source).foregroundStyle(.secondary)
+            Text(source).foregroundStyle(MacSettingsTheme.text2)
             Text(item.event.displayBounds().start.formatted(date: .complete, time: item.event.allDay ? .omitted : .shortened))
             if !item.event.allDay { Text("Until " + item.event.end.formatted(date: .abbreviated, time: .shortened)) }
             if !item.event.location.isEmpty { Label(item.event.location, systemImage: "location") }
             if !item.event.notes.isEmpty { ScrollView { Text(item.event.notes).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 200) }
-            Text("This connected event is read-only in Whytap.").font(.caption).foregroundStyle(.secondary)
+            Text("This connected event is read-only in Whytap.").font(.caption).foregroundStyle(MacSettingsTheme.text2)
             HStack {
                 if let url = item.event.meetingURL { Link("Join meeting", destination: url).buttonStyle(.borderedProminent) }
                 if let url = item.sourceURL { Link("Open original", destination: url) }

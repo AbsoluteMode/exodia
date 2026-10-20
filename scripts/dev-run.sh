@@ -50,6 +50,7 @@ BUNDLE_DISPLAY_NAME="Whytap Beta"
 BUNDLE_ICON_FILE="AppIcon"
 DEV_APPCAST_URL="${DEV_APPCAST_URL:-https://github.com/${GITHUB_REPO:-AbsoluteMode/whytap}/releases/download/beta/appcast.xml}"
 SWIFT_BUILD_ARGS=(--product Sidekey -Xswiftc -DBETA)
+HELPER_BUILD_ARGS=(--product whytap -Xswiftc -DBETA)
 # Build/version values used only for the dev bundle's Info.plist. A high
 # CFBundleVersion stops Sparkle from "discovering" a prod release as a
 # downgrade should the dev bundle ever talk to the appcast.
@@ -100,6 +101,7 @@ done
 echo "▶ Building dev debug binary (swift build)..."
 cd "${PROJECT_DIR}"
 swift build "${SWIFT_BUILD_ARGS[@]}"
+swift build "${HELPER_BUILD_ARGS[@]}"
 
 if [ ! -f "${BUILD_DIR}/${APP_NAME}" ]; then
     echo "✗ Expected binary not found at ${BUILD_DIR}/${APP_NAME}" >&2
@@ -136,6 +138,15 @@ mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
+
+# Case secrets helper (the broker pins its cdhash; sign it before the app).
+if [ ! -f "${BUILD_DIR}/whytap" ]; then
+    echo "✗ Expected helper not found at ${BUILD_DIR}/whytap" >&2
+    exit 1
+fi
+mkdir -p "${APP_BUNDLE}/Contents/Helpers"
+cp "${BUILD_DIR}/whytap" "${APP_BUNDLE}/Contents/Helpers/whytap"
+chmod 755 "${APP_BUNDLE}/Contents/Helpers/whytap"
 
 # Mirror build-dmg.sh: SwiftPM does NOT embed @executable_path/../Frameworks
 # in the binary's rpath search list, so without this step dyld can't resolve
@@ -183,6 +194,7 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     -e "s|__APPCAST_URL__|${DEV_APPCAST_URL}|g" \
     -e "s|__SPARKLE_PUBLIC_ED_KEY__|${SPARKLE_PUBLIC_ED_KEY}|g" \
     "${INFO_PLIST_TEMPLATE}" > "${APP_BUNDLE}/Contents/Info.plist"
+python3 "${PROJECT_DIR}/scripts/configure-calendar-clients.py" "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaInstanceLeaseVersion integer 1" \
     "${APP_BUNDLE}/Contents/Info.plist"
 
@@ -338,6 +350,10 @@ if [ -d "${MRA_FW_DST}" ]; then
     echo "▶ Signing MediaRemoteAdapter.framework (${SIGN_LABEL})..."
     codesign --force --sign "${SIGN_IDENTITY}" --options runtime "${MRA_FW_DST}"
 fi
+
+echo "▶ Signing whytap helper (${SIGN_LABEL})..."
+codesign --force --sign "${SIGN_IDENTITY}" --options runtime \
+    "${APP_BUNDLE}/Contents/Helpers/whytap"
 
 # --- Dev entitlements (no team-id-prefixed keychain group) -----------------
 #

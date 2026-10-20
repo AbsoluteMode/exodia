@@ -28,7 +28,7 @@ final class SettingsWindowViewTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertTrue(source.contains("AppBuildIdentity.current.settingsTitle"))
-        XCTAssertTrue(source.contains("buildIdentity"))
+        XCTAssertTrue(source.contains("SettingsProjectFooter(identity: .current)"))
         XCTAssertTrue(source.contains("AppBuildIdentity.current.quitActionTitle"))
     }
 

@@ -54,7 +54,7 @@ struct MacProgressBar: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.10))
+                    .fill(MacSettingsTheme.controlBg)
                 Capsule()
                     .fill(fillColor)
                     .frame(width: max(0, proxy.size.width * clamped))

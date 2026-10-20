@@ -8,6 +8,8 @@ import SwiftUI
 struct SidekeyAuroraWindow<Content: View>: View {
     let title: String
     var showsTitleBar: Bool = true
+    /// Settings follows macOS; island-related utility windows keep their dark backing.
+    var followsSystemAppearance: Bool = false
     @ViewBuilder var content: Content
 
     private let haloPadding: CGFloat = 0
@@ -17,7 +19,7 @@ struct SidekeyAuroraWindow<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             if showsTitleBar {
-                SidekeyAuroraTitleBar(title: title, height: titleBarHeight)
+                SidekeyAuroraTitleBar(title: title, height: titleBarHeight, followsSystemAppearance: followsSystemAppearance)
             }
             content
         }
@@ -25,22 +27,28 @@ struct SidekeyAuroraWindow<Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .padding(haloPadding)
         .ignoresSafeArea()
-        .environment(\.colorScheme, .dark)
+        .transformEnvironment(\.colorScheme) { scheme in
+            if !followsSystemAppearance { scheme = .dark }
+        }
     }
 
-    private var glassFill: some View {
-        ZStack {
-            // Behind-window vibrancy — shows desktop content through the window
-            IslandVisualEffectBackground(material: .popover)
-            // Dark tint overlay: keep ~0.40 opacity so the material is visible
-            LinearGradient(
-                colors: [
-                    Color(red: 28 / 255, green: 28 / 255, blue: 34 / 255).opacity(0.38),
-                    Color(red: 18 / 255, green: 18 / 255, blue: 24 / 255).opacity(0.50)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+    @ViewBuilder private var glassFill: some View {
+        if followsSystemAppearance {
+            MacSettingsTheme.bgContent
+        } else {
+            ZStack {
+                // Behind-window vibrancy — shows desktop content through the window
+                IslandVisualEffectBackground(material: .popover)
+                // Dark tint overlay: keep ~0.40 opacity so the material is visible
+                LinearGradient(
+                    colors: [
+                        Color(red: 28 / 255, green: 28 / 255, blue: 34 / 255).opacity(0.38),
+                        Color(red: 18 / 255, green: 18 / 255, blue: 24 / 255).opacity(0.50)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         }
     }
 
@@ -50,19 +58,20 @@ struct SidekeyAuroraWindow<Content: View>: View {
 private struct SidekeyAuroraTitleBar: View {
     let title: String
     let height: CGFloat
+    var followsSystemAppearance: Bool
 
     var body: some View {
         ZStack {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.80))
+                .foregroundStyle(followsSystemAppearance ? MacSettingsTheme.text2 : .white.opacity(0.80))
         }
         .frame(height: height)
         .frame(maxWidth: .infinity)
         .overlay(
             Rectangle()
                 .frame(height: 1)
-                .foregroundStyle(.white.opacity(0.06)),
+                .foregroundStyle(followsSystemAppearance ? MacSettingsTheme.sep : .white.opacity(0.06)),
             alignment: .bottom
         )
     }

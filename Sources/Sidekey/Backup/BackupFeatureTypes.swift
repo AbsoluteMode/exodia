@@ -3,7 +3,7 @@ import Foundation
 /// Portable content groups. Machine permissions and executable runtime state
 /// are intentionally outside the restore contract.
 enum ArtifactBackupSection: String, Codable, CaseIterable, Identifiable {
-    case settings, credentials, caseVault, meetings, history, workspace
+    case settings, credentials, caseVault, meetings, history, workspace, planner
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -13,6 +13,7 @@ enum ArtifactBackupSection: String, Codable, CaseIterable, Identifiable {
         case .meetings: return "Meetings & recordings"
         case .history: return "History & saved images"
         case .workspace: return "Dashboards & agent instructions"
+        case .planner: return "To-do & calendar"
         }
     }
 }
@@ -23,6 +24,12 @@ struct ArtifactBackupSummary: Codable, Equatable, Identifiable {
     var totalBytes: Int64
     var fileCount: Int
     var sections: Set<ArtifactBackupSection>
+
+    /// The wire date is rounded by the archive's ISO-8601 encoder.
+    func matchesArchive(_ other: Self) -> Bool {
+        id == other.id && totalBytes == other.totalBytes && fileCount == other.fileCount
+            && sections == other.sections && abs(createdAt.timeIntervalSince(other.createdAt)) < 1
+    }
 }
 
 struct ArtifactBackupPreview: Equatable {
@@ -31,6 +38,34 @@ struct ArtifactBackupPreview: Equatable {
 }
 
 enum BackupVersionLocation: Equatable { case local, folder, github, localAndFolder, localAndGitHub }
+
+enum BackupSyncState: Equatable {
+    case disconnected, checking, notCreated, waiting, syncing, synced, paused, needsAttention, restoring, restoreReady
+
+    var title: String {
+        switch self {
+        case .disconnected: return "GitHub not connected"
+        case .checking: return "Checking backup…"
+        case .notCreated: return "No backup yet"
+        case .waiting: return "Backup sync pending"
+        case .syncing: return "Syncing backup…"
+        case .synced: return "Backup synced"
+        case .paused: return "Backup sync paused"
+        case .needsAttention: return "Backup needs attention"
+        case .restoring: return "Restoring backup…"
+        case .restoreReady: return "Restore is ready"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .synced: return "checkmark.circle.fill"
+        case .needsAttention: return "exclamationmark.triangle"
+        case .waiting, .syncing, .checking: return "arrow.triangle.2.circlepath"
+        default: return "externaldrive.badge.timemachine"
+        }
+    }
+}
 
 struct BackupVersion: Identifiable, Equatable {
     var id: String

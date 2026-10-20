@@ -18,7 +18,7 @@ final class CalendarConnections: ObservableObject {
     private var appleStore: EKEventStore?
     private var generation = 0
     private var metadataValid = true
-    private static let accountsKey = "planner.calendar.accounts.v1"
+    private static let accountsKey = CalendarAccountSettings.accountsKey
 
     init(defaults: UserDefaults = .standard, oauth: CalendarOAuthClient = CalendarOAuthClient(),
         http: CalendarHTTP = CalendarHTTP()) {
@@ -28,19 +28,14 @@ final class CalendarConnections: ObservableObject {
         appleEnabled = defaults.bool(forKey: "planner.calendar.appleEnabled")
         if let data = defaults.data(forKey: Self.accountsKey) {
             do {
-                let decoded = try JSONDecoder().decode([ConnectedCalendarAccount].self, from: data)
-                guard Set(decoded.map(\.id)).count == decoded.count,
-                      decoded.allSatisfy({ $0.provider != .apple && !$0.label.isEmpty && $0.label.count <= 120 }) else {
-                    throw CalendarConnectionError.configuration
-                }
-                accounts = decoded
+                accounts = try CalendarAccountSettings.decode(data)
             }
             catch { metadataValid = false; errors["accounts"] = "Couldn’t read your calendar connections. Saved settings have been kept." }
         }
     }
 
     func add(_ account: ConnectedCalendarAccount) throws {
-        guard metadataValid, account.provider != .apple, !accounts.contains(where: { $0.id == account.id }),
+        guard metadataValid, accounts.count < 64, account.provider != .apple, !accounts.contains(where: { $0.id == account.id }),
               !account.label.isEmpty, account.label.count <= 120 else { throw CalendarConnectionError.configuration }
         let candidate = accounts + [account]
         defaults.set(try JSONEncoder().encode(candidate), forKey: Self.accountsKey)
@@ -53,6 +48,7 @@ final class CalendarConnections: ObservableObject {
         defaults.set(try JSONEncoder().encode(candidate), forKey: Self.accountsKey)
         accounts = candidate
         generation += 1
+        refreshing = false
         let ids = Set(feeds.filter { $0.accountID == account.id }.map(\.id))
         feeds.removeAll { ids.contains($0.id) }; events.removeAll { ids.contains($0.feedID) }
         errors.removeValue(forKey: account.id.uuidString); lastSynced.removeValue(forKey: account.id.uuidString)
@@ -72,6 +68,8 @@ final class CalendarConnections: ObservableObject {
     }
 
     func disableApple() {
+        generation += 1
+        refreshing = false
         appleEnabled = false
         defaults.set(false, forKey: "planner.calendar.appleEnabled")
         feeds.removeAll { $0.provider == .apple }

@@ -15,6 +15,18 @@ protocol MeetingsSidebarSource: AnyObject {
     func loadList() async throws -> [MeetingMetaWithLocalState]
 }
 
+struct MeetingDetailSnapshot: Sendable {
+    let markdown: String
+    let transcript: [TranscriptSegment]?
+    let version: Int
+    let title: String?
+}
+
+@MainActor
+protocol MeetingDetailSnapshotSource: AnyObject {
+    func loadDetail(id: UUID) async throws -> MeetingDetailSnapshot?
+}
+
 /// Sink for selection events emitted by the list. `MeetingsContentController`
 /// conforms to this so a row click pushes a `loadMeeting(id:)` into the viewer.
 @MainActor
@@ -34,7 +46,7 @@ extension MeetingsSidebarDelegate {
 /// adopt a MainActor-isolated protocol. The actor's `list()` already
 /// returns the same shape — this wrapper just forwards.
 @MainActor
-final class MeetingsStoreSidebarSource: MeetingsSidebarSource {
+final class MeetingsStoreSidebarSource: MeetingsSidebarSource, MeetingDetailSnapshotSource {
     private let store: MeetingsStore
 
     init(store: MeetingsStore) {
@@ -43,6 +55,10 @@ final class MeetingsStoreSidebarSource: MeetingsSidebarSource {
 
     func loadList() async throws -> [MeetingMetaWithLocalState] {
         try await store.list()
+    }
+
+    func loadDetail(id: UUID) async throws -> MeetingDetailSnapshot? {
+        try await store.detailSnapshot(id: id)
     }
 }
 
@@ -71,6 +87,7 @@ final class MeetingsSidebarController: NSViewController {
     /// Grouped sections the SwiftUI list renders. Exposed for tests so the
     /// bucketing contract can be asserted without touching view internals.
     var sections: [MeetingListSectionItem] { model.sections }
+    var page: MeetingListModel.Page { model.page }
 
     init(
         source: MeetingsSidebarSource,
@@ -138,6 +155,10 @@ final class MeetingsSidebarController: NSViewController {
     func selectMeeting(id: UUID) {
         model.select(id)
     }
+
+    func showOverview() { model.showOverview() }
+    func showHistory() { model.showHistory() }
+    func restoreFocus() { model.restoreFocus() }
 
     /// A row was tapped by the user — highlight it and notify the delegate.
     func handleUserSelection(id: UUID) {

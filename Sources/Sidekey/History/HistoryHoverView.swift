@@ -107,6 +107,7 @@ struct HistoryHoverView: View {
     /// `nil` frame on hover exit so the owner can clear matching state.
     let onPreviewAnchorChange: (HistoryStripCard, CGRect?) -> Void
     let onPaste: (HistoryStripCard) -> Void
+    var allowsKeyboardPaste = true
 
     @State private var hoveredCard: HistoryStripCard?
     @StateObject private var keyMonitor = HistoryHoverKeyMonitor()
@@ -133,7 +134,7 @@ struct HistoryHoverView: View {
         .padding(.top, Self.topPadding)
         .onAppear {
             keyMonitor.onPaste = onPaste
-            keyMonitor.start()
+            if allowsKeyboardPaste { keyMonitor.start() }
         }
         .onDisappear { keyMonitor.stop() }
         .onChange(of: hoveredCard) { _, newValue in

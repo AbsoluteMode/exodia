@@ -23,12 +23,11 @@ final class CaseVaultStoreTests: XCTestCase {
         let secretID = UUID()
         let payload = CaseVaultPayload(
             secrets: [
-                CaseSecret(id: secretID, name: "OPENAI_API_KEY", groupID: nil, copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+                CaseSecret(id: secretID, name: "OPENAI_API_KEY", projectID: CaseProject.generalID, description: "", copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
             ],
             values: [
                 CaseSecretValue(secretID: secretID, value: "sk-secret-value")
-            ],
-            groups: []
+            ]
         )
 
         try store.save(payload, using: key)
@@ -42,9 +41,8 @@ final class CaseVaultStoreTests: XCTestCase {
         let key = SymmetricKey(size: .bits256)
         let secretID = UUID()
         let payload = CaseVaultPayload(
-            secrets: [CaseSecret(id: secretID, name: "OPENAI_API_KEY", groupID: nil, copyCount: 1, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())],
-            values: [CaseSecretValue(secretID: secretID, value: "sk-secret-value")],
-            groups: []
+            secrets: [CaseSecret(id: secretID, name: "OPENAI_API_KEY", projectID: CaseProject.generalID, description: "", copyCount: 1, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())],
+            values: [CaseSecretValue(secretID: secretID, value: "sk-secret-value")]
         )
 
         try store.save(payload, using: key)
@@ -154,9 +152,8 @@ final class CaseVaultStoreTests: XCTestCase {
         let key = SymmetricKey(size: .bits256)
         let secretID = UUID()
         let first = CaseVaultPayload(
-            secrets: [CaseSecret(id: secretID, name: "GITHUB_TOKEN", groupID: nil, copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())],
-            values: [CaseSecretValue(secretID: secretID, value: "ghp-value")],
-            groups: []
+            secrets: [CaseSecret(id: secretID, name: "GITHUB_TOKEN", projectID: CaseProject.generalID, description: "", copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())],
+            values: [CaseSecretValue(secretID: secretID, value: "ghp-value")]
         )
         try store.save(first, using: key)
         try store.save(CaseVaultPayload(), using: key)
@@ -213,11 +210,10 @@ final class CaseVaultStoreTests: XCTestCase {
     func test_older_schema_version_throws_unsupported_envelope() throws {
         // A vault with schemaVersion LESS than current is an old format we no
         // longer understand — treat as unsupportedEnvelope (existing downgrade path).
-        // Only version 1 exists today, so this is a future-proofing guard; no
-        // migration machinery needed.
+        // Versions 1 and 2 are supported, so only 0 is unknown.
         let store = CaseVaultStore(fileURL: root.appendingPathComponent("case-vault.json.enc"))
         let key = SymmetricKey(size: .bits256)
-        try store.save(CaseVaultPayload(schemaVersion: CaseVaultPayload.currentSchemaVersion - 1), using: key)
+        try store.save(CaseVaultPayload(schemaVersion: 0), using: key)
 
         XCTAssertThrowsError(try store.load(using: key)) { error in
             XCTAssertEqual(error as? CaseVaultStoreError, .unsupportedEnvelope)

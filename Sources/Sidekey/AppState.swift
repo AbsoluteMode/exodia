@@ -35,6 +35,12 @@ final class AppState: ObservableObject {
     /// Fixed, privacy-safe copy for a retained Smart-processing failure.
     @Published var dropDeliveryFailureMessage: String?
     @Published var agentPhase: AgentPhase = .idle
+    /// Visible translation work (including unsent input) or an active session.
+    @Published var translationActive = false
+    /// A screenshot selection/editor, including in-flight local OCR and unsaved edits.
+    @Published var screenshotActive = false
+    /// Visible Planner work or a retained unsent task draft.
+    @Published var plannerActive = false
 
     /// Dynamic Island idle-hide visibility, mirrored from `IslandIdleController`
     /// by `AppDelegate` (controller-owns-logic / AppState-mirrors-for-view).
@@ -57,6 +63,12 @@ final class AppState: ObservableObject {
     @Published var rightOptionHeld: Bool = false
     @Published var toolsExpanded: Bool = false
     @Published var meetingSuggestionActive: Bool = false
+    /// A Case Approve prompt is attached under the island (`CaseApprovalController`).
+    /// Holds idle-hide off and keeps the hover drawer closed while it is up.
+    @Published var caseApprovalActive: Bool = false
+    /// Height of the agent answer card below the island (0 when none); the Case
+    /// prompt goes under it so both stay readable.
+    @Published var agentAnswerCardHeight: CGFloat = 0
     @Published var meetingSuggestionDeadline: Date?
 
     @Published private(set) var meetingRecordingActive: Bool = false

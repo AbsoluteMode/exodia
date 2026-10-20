@@ -280,6 +280,8 @@ enum ArtifactRestoreDestination: Hashable {
             return .file(try inside(locations.notifyRoot, Array(parts.dropFirst(2))))
         case ("workspace", 3) where parts[1] == "agent" && parts[2] == "AGENTS.md":
             return .file(try inside(locations.agentWorkspace, ["AGENTS.md"]))
+        case ("planner", 2) where parts[1] == "planner-v1.json":
+            return .file(locations.plannerArchive)
         default:
             throw ArtifactBackupError.unsafeContent
         }
@@ -864,6 +866,7 @@ struct ArtifactRestoreTransaction {
             targets.append(locations.notifyRoot)
             targets.append(locations.agentMemory)
         }
+        if sections.contains(.planner) { targets.append(locations.plannerArchive) }
         return targets
     }
 
@@ -1146,7 +1149,8 @@ struct ArtifactRestoreTransaction {
         try payload.validate()
         // Only the blocks this payload restores are rewritten; everything else
         // the user changed meanwhile stays as it is.
-        let preserve: Set<String> = payload.schema < 3 ? [ConfigBackupRegistry.aiRoutingKey, ConfigBackupRegistry.aiRoutingPreservedKey] : []
+        var preserve: Set<String> = payload.schema < 3 ? [ConfigBackupRegistry.aiRoutingKey, ConfigBackupRegistry.aiRoutingPreservedKey] : []
+        if payload.schema < 4 { preserve.formUnion(CalendarAccountSettings.keys) }
         try ConfigBackupRegistry.apply(payload.values, sections: payload.appliedSections,
                                        preservingMissingKeys: preserve, to: defaults)
     }
@@ -1187,6 +1191,7 @@ struct ArtifactRestoreTransaction {
         guard let vault, let key, key.count == 32 else { throw ArtifactBackupError.damaged }
         let sourcePayload: CaseVaultPayload
         do { sourcePayload = try CaseVaultStore.decode(envelope: vault, using: SymmetricKey(data: key)) }
+        catch CaseVaultStoreError.needsNewerApp { throw ArtifactBackupError.needsNewerApp }
         catch { throw ArtifactBackupError.damaged }
         guard sourcePayload.schemaVersion <= CaseVaultPayload.currentSchemaVersion else {
             throw ArtifactBackupError.needsNewerApp
@@ -1347,7 +1352,7 @@ struct ArtifactRestoreTransaction {
 /// Schema 3 includes API & Models' binary routing document. Older snapshots
 /// cannot clear current routes simply because their format predated that key.
 struct ArtifactSettingsPayload: Codable, Equatable {
-    static let currentSchema = 3
+    static let currentSchema = 4
     var schema: Int = ArtifactSettingsPayload.currentSchema
     var values: [String: ConfigBackupValue]
     var selectedSections: [ConfigBackupSection]?
@@ -1403,24 +1408,100 @@ enum ArtifactCaseMerge {
                 if let incomingValue { values[secret.id] = incomingValue }
             }
         }
-        var groups: [UUID: CaseGroup] = [:]
-        for group in target.groups { groups[group.id] = group }
-        for group in source.groups {
-            if let existing = groups[group.id], group.updatedAt <= existing.updatedAt { continue }
-            groups[group.id] = group
+        var projects: [UUID: CaseProject] = [:]
+        for project in target.projects { projects[project.id] = project }
+        for project in source.projects {
+            if let existing = projects[project.id], project.updatedAt <= existing.updatedAt { continue }
+            projects[project.id] = project
         }
+        if projects[CaseProject.generalID] == nil {
+            projects[CaseProject.generalID] = .general(now: secrets.values.map(\.createdAt).min() ?? Date())
+        }
+        // A secret must always point at an existing project.
+        for (id, secret) in secrets where projects[secret.projectID] == nil {
+            var moved = secret
+            moved.projectID = CaseProject.generalID
+            secrets[id] = moved
+        }
+        renameClashingProjects(&projects, target: target)
+        renameClashingSecrets(&secrets, target: target)
+        var apps: [UUID: CaseAppRegistration] = [:]
+        for app in source.apps { apps[app.id] = app }
+        for app in target.apps { apps[app.id] = app }
         let known = Set(secrets.keys)
-        let mergedGroups = groups.values.map { group -> CaseGroup in
-            var copy = group
-            copy.keyIDs = group.keyIDs.filter { known.contains($0) }
-            return copy
-        }
         return CaseVaultPayload(
             schemaVersion: CaseVaultPayload.currentSchemaVersion,
+            projects: projects.values.sorted { lhs, rhs in
+                if lhs.id == CaseProject.generalID { return true }
+                if rhs.id == CaseProject.generalID { return false }
+                return lhs.createdAt < rhs.createdAt
+            },
             secrets: secrets.values.sorted { $0.createdAt < $1.createdAt },
             values: known.compactMap { id in
                 values[id].map { CaseSecretValue(secretID: id, value: $0) }
             }.sorted { $0.secretID.uuidString < $1.secretID.uuidString },
-            groups: mergedGroups.sorted { $0.createdAt < $1.createdAt })
+            apps: apps.values.sorted { $0.createdAt < $1.createdAt },
+            timedApprovalMinutes: target.timedApprovalMinutes)
+    }
+
+    // The broker finds projects and keys by name, so names must stay unique
+    // after a merge (projects case-insensitively, keys per project). What this
+    // Mac already had keeps its name; a clashing name that came from the
+    // backup gets the same suffix migration uses: ` (2)` for projects, `_2`
+    // for keys. Ties are broken by creation date, then id, so a merge is
+    // deterministic.
+
+    /// 0: unchanged local name, 1: local item renamed by the backup, 2: new from the backup.
+    private static func origin(id: UUID, name: String, localNames: [UUID: String]) -> Int {
+        guard let local = localNames[id] else { return 2 }
+        return local == name ? 0 : 1
+    }
+
+    private static func renameClashingProjects(_ projects: inout [UUID: CaseProject], target: CaseVaultPayload) {
+        var local: [UUID: String] = [:]
+        for project in target.projects { local[project.id] = project.name }
+        local[CaseProject.generalID] = projects[CaseProject.generalID]?.name
+        let ordered = projects.values.sorted { lhs, rhs in
+            let l = origin(id: lhs.id, name: lhs.name, localNames: local)
+            let r = origin(id: rhs.id, name: rhs.name, localNames: local)
+            if l != r { return l < r }
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        // Every name that stays is reserved first, so a renamed item never takes it.
+        var taken = Set<String>()
+        var clashing: [CaseProject] = []
+        for project in ordered {
+            if taken.insert(project.name.lowercased()).inserted { continue }
+            clashing.append(project)
+        }
+        for var project in clashing {
+            project.name = CaseProject.uniqueName(project.name, taken: taken)
+            taken.insert(project.name.lowercased())
+            projects[project.id] = project
+        }
+    }
+
+    private static func renameClashingSecrets(_ secrets: inout [UUID: CaseSecret], target: CaseVaultPayload) {
+        var local: [UUID: String] = [:]
+        for secret in target.secrets { local[secret.id] = secret.name }
+        let ordered = secrets.values.sorted { lhs, rhs in
+            let l = origin(id: lhs.id, name: lhs.name, localNames: local)
+            let r = origin(id: rhs.id, name: rhs.name, localNames: local)
+            if l != r { return l < r }
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        var taken: [UUID: Set<String>] = [:]
+        var clashing: [CaseSecret] = []
+        for secret in ordered {
+            if taken[secret.projectID, default: []].insert(secret.name.uppercased()).inserted { continue }
+            clashing.append(secret)
+        }
+        for var secret in clashing {
+            secret.name = CaseNameNormalizer.uniqueName(secret.name, taken: taken[secret.projectID, default: []])
+            taken[secret.projectID, default: []].insert(secret.name.uppercased())
+            secrets[secret.id] = secret
+        }
     }
 }

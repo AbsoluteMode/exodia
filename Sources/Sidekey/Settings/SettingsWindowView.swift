@@ -24,6 +24,7 @@ struct SettingsWindowView: View {
     /// Owned here (not by `SettingsOtherView`) so the picker's options list
     /// survives tab switches — the detail pane recreates the tab views.
     @StateObject private var displayPickerViewModel = DisplayPickerViewModel()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The `otherVolumeDuckConfig` parameter is optional so callers without a
     /// pre-built config can pass `nil` and let `SettingsOtherView` construct its
@@ -61,7 +62,7 @@ struct SettingsWindowView: View {
     }
 
     var body: some View {
-        SidekeyAuroraWindow(title: AppBuildIdentity.current.settingsTitle) {
+        SidekeyAuroraWindow(title: AppBuildIdentity.current.settingsTitle, followsSystemAppearance: true) {
             settingsShell
         }
     }
@@ -71,7 +72,7 @@ struct SettingsWindowView: View {
             sidebar
 
             Rectangle()
-                .fill(.white.opacity(0.08))
+                .fill(MacSettingsTheme.sep)
                 .frame(width: 1)
 
             detailPane
@@ -98,12 +99,12 @@ struct SettingsWindowView: View {
             // Pinned support + Quit rows stay visible even when the settings
             // tab list grows beyond the available window height.
             Rectangle()
-                .fill(Color.white.opacity(0.06))
+                .fill(MacSettingsTheme.sep)
                 .frame(height: 1)
                 .padding(.horizontal, SettingsSidebarStyle.horizontalPadding)
 
             VStack(alignment: .leading, spacing: 4) {
-                buildIdentity
+                SettingsProjectFooter(identity: .current)
                 learningCenterRow
                 quitRow
             }
@@ -112,30 +113,7 @@ struct SettingsWindowView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(width: SettingsSidebarStyle.width, alignment: .topLeading)
-    }
-
-    private var buildIdentity: some View {
-        let identity = AppBuildIdentity.current
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("\(identity.name) · \(identity.channel)")
-                .font(.system(size: 11, weight: .medium))
-            Text(identity.versionDescription)
-                .font(.system(size: 10))
-            if let revision = identity.shortRevision {
-                Text("Source \(revision)")
-                    .font(.system(size: 9, design: .monospaced))
-            }
-            Text(identity.bundlePath)
-                .font(.system(size: 9))
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .help(identity.bundlePath)
-                .textSelection(.enabled)
-        }
-        .foregroundStyle(MacSettingsTheme.text2)
-        .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
-        .padding(.bottom, 6)
-        .accessibilityElement(children: .combine)
+        .background(MacSettingsTheme.bgSidebar)
     }
 
     @ViewBuilder
@@ -148,7 +126,13 @@ struct SettingsWindowView: View {
         Button {
             selection.select(tab)
         } label: {
-            HStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: tab.systemImageName)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 26, height: 26)
+                    .foregroundStyle(.white)
+                    .background(tab.iconTint, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .accessibilityHidden(true)
                 Text(tab.title)
                     .font(.system(size: SettingsSidebarStyle.labelFontSize, weight: .medium))
                     .lineLimit(1)
@@ -156,19 +140,19 @@ struct SettingsWindowView: View {
                     .layoutPriority(1)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(selection.selectedTab == tab ? Color.white : MacSettingsTheme.text2)
+            .foregroundStyle(selection.selectedTab == tab && !isHighlighted ? Color.white : MacSettingsTheme.text)
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHighlighted
-                          ? Color.white.opacity(0.22)
+                          ? MacSettingsTheme.selection
                           : (selection.selectedTab == tab
-                             ? MacSettingsTheme.accent
+                             ? MacSettingsTheme.accentFill
                              : Color.clear))
             )
-            .animation(.easeOut(duration: 0.2), value: isHighlighted)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isHighlighted)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tab.title)
@@ -213,7 +197,7 @@ struct SettingsWindowView: View {
                     .layoutPriority(1)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(Color(red: 1.0, green: 0.45, blue: 0.45))
+            .foregroundStyle(MacSettingsTheme.red)
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -221,7 +205,7 @@ struct SettingsWindowView: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHighlighted ? Color.red.opacity(0.25) : Color.clear)
             )
-            .animation(.easeOut(duration: 0.2), value: isHighlighted)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isHighlighted)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(AppBuildIdentity.current.quitActionTitle)
@@ -272,8 +256,10 @@ struct SettingsWindowView: View {
             )
         case .notifications:
             SettingsNotificationsView()
+        case .integrations:
+            SettingsIntegrationsView()
         case .backup:
-            SettingsBackupView()
+            SettingsBackupView(openIntegrations: { selection.select(.integrations) })
         }
     }
 }
@@ -300,13 +286,13 @@ private struct SettingsNotesUnavailableView: View {
         VStack(spacing: 8) {
             Image(systemName: "note.text")
                 .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(MacSettingsTheme.text2)
             Text("Notes are not available")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(MacSettingsTheme.text)
             Text("Meeting notes will appear here after the meetings store is ready.")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(MacSettingsTheme.text2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -383,7 +369,7 @@ enum SettingsSidebarStyle {
     static let horizontalPadding: CGFloat = 10
     static let verticalPadding: CGFloat = 14
     static let buttonHorizontalPadding: CGFloat = 10
-    static let rowHeight: CGFloat = 34
+    static let rowHeight: CGFloat = 38
     static let labelFontSize: CGFloat = 13
     static let labelMinimumScaleFactor: CGFloat = 0.88
 
@@ -391,5 +377,6 @@ enum SettingsSidebarStyle {
         width
             - horizontalPadding * 2
             - buttonHorizontalPadding * 2
+            - 36 // icon and its gap
     }
 }

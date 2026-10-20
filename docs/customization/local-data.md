@@ -11,6 +11,7 @@ new account system, hosted service or second copy of the user's knowledge.
 | Clipboard, Drop and agent history | `History/HistoryStore.swift`, `History/SQLiteHistoryStore.swift` | `Application Support/<bundle ID>/history.sqlite`, with local image sidecars |
 | Meeting notes and checkpoints | `Meetings/MeetingsStore.swift`, `Meetings/MeetingFinalizeManifest.swift` | `Application Support/Sidekey/Meetings/`; staged audio and durable processing state |
 | Case snippets | `Case/CaseVaultStore.swift` | AES-GCM encrypted file under `Application Support/<bundle ID>/`, Keychain encryption key, backup before save |
+| Case vault v2 and AI broker | `Case/CaseVaultStore.swift`, `Case/Broker/` | Schema v2 (projects, secrets with `projectID`, app registrations) in the same encrypted file; v1 migrates losslessly and an older build reports `needsNewerApp`. The broker listens on a Unix socket `case-broker.sock` (fallback `cb.sock`) in `Application Support/<bundle ID>/` (directory 0700, socket 0600); the decrypted payload stays in memory for it until quit. Values reach a command only through its environment |
 | Agent memory and sessions | `AgentDaemon/AgentDaemonWorkingDirectory.swift`, `AgentDaemon/AgentSessionStore.swift` | `Application Support/whytap/agent/` with AGENTS.md, sessions.json and isolated OpenCode runtime data |
 
 Paths in the code column start at `Sources/Sidekey/`. Application Support is the

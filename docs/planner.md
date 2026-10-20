@@ -17,9 +17,11 @@ Changes persist atomically before appearing in the interface. Unreadable or
 unsupported archives block writes and retain the original file; Retry loads a
 restored file. A failed save keeps the editor/draft and reports an error.
 Local tasks and events are not uploaded by calendar connections.
-The existing encrypted-backup allowlist does not yet include the Planner archive,
-calendar account settings or OAuth credentials; do not rely on that feature to
-restore Planner data on another Mac.
+Encrypted backups include the Planner archive, calendar account settings and saved
+OAuth credentials. The local content has its own To-do & calendar archive section;
+connection metadata travels with settings and sign-in travels with credentials.
+Restore keeps the previous local archive for rollback. Archives from before
+Planner support preserve connections already configured on the target Mac.
 
 ## Unified calendar
 
@@ -69,12 +71,14 @@ any supported source remain joinable.
 
 Use **Whytap** as the application name and public consent-screen brand.
 
-No shared provider registrations or production OAuth client IDs were supplied
-with this change. Direct sign-in needs the developer's registered public client
-configuration, entered in Connect account. Live authorization, organizational
-consent and provider-account compatibility require separate acceptance with real
-accounts. Passing fixture tests is not evidence of a live provider connection.
-These registrations are not created automatically by the application.
+The application owner registers native OAuth clients once. Packaged client
+configuration is loaded from WhytapCalendarOAuthClients in the app Info.plist;
+ordinary users choose an account and sign in. Advanced app setup allows a source
+user to supply their own client. A build without a registered client still needs
+that setup; it does not pretend to have a working shared sign-in.
+Live consent, organizational restrictions and provider-account compatibility
+require acceptance with real accounts. Fixture tests do not prove live sign-in.
+Provider registration and public verification remain separate external steps.
 
 1. **Google Cloud:** enable Calendar API, configure the consent screen and create
    a **Desktop app** OAuth client. Add the account as a test user while the app is
@@ -95,7 +99,7 @@ These registrations are not created automatically by the application.
 Authorization opens the default browser; a temporary receiver binds only
 127.0.0.1. Microsoft uses a localhost redirect, with that same numeric listener.
 State validation, S256 PKCE, a three-minute timeout, cancellation, bounded request
-sizes and listener cleanup apply. Tokens and Google client configuration are
+sizes and listener cleanup apply. Account tokens and the configuration used for each connected account are
 stored in the login Keychain under the existing channel's service. Rotated refresh
 tokens are persisted before an API call resumes. Disconnect cancels pending
 refreshes so they cannot restore a deleted credential. Private responses use an
@@ -131,3 +135,22 @@ Provider contracts checked on 2026-10-19:
 [Teams meeting links](https://learn.microsoft.com/en-us/graph/outlook-calendar-online-meetings),
 [Zoom OAuth and loopback](https://developers.zoom.us/docs/integrations/oauth/),
 [Zoom Calendar API](https://developers.zoom.us/docs/api/calendar/).
+
+## Packaging registered clients
+
+Keep the owner's native-client configuration in the Git common directory as
+`whytap-calendar-clients.plist`, outside version control. It is a plist dictionary
+keyed by `google`, `microsoft` and `zoom`; each entry contains `clientID`. Only
+Google's public Desktop client may include `clientSecret`; confidential web-app
+secrets, access tokens and refresh tokens are refused.
+
+Both packaging scripts run `scripts/configure-calendar-clients.py` before signing.
+`WHYTAP_CALENDAR_CLIENTS_PLIST` can select another local configuration file. Use
+`--require-all` on that helper to verify a candidate intended for all three direct
+connections. Its output names providers only. Registration values never belong
+in logs, public PRs or source documentation.
+
+Closing Planner stops calendar polling. Reopening refreshes the visible range.
+An open editor keeps its draft when another tool hotkey brings Planner forward.
+The visible window or a retained new-task draft defers Sparkle restart and backup
+restore. Ordinary backups continue to capture saved content while Planner is open.

@@ -20,8 +20,11 @@ enum HoverTool: String, CaseIterable, Hashable {
     case brightness
     case tasks
     case calendar
+    case translate
+    case subtitles
     case quit
     case settings
+    case screenshot
 }
 
 /// Where a `.navigate` tool takes the user.
@@ -30,7 +33,7 @@ enum HoverNavigationTarget: Equatable {
     case quitRow
 }
 
-/// What happens when a tile is tapped.
+/// Activation in the live island. Toolbox first selects the tool’s pane.
 enum HoverToolKind: Equatable {
     /// Opens an inline sub-panel in the hover or in the Toolbox right pane.
     case inlinePanel
@@ -99,6 +102,15 @@ enum HoverToolRegistry {
         case .calendar:
             return HoverToolInfo(title: "Calendar", sfSymbol: "calendar", kind: .action,
                                  description: "Your schedule from Whytap, Apple, Google, Outlook and Zoom")
+        case .translate:
+            return HoverToolInfo(title: "Translate", sfSymbol: "character.bubble", kind: .action,
+                                 description: "Translate text with your chosen LLM")
+        case .subtitles:
+            return HoverToolInfo(title: "Subtitles", sfSymbol: "captions.bubble", kind: .action,
+                                 description: "Translate system audio into live subtitles")
+        case .screenshot:
+            return HoverToolInfo(title: "Screenshot", sfSymbol: "viewfinder", kind: .action,
+                                 description: "Capture an area, annotate it and blur text and numbers")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
                                  kind: .navigate(.quitRow),

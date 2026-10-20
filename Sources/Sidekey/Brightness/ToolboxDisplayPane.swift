@@ -23,7 +23,7 @@ struct ToolboxDisplayPane: View {
         VStack(alignment: .leading, spacing: 14) {
             MacCard {
                 if controller.supportsExtra {
-                    MacRow(title: "Extra", subtitle: "Stays on until you turn it off. Uses more battery.") {
+                    MacRow(title: "Extra", subtitle: "First decrease only turns Extra off. Uses more battery.") {
                         MacSwitch(isOn: Binding(get: { controller.isExtraOn }, set: { controller.setExtra($0) }))
                             .accessibilityLabel("Extra brightness")
                     }
@@ -38,7 +38,7 @@ struct ToolboxDisplayPane: View {
             if !controller.supportsExtra {
                 Text(controller.isAvailable ? Self.noExtraText : IslandBrightnessStrip.unavailableText)
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(MacSettingsTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

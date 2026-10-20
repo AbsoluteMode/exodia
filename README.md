@@ -71,7 +71,8 @@ Open **Settings** from the island's hover controls:
    free request and stores it in macOS Keychain. A dot on each provider chip
    shows whether the key works.
 2. Under **Models**, give each feature a model: Drop Fast, Drop Smart, Drop
-   Smart cleanup, Meetings, Meeting notes, Agent, Agent voice and Voice search.
+   Smart cleanup, Meetings, Meeting notes, Agent, Agent voice, Voice search,
+   Translation and Subtitles audio.
    After you add a key, **Set up** offers to assign it to the features it can
    serve; nothing is assigned until you choose. A model that is not in Whytap's
    built-in list is checked with a tiny synthetic request when you pick it.
@@ -161,3 +162,11 @@ that would require a Whytap-hosted service are out of scope by design.
 ## Security
 
 See `SECURITY.md`. Report vulnerabilities to security@whytap.ai.
+
+### Translation
+
+Use **Translate** or **Subtitles** in the island’s tool search. Translate text
+with automatic RU↔EN direction or choose a target language; read floating
+subtitles for system audio without opening the microphone. Choose the
+**Translation** and **Subtitles audio** routes in API & Models first. Both
+tools can be pinned in Toolbox or assigned shortcuts. [Usage and privacy](docs/translation.md).

@@ -22,9 +22,9 @@ final class MacUIContractTests: XCTestCase {
 
     func test_macSwitch_is_ios_style_not_textual() throws {
         let s = try source("Sources/Sidekey/Settings/MacUI/MacSwitch.swift")
-        XCTAssertTrue(s.contains("MacSettingsTheme.accent"))      // on-fill = accent
+        XCTAssertTrue(s.contains("MacSettingsTheme.switchOn"))
         XCTAssertFalse(s.contains("Text(\"ON\")"))                // no textual ON/OFF
-        XCTAssertFalse(s.contains("Toggle("))                      // not the system toggle
+        XCTAssertTrue(s.contains(".accessibilityRepresentation")) // native switch semantics
     }
 
     func test_macButton_has_primary_and_danger_styles() throws {
@@ -46,12 +46,8 @@ final class MacUIContractTests: XCTestCase {
         XCTAssertTrue(s.contains(".contentShape(Rectangle())"))
     }
 
-    func test_macPopup_has_accent_chevron() throws {
-        let s = try source("Sources/Sidekey/Settings/MacUI/MacPopup.swift")
-        XCTAssertTrue(s.contains("struct MacPopup"))
-        XCTAssertTrue(s.contains("MacSettingsTheme.accent"))
-        XCTAssertTrue(s.contains("chevron"))
-    }
+    // CompactMenuTests checks popup sizing, target/action and notification alignment
+    // with actual hosted controls. The retired accent-chevron source contract is gone.
 
     func test_macField_uses_field_bg_and_supports_secure() throws {
         let s = try source("Sources/Sidekey/Settings/MacUI/MacField.swift")

@@ -19,7 +19,7 @@ enum ConfigBackupSection: String, Codable, CaseIterable, Identifiable {
 /// An explicit import/export allowlist. Never copy the defaults domain: it also
 /// contains migrations, installation state, updater state and file bookmarks.
 enum ConfigBackupRegistry {
-    enum Kind { case string, bool, strings, data, propertyList }
+    enum Kind { case string, bool, strings, data, propertyList, calendarAccounts }
     static let aiRoutingKey = "sidekey.aiRouting.v1"
     static let aiRoutingPreservedKey = "sidekey.aiRouting.v1.unreadable"
     struct Entry {
@@ -37,8 +37,11 @@ enum ConfigBackupRegistry {
             "sidekey.models.openRouterModel", "sidekey.models.customLLMBaseURL", "sidekey.models.customLLMModel",
             "sidekey.preferences.transcriptionMode", "sidekey.preferences.selectedLanguage", "sidekey.preferences.targetLanguage", "com.sidekey.meetings.preferredLanguage"])
         add(.models, .string, ["openAI", "selfHosted", "deepgram", "soniox", "elevenLabs"].map { "sidekey.models.byokModel." + $0 })
+        add(.models, .string, ["sidekey.translation.textTarget", "sidekey.translation.subtitleTarget", "sidekey.translation.source"])
+        add(.models, .bool, ["sidekey.translation.original"])
         add(.models, .data, [aiRoutingKey])
         add(.models, .propertyList, [aiRoutingPreservedKey])
+        add(.hotkeys, .propertyList, [HotkeyPreferences.toolShortcutsDefaultsKey])
         add(.hotkeys, .bool, ["sidekey.preferences.brightnessKeys"])
         add(.hotkeys, .string, ["agentGestureKey", "agentTextKey", "agentVoiceKey", "agentTextShortcut",
             "agentVoiceShortcut", "agentVoiceGesture", "dropVoiceGesture", "dropVoiceTapCombo", "dropVoiceShortcut",
@@ -53,6 +56,9 @@ enum ConfigBackupRegistry {
             "sidekey.preferences.googleEnabled", "com.sidekey.meetings.enabled", "com.sidekey.volumeduck.enabled",
             "com.sidekey.nowplaying.enabled", "com.sidekey.island.idleHideEnabled"])
         add(.other, .string, ["sidekey.dynamicIsland.preferredDisplayUUID"])
+        add(.other, .calendarAccounts, [CalendarAccountSettings.accountsKey])
+        add(.other, .strings, [CalendarAccountSettings.hiddenFeedsKey])
+        add(.other, .bool, [CalendarAccountSettings.appleEnabledKey])
         add(.agents, .string, ["agent.opencode.model", "agent.claude.model", "agent.claude.effort", "agent.codex.model", "agent.codex.effort", "agent.codex.serviceTier"])
         add(.agents, .bool, ["agent.opencode.allowActions"])
         return result
@@ -65,12 +71,22 @@ enum ConfigBackupRegistry {
     /// No Keychain enumeration or caller-controlled account names. Only server
     /// IDs registered in the routing document add accounts to the export.
     static func credentialAccounts(in defaults: UserDefaults) throws -> Set<String> {
-        guard let stored = defaults.object(forKey: aiRoutingKey) else { return credentialAccounts }
-        return credentialAccounts.union(try routingServers(capturedRouting(stored).data).map(\.keyAccount))
+        var accounts = credentialAccounts
+        if let stored = defaults.object(forKey: aiRoutingKey) {
+            accounts.formUnion(try routingServers(capturedRouting(stored).data).map(\.keyAccount))
+        }
+        if let stored = defaults.object(forKey: CalendarAccountSettings.accountsKey) {
+            guard let data = stored as? Data else { throw ConfigBackupError.invalidArchive }
+            accounts.formUnion(try CalendarAccountSettings.decode(data).map { CalendarKeychain.account($0.id) })
+        }
+        return accounts
     }
 
     static func isCredentialAccount(_ account: String) -> Bool {
         if credentialAccounts.contains(account) { return true }
+        if account.hasPrefix("calendar."), let id = UUID(uuidString: String(account.dropFirst(9))) {
+            return account == CalendarKeychain.account(id)
+        }
         let prefix = "byok.server.", suffix = ".api_key"
         guard account.hasPrefix(prefix), account.hasSuffix(suffix),
               let id = UUID(uuidString: String(account.dropFirst(prefix.count).dropLast(suffix.count))) else { return false }
@@ -157,6 +173,10 @@ enum ConfigBackupRegistry {
                     values[aiRoutingPreservedKey] = try preserved(copy)
                     warnings.append("Some API & Models settings could not be read. Their original value is preserved in this backup. Keys for unreadable server entries could not be included; review those servers after recovery.")
                 }
+            case .calendarAccounts:
+                guard let data = value as? Data else { throw ConfigBackupError.invalidArchive }
+                _ = try CalendarAccountSettings.decode(data)
+                values[key] = .data(data)
             case .propertyList:
                 // A repaired routing document includes this existing copy too.
                 if values[key] == nil { values[key] = try preserved(value) }
@@ -174,6 +194,7 @@ enum ConfigBackupRegistry {
                 guard value.utf8.count <= 8192, !value.contains("\0") else { throw ConfigBackupError.invalidArchive }
             case (.bool, .bool): break
             case (.data, .data(let data)): _ = try routingServers(data)
+            case (.calendarAccounts, .data(let data)): _ = try CalendarAccountSettings.decode(data)
             case (.propertyList, .propertyList(let data)):
                 guard data.count <= 524_288 else { throw ConfigBackupError.tooLarge }
                 _ = try value.propertyListValue()
@@ -185,9 +206,18 @@ enum ConfigBackupRegistry {
             }
         }
         if let credentials {
-            guard credentials.count <= 264, credentials.keys.allSatisfy(isCredentialAccount),
-                  credentials.values.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 16384 && !$0.contains("\0") })
+            guard credentials.count <= 328, credentials.keys.allSatisfy(isCredentialAccount),
+                  credentials.allSatisfy({ account, value in
+                      !value.isEmpty && value.utf8.count <= (account.hasPrefix("calendar.") ? 65_536 : 16_384) && !value.contains("\0")
+                  })
             else { throw ConfigBackupError.invalidArchive }
+            for (account, value) in credentials where account.hasPrefix("calendar.") {
+                guard let data = value.data(using: .utf8),
+                      let credential = try? JSONDecoder().decode(CalendarCredential.self, from: data),
+                      credential.provider != .apple, !credential.clientID.isEmpty,
+                      !credential.accessToken.isEmpty, !credential.refreshToken.isEmpty,
+                      credential.expiresAt.timeIntervalSince1970.isFinite else { throw ConfigBackupError.invalidArchive }
+            }
         }
     }
 

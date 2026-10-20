@@ -26,6 +26,7 @@ struct ArtifactBackupLocations: Sendable {
     var monitorRoot: URL { bundleRoot.appendingPathComponent("Monitor", isDirectory: true) }
     var notifyRoot: URL { bundleRoot.appendingPathComponent("notifications", isDirectory: true) }
     var agentMemory: URL { agentWorkspace.appendingPathComponent("AGENTS.md", isDirectory: false) }
+    var plannerArchive: URL { legacyMeetingsRoot.appendingPathComponent("Planner/planner-v1.json") }
     var pendingRestoreRoot: URL { bundleRoot.appendingPathComponent("pending-restore", isDirectory: true) }
     var stagingWorkRoot: URL { bundleRoot.appendingPathComponent("backup-work", isDirectory: true) }
     /// Retained checkpoints of data a finished restore replaced.
@@ -150,7 +151,10 @@ actor ArtifactBackupStager {
         static let workspaceDepth = 5
         static let agentMemory: Int64 = 8 * 1024 * 1024
         static let recordingFile: Int64 = 8 * 1024 * 1024 * 1024
-        static let recordingFiles = 4096
+        // Short audio chunks accumulate across retained meetings. The archive
+        // already bounds total entries and bytes; 4096 rejected normal profiles.
+        // WHY: .project-docs/decisions/2026-10-20-simple-github-backup.md
+        static let recordingFiles = ArtifactBackupManifest.maxEntries
         static let recordingDirectories = 1024
         /// A chunk rotates every 30 s (`MeetingsConfig.chunkRotationSeconds`),
         /// so a `.tmp` untouched for ten rotations is not being written: it is
@@ -199,6 +203,13 @@ actor ArtifactBackupStager {
             if request.sections.contains(.workspace) {
                 entries.append(contentsOf: try stageWorkspace(request, into: directory,
                                                               warnings: &warnings))
+            }
+            if request.sections.contains(.planner), fileManager.fileExists(atPath: request.locations.plannerArchive.path) {
+                let copy = directory.appendingPathComponent("planner-v1.json")
+                _ = try copyStable(request.locations.plannerArchive, to: copy,
+                                   limit: ArtifactBackupManifest.maxInlineBytes, required: true)
+                _ = try PlannerStore.decodeArchive(Data(contentsOf: copy))
+                entries.append(try entry(for: copy, path: "planner/planner-v1.json", section: .planner))
             }
             entries = try Self.ordered(entries)
             let total = entries.reduce(Int64(0)) { $0 + $1.bytes }

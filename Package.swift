@@ -20,7 +20,10 @@ let package = Package(
         // `.build/<config>/SidekeyApp` (SwiftPM names binaries after the
         // target); `build-dmg.sh` renames it to `Sidekey` when assembling
         // the .app so `CFBundleExecutable` stays stable.
-        .executable(name: "Sidekey", targets: ["SidekeyApp"])
+        .executable(name: "Sidekey", targets: ["SidekeyApp"]),
+        // Command-line helper for the Case secrets manager. Depends only on
+        // WhytapCaseKit (never on Sidekey) so it stays small.
+        .executable(name: "whytap", targets: ["WhytapCLI"])
     ],
     dependencies: [
         // Sparkle 2 — auto-update framework.
@@ -44,9 +47,16 @@ let package = Package(
     targets: [
         // App library — all application code. Entry lives in
         // `SidekeyAppMain.run()`.
+        // Shared protocol + masker for the app and the `whytap` CLI.
+        // Must not depend on Sidekey.
+        .target(
+            name: "WhytapCaseKit",
+            path: "Sources/WhytapCaseKit"
+        ),
         .target(
             name: "Sidekey",
             dependencies: [
+                "WhytapCaseKit",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "FluidAudio", package: "FluidAudio")
             ],
@@ -57,6 +67,16 @@ let package = Package(
             name: "SidekeyApp",
             dependencies: ["Sidekey"],
             path: "Sources/SidekeyApp"
+        ),
+        .executableTarget(
+            name: "WhytapCLI",
+            dependencies: ["WhytapCaseKit"],
+            path: "Sources/WhytapCLI"
+        ),
+        .testTarget(
+            name: "WhytapCaseKitTests",
+            dependencies: ["WhytapCaseKit"],
+            path: "Tests/WhytapCaseKitTests"
         ),
         .testTarget(
             name: "SidekeyTests",

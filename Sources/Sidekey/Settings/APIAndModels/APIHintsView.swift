@@ -5,114 +5,177 @@ import SwiftUI
 @MainActor
 struct APIHintsView: View {
     let onAddKey: () -> Void
-    @State private var isExpanded: Bool
-
-    init(initiallyExpanded: Bool = false, onAddKey: @escaping () -> Void) {
-        self.onAddKey = onAddKey
-        self._isExpanded = State(initialValue: initiallyExpanded)
-    }
+    let onClose: () -> Void
 
     var body: some View {
-        MacCard {
-            DisclosureGroup(isExpanded: $isExpanded) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Whytap is free. Provider free tiers and included credits can cover your AI usage within their limits.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(MacSettingsTheme.text2)
-
-                    ForEach(Self.hints) { hint in
-                        hintRow(hint)
-                    }
-
-                    Text("Offers checked October 19, 2026. Eligibility, quotas and availability can change. Check the provider's terms and billing settings before use.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(MacSettingsTheme.text2)
-
-                    Button("Add API key", action: onAddKey)
-                        .controlSize(.small)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 12)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "lightbulb")
-                        .foregroundStyle(MacSettingsTheme.orange)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("API hints")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(MacSettingsTheme.text)
-                        Text("Free tiers & included credits")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(MacSettingsTheme.text2)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("API hints")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(MacSettingsTheme.text)
+                Text("Free tiers and credits for the providers you connect.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(MacSettingsTheme.text2)
             }
-            .padding(14)
+            .padding(24)
+            .padding(.bottom, 2)
+
+            ScrollView {
+                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                    GridRow {
+                        offerCard(Self.hints[0])
+                        offerCard(Self.hints[1])
+                    }
+                    GridRow {
+                        offerCard(Self.hints[2])
+                        offerCard(Self.hints[3])
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+            }
+
+            footer
         }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .onExitCommand(perform: onClose)
     }
 
-    private func hintRow(_ hint: Hint) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+    private func offerCard(_ hint: Hint) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                ProviderBrandIcon(assetName: hint.assetName, size: 18, color: MacSettingsTheme.text)
+                    .frame(width: 32, height: 32)
+                    .background(MacSettingsTheme.hover, in: RoundedRectangle(cornerRadius: 8))
                 Text(hint.provider)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(MacSettingsTheme.text)
+                Spacer(minLength: 4)
+                if hint.requiresPaidPlan {
+                    Text("Paid plan")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(MacSettingsTheme.text2)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(MacSettingsTheme.hover, in: Capsule())
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(hint.allowance)
+                    .font(.system(size: 30, weight: .semibold))
+                    .tracking(-0.6)
+                    .foregroundStyle(MacSettingsTheme.text)
+                Text(hint.cadence)
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(MacSettingsTheme.text2)
             }
+            .padding(.top, 17)
+
             Text(hint.detail)
                 .font(.system(size: 12))
+                .lineSpacing(2)
                 .foregroundStyle(MacSettingsTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 11)
+
+            Spacer(minLength: 16)
+
             Link(destination: hint.url) {
-                Label(hint.linkTitle, systemImage: "arrow.up.right")
-                    .font(.system(size: 11.5))
+                HStack(spacing: 4) {
+                    Text("View offer")
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .font(.system(size: 11.5, weight: .medium))
             }
+            .accessibilityLabel("\(hint.provider) offer details")
             .accessibilityHint("Opens the provider's website in your browser")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .frame(maxWidth: .infinity, minHeight: 220, maxHeight: .infinity, alignment: .topLeading)
+        .background(MacSettingsTheme.bgCard, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5)
+        }
         .accessibilityElement(children: .contain)
     }
 
-    private struct Hint: Identifiable {
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add a provider key, then choose its model for a feature in Models.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(MacSettingsTheme.text2)
+
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Checked October 19, 2026")
+                    Text("Provider terms, limits and billing settings apply.")
+                }
+                .font(.system(size: 10.5))
+                .foregroundStyle(MacSettingsTheme.text2)
+                Spacer(minLength: 16)
+                Button("Add API key", action: onAddKey)
+                    .buttonStyle(.bordered)
+                Button("Done", action: onClose)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .controlSize(.regular)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 22)
+        .overlay(alignment: .top) {
+            Rectangle().fill(MacSettingsTheme.sep).frame(height: 0.5)
+        }
+    }
+
+    private struct Hint {
         let provider: String
+        let assetName: String
         let allowance: String
+        let cadence: String
         let detail: String
-        let linkTitle: String
         let url: URL
-        var id: String { provider }
+        var requiresPaidPlan = false
     }
 
     // Keep amounts and the visible verification date together when refreshing offers.
     private static let hints: [Hint] = [
         Hint(
             provider: "Deepgram",
-            allowance: "$200 starter credit",
-            detail: "New accounts receive a one-time $200 API credit, with no card required to start. Add a Deepgram key and choose a Deepgram model for speech recognition.",
-            linkTitle: "Deepgram credit details",
+            assetName: "deepgram",
+            allowance: "$200",
+            cadence: "one-time starter credit",
+            detail: "Speech recognition credit for new accounts. No card needed to start.",
             url: URL(string: "https://deepgram.com/pricing")!
         ),
         Hint(
             provider: "ElevenLabs",
-            allowance: "Free monthly allowance",
-            detail: "The Free plan includes 10,000 credits each month and API access. Check the Scribe speech-to-text allowance: realtime and batch audio have different quotas. Add an ElevenLabs key and choose Scribe for speech recognition.",
-            linkTitle: "ElevenLabs API pricing",
+            assetName: "elevenlabs",
+            allowance: "10,000",
+            cadence: "free credits each month",
+            detail: "The Free plan includes API access. Check Scribe's allowance: realtime and batch audio have different quotas.",
             url: URL(string: "https://elevenlabs.io/pricing/api")!
         ),
         Hint(
             provider: "OpenRouter",
-            allowance: "Free models",
-            detail: "Choose a model ending in :free for text cleanup, meeting notes or the agent. The free tier allows 50 requests a day and 20 a minute. Agent turns may use several requests; availability and tool support vary by model.",
-            linkTitle: "Browse OpenRouter free models",
+            assetName: "openrouter",
+            allowance: "50 / day",
+            cadence: "free model requests",
+            detail: "Choose a :free model. Limit: 20 requests a minute. Tool support and availability vary; agent turns may use several requests.",
             url: URL(string: "https://openrouter.ai/models?max_price=0")!
         ),
         Hint(
             provider: "Claude Max",
-            allowance: "Included with a paid plan",
-            detail: "Max 5x includes $100 and Max 20x $200 in API credit per month. After seven days on the plan, link a Console organization in Claude Settings → Billing. Add that organization's Anthropic key here and select an Anthropic model for Agent. Unused credits expire each cycle; they do not fund OpenRouter requests.",
-            linkTitle: "Claim Claude Max API credits",
-            url: URL(string: "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans")!
+            assetName: "claude-code",
+            allowance: "$100–200",
+            cadence: "API credit each month",
+            detail: "Max 5x: $100; Max 20x: $200. After seven days, link a Console organization in Claude's billing settings. Use its Anthropic key for Agent. Credits expire each cycle.",
+            url: URL(string: "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans")!,
+            requiresPaidPlan: true
         ),
     ]
 }

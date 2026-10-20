@@ -18,7 +18,7 @@ struct PlannerView: View {
                                 Spacer()
                                 if section == .tasks {
                                     Text("\(store.archive.tasks.filter { !$0.completed }.count)")
-                                        .foregroundStyle(.secondary).monospacedDigit()
+                                        .foregroundStyle(MacSettingsTheme.text2).monospacedDigit()
                                 }
                             }
                             .padding(10).contentShape(Rectangle())
@@ -30,7 +30,7 @@ struct PlannerView: View {
                 }
                 Spacer()
                 Label("Stored on this Mac", systemImage: "internaldrive")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(MacSettingsTheme.text2)
             }
             .padding(18).frame(width: 185)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
@@ -76,13 +76,14 @@ struct PlannerTasksView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("To-do").font(.largeTitle.weight(.bold))
-                    Text("A little less to keep in your head.").foregroundStyle(.secondary)
+                    Text("A little less to keep in your head.").foregroundStyle(MacSettingsTheme.text2)
                 }
                 Spacer()
                 Picker("Tasks", selection: $showCompleted) {
                     Text("Active").tag(false)
                     Text("Completed").tag(true)
-                }.pickerStyle(.segmented).frame(width: 200)
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 200)
+                .accessibilityLabel("Tasks")
             }
             HStack(spacing: 12) {
                 Image(systemName: "plus.circle.fill").font(.title2).foregroundStyle(Color.accentColor)
@@ -94,7 +95,7 @@ struct PlannerTasksView: View {
             }.padding(14).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
             HStack {
                 Text("\(tasks.count) \(showCompleted ? "completed" : "active")")
-                    .font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                    .font(.callout.weight(.medium)).foregroundStyle(MacSettingsTheme.text2)
                 Spacer()
                 TextField("Search tasks", text: $query).textFieldStyle(.roundedBorder).frame(width: 190)
             }
@@ -179,9 +180,9 @@ struct PlannerEmptyState: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 38, weight: .light)).foregroundStyle(.secondary)
+            Image(systemName: symbol).font(.system(size: 38, weight: .light)).foregroundStyle(MacSettingsTheme.text2)
             Text(title).font(.title3.weight(.semibold))
-            Text(subtitle).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text(subtitle).foregroundStyle(MacSettingsTheme.text2).multilineTextAlignment(.center)
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(24)
     }
 }

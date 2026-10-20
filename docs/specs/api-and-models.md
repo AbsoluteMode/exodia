@@ -78,6 +78,8 @@ Whytap сам узнаёт у провайдера актуальный спис
 | `agent` | Agent | LLM with tools | `OpenCodeProvider` (`--model openrouter/<id>`) |
 | `agentVoice` | Agent voice | real-time | `makeStreamingSession(resilient: false)` для голоса агента |
 | `voiceSearch` | Voice search | real-time | `makeStreamingSession(resilient: false)` для поиска Google |
+| `translation` | Translation | LLM | `TranslationService`: текст и финальные фразы субтитров |
+| `subtitlesAudio` | Subtitles audio | real-time | `LiveSubtitleModel`: только системный звук |
 
 Запасные пути отдельных строк не получают:
 
@@ -106,12 +108,14 @@ Whytap сам узнаёт у провайдера актуальный спис
 
 ## API hints
 
-Под ключами расположен свёрнутый блок **API hints**: бесплатные лимиты и кредиты
-Deepgram, ElevenLabs, OpenRouter и Claude Max, условия их использования,
-официальные ссылки и кнопка **Add API key**. Блок доступен и без сохранённых
-ключей. Стартовый кредит, ежемесячный лимит и бонус платной подписки отмечены
-отдельно; дата проверки предложений видна после раскрытия. Просмотр подсказок
-не делает сетевых запросов и не меняет модели или ключи. Подробности и источники:
+Внизу раздела, после блока Models, расположена ссылка **API hints**, доступная и без
+сохранённых ключей. Она открывает отдельный лист с четырьмя карточками:
+Deepgram, ElevenLabs, OpenRouter и Claude Max. В карточках — значок провайдера,
+крупная сумма или лимит, период, короткие условия и официальная ссылка.
+Для Claude Max явно указан платный план. Внизу всегда видны дата проверки,
+**Add API key** и **Done**; Return и Escape закрывают лист. Лампочки и
+раскрывающегося блока нет. Просмотр не делает сетевых запросов и не меняет
+модели или ключи. **Add API key** открывает существующую форму. Подробности и источники:
 [API hints](../../.project-docs/decisions/2026-10-19-api-hints.md).
 
 ## Блок API keys

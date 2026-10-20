@@ -197,7 +197,8 @@ verify_community_signature() {
         "Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" \
         "Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app" \
         "Contents/Frameworks/Sparkle.framework/Versions/B" \
-        "Contents/Frameworks/MediaRemoteAdapter.framework"; do
+        "Contents/Frameworks/MediaRemoteAdapter.framework" \
+        "Contents/Helpers/whytap"; do
         if [ -e "${bundle}/${nested}" ]; then
             require_signature "${bundle}/${nested}" "certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
         fi
@@ -429,6 +430,11 @@ cd "${PROJECT_DIR}"
 swift build --build-system native -c release --arch arm64 --product Sidekey ${SWIFT_FLAGS}
 # shellcheck disable=SC2086 # SWIFT_FLAGS expands to multi-token "-Xswiftc -DBETA" intentionally.
 swift build --build-system native -c release --arch x86_64 --product Sidekey ${SWIFT_FLAGS}
+# Case secrets helper (Contents/Helpers/whytap): same flags and both arches.
+# shellcheck disable=SC2086
+swift build --build-system native -c release --arch arm64 --product whytap ${SWIFT_FLAGS}
+# shellcheck disable=SC2086
+swift build --build-system native -c release --arch x86_64 --product whytap ${SWIFT_FLAGS}
 
 echo "▶ Resolving native products dirs..."
 # shellcheck disable=SC2086 # SWIFT_FLAGS expands to multi-token intentionally.
@@ -463,6 +469,19 @@ lipo -create \
     "${ARM64_BUILD_DIR}/${EXECUTABLE_NAME}" \
     "${X86_64_BUILD_DIR}/${EXECUTABLE_NAME}" \
     -output "${BUILD_DIR}/${EXECUTABLE_NAME}"
+lipo -create \
+    "${ARM64_BUILD_DIR}/whytap" \
+    "${X86_64_BUILD_DIR}/whytap" \
+    -output "${BUILD_DIR}/whytap"
+HELPER_LIPO_INFO="$(lipo -info "${BUILD_DIR}/whytap")"
+case "${HELPER_LIPO_INFO}" in
+    *x86_64*arm64*|*arm64*x86_64*) ;;
+    *)
+        echo "ERROR: whytap helper is not universal (need x86_64 + arm64)." >&2
+        echo "  lipo -info: ${HELPER_LIPO_INFO}" >&2
+        exit 1
+        ;;
+esac
 echo "  products dir: ${BUILD_DIR}"
 
 if [ ! -f "${BUILD_DIR}/${EXECUTABLE_NAME}" ]; then
@@ -502,6 +521,12 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 # stays "Sidekey".
 cp "${BUILD_DIR}/${EXECUTABLE_NAME}" "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
 
+# Case secrets helper: the broker pins this binary's cdhash, so it must be
+# signed with the app's identity below and never modified afterwards.
+mkdir -p "${APP_BUNDLE}/Contents/Helpers"
+cp "${BUILD_DIR}/whytap" "${APP_BUNDLE}/Contents/Helpers/whytap"
+chmod 755 "${APP_BUNDLE}/Contents/Helpers/whytap"
+
 # SwiftPM can carry the active Xcode toolchain's Swift library directory into
 # LC_RPATH. That directory exists only on the build Mac and makes macOS's
 # distribution assessment reject otherwise valid embedded frameworks. Keep
@@ -539,6 +564,7 @@ sed -e "s|__BUNDLE_ID__|${BUNDLE_ID}|g" \
     -e "s|__APPCAST_URL__|${APPCAST_URL}|g" \
     -e "s|__SPARKLE_PUBLIC_ED_KEY__|${SPARKLE_PUBLIC_ED_KEY}|g" \
     "${INFO_PLIST_TEMPLATE}" > "${APP_BUNDLE}/Contents/Info.plist"
+python3 "${PROJECT_DIR}/scripts/configure-calendar-clients.py" "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaDistribution string ${DISTRIBUTION_MODE}" \
     "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :ExodiaSourceRevision string ${BUILD_SOURCE_SHA}" \
@@ -763,6 +789,13 @@ if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
     fi
     SIGNING_ARGS=(--sign "${SIGNING_CERTIFICATE_SHA1}" --keychain "${SIGNING_KEYCHAIN}")
 fi
+
+echo "▶ Code signing whytap helper..."
+codesign --force \
+    "${SIGNING_ARGS[@]}" \
+    --options runtime \
+    "${SIGNING_TIMESTAMP_ARGS[@]}" \
+    "${APP_BUNDLE}/Contents/Helpers/whytap"
 
 echo "▶ Code signing Sparkle XPC services..."
 if [ -d "${SPARKLE_BUNDLE}/XPCServices/Installer.xpc" ]; then

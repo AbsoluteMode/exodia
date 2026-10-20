@@ -30,10 +30,18 @@ feature sessions with regular checked integration and one working application.
 - Run exactly one Whytap instance across all channels: beta shares meetings,
   staging and clipboard history with production and competes for hotkeys.
   Production app/DMG packaging is reserved for the integrator under the lock.
-- Any session may integrate ready work, but only one holds the shared
-  `exodia-integration.lock` in `git rev-parse --git-common-dir`. Follow the
-  runbook's owner/recovery protocol. Preserve all other sessions' WIP; use a
-  clean integration worktree when the primary checkout is occupied.
+- Finished feature agents automatically submit their reviewed PR/exact head,
+  checks, dependencies and acceptance steps to the persistent build queue
+  (`scripts/build-queue.py`; installed helper in the Git common directory).
+  The configured builder chat processes FIFO, sends queue/start/result messages
+  to the originating sessions and alone integrates/packages/promotes. These
+  queue messages are user-authorized. Workers follow the result and report
+  issues without starting competing builds. Follow the runbook for CLI inboxes,
+  pending installs, recovery and the five-minute builder automation.
+- The builder holds the shared `exodia-integration.lock` in
+  `git rev-parse --git-common-dir` for protected operations. Queue claims never
+  replace that lock or any validation gate. Preserve all other sessions' WIP;
+  use a clean integration worktree when the primary checkout is occupied.
 - Review overlaps, validate the final combined candidate and merge through a
   PR with exact head/base checks. Routine checked integration/local refresh
   needs no repeated approval. Public publishing remains a separate action.
@@ -178,7 +186,32 @@ Agent flow (OpenCode + OpenRouter or Anthropic):
   paths, dashboard/collector contracts and source-kit discovery to the runtime
   agent, so creating a dashboard does not require finding the source checkout.
 
+Translation tools:
+  Translate and Subtitles are optional catalog action tools opening one native
+  floating window (TranslationWindowController). TextTranslationModel cancels
+  edited/replaced requests and rejects late results; automatic text direction
+  is RU to EN for Cyrillic input and EN to RU otherwise. Explicit targets use
+  AppLanguage. LiveSubtitleModel captures only CoreAudio system audio, never
+  the microphone, on the subtitlesAudio real-time route; final-only phrases
+  go to the translation LLM route shared with typed text. Both routes start
+  unset; never borrow Drop/Agent routes or migrate standalone credentials.
+  Eight queued phrases, forty retained lines and a bounded audio relay stop
+  visibly on backlog. Stop uses opt-in CoreAudio terminal EOF after capture
+  quiescence and an IO queue barrier, then naturally drains the relay before
+  provider endInput. Ordinary meeting/VAD stop keeps streams reusable; hardware
+  start/stop/route restart are serialized. Cancel, window close and sleep
+  tear down capture and requests. No audio/history is saved. Visible translation work
+  (including unsent input) or an active session blocks app-initiated update restart. Guide: docs/translation.md. WHY:
+  .project-docs/decisions/2026-10-20-translation-tools.md
+
 Meeting Notes:
+  Meetings opens an overview of the five newest notes with a History button.
+  History keeps the full date-grouped list. Back from a note preserves its list
+  origin; the Settings Meetings entry and direct note links return to overview.
+  Both use MeetingListModel and retain refresh, status and confirmed deletion.
+  Load failures preserve existing rows and offer Retry. The vertical overview
+  layout leaves room for future Meeting Assistant presets without showing
+  unfinished controls. UI rationale and behavior: docs/DESIGN.md.
   Always-on detector (mic activity + CoreAudio system audio + FluidAudio
   Silero VAD, the only remaining Core ML model, downloaded from Hugging Face
   on the first speech check; fires only when a recognised meeting app writes
@@ -218,16 +251,73 @@ Meeting Notes:
   converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
   enable-prompt. Auto-end when the system mic is released for 3s (not before
-  the 30s startup grace); an auto-ended recording waits 45 seconds as
-  pendingReconnect and ANY detector re-fire shows "Notes | Reconnect | Skip";
-  resuming is always the user's decision. WHY:
-  docs/decisions/2026-07-29-reconnect-always-asks.md
+  the 30s startup grace). Every completed call starts processing immediately;
+  an auto-ended part remains a Reconnect candidate for three minutes and any
+  detector re-fire inside that window asks "Notes | Reconnect | Skip".
+  Reconnect captures a fresh part in a separate staging directory. When it ends,
+  the same meeting shows Updating… while the earlier note stays readable; only
+  fresh audio is transcribed, and its findings/transcript supplement the note.
+  Per-meeting processing order, durable recording receipts/content snapshots and
+  versioned additions protect recovery and edits. Both Notes hosts refresh the
+  selected note/transcript after the list fetch and preserve its current tab.
+  Active drafts defer refresh; Done waits for the latest store-save acknowledgment,
+  while Cancel applies the deferred refresh. Speaker labels stay scoped to each
+  part. Manual Stop is final; timeout/Skip never resume recording. WHY:
+  .project-docs/decisions/2026-10-20-meeting-continuations.md
   A BYOK key read that fails with errSecInDarkWake (no Keychain prompt
   possible: dark wake or the lid closing) defers the meeting instead of
   failing it: no failure event, the earlier failure reason is restored and
   the manifest stays for the next pass (startReady() after a full wake, or
   the next launch). WHY:
   .project-docs/decisions/2026-10-18-meeting-recovery-dark-wake.md
+
+  Internal opt-in research (no Settings controls): the local
+  sidekey.meetings.liveTestCapture flag adds a separate Soniox stt-rt-v5 stream
+  only when Meetings uses Soniox. Preserve its explicitly chosen value. It saves
+  private aligned source PCM, signal activity, final diarized tokens and receipt
+  times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
+  no automatic suggestions are enabled. The independent 100ms test mixer uses
+  a 150ms jitter allowance and approximate callback timing; source-role labels
+  are experimental. Per-source background calibration warms up for two seconds;
+  unique-time speaker anchors check surrounding audio and never override current
+  overlap or an opposing source. Meeting mic capture keeps its quiet-input boost
+  with a peak limiter and gradual gain release. Guide: docs/meeting-assistant-testing.md. WHY:
+  .project-docs/decisions/2026-10-20-meeting-source-noise-floor.md,
+  .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
+
+Case secrets manager:
+  The Case drawer has a 320 pt content viewport (the outer hit band includes
+  its gap/music strip) and retains the notch-derived width. UI authentication
+  and Doppler import hold it across interrupted hover; pointer return, outside
+  click or Escape releases the hold after the system interaction finishes.
+  The key-access action explains client command access. Doppler import uses the
+  existing local CLI login, reads every available project/config into memory,
+  and merges once into the encrypted vault as separate project/config groups.
+  It never overwrites differing local values or writes plaintext exports;
+  cancellation/read/validation/conflict errors leave the vault unchanged.
+  Reimport of unchanged values is idempotent. UI design: docs/DESIGN.md.
+  The encrypted schema-2 vault has projects, descriptions and registered AI
+  clients with Approve/Bypass per app and project. `Contents/Helpers/whytap`
+  exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
+  names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). The app's local Unix
+  socket broker accepts only its bundled helper by audit-token cdhash and
+  dynamic validity. It validates every bundled architecture and compares the
+  running peer with a valid signed slice, including x86_64 under Rosetta. It
+  resolves the caller from its process ancestry; Developer ID identities
+  require an Apple anchor. Unregistered known AI clients are refused; human
+  requests require Touch ID. Before releasing values or creating a timed
+  grant after authentication/approval, the broker revalidates the current
+  caller, registration and project. Revoking or rebinding a registration
+  invalidates its pending requests, including queued approvals.
+  Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
+  300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
+  grants. Registration configures the client's names-only MCP entry. The
+  helper injects authorized values into the child command's environment and
+  applies best-effort masking to stdout/stderr. Deliberately transformed
+  output, files and values shorter than four bytes can expose values; this is
+  protection against accidental transcript leaks, not a command sandbox.
+  The broker's decrypted vault cache outlives the panel's idle lock. WHY:
+  docs/decisions/2026-10-19-case-secrets-broker.md
 
 Hover capsules and materials:
   The 2026-10-17 user correction requires hover and the compact island to have
@@ -252,9 +342,17 @@ Hover capsules and materials:
   stride, 8 pt row/column gaps, 12 pt horizontal and 8 pt vertical insets.
   Default six tools occupy two rows and a 243 pt host band. At most four rows
   are visible (312 pt grid viewport); 13 tools retain 388 pt of scroll content.
-  Settings stays last; persistence and the first five positional hotkeys remain.
-  Settings Toolbox draws editable tools, a permanent Add target, then Settings,
-  using stable tool/Add identities. Add occupies the actual insertion position.
+  Settings stays last; persistence remains. Feature hotkeys use stable tool IDs.
+  Settings Toolbox keeps a fixed header outside the catalog and tool pane.
+  Saved tools scroll horizontally; Add and locked Settings remain visible.
+  Add accepts drops and offers a click chooser. Catalog tiles remain selectable
+  and draggable when pinned; their header/context menu supports Add/Remove.
+  Translate/Subtitles embed the shared translation models in compact views;
+  History disables the island keyboard-paste monitor; Monitor and Record expose
+  working panels. Other tools have explicit actions instead of blank panes.
+  Embedded translation has token-based ownership, cancels on departure/Settings
+  close unless its floating window is visible, and blocks update relaunch while
+  visible. WHY: .project-docs/decisions/2026-10-20-toolbox-mini-apps.md.
   Drop targeting highlights without moving targets or saving. Native hosted
   destinations set animatesToDestination=false in prepare, before AppKit removes
   its preview and perform commits the current target identity. Settings has no
@@ -284,7 +382,7 @@ Hover capsules and materials:
 
 Monitor inside hover:
   Monitor registry kind is inlinePanel and HoverSlotRouter resolves
-  .openPanel(.monitor). Capsule, catalog search and positional hotkeys all open
+  .openPanel(.monitor). Capsule, catalog search and feature hotkeys all open
   MonitorHoverPanel in the same compact-width drawer: dashboard picker -> Server
   status or custom dashboard -> Back to picker -> Tools. The 2026-10-18 user
   clarification keeps the Monitor heading and centers it precisely, using equal
@@ -314,31 +412,61 @@ Brightness inside hover:
   capsule. HoverLayoutStore.defaultSlots and saved layouts are unchanged.
   HoverSlotRouter resolves .openPanel(.brightness) to IslandBrightnessStrip:
   Back, a white capsule backlight slider, an Extra switch and one status line
-  (a notice, or the battery time left). The strip is 68 pt (76 pt band, 126 pt
-  with music) and needsKeyboardFocus for its controls. Opened from a lower
-  tile, the band keeps the previous height as transparent hover space under the
-  top-aligned drawer until the pointer reaches the strip (onContinuousHover
-  releases it), so the drawer does not close under the pointer.
+  (a notice, or the battery time left). The switch is the Settings MacSwitch
+  at its 30x18 compact size, blue while on: the island is never the active
+  app's key window, where the native switch draws its on state gray. The strip
+  is 68 pt (76 pt band, 126 pt with music) and needsKeyboardFocus for its
+  controls. Opened from a lower tile, the band keeps the previous height as
+  transparent hover space under the top-aligned drawer until the pointer is
+  over the drawer's final frame (onContinuousHover with
+  IslandView.releasesHeldHoverZone): the shrinking drawer's animated frame
+  still covers the held zone, and releasing there closed the drawer under a
+  quick move up from the third row.
   ScreenBrightnessController follows the island display (IslandScreenResolver)
   and reads/writes its backlight through private DisplayServices (dlopen); an
   unreadable display gets a disabled slider and no switch. Showing the strip
-  only reads, polling every 0.5 s while it is visible; a pinned capsule
-  refreshes NN%/Extra when hover opens. Extra exists only for potential EDR
-  headroom > 1.01 and never writes the backlight: it orders a click-through
-  shielding-level BrightnessBoostOverlay (1x1 rgba16Float extended-linear
-  MTKView, multiply compositing, multiplier min(2, headroom), sharingType none)
-  over whatever level the backlight has. BrightnessBoostFrameTimer presents a
-  frame every 0.2 s while the overlay window is visible, strip open or not:
-  without focus WindowServer keeps the boost only ~0.8 s after the last frame,
-  so the former 2 s keepalive blinked. Each app activation adds a frame at once
-  and 15 more at 1/60 s, because every ⌘Tab dimmed the boost (pending live
-  check). Frames pause during display sleep, system sleep and another user's
-  session, each until its own end notification. Extra is a fixed boost: the
-  slider at any level, brightness keys, automatic brightness, idle dimming,
-  closing the strip, sleep and a session switch keep it. Only its switch (strip
-  or Settings) ends it, apart from serious thermal state, a display change or
-  lost headroom, an overlay failure and quit; ending it leaves the backlight as
-  it is. Extra is never persisted or resumed after relaunch.
+  only reads, polling every 0.5 s while it is visible or Extra is on; a pinned capsule
+  refreshes its NN%/Extra VoiceOver status when hover opens. Extra exists only
+  for potential EDR headroom > 1.01 and never writes the backlight. As Vivid
+  does it, GammaBrightnessBoost scales the display's own transfer table by
+  min(1.45, the sRGB-encoded current headroom), Vivid's measured factor on the
+  same panel (white about 2.35x SDR), and BrightnessHeadroomTrigger keeps that
+  headroom engaged: a click-through shielding-level 1x1 pt window in the
+  display's top-right corner, hidden by a built-in display's rounded corner,
+  with an rgba16Float extended-linear MTKView cleared to 2 and sharingType
+  none. The display applies the table after WindowServer composites, so an app
+  switch cannot dim it; the former full-screen multiply layer dimmed on every
+  ⌘Tab. Nothing is written until the headroom exceeds 1.05 (none within 5 s
+  ends Extra as unavailable). While the headroom first rises or returns, each
+  step is followed at once; any other change applies once it holds 1.5 s.
+  Without headroom the display has exactly its own table (a factor within
+  0.005 of none is none) and Extra stays on; its current table, a new
+  profile's included, is the one boosted when the headroom returns. A table
+  already above SDR white (Vivid) or rewritten by another app is left alone
+  and ends Extra with "Another app is adjusting this display."; a reset by a
+  reconfiguration or profile change is boosted again, and a third reset within
+  10 s counts as another app. Ending or suspending gives a table back only
+  while the display still has the boosted one. BrightnessBoostFrameTimer presents a trigger
+  frame every 0.2 s, strip open or not, then checks the table: without focus
+  WindowServer keeps the headroom only ~0.8 s after the last frame. Frames
+  pause during display sleep, system sleep and another user's session, each
+  until its own end notification, and a gap over 1 s between frames restarts
+  the 5 s wait for headroom and the 1.5 s hold; another user's session also gets the
+  display's own table until this one is active again. Extra is a fixed boost;
+  any backlight decrease ends it, including native brightness keys, automatic
+  brightness and idle dimming with the strip closed. The first slider decrease
+  or intercepted brightness-down press only ends Extra, leaving the backlight
+  and slider unchanged for that whole drag or held press. The next adjustment
+  lowers the backlight normally, including accessibility adjustments and fine
+  key steps; outside changes
+  are detected within the 0.5 s poll, after the 0.75 s write-settle window.
+  Float readback round-off is ignored. Enabling Extra reads a fresh baseline;
+  increasing brightness never enables it. Its switch (strip or Settings) also
+  ends it, as do serious thermal state, a
+  display change or lost EDR support, another app's table, a boost failure and
+  quit. Ending it gives the display its own table back (ColorSync's if Quartz
+  refuses it; Quartz also restores it when the process exits) and leaves the
+  backlight as it is. Extra is never persisted or resumed after relaunch.
   Settings -> Toolbox -> Display (ToolboxDisplayPane) holds the Extra and
   Brightness keys switches without a slider; it reads the display on appear,
   never polls and fits the 188 pt Toolbox area in every state. Brightness keys
@@ -355,11 +483,22 @@ Brightness inside hover:
   macOS disabled, the presses in progress finish with macOS. The tap needs
   Accessibility, is reinstalled with the hotkeys and retried when the Settings
   pane appears. They are the Mac's keys, not a Whytap hotkey: no Help row.
-  BatteryRuntimeMonitor reads IOKit
-  power sources and AppleSmartBattery every 5 s while the strip is visible: on
-  battery macOS's estimate wins, otherwise remaining Wh over the smoothed
-  accumulator load; on power the line shows the time if unplugged. Battery
-  readings and key events are never stored, logged or sent. WHY:
+  BatteryRuntimeMonitor reads IOKit power sources and AppleSmartBattery once a
+  minute from launch, and every 5 s while the strip is visible. Each sample is
+  the system load that PowerTelemetryData's accumulators average between two
+  updates 30-180 s apart (a longer gap such as sleep adds none), with the
+  built-in display's light averaged over the same span: level squared, times
+  the light of the table factor Extra currently applies to it (x2.35 at 1.45,
+  x1 without headroom), 0 with the lid closed. A factor change on its own is
+  counted at the next reading (5 s with the strip, 60 s without). Over the last 30 minutes the load's
+  slope over that light (ridge toward a 5 W prior, 1-15 W, at most 80% of the
+  mean load) moves the display's share to the current light, so a slider or
+  Extra change recomputes the line at once without reading the battery. On
+  battery macOS's estimate comes first until five samples exist, adjusted the
+  same way from the light of the minute before its reading (about what macOS
+  averages) to the current light; on power the line shows the
+  time if unplugged. The history stays in memory: battery readings and key
+  events are never written to disk, logged or sent. WHY:
   .project-docs/decisions/2026-10-18-brightness-tool.md
 
 Hover tool search and pointer routing:
@@ -430,6 +569,12 @@ Now Playing:
   (parentWatchGuardScript) that ends it when the app's end of the guard's
   stdin closes; vendored run.pl stays untouched. WHY:
   .project-docs/decisions/2026-10-19-nowplaying-adapter-shutdown.md
+  Missing artwork triggers a background get --micros with a 2s deadline,
+  one request at a time and a 5s retry cooldown. Recovery copies only the image
+  into current metadata, matching player/process/content item/title/artist/album
+  and the request generation; track changes, clears and lifecycle resets reject
+  stale results. No Automation prompt is added. WHY:
+  .project-docs/decisions/2026-10-19-nowplaying-artwork-recovery.md
 
 Island idle-hide:
   ~20s without activity -> the compact pill fades to the bare notch (opacity
@@ -486,11 +631,30 @@ retired Local choice shows "not set up" banners until the user saves a
 provider. WHY: .project-docs/decisions/2026-09-10-byok-and-local-builds.md,
 .project-docs/decisions/2026-10-18-remove-local-models.md
 
-API hints: a collapsed card below API keys explains provider free tiers and
-included credits, with official links, a verification date and Add API key.
+API hints: a small link after Models at the bottom of API & Models opens four provider offer cards in a
+native sheet, with brand marks, allowances, official links and a fixed footer.
 It distinguishes starter credit, monthly allowance and paid-plan benefits;
-it never checks balances or changes routes. WHY:
+Done/Return/Escape close it, and Add API key opens the existing sheet. It never
+checks balances or changes routes. WHY:
 .project-docs/decisions/2026-10-19-api-hints.md
+
+Selection menus use MacMenu/MacPopup: a 30 pt neutral control with 8 pt corners
+and one down chevron, retaining native menu tracking. Model/provider menus,
+Backup, display, account/key sheets and translation share this label; the
+screenshot toolbar uses its AppKit counterpart MacPopupButton. Notifications
+centers the menu and enable switch, moving Notification type into the adjacent
+question-mark tooltip/popover. Bindings and saved selections are unchanged.
+WHY: .project-docs/decisions/2026-10-20-compact-selection-menus.md
+
+Settings follows macOS light/dark appearance while open. MacSettingsTheme owns
+dynamic SwiftUI/AppKit colors; the shell uses inset groups and SF Symbol sidebar
+tiles. MacSwitch adapts the supplied glass switch in SwiftUI with click/drag,
+keyboard and native Toggle accessibility, respecting Reduce Motion/Transparency.
+The island keeps its compact blue switch and explicitly dark Toolbox previews.
+UI decisions and verification limits: docs/DESIGN.md.
+API & Models separates function rows; missing setup uses a static orange contour
+and soft glow instead of Not set/triangle status lines. Actual problem text and
+recovery actions remain. Shared settings rows use spaced, full-point dividers.
 
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
@@ -504,6 +668,17 @@ Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
 
+Notify includes a built-in Meeting notes source, enabled by default for new and
+existing users unless explicitly switched off. MeetingReadyNotifications sends
+successful newMeetingAvailable events to the local queue/history with the
+packaged Whytap app icon in color and Small as the initial type. Settings ->
+Notifications has a persistent switch and Large / Small selector; Notify ->
+Sources also has the switch. An optional internal meetingID in the archived
+event opens that exact note through SettingsWindowController.selectNoteMeeting;
+scripts cannot supply this target. Failed processing does not announce success,
+and loading history does not replay old popups. WHY:
+.project-docs/decisions/2026-10-20-meeting-ready-notifications.md
+
 Notify: agent-configured local scripts emit JSON lines with title, body, event
 ID, optional link, color, logo and duration. NotifyScriptSupervisor reads private
 sources/<id>.json manifests, supervises child process groups only during the app
@@ -512,10 +687,33 @@ quit. A perl stdin-EOF guard (NotifyProcess.parentWatchGuardScript) leads each
 group and ends it when the app is killed or crashes. WHY:
 .project-docs/decisions/2026-10-19-notify-parent-death-guard.md. No backend or built-in provider connectors are restored. The original
 IslandNotificationPill / nonactivating panel sits left of the island, using the
-selected screen and screenshot-protection preference. Hover pauses dismissal.
+selected screen and screenshot-protection preference. `presentation: "icon"`
+adds a text-free Small notification over the compact right wing, above hints,
+meetings and music. It shakes for up to 5 seconds, expires after 5 by default,
+grows slightly and reveals a close button on hover. Hover pauses dismissal and
+shake; Reduce Motion disables shake/scale. Consecutive Small events form a counted stack, newest first,
+with up to three visible icons that fan apart on hover for individual links.
+New arrivals restart the stack lifetime; expiry dismisses the entire stack.
+Large cards separate bursts and retain queue order; presentation is bounded to
+33 events. Notify retains 500 history events. Unseen events show a red dot only
+on Notify in hover/search until history is opened, including after a restart.
+Clear All is text-only and immediately clears history and current events without
+confirmation, preserving sources.
+Card remains the backwards-compatible
+default (8 seconds). Settings -> Notifications offers Notification type (Large /
+Small) per source; events can override it. Icon titles may be omitted and use
+the source name for history/VoiceOver. Existing Codex chats support click-through
+via codex://threads/<thread-id>; no query/fragment or new-chat/action links.
+Claude Desktop local Code sessions accept
+claude://code/continue?session=local_<uuid>, restricted to that one parameter.
+Native sessionId is resolved from Desktop metadata by the hook's cliSessionId;
+it is not the hook ID with a prefix. Other Claude routes are rejected.
+Bundled logos include codex and claude-code. Actual agent event sources are
+configured separately. WHY:
+.project-docs/decisions/2026-10-19-icon-notifications.md. Hover pauses dismissal.
 LocalNotificationHub persists up to 500 events, deduplicates scoped IDs and keeps
 presentation in history; unreadable history is never silently overwritten. Notify
-opens through hover search, Toolbox and existing positional hotkeys without
+opens through hover search, Toolbox and assigned feature hotkeys without
 changing saved layouts. Settings -> Notifications lists connected sources with
 their name, logo, runtime status and individual persistent enable switches.
 Disabling stops the source and keeps its setup/history for re-enabling.
@@ -532,9 +730,14 @@ visible-range recurrence is provider-expanded, refresh runs only while the calen
 view is visible, and matching UID/occurrence bounds collapse duplicate sources.
 OAuth uses browser S256 PKCE/state, a numeric loopback listener (Microsoft redirects
 to localhost), and Keychain credentials with durable refresh-token rotation. No
-shared OAuth registrations ship yet; live accounts require provider setup and
-separate acceptance. Planner data and OAuth credentials are outside the current
-backup allowlists. Tests use fake providers and temporary stores. Guide:
+shared OAuth registrations are created by the app itself; the owner supplies
+registered native clients during packaging through configure-calendar-clients.py.
+Live accounts require provider setup and separate acceptance. Encrypted backups
+include local Planner content, calendar metadata and saved credentials. Old backups
+preserve current calendar settings. A visible Planner or retained task draft
+defers update restart and restore; ordinary backups still run. Closing the window
+stops calendar polling; another tool hotkey preserves an attached editor. Tests
+use fake providers and temporary stores. Guide:
 docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md
 
 Customization: any local coding harness can use the same source checkout.
@@ -561,7 +764,11 @@ instructions and quits before permissions, provider discovery or updates.
 ApplicationInstanceCoordinator then acquires one common prod/beta/worktree lease
 before constructing AppDelegate. A second copy offers to activate the owner and
 quits without starting permissions, providers or hotkeys. Legacy binaries launched
-later cannot honor the lease. Settings shows actual channel/version/build/path/revision.
+later cannot honor the lease. The Settings footer shows only the actual app name
+and display version, separated from website and GitHub links by a thin rule.
+All footer text uses the same size; the links have icons, a pointing-hand cursor,
+hover/press highlights and destination tooltips. Detailed build identity stays
+in bundle metadata, outside this compact footer.
 WHY: .project-docs/decisions/2026-10-19-one-running-copy.md
 `--installation-check` loads the packaged executable and verifies resources
 without starting the app runtime. User guide: `docs/install.md`. Policy:
@@ -573,14 +780,29 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 
 ## User artifact backup
 
-Settings → Backup keeps encrypted local settings/key history independently of
-cloud setup. Block restore or source-default reset applies before AppDelegate
-on the next normal launch. Optional complete `.exodiabackup` archives use a
-streaming authenticated format and one recovery code saved outside Whytap.
-GitHub release assets receive ciphertext; a checked completion index is published
-last. Folder copies report verified local writes, not verified cloud upload.
+Settings → Integrations connects GitHub using an existing CLI login or an access
+token. Settings → Backup shows its synchronization status, a GitHub Releases link and Back up /
+Restore backup. Back up always includes all supported user data and stored keys,
+uploads and verifies ciphertext, then displays the recovery code without a
+paste-back step. Restore takes only that code and stages every included section
+from the newest completed GitHub version without a selection/confirmation wizard.
+A normal quit and relaunch applies it; the running stores are never replaced.
+There are no normal-page backup settings, management/history disclosures or
+folder picker. Existing automatic schedules, folder destinations, local encrypted
+history and unfinished maintenance recovery remain compatible internally.
+A successfully created GitHub backup enables automatic sync. Existing verified
+GitHub copies adopt it once; later explicit cancellation pauses it across restart.
+The 60-second poll detects settings/credential and artifact changes, waits for idle
+and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
+pauses and maintenance never show Backup synced. Background sync keeps the same
+recovery credential without revealing it. WHY:
+`.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
+GitHub connection checks are read-only; Connect is the only action that can
+create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
-Reset leaves routes Not set; archives predating routing preserve current routes.
+Short recording chunks use the archive entry ceiling rather than a separate
+4096-file limit. WHY:
+`.project-docs/decisions/2026-10-20-simple-github-backup.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore
@@ -596,7 +818,27 @@ backend, automatic GitHub Actions, silent source changes or forced restart.
 Guide: `docs/backup.md`. WHY:
 `.project-docs/decisions/2026-10-19-config-backup.md`.
 
+## Screenshots
+
+Screenshot is an action tool in hover search/Toolbox with an optional named
+hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
+then shows a frozen selection canvas and compact native toolbar. Arrow, Shape,
+Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
+system sharing live in More. Blur defaults to Text and numbers, including
+standalone digits, using system Vision without language correction and with
+additional text detection; Entire area is the alternative. Detection is
+best-effort and the visible result must be checked. Exports flatten edited
+pixels; Copy text analyzes those pixels too. No capture is persisted before an
+explicit export. Active editing/processing/dialogs block app-initiated update
+restarts; screen/Space changes and sleep cancel stale captures. This system OCR
+is separate from the removed app-managed speech/LLM models. Guide:
+`docs/screenshots.md`. WHY:
+`.project-docs/decisions/2026-10-20-screenshot-toolbar.md`.
+
 ## Permissions
+
+- **Screen Recording** for explicit screenshot capture (Screenshot tool only).
+  Request on invocation with `CGRequestScreenCaptureAccess`, never at launch.
 
 - **Accessibility** gates `NSEvent.addGlobalMonitorForEvents`
   (`RightCmdGestureMonitor`; `EscapeCloseEventMonitor` is a passive bare-Esc
@@ -604,7 +846,8 @@ Guide: `docs/backup.md`. WHY:
   docs/decisions/2026-07-02-escape-close-passive-monitor.md), the AX check
   of the focused field (`PasteTargetValidator`) and, empirically, the active
   `CGEventTap` in `SpaceHoldMonitor` and the optional Brightness keys tap
-  (`BrightnessKeyEventTap`).
+  (`BrightnessKeyEventTap`) and the Case approval tap (`CaseApprovalKeyTap`,
+  only while a prompt is queued; clicking remains available without the tap).
 - **Post Event** gates `CGEvent.post` for the synthetic Cmd+V and Backspace
   (`CGPreflightPostEventAccess` / `CGRequestPostEventAccess`, a separate TCC
   bucket from Accessibility since 10.15; Tahoe shows both in one panel).
@@ -719,10 +962,12 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    has no account and sends no telemetry. Network traffic is limited to
    the meeting detector's Silero VAD download from Hugging Face, providers
    and monitoring sources the user configured (including their credential store),
+   the user's Doppler workspace during an explicitly started local CLI import,
    notification sources accessed by user-configured local scripts, calendar providers
    explicitly connected by the user (Google, Microsoft and Zoom), OpenCode's own provider
    traffic, the model catalogs and free key checks of providers the user added
-   a key for, synthetic model probes (silence or a one-word prompt, never user
+   a key for, OpenRouter's provider list (latency, throughput) for a model
+   selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
    Check now, its official GitHub release download, `google.com` opened in the
    browser, the Sparkle feed on GitHub Releases, and optional encrypted backups
@@ -753,7 +998,7 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
 4. **Sparkle never shows a window.** Scheduled checks only show the island
    pill; nothing downloads before the user clicks. Requested downloads may
    install and relaunch while idle. Active meeting recording, dictation or
-   agent work defers app-initiated relaunch; becoming idle alone does not restart
+   agent work or translation defers app-initiated relaunch; becoming idle alone does not restart
    it. Ready-stage "Later" cancels the current installation via .skip. A prepared
    download may apply on ordinary user-initiated app quit unless cancelled.
    Do not promise installation after arbitrary process termination. No manual
@@ -765,5 +1010,16 @@ derive from `HotkeyConfiguration` (single source of truth for every surface).
    cancels), tap/toggle Drop through Carbon, modifier Drop through
    `ModifierOnlyHotkeyMonitor`. One physical key = one action, except the
    right modifiers' tap/hold split (Right Command = agent text / voice).
-   Hover buttons 1 to 5 have positional hotkeys Option 1 to Option 5 bound to
-   `HoverLayoutStore.slots`.
+   Every HoverTool can have an optional named shortcut in Settings -> Hotkeys ->
+   Tools, including unpinned tools. `toolShortcuts` binds stable tool IDs, so
+   reordering/removing tiles never reassigns keys. New installs reserve no digit
+   shortcuts; explicitly saved old slot keys migrate once to their current tools.
+   Hints and Help read the same config; clearing/reset persists an empty map.
+   WHY: docs/decisions/2026-10-19-feature-hotkeys.md
+6. **Case authorizes secret use at the broker boundary.** Only the bundled
+   helper receives values for an authorized child command's environment.
+   Never put values in argv, MCP responses, client configuration, repository
+   files or app logs. Output masking is best effort, not a guarantee against
+   deliberate extraction by an approved command. Revalidate current caller
+   authority after approval/authentication before granting or releasing
+   values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md

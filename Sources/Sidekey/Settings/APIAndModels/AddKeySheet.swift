@@ -22,12 +22,15 @@ struct AddKeySheet: View {
             Text("Add key")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(MacSettingsTheme.text)
-            Picker("Provider", selection: Binding(get: { selectedKind }, set: { kind = $0; error = nil })) {
-                ForEach(viewModel.addableKinds, id: \.self) { kind in
-                    Text(kind.displayName).tag(Optional(kind))
-                }
+            HStack {
+                Text("Provider").font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
+                Spacer()
+                MacPopup(items: viewModel.addableKinds.map { .init(value: Optional($0), label: $0.displayName) },
+                         selection: Binding(get: { selectedKind }, set: { kind = $0; error = nil }),
+                         maxWidth: 260)
+                    .accessibilityLabel("Provider")
+                    .disabled(saving)
             }
-            .disabled(saving)
             fields
             if let error {
                 Text(error).font(.caption).foregroundStyle(MacSettingsTheme.red)

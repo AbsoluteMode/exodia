@@ -174,6 +174,12 @@ private actor MonitorDeferredCollector {
 }
 
 final class MonitorProcessRunnerTests: XCTestCase {
+    func testLargerExplicitOutputBudgetDoesNotTruncateCredentialImports() async throws {
+        let data = try await MonitorProcessRunner().run(executable: URL(fileURLWithPath: "/usr/bin/head"),
+            arguments: ["-c", "300000", "/dev/zero"], maxOutputBytes: 400_000)
+        XCTAssertEqual(data.count, 300_000)
+    }
+
     func testSubprocessInheritsHomeForCredentialTools() async throws {
         let data = try await MonitorProcessRunner().run(executable: URL(fileURLWithPath: "/usr/bin/printenv"),
                                                        arguments: ["HOME"])

@@ -125,6 +125,7 @@ final class BrightnessKeyHandler {
     private let controller: ScreenBrightnessController
     private let showStrip: @MainActor () -> Void
     private var gesture = BrightnessExtraKeyGesture()
+    private var ignoresDownRepeats = false
 
     init(controller: ScreenBrightnessController, showStrip: @escaping @MainActor () -> Void) {
         self.controller = controller
@@ -135,13 +136,21 @@ final class BrightnessKeyHandler {
     /// happened, however late a busy main thread handles them.
     func handle(_ event: BrightnessKeyEvent, at date: Date) {
         guard event.isDown, let step = event.step else { return }
+        if !event.isRepeat { ignoresDownRepeats = false }
+        if event.direction == .down, ignoresDownRepeats {
+            showStrip()
+            return
+        }
         // A closed strip does not follow the backlight, so read it. Right after a write the
         // controller keeps the written level, so presses in a row add up.
         controller.refresh()
         let before = controller.level
         let asksForExtra = gesture.register(event.direction, isRepeat: event.isRepeat, levelBefore: before,
                                             at: date)
-        if asksForExtra, controller.supportsExtra, !controller.isExtraOn {
+        if event.direction == .down, controller.isExtraOn {
+            controller.stopExtra()
+            ignoresDownRepeats = true
+        } else if asksForExtra, controller.supportsExtra, !controller.isExtraOn {
             controller.setExtra(true)
         } else {
             let next = BrightnessKeyStep.level(after: before, direction: event.direction, step: step)

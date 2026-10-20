@@ -80,7 +80,10 @@ final class AgentSettingsStore: ObservableObject {
         case .opencode:
             return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions,
                                    openCodeModelSpec: selectedOpenCodeModelSpec,
-                                   openCodeProvider: selectedOpenCodeProvider ?? .openRouter)
+                                   openCodeProvider: selectedOpenCodeProvider ?? .openRouter,
+                                   caseMCPCommand: CaseBuiltInAgentAccess.currentMCPCommand(),
+                                   openRouterProvider: selectedOpenCodeProvider == .openRouter
+                                       ? routing.route(for: .agent)?.provider : nil)
         }
     }
 

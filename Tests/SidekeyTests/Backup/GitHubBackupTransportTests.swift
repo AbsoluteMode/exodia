@@ -18,6 +18,58 @@ final class GitHubBackupTransportTests: XCTestCase {
         json(["name": "Exodia-Backup", "private": isPrivate, "permissions": ["push": true]])
     }
 
+    func testExplicitDeletionWorksForPublicRepositoryAndIncludesDraftsButKeepsUnrelatedReleases() async throws {
+        let kept = UUID(), old = UUID(), draft = UUID()
+        func release(_ id: Int, _ tag: String, _ marker: String, draft: Bool = false) -> [String: Any] {
+            ["id": id, "draft": draft, "tag_name": tag, "body": marker,
+             "created_at": "2026-10-19T12:00:00Z", "assets": []]
+        }
+        var releases = [
+            release(1, "exodia-backup-" + kept.uuidString.lowercased(), "exodia.encrypted-backup.v1"),
+            release(2, "exodia-backup-" + old.uuidString.lowercased(), "exodia.encrypted-backup.v1"),
+            release(3, "exodia-backup-" + draft.uuidString.lowercased(), "exodia.encrypted-backup.v1", draft: true),
+            release(4, "unrelated", "exodia.encrypted-backup.v1"),
+            release(5, "exodia-backup-" + UUID().uuidString.lowercased(), "User's release")
+        ]
+        var deleted: [Int] = []
+        StubURLProtocol.handler = { request in
+            let path = request.url!.path
+            if path == "/repos/developer/Exodia-Backup" { return (200, [:], self.repository(private: false)) }
+            if path == "/repos/developer/Exodia-Backup/releases" { return (200, [:], self.json(releases)) }
+            guard let id = Int(path.components(separatedBy: "/").last!) else { XCTFail("Unexpected route"); return (500, [:], Data()) }
+            if request.httpMethod == "DELETE" {
+                deleted.append(id); releases.removeAll { ($0["id"] as? Int) == id }
+                return (204, [:], Data())
+            }
+            return (releases.contains { ($0["id"] as? Int) == id } ? 200 : 404, [:], Data())
+        }
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        try await transport.deleteBackups(except: kept)
+        XCTAssertEqual(deleted, [2, 3])
+        XCTAssertEqual(releases.compactMap { $0["id"] as? Int }, [1, 4, 5])
+        try await transport.deleteBackups(except: kept)
+        XCTAssertEqual(deleted, [2, 3], "Retry must not delete the replacement or unrelated releases")
+        XCTAssertFalse(StubURLProtocol.capturedRequests.contains { $0.httpMethod == "PATCH" || $0.httpMethod == "POST" })
+    }
+
+    func testDeletionRequiresAnAbsentReadbackAndDoesNotReportSuccessForAConcurrentUpload() async throws {
+        let id = UUID()
+        let release: [String: Any] = ["id": 7, "draft": false, "tag_name": "exodia-backup-" + id.uuidString.lowercased(),
+            "body": "exodia.encrypted-backup.v1", "created_at": "2026-10-19T12:00:00Z", "assets": []]
+        var readbackStatus = 200
+        StubURLProtocol.handler = { request in
+            if request.url!.path == "/repos/developer/Exodia-Backup" { return (200, [:], self.repository()) }
+            if request.url!.path.hasSuffix("/releases") { return (200, [:], self.json([release])) }
+            return (request.httpMethod == "DELETE" ? 204 : readbackStatus, [:], Data())
+        }
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        do { try await transport.deleteBackups(); XCTFail("A delete response is not proof of removal") }
+        catch { XCTAssertEqual(error as? GitHubBackupTransport.Failure, .incomplete) }
+        readbackStatus = 404
+        do { try await transport.deleteBackups(); XCTFail("A newly listed copy must keep cleanup pending") }
+        catch { XCTAssertEqual(error as? GitHubBackupTransport.Failure, .incomplete) }
+    }
+
     func testConnectCreatesOnlyAPrivateRepositoryAndChecksTheResult() async throws {
         var seenRepository = false
         StubURLProtocol.handler = { request in
@@ -156,54 +208,5 @@ final class GitHubBackupTransportTests: XCTestCase {
         XCTAssertThrowsError(try GitHubBackupTransport.partSize(for: .max))
     }
 
-    private final class RemoteFixture {
-        let json: (Any) -> Data
-        var tag: String?
-        var draft = true
-        var corruptReadback = false
-        var failOneReadback = false
-        var publishCount = 0
-        var uploadNames: [String] = []
-        var assets: [[String: Any]] = []
-        var bytes: [Int: Data] = [:]
-        init(json: @escaping (Any) -> Data) { self.json = json }
-        func release() -> Data {
-            json(["id": 7, "tag_name": tag!, "draft": draft, "body": "exodia.encrypted-backup.v1",
-                  "created_at": "2026-10-19T12:00:00Z", "assets": assets])
-        }
-        func handle(_ request: URLRequest) throws -> (Int, [String: String], Data) {
-            let path = request.url!.path, method = request.httpMethod!
-            if path.hasSuffix("/Exodia-Backup") { return (200, [:], json(["name": "Exodia-Backup", "private": true])) }
-            if path.contains("/releases/tags/") { return tag == nil || draft ? (404, [:], Data()) : (200, [:], release()) }
-            if path.hasSuffix("/releases"), method == "GET" {
-                return (200, [:], json(tag == nil ? [] : [try JSONSerialization.jsonObject(with: release())]))
-            }
-            if path.contains("/releases/assets/"), method == "DELETE" {
-                let id = Int(path.components(separatedBy: "/").last!)!
-                assets.removeAll { ($0["id"] as? Int) == id }; bytes.removeValue(forKey: id)
-                return (204, [:], Data())
-            }
-            if path.hasSuffix("/releases"), method == "POST" {
-                let body = try JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies.last!) as! [String: Any]
-                tag = body["tag_name"] as? String
-                return (201, [:], release())
-            }
-            if request.url!.host == "uploads.github.com" {
-                let name = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first!.value!
-                let data = StubURLProtocol.capturedBodies.last!, id = assets.count + 100
-                let asset: [String: Any] = ["id": id, "name": name, "size": data.count, "state": "uploaded"]
-                assets.append(asset); bytes[id] = data; uploadNames.append(name)
-                return (201, [:], json(asset))
-            }
-            if path.contains("/releases/assets/") {
-                let id = Int(path.components(separatedBy: "/").last!)!
-                let data = bytes[id]!
-                if failOneReadback { failOneReadback = false; throw URLError(.networkConnectionLost) }
-                return (200, ["Content-Type": "application/octet-stream"], corruptReadback ? Data(repeating: 0, count: data.count) : data)
-            }
-            if path.hasSuffix("/releases/7"), method == "PATCH" { draft = false; publishCount += 1; return (200, [:], release()) }
-            if path.hasSuffix("/releases/7") { return (200, [:], release()) }
-            throw URLError(.badURL)
-        }
-    }
+    private typealias RemoteFixture = BackupGitHubFixture
 }

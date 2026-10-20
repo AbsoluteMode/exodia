@@ -17,6 +17,9 @@ For the maintainer's parallel feature sessions, follow the
 Feature worktrees use non-launching Swift builds/tests. The commands below
 describe a standalone source customization; dev packaging can stop other beta
 processes, so it is not the way to update the shared installed production app.
+Finished feature agents automatically submit reviewed PRs to the persistent
+FIFO build queue. Its designated builder owns integration and local promotion;
+queue pickup does not bypass any release or safe-restart check.
 
 Use macOS 14.2 or newer and Xcode 26 or newer with its command-line tools:
 
@@ -38,7 +41,10 @@ bundles in LaunchServices. If the usual development bundle is running, the
 script assembles a separate candidate. New builds coordinate one running copy
 across production, beta and worktrees before starting providers or permissions.
 The second copy offers to activate the existing app; it never stops a recording.
-Settings shows the actual app path, channel, version, build and source revision.
+Settings shows the app name and display version, plus website and GitHub links.
+The compact footer omits channel, build number, source revision and bundle path;
+those diagnostics remain available from bundle metadata and the maintainer's
+current-build receipt.
 
 Development version `0.0.0-dev` / build `9999` keeps published binary updates
 from replacing the custom app. Update the checkout with your coding agent,
@@ -218,3 +224,14 @@ Sparkle key pair, code-signing certificate and update feed; see
 Whytap's key: delete `Resources/community-signing-certificate.pem`, then run
 `community-signing-bootstrap.sh` with the fork's own Doppler project or
 `--key-file`, or publish ad hoc.
+
+### Planner native OAuth clients
+
+`configure-calendar-clients.py` adds the owner's registered public native clients
+to the unsigned app Info.plist before either packaging path signs it. The default
+input is `whytap-calendar-clients.plist` in the Git common directory; the explicit
+`WHYTAP_CALENDAR_CLIENTS_PLIST` override is also supported. Keep this local input
+outside source commits and public logs. No account tokens or confidential web-app
+secrets belong in it. Use `--require-all` on the helper for acceptance of a candidate
+intended to offer Google, Outlook and Zoom sign-in without manual client setup.
+A build with no such input retains advanced custom-client setup and Apple access.

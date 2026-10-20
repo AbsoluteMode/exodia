@@ -5,6 +5,38 @@ import XCTest
 
 @MainActor
 final class CaseViewModelTests: XCTestCase {
+    func test_returning_directly_to_held_case_drawer_hands_control_back_to_hover() {
+        var expanded = false // Touch ID interrupted the original hover.
+        expanded = IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: true,
+            wasExpanded: expanded, glance: false, interactionHeld: true)
+        XCTAssertTrue(expanded, "The visible held drawer accepts re-entry without visiting the pill")
+        expanded = IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false,
+            wasExpanded: expanded, glance: false, interactionHeld: false)
+        XCTAssertFalse(expanded, "After pointer return releases the hold, mouse exit collapses normally")
+        XCTAssertFalse(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: true,
+            wasExpanded: false, glance: false), "Fading panels must still be unable to reopen themselves")
+    }
+
+    func test_system_authentication_holds_panel_through_success_or_cancel_until_return() async throws {
+        for denied in [false, true] {
+            let env = TestCaseEnvironment(payload: CaseVaultPayload())
+            let vm = env.makeViewModel()
+            env.authenticator.duringAuthentication = {
+                XCTAssertTrue(vm.isSystemInteractionActive)
+                XCTAssertTrue(vm.holdsPanelOpen)
+                vm.releasePanelHold()
+                XCTAssertTrue(vm.holdsPanelOpen, "Hover loss cannot dismiss a system prompt")
+                await Task.yield()
+            }
+            if denied { env.authenticator.error = CaseAuthenticationError.denied }
+            do { try await vm.unlock() } catch { XCTAssertTrue(denied) }
+            XCTAssertFalse(vm.isSystemInteractionActive)
+            XCTAssertTrue(vm.holdsPanelOpen, "Keep the result until the pointer returns or outside click")
+            vm.releasePanelHold()
+            XCTAssertFalse(vm.holdsPanelOpen)
+        }
+    }
+
     func test_unlock_loads_payload_and_exposes_rows_without_values() async throws {
         let secretID = UUID()
         let payload = CaseVaultPayload(
@@ -27,13 +59,36 @@ final class CaseViewModelTests: XCTestCase {
         try await vm.unlock()
 
         try vm.submitName("open ai api key")
-        XCTAssertEqual(vm.inputMode, .value(name: "OPEN_AI_API_KEY", groupID: nil))
+        XCTAssertEqual(vm.inputMode, .value(name: "OPEN_AI_API_KEY", projectID: CaseProject.generalID))
 
         try vm.submitValue("sk-secret-value")
 
         XCTAssertEqual(env.savedPayload?.secrets.map(\.name), ["OPEN_AI_API_KEY"])
         XCTAssertEqual(env.savedPayload?.values.map(\.value), ["sk-secret-value"])
         XCTAssertEqual(vm.inputMode, .name)
+    }
+
+    func test_short_values_are_flagged_as_not_masked_without_exposing_them() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        try vm.submitName("pin")
+        try vm.submitValue("abc")                 // 3 bytes: below the masking minimum
+        try vm.submitName("port")
+        try vm.submitValue("8080")                // 4 bytes: masked
+        try vm.submitName("emoji")
+        try vm.submitValue("é€")                  // 2 characters, 5 bytes: masked
+
+        let rows = vm.secretRows(inProject: CaseProject.generalID)
+        let flags = Dictionary(uniqueKeysWithValues: rows.map { ($0.displayName, $0.valueNotMasked) })
+        XCTAssertEqual(flags, ["PIN": true, "PORT": false, "EMOJI": false])
+        let sectionFlags = vm.projectSections.first?.secrets.map(\.valueNotMasked)
+        XCTAssertEqual(sectionFlags?.filter { $0 }.count, 1)
+
+        vm.query = "pin"
+        XCTAssertEqual(vm.rows.first { $0.displayName == "PIN" }?.valueNotMasked, true, "search results too")
+        XCTAssertFalse(String(describing: vm.rows).contains("abc"), "only a Bool reaches the row")
+        XCTAssertEqual(IslandCaseSecretRow.notMaskedHint, "не скрываются в выводе")
     }
 
     func test_copy_writes_value_to_injected_pasteboard_and_updates_usage() async throws {
@@ -139,7 +194,7 @@ final class CaseViewModelTests: XCTestCase {
             XCTAssertFalse(String(describing: error).contains("sk-secret-value"))
         }
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertFalse(String(describing: vm.unlockState).contains("sk-secret-value"))
     }
 
@@ -153,11 +208,13 @@ final class CaseViewModelTests: XCTestCase {
         try await vm.unlock()
         try vm.submitName("new key")
 
-        env.failLoads(with: ScaryCaseVaultError(message: "storage blew up with sk-stale-value"))
+        // The shared service keeps its payload, so a re-unlock fails at the
+        // Touch ID gate, not at the disk read.
+        env.authenticator.error = ScaryCaseVaultError(message: "auth blew up with sk-stale-value")
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertTrue(vm.rows.isEmpty)
         XCTAssertEqual(vm.inputMode, .name)
         XCTAssertFalse(String(describing: vm.rows).contains("sk-stale-value"))
@@ -175,7 +232,7 @@ final class CaseViewModelTests: XCTestCase {
             XCTAssertFalse(String(describing: error).contains("sk-secret-value"))
         }
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertFalse(String(describing: vm.unlockState).contains("sk-secret-value"))
     }
 
@@ -191,7 +248,7 @@ final class CaseViewModelTests: XCTestCase {
             XCTAssertFalse(String(describing: error).contains("sk-secret-value"))
         }
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
         XCTAssertFalse(String(describing: vm.unlockState).contains("sk-secret-value"))
     }
 
@@ -204,7 +261,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."))
         XCTAssertTrue(vm.rows.isEmpty)
     }
 
@@ -217,7 +274,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."))
     }
 
     func test_unlock_newer_schema_vault_enters_needs_newer_app_not_needs_reset() async {
@@ -232,7 +289,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .needsNewerApp("Update the app to open this Case."))
+        XCTAssertEqual(vm.unlockState, .needsNewerApp("Обновите приложение, чтобы открыть этот Case."))
     }
 
     func test_newer_schema_vault_does_not_classify_as_undecryptable() async {
@@ -274,7 +331,7 @@ final class CaseViewModelTests: XCTestCase {
     }
 
     func test_arm_reset_publishes_change_so_confirm_ui_can_render() async throws {
-        // The panel's "Confirm Reset" label and warning copy key off
+        // The panel's "Подтвердить сброс" label and warning copy key off
         // isResetArmed. Arming must emit objectWillChange or SwiftUI never
         // re-renders and the confirm step is invisible to the user.
         let env = TestCaseEnvironment(
@@ -323,7 +380,7 @@ final class CaseViewModelTests: XCTestCase {
 
         await XCTAssertAsyncThrows(try await vm.unlock())
 
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
     }
 
     func test_reset_vault_discards_file_and_allows_fresh_unlock() async throws {
@@ -333,7 +390,7 @@ final class CaseViewModelTests: XCTestCase {
         )
         let vm = env.makeViewModel()
         await XCTAssertAsyncThrows(try await vm.unlock())
-        XCTAssertEqual(vm.unlockState, .needsReset("Couldn't unlock this Case. Reset starts a new one and keeps the old file."))
+        XCTAssertEqual(vm.unlockState, .needsReset("Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."))
 
         vm.armResetVault()
         try vm.resetVault()
@@ -367,7 +424,7 @@ final class CaseViewModelTests: XCTestCase {
 
         XCTAssertEqual(env.authenticator.authenticateCallCount, 1)
         XCTAssertEqual(env.keys.readCallCount, 0)
-        XCTAssertEqual(vm.unlockState, .failed("Unable to unlock Case"))
+        XCTAssertEqual(vm.unlockState, .failed("Не удалось открыть Case"))
     }
 
     func test_query_change_refreshes_idle_lock() async throws {
@@ -386,11 +443,12 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertEqual(scheduler.scheduled[1].delaySeconds, 15 * 60)
     }
 
-    func test_delete_secret_clears_orphaned_group_id_when_group_dissolves() async throws {
+    func test_delete_secret_keeps_the_project_with_its_remaining_key() async throws {
         let groupID = UUID()
         let deletedID = UUID()
         let survivingID = UUID()
         let payload = CaseVaultPayload(
+            projects: [.general(now: Date()), group(id: groupID, name: "AWS")],
             secrets: [
                 secret(id: deletedID, name: "AWS_ACCESS_KEY", groupID: groupID),
                 secret(id: survivingID, name: "AWS_SECRET_KEY", groupID: groupID)
@@ -398,9 +456,6 @@ final class CaseViewModelTests: XCTestCase {
             values: [
                 CaseSecretValue(secretID: deletedID, value: "deleted-value"),
                 CaseSecretValue(secretID: survivingID, value: "surviving-value")
-            ],
-            groups: [
-                group(id: groupID, name: "AWS", keyIDs: [deletedID, survivingID])
             ]
         )
         let env = TestCaseEnvironment(payload: payload)
@@ -409,110 +464,78 @@ final class CaseViewModelTests: XCTestCase {
 
         try vm.deleteSecret(deletedID)
 
-        XCTAssertTrue(env.savedPayload?.groups.isEmpty ?? false)
-        XCTAssertEqual(env.savedPayload?.secrets.first(where: { $0.id == survivingID })?.groupID, nil)
-        XCTAssertEqual(vm.rows, [CaseDisplayRow(id: survivingID, kind: .secret, displayName: "AWS_SECRET_KEY")])
+        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID, groupID])
+        XCTAssertEqual(env.savedPayload?.secrets.first(where: { $0.id == survivingID })?.projectID, groupID)
+        let section = vm.projectSections.first { $0.id == groupID }
+        XCTAssertEqual(section?.name, "AWS")
+        XCTAssertEqual(section?.secrets.map(\.id), [survivingID])
     }
 
-    func test_create_group_from_dragged_keys() async throws {
-        let firstID = UUID()
-        let secondID = UUID()
-        let env = TestCaseEnvironment(payload: CaseVaultPayload(
-            secrets: [secret(id: firstID, name: "OPENAI_API_KEY"), secret(id: secondID, name: "ANTHROPIC_API_KEY")],
-            values: []
-        ))
+    func test_migrated_one_key_project_survives_unrelated_delete() async throws {
+        let gid = UUID(), keptID = UUID(), looseID = UUID()
+        let plaintext = try CaseVaultMigrationTests.v1Plaintext(
+            secrets: [(keptID, "SOLO_KEY", gid), (looseID, "LOOSE_KEY", nil)],
+            groups: [(gid, "solo project", [keptID])], at: Date(timeIntervalSince1970: 1_500_000_000))
+        let migrated = try CaseVaultMigration.decodePayload(plaintext)
+        XCTAssertEqual(migrated.projects.map(\.id), [CaseProject.generalID, gid])
+
+        let env = TestCaseEnvironment(payload: migrated)
         let vm = env.makeViewModel()
         try await vm.unlock()
+        try vm.deleteSecret(looseID)
 
-        let createdGroupID = try vm.createGroup(sourceSecretID: firstID, targetSecretID: secondID, name: "AI keys")
-
-        XCTAssertEqual(createdGroupID, env.savedPayload?.groups.first?.id)
-        XCTAssertEqual(env.savedPayload?.groups.first?.name, "AI keys")
-        XCTAssertEqual(Set(env.savedPayload?.groups.first?.keyIDs ?? []), Set([firstID, secondID]))
-        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == firstID }?.groupID, env.savedPayload?.groups.first?.id)
-        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == secondID }?.groupID, env.savedPayload?.groups.first?.id)
-    }
-
-    func test_create_group_rejects_empty_and_too_long_names() async throws {
-        let firstID = UUID()
-        let secondID = UUID()
-        let env = TestCaseEnvironment(payload: CaseVaultPayload(
-            secrets: [secret(id: firstID, name: "OPENAI_API_KEY"), secret(id: secondID, name: "ANTHROPIC_API_KEY")]
-        ))
-        let vm = env.makeViewModel()
-        try await vm.unlock()
-
-        XCTAssertThrowsError(try vm.createGroup(sourceSecretID: firstID, targetSecretID: secondID, name: "   "))
-        XCTAssertThrowsError(try vm.createGroup(sourceSecretID: firstID, targetSecretID: secondID, name: String(repeating: "a", count: 49)))
-        XCTAssertTrue(env.store.payload.groups.isEmpty)
+        let saved = try XCTUnwrap(env.savedPayload)
+        XCTAssertEqual(saved.project(gid)?.name, "solo project")
+        XCTAssertEqual(saved.secrets.first { $0.id == keptID }?.projectID, gid)
+        XCTAssertEqual(env.store.payload.project(gid)?.name, "solo project")
+        XCTAssertEqual(env.store.payload.secrets.map(\.id), [keptID])
     }
 
     func test_create_key_directly_inside_opened_group() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+        let group = CaseProject(id: groupID, name: "AI keys", description: "", createdAt: Date(), updatedAt: Date())
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group],
             secrets: [secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID), secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)],
-            values: [],
-            groups: [group]
+            values: []
         ))
         let vm = env.makeViewModel()
         try await vm.unlock()
 
-        try vm.submitName("github token", groupID: groupID)
+        try vm.submitName("github token", projectID: groupID)
         try vm.submitValue("ghp-secret")
 
-        XCTAssertEqual(env.savedPayload?.secrets.last?.groupID, groupID)
-        XCTAssertEqual(env.savedPayload?.groups.first?.keyIDs.count, 3)
+        XCTAssertEqual(env.savedPayload?.secrets.last?.projectID, groupID)
+        XCTAssertEqual(env.savedPayload?.secrets.filter { $0.projectID == groupID }.count, 3)
     }
 
-    func test_drag_out_of_two_key_group_collapses_group() async throws {
+    func test_move_secret_out_of_two_key_project_keeps_the_project() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group(id: groupID, name: "AI keys")],
             secrets: [secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID), secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)],
-            values: [],
-            groups: [group]
+            values: []
         ))
         let vm = env.makeViewModel()
         try await vm.unlock()
 
-        try vm.removeSecretFromGroup(firstID)
+        try vm.moveSecret(firstID, toProject: CaseProject.generalID)
 
-        XCTAssertTrue(env.savedPayload?.groups.isEmpty ?? false)
-        XCTAssertNil(env.savedPayload?.secrets.first { $0.id == firstID }?.groupID)
-        XCTAssertNil(env.savedPayload?.secrets.first { $0.id == secondID }?.groupID)
+        XCTAssertEqual(env.savedPayload?.projects.map(\.id), [CaseProject.generalID, groupID])
+        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == firstID }?.projectID, CaseProject.generalID)
+        XCTAssertEqual(env.savedPayload?.secrets.first { $0.id == secondID }?.projectID, groupID)
     }
 
-    func test_copy_all_group_emits_env_payload_and_updates_usage() async throws {
+    func test_secret_rows_in_project_expose_names_and_descriptions_without_values() async throws {
         let firstID = UUID()
         let secondID = UUID()
         let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
         let env = TestCaseEnvironment(payload: CaseVaultPayload(
-            secrets: [secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID), secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)],
-            values: [CaseSecretValue(secretID: firstID, value: "sk-openai"), CaseSecretValue(secretID: secondID, value: "sk-anthropic")],
-            groups: [group]
-        ))
-        let vm = env.makeViewModel()
-        try await vm.unlock()
-
-        try vm.copyAll(groupID)
-
-        XCTAssertEqual(env.pasteboard.lastString, "OPENAI_API_KEY=sk-openai\nANTHROPIC_API_KEY=sk-anthropic")
-        XCTAssertEqual(env.savedPayload?.groups.first?.copyCount, 1)
-        XCTAssertEqual(env.savedPayload?.secrets.map(\.copyCount), [1, 1])
-    }
-
-    func test_child_rows_for_group_exposes_names_without_values() async throws {
-        let firstID = UUID()
-        let secondID = UUID()
-        let groupID = UUID()
-        let group = CaseGroup(id: groupID, name: "AI keys", keyIDs: [firstID, secondID], copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
-        let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group(id: groupID, name: "AI keys")],
             secrets: [
                 secret(id: firstID, name: "OPENAI_API_KEY", groupID: groupID),
                 secret(id: secondID, name: "ANTHROPIC_API_KEY", groupID: groupID)
@@ -520,17 +543,162 @@ final class CaseViewModelTests: XCTestCase {
             values: [
                 CaseSecretValue(secretID: firstID, value: "sk-openai"),
                 CaseSecretValue(secretID: secondID, value: "sk-anthropic")
-            ],
-            groups: [group]
+            ]
+        ))
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        try vm.setSecretDescription(firstID, "main key")
+
+        let rows = vm.secretRows(inProject: groupID)
+
+        XCTAssertEqual(rows.map(\.displayName), ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"])
+        XCTAssertEqual(rows.first?.description, "main key")
+        XCTAssertEqual(rows.first?.projectID, groupID)
+        XCTAssertFalse(String(describing: rows).contains("sk-openai"))
+        XCTAssertFalse(String(describing: rows).contains("sk-anthropic"))
+    }
+
+    func test_names_unique_per_project_not_global() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        let servers = try vm.createProject(name: "servers", description: "")
+
+        try vm.submitName("db pass")
+        try vm.submitValue("one")
+        try vm.submitName("db pass", projectID: servers)
+        try vm.submitValue("two")
+
+        XCTAssertEqual(env.savedPayload?.secrets.map(\.name), ["DB_PASS", "DB_PASS"])
+        XCTAssertThrowsError(try vm.submitName("db pass", projectID: servers)) {
+            XCTAssertEqual($0 as? CaseViewModelError, .duplicateName)
+        }
+        XCTAssertThrowsError(try vm.submitName("DB_pass")) {
+            XCTAssertEqual($0 as? CaseViewModelError, .duplicateName)
+        }
+    }
+
+    func test_submit_name_for_unknown_project_is_refused() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+
+        XCTAssertThrowsError(try vm.submitName("x key", projectID: UUID())) {
+            XCTAssertEqual($0 as? CaseViewModelError, .missingProject)
+        }
+    }
+
+    func test_delete_project_removes_its_secrets_and_values() async throws {
+        let inID = UUID(), outID = UUID(), groupID = UUID()
+        let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group(id: groupID, name: "servers")],
+            secrets: [secret(id: inID, name: "IN_KEY", groupID: groupID), secret(id: outID, name: "OUT_KEY")],
+            values: [CaseSecretValue(secretID: inID, value: "in"), CaseSecretValue(secretID: outID, value: "out")]
         ))
         let vm = env.makeViewModel()
         try await vm.unlock()
 
-        let childRows = vm.childRows(forGroupID: groupID)
+        try vm.deleteProject(groupID)
 
-        XCTAssertEqual(childRows.map(\.displayName), ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"])
-        XCTAssertFalse(String(describing: childRows).contains("sk-openai"))
-        XCTAssertFalse(String(describing: childRows).contains("sk-anthropic"))
+        let saved = try XCTUnwrap(env.savedPayload)
+        XCTAssertEqual(saved.projects.map(\.id), [CaseProject.generalID])
+        XCTAssertEqual(saved.secrets.map(\.id), [outID])
+        XCTAssertEqual(saved.values.map(\.secretID), [outID])
+    }
+
+    func test_general_cannot_be_deleted_or_renamed() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+
+        XCTAssertThrowsError(try vm.deleteProject(CaseProject.generalID)) {
+            XCTAssertEqual($0 as? CaseViewModelError, .invalidProjectOperation)
+        }
+        XCTAssertThrowsError(try vm.renameProject(CaseProject.generalID, name: "Other")) {
+            XCTAssertEqual($0 as? CaseViewModelError, .invalidProjectOperation)
+        }
+        XCTAssertEqual(env.store.payload.project(CaseProject.generalID)?.name, "General")
+    }
+
+    func test_move_secret_with_name_clash_is_refused() async throws {
+        let aID = UUID(), bID = UUID(), groupID = UUID()
+        let env = TestCaseEnvironment(payload: CaseVaultPayload(
+            projects: [.general(now: Date()), group(id: groupID, name: "servers")],
+            secrets: [secret(id: aID, name: "DB_PASS"), secret(id: bID, name: "db_pass", groupID: groupID)],
+            values: []
+        ))
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+
+        XCTAssertThrowsError(try vm.moveSecret(aID, toProject: groupID)) {
+            XCTAssertEqual($0 as? CaseViewModelError, .duplicateName)
+        }
+        XCTAssertEqual(env.store.payload.secrets.first { $0.id == aID }?.projectID, CaseProject.generalID)
+    }
+
+    func test_project_validation_and_description_limits() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        let id = try vm.createProject(name: "  servers  ", description: "prod boxes")
+        XCTAssertEqual(env.store.payload.project(id)?.name, "servers")
+
+        for bad in ["   ", String(repeating: "a", count: 49)] {
+            XCTAssertThrowsError(try vm.createProject(name: bad, description: "")) {
+                XCTAssertEqual($0 as? CaseViewModelError, .invalidProjectName)
+            }
+        }
+        XCTAssertThrowsError(try vm.createProject(name: "SERVERS", description: "")) {
+            XCTAssertEqual($0 as? CaseViewModelError, .duplicateName)
+        }
+        XCTAssertThrowsError(try vm.createProject(name: "general", description: "")) {
+            XCTAssertEqual($0 as? CaseViewModelError, .duplicateName)
+        }
+        XCTAssertThrowsError(try vm.createProject(name: "x", description: String(repeating: "d", count: 201))) {
+            XCTAssertEqual($0 as? CaseViewModelError, .descriptionTooLong)
+        }
+        XCTAssertThrowsError(try vm.setProjectDescription(id, String(repeating: "d", count: 201))) {
+            XCTAssertEqual($0 as? CaseViewModelError, .descriptionTooLong)
+        }
+        try vm.setProjectDescription(id, String(repeating: "d", count: 200))
+        try vm.renameProject(id, name: "boxes")
+        XCTAssertEqual(env.store.payload.project(id)?.name, "boxes")
+        XCTAssertThrowsError(try vm.renameProject(id, name: "General")) {
+            XCTAssertEqual($0 as? CaseViewModelError, .duplicateName)
+        }
+    }
+
+    func test_expanded_projects_default_to_general() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let vm = env.makeViewModel()
+        XCTAssertEqual(vm.expandedProjectIDs, [CaseProject.generalID])
+    }
+
+    func test_two_view_models_share_one_service_without_clobbering() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload())
+        let a = env.makeViewModel()
+        let b = env.makeViewModel()
+        try await a.unlock()
+        try await b.unlock()
+
+        try a.submitName("key a")
+        try a.submitValue("va")
+        try b.submitName("key b")
+        try b.submitValue("vb")
+
+        XCTAssertEqual(Set(env.store.payload.secrets.map(\.name)), ["KEY_A", "KEY_B"])
+        XCTAssertEqual(Set(a.rows.map(\.displayName)), ["KEY_A", "KEY_B"])
+    }
+
+    func test_lock_hides_ui_but_keeps_service_payload() async throws {
+        let env = TestCaseEnvironment(payload: CaseVaultPayload(secrets: [secret(name: "K_ONE")]))
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+
+        vm.lock()
+
+        XCTAssertTrue(vm.rows.isEmpty)
+        XCTAssertNotNil(env.service.payload)
     }
 
     func test_cancel_input_returns_to_name_mode_and_clears_query() async throws {
@@ -547,11 +715,11 @@ final class CaseViewModelTests: XCTestCase {
     }
 
     private func secret(id: UUID = UUID(), name: String, groupID: UUID? = nil) -> CaseSecret {
-        CaseSecret(id: id, name: name, groupID: groupID, copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+        CaseSecret(id: id, name: name, projectID: groupID ?? CaseProject.generalID, description: "", copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
     }
 
-    private func group(id: UUID = UUID(), name: String, keyIDs: [UUID]) -> CaseGroup {
-        CaseGroup(id: id, name: name, keyIDs: keyIDs, copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
+    private func group(id: UUID = UUID(), name: String) -> CaseProject {
+        CaseProject(id: id, name: name, description: "", createdAt: Date(), updatedAt: Date())
     }
 }
 
@@ -562,6 +730,7 @@ private final class TestCaseEnvironment {
     let store: StubCaseVaultStore
     let keys: StubCaseVaultKeyProvider
     let authenticator: StubCaseAuthenticator
+    let service: CaseVaultService
 
     init(
         payload: CaseVaultPayload,
@@ -573,6 +742,7 @@ private final class TestCaseEnvironment {
         self.store = StubCaseVaultStore(payload: payload, loadError: loadError, saveError: saveError)
         self.keys = StubCaseVaultKeyProvider(error: keyError)
         self.authenticator = StubCaseAuthenticator(error: authError)
+        self.service = CaseVaultService(store: store, keyProvider: keys)
         self.store.onSave = { [weak self] payload in self?.savedPayload = payload }
     }
 
@@ -580,8 +750,7 @@ private final class TestCaseEnvironment {
         scheduleIdleLock: CaseViewModel.IdleLockScheduler? = nil
     ) -> CaseViewModel {
         CaseViewModel(
-            store: store,
-            keyProvider: keys,
+            service: service,
             authenticator: authenticator,
             pasteboard: pasteboard,
             now: Date.init,
@@ -654,6 +823,7 @@ private final class StubCaseVaultKeyProvider: CaseVaultKeyProviding {
 
 @MainActor
 private final class StubCaseAuthenticator: CaseAuthenticating {
+    var duringAuthentication: (() async -> Void)?
     var error: Error?
     private(set) var authenticateCallCount = 0
 
@@ -663,7 +833,8 @@ private final class StubCaseAuthenticator: CaseAuthenticating {
 
     func authenticate(reason: String) async throws {
         authenticateCallCount += 1
-        XCTAssertEqual(reason, "Unlock Case")
+        XCTAssertEqual(reason, "Открыть Case")
+        await duringAuthentication?()
         if let error {
             throw error
         }

@@ -20,14 +20,10 @@ enum HelpWindowContent {
         hotkeyRows(for: .defaults)
     }
 
-    /// Config-driven Help rows. `hoverSlots` names the tool currently in each
-    /// positional Hover slot (D1) so the five `Hover slot N` rows describe the
-    /// live occupant; it defaults to the canonical layout for `.defaults`-based
-    /// callers (tests, the static convenience above).
+    /// Every assigned feature shortcut appears under its stable tool title.
     @MainActor
     static func hotkeyRows(
         for configuration: HotkeyConfiguration,
-        hoverSlots: [HoverTool] = HoverLayoutStore.defaultSlots,
         includeAgent: Bool = true
     ) -> [HelpHotkeyRowSpec] {
         let rows = [
@@ -91,6 +87,30 @@ enum HelpWindowContent {
                 prefix: nil,
                 contents: [.text("Esc")]
             ),
+            // Case Approve prompt: fixed physical keys (any layout), taken only
+            // while a prompt is on screen, after 300 ms without key presses. One row
+            // per answer so the caps never read as a chord.
+            HelpHotkeyRowSpec(
+                title: "Case — allow",
+                detail: "While a Case request is on screen, allow the command once. Works on any keyboard layout.",
+                iconName: "checkmark.circle",
+                prefix: nil,
+                contents: [.text("Y")]
+            ),
+            HelpHotkeyRowSpec(
+                title: "Case — deny",
+                detail: "While a Case request is on screen, deny it. Escape denies too.",
+                iconName: "xmark.octagon",
+                prefix: nil,
+                contents: [.text("N")]
+            ),
+            HelpHotkeyRowSpec(
+                title: "Case — allow for minutes",
+                detail: "While a Case request is on screen, let this app use this project without asking for the set minutes.",
+                iconName: "timer",
+                prefix: nil,
+                contents: [.text("A")]
+            ),
             // ROO-208: the three per-mode rows (`⌥1` Agent / `⌥2` Drop /
             // `⌥3` Clipboard) collapse into a single unified-strip row.
             // Filter selection lives inside the strip's left sidebar.
@@ -145,32 +165,34 @@ enum HelpWindowContent {
                 prefix: nil,
                 contents: configuration.usefulLinksPreviousShortcut.contents
             )
-        ] + hoverSlotRows(for: configuration, hoverSlots: hoverSlots)
+        ] + toolHotkeyRows(for: configuration) + screenshotEditorRows
         guard !includeAgent else { return rows }
         return rows.filter { !$0.title.hasPrefix("Agent") }
     }
 
-    /// The five positional Hover-slot rows (ROO-210). Each names the tool that
-    /// currently occupies its slot (D1: the shortcut is bound to the POSITION,
-    /// so the detail tracks the live layout) and sources its caps from the
-    /// matching `hoverSlotNShortcut` so a rebound shortcut shows through.
-    @MainActor
-    private static func hoverSlotRows(
-        for configuration: HotkeyConfiguration,
-        hoverSlots: [HoverTool]
-    ) -> [HelpHotkeyRowSpec] {
-        let shortcuts = configuration.hoverSlotShortcuts
-        return (0..<HoverLayoutStore.shortcutSlotCount).compactMap { offset in
-            guard offset < shortcuts.count, offset < hoverSlots.count else { return nil }
-            let info = HoverToolRegistry.info(for: hoverSlots[offset])
-            return HelpHotkeyRowSpec(
-                title: "Hover slot \(offset + 1)",
-                detail: "Open the Hover and activate \(info.title).",
-                iconName: info.sfSymbol,
-                prefix: nil,
-                contents: shortcuts[offset].contents
-            )
+    private static func toolHotkeyRows(for configuration: HotkeyConfiguration) -> [HelpHotkeyRowSpec] {
+        HoverTool.allCases.compactMap { tool in
+            guard let shortcut = configuration.toolShortcuts[tool] else { return nil }
+            let info = HoverToolRegistry.info(for: tool)
+            return HelpHotkeyRowSpec(title: "Tool — \(info.title)", detail: info.description,
+                                     iconName: info.sfSymbol, prefix: nil, contents: shortcut.contents)
         }
+    }
+
+    private static var screenshotEditorRows: [HelpHotkeyRowSpec] {
+        ScreenshotEditorKeys.tools.map { entry in
+            HelpHotkeyRowSpec(title: "Screenshot — \(entry.title)", detail: "While the screenshot editor is open.",
+                              iconName: "viewfinder", prefix: nil, contents: [.text(entry.key.uppercased())])
+        } + [
+            HelpHotkeyRowSpec(title: "Screenshot — copy", detail: "Copy the edited image and finish capture.", iconName: "doc.on.doc", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("C")]),
+            HelpHotkeyRowSpec(title: "Screenshot — save", detail: "Save as PNG or JPEG.", iconName: "square.and.arrow.down", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("S")]),
+            HelpHotkeyRowSpec(title: "Screenshot — undo", detail: "Undo a crop or annotation.", iconName: "arrow.uturn.backward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("Z")]),
+            HelpHotkeyRowSpec(title: "Screenshot — redo", detail: "Redo the last undone change.", iconName: "arrow.uturn.forward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text(HotkeyGlyph.shift), .text("Z")]),
+            HelpHotkeyRowSpec(title: "Screenshot — move crop", detail: "Arrow keys move the crop; Shift moves 10 points; Option resizes.", iconName: "arrow.up.left.and.arrow.down.right", prefix: nil, contents: [.text("←"), .text("↑"), .text("↓"), .text("→")]),
+            HelpHotkeyRowSpec(title: "Screenshot — cancel", detail: "Cancel the current drawing, then cancel capture.", iconName: "escape", prefix: nil, contents: [.text("Esc")]),
+            HelpHotkeyRowSpec(title: "Screenshot — full display", detail: "Select the entire display before drawing a crop.", iconName: "viewfinder", prefix: nil, contents: [.text("Return")]),
+            HelpHotkeyRowSpec(title: "Screenshot — delete annotation", detail: "Remove the selected annotation.", iconName: "delete.left", prefix: nil, contents: [.text("Delete")])
+        ]
     }
 }
 
@@ -211,17 +233,14 @@ final class HelpWindowController: NSWindowController, NSWindowDelegate {
 
 private struct HelpView: View {
     @ObservedObject private var hotkeys: HotkeyPreferences
-    @ObservedObject private var hoverLayout: HoverLayoutStore
     @ObservedObject private var agentProviders: AgentProviderStore
 
     @MainActor
     init(
         hotkeys: HotkeyPreferences? = nil,
-        hoverLayout: HoverLayoutStore? = nil,
         agentProviders: AgentProviderStore? = nil
     ) {
         self.hotkeys = hotkeys ?? .shared
-        self.hoverLayout = hoverLayout ?? .shared
         self.agentProviders = agentProviders ?? .shared
     }
 
@@ -255,7 +274,6 @@ private struct HelpView: View {
                     ForEach(
                         HelpWindowContent.hotkeyRows(
                         for: hotkeys.configuration,
-                        hoverSlots: hoverLayout.slots,
                         includeAgent: agentProviders.activeProvider != nil
                     )
                     ) { row in

@@ -10,6 +10,8 @@ enum OpenCodeEnvironment {
     static func make(workingDirectory: URL, model: String, provider: OpenCodeModelProvider = .openRouter,
                      key: String?, allowActions: Bool,
                      modelSpec: OpenCodeModelSpec? = nil,
+                     caseMCPCommand: [String]? = nil,
+                     openRouterProvider: String? = nil,
                      inherited: [String: String] = ProcessInfo.processInfo.environment) throws -> [String: String] {
         var env = inherited.filter { name, _ in
             !name.hasPrefix("OPENCODE_") && !name.hasPrefix("OPENROUTER_")
@@ -36,21 +38,33 @@ enum OpenCodeEnvironment {
         // Declaring the selected model also supports fresh models that have not
         // reached OpenCode's models.dev cache yet; the catalog limits keep
         // OpenCode from treating such a model's context as 0.
-        let permissions: [String: String] = allowActions
+        var permissions: [String: String] = allowActions
             ? ["*": "allow", "question": "deny"]
             : ["*": "deny", "read": "allow", "glob": "allow", "grep": "allow", "webfetch": "allow"]
-        let declaration: [String: Any] = modelSpec.map {
+        // Case MCP only lists project and key names, so it stays usable with
+        // actions off; running commands still follows the bash permission.
+        if caseMCPCommand != nil { permissions["case_*"] = "allow" }
+        var declaration: [String: Any] = modelSpec.map {
             ["tool_call": $0.toolCall, "reasoning": $0.reasoning,
              "limit": ["context": $0.contextLimit, "output": $0.outputLimit]]
         } ?? [:]
+        // A pinned provider is used alone, as for the app's own OpenRouter calls.
+        if provider == .openRouter, let pinned = openRouterProvider {
+            declaration["options"] = ["provider": ["order": [pinned], "allow_fallbacks": false]]
+        }
         let id = provider.openCodeID
-        let config: [String: Any] = [
+        var config: [String: Any] = [
             "$schema": "https://opencode.ai/config.json", "model": "\(id)/\(normalized)",
             "enabled_providers": [id], "share": "disabled", "autoupdate": false,
             "permission": permissions,
             "provider": [id: ["options": ["apiKey": "{env:\(provider.keyEnvironmentName)}"],
                               "models": [normalized: declaration]]]
         ]
+        // Present only while the built-in agent is registered in Case; the
+        // entry holds the helper path, never a value or token.
+        if let caseMCPCommand {
+            config["mcp"] = ["case": ["type": "local", "command": caseMCPCommand, "enabled": true]]
+        }
         env["OPENCODE_CONFIG_CONTENT"] = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
         return env
     }

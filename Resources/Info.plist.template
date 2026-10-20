@@ -36,11 +36,11 @@
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>Whytap shows your selected calendars and upcoming meetings together in Planner. Connected Apple calendars are read-only in Whytap.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Whytap records the other participants' audio during meetings to transcribe what's said.</string>
+    <string>Whytap captures system audio for live translated subtitles and meeting transcripts.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Whytap uses Accessibility to paste transcribed text into the active window.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Whytap captures the active window to provide context for smarter formatting.</string>
+    <string>Whytap captures screenshots only when you choose Screenshot, so you can annotate them and blur text and numbers on your Mac.</string>
     <key>NSAccessibilityUsageDescription</key>
     <string>Whytap uses Accessibility to detect the global hotkey and to paste transcribed text into the active window.</string>
     <key>SUFeedURL</key>

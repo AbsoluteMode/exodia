@@ -43,16 +43,25 @@ final class PlannerRenderTests: XCTestCase {
             to: destination.appendingPathComponent("connect.png"))
         try render(PlannerEventEditor(event: store.archive.events[0], store: store), size: NSSize(width: 538, height: 510),
             to: destination.appendingPathComponent("event-editor.png"))
+        for scheme in [ColorScheme.light, .dark] {
+            for size in [NSSize(width: 980, height: 680), NSSize(width: 820, height: 560)] {
+                for section in PlannerSection.allCases {
+                    navigation.section = section
+                    try render(PlannerView(store: store, navigation: navigation, connections: connections), size: size,
+                        to: destination.appendingPathComponent("\(section == .tasks ? "tasks" : "calendar")-\(Int(size.width))-\(scheme).png"), scheme: scheme)
+                }
+            }
+        }
     }
 
-    private func render<V: View>(_ view: V, size: NSSize, to url: URL) throws {
-        let host = NSHostingView(rootView: view.environment(\.colorScheme, .dark).tint(.blue))
-        host.appearance = NSAppearance(named: .darkAqua)
+    private func render<V: View>(_ view: V, size: NSSize, to url: URL, scheme: ColorScheme = .dark) throws {
+        let host = NSHostingView(rootView: view.environment(\.colorScheme, scheme).tint(.blue))
+        host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size),
             styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
         window.backgroundColor = .windowBackgroundColor
         window.contentView = host
         defer { window.contentView = nil; window.close() }

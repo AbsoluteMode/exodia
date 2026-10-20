@@ -3,6 +3,7 @@ import AVFoundation
 import Combine
 import Foundation
 import os.log
+import WhytapCaseKit
 
 /// How the drop streaming session failed to start. No chosen provider or a
 /// missing BYOK key is the user's configuration — surfaced, never fatal.
@@ -55,6 +56,8 @@ enum DropCancelRoute: Equatable {
 // Sources/SidekeyApp via `SidekeyAppMain.run()` → `AppDelegate.main()`.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var translationWindowController: TranslationWindowController?
+    private var screenshotCoordinator: ScreenshotCoordinator?
     private let recorder = AudioRecorder()
     /// Batch transcriber for the Drop recorder fallback, the resilient-delivery
     /// batch rung and Retry: the provider, model and key of the route the take
@@ -114,10 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// trio of per-mode `⌥1` / `⌥2` / `⌥3` monitors that used to live
     /// in `historyHotkeys: [CarbonHotkeyMonitor]`.
     private var historyHotkey: CarbonHotkeyMonitor?
-    /// Positional Hover-slot hotkeys (ROO-210): ⌥N (default) activates
-    /// `HoverLayoutStore.slots[N-1]`. Registered as an independent block of five
-    /// so a failure on one (or on Drop) never disables the rest. Index 0 = slot 1.
-    private var hoverSlotHotkeys: [HotkeyShortcutMonitor] = []
+    /// Independent monitors for the user's tool bindings, regardless of layout.
+    private var toolHotkeys: [HotkeyShortcutMonitor] = []
     /// Manual Meeting-record toggle (default ⌥M) — tap starts a recording
     /// bypassing the detector nudge, tap again stops it.
     private var meetingRecordHotkey: HotkeyShortcutMonitor?
@@ -195,6 +196,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// strongly so the `weak` ref in `AppState` survives. Feature-flag
     /// gated (`NowPlayingConfig`); when off, `start()` is a logged no-op.
     private var nowPlayingCoordinator: NowPlayingCoordinator?
+    /// Case broker socket for the bundled `whytap` helper; running app only.
+    private var caseBrokerServer: CaseBrokerServer?
+    /// Case Approve prompts in the island (Y / N / A keys) and their panel.
+    private var caseApprovalController: CaseApprovalController?
+    private var caseApprovalPanel: CaseApprovalPanel?
+    private var caseApprovalCancellable: AnyCancellable?
     private var nowPlayingController: NowPlayingController?
 
     /// Volume ducking: smoothly lowers the system output volume while the user
@@ -333,6 +340,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        LocalNotificationHub.shared.openMeeting = { [weak self] id in
+            guard let self else { return }
+            self.openSettingsWindow(tab: .notes)
+            self.ensureSettingsWindowController().selectNoteMeeting(id: id)
+        }
         NotifyScriptSupervisor.shared.start()
         Task { await AgentSettingsStore.shared.refreshCodexCatalog() }
         // Final-rubber-stamp diagnostic + last-resort retry. If we reach
@@ -451,8 +463,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         installMeetingsCoordinator()
         installNowPlayingCoordinator()
+        installCaseBroker()
         installDisplayPreferenceObserver()
         installWorkspacePowerObservers()
+        // The Display tool's time left learns the load from the last half hour, in memory only.
+        BatteryRuntimeMonitor.shared.startHistory()
 
         startReady()
         ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore)
@@ -476,8 +491,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        screenshotCoordinator?.cancel(restoreFocus: false)
+        translationWindowController?.cancel()
         BackupViewModel.shared.stop()
-        // Remove the Extra overlay; Extra never changes the backlight.
+        // Give the display its own transfer table back; Extra never changes the backlight.
         ScreenBrightnessController.shared.shutdown()
         BrightnessKeys.shared.stop()
         NotifyScriptSupervisor.shared.stop()
@@ -500,6 +517,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Terminate the MediaRemote `run.pl stream` child synchronously;
         // otherwise it outlives the app as an orphan (PPID 1).
         nowPlayingCoordinator?.shutdown()
+        // Waiting Approve prompts are denied (and the key tap removed) before the socket closes.
+        caseApprovalController?.cancelAll()
+        caseBrokerServer?.stop()
+        caseBrokerServer = nil
         IslandPanel.shared.hide()
         IslandNotificationPanel.shared.hide()
         meetingsEventConsumer?.cancel()
@@ -705,6 +726,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toggleDropMode: actions.toggleDropMode,
             currentDropMode: actions.currentDropMode,
             openClipboard: actions.openClipboard,
+            historyCards: actions.historyCards,
+            copyHistoryCard: actions.copyHistoryCard,
+            toggleMeetingRecord: actions.toggleMeetingRecord,
+            openScreenshot: actions.openScreenshot,
+            quitApplication: actions.quitApplication,
+            translationController: { [weak self] in self?.ensureTranslationController() },
+            endToolSessions: { [weak self] in _ = self?.translationWindowController?.endEmbedding() },
             vocabulary: actions.vocabulary,
             currentLanguage: actions.currentLanguage,
             currentTargetLanguage: actions.currentTargetLanguage,
@@ -829,8 +857,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// { animation = nil }`); either fix alone would close most of
     /// the hang surface, both together close the corner cases.
     private func pauseRuntimeForSleep() {
+        screenshotCoordinator?.cancel(restoreFocus: false)
         os_log("power_will_sleep pausing runtime", log: Self.log, type: .info)
         stopPermissionRecoveryPolling()
+        translationWindowController?.cancel()
 
         recorder.cancel()
         // Same reasoning as `applicationWillTerminate` — sleep should not
@@ -934,7 +964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// rebuilt before `registerHotkey()` can re-create it. `registerHotkey()`
     /// and its per-monitor registrars all early-return on a non-nil / non-empty
     /// handle (`guard hotkey == nil`, `guard meetingRecordHotkey == nil`,
-    /// `guard hoverSlotHotkeys.isEmpty`), so any rebuild path that leaves a
+    /// `guard toolHotkeys.isEmpty`), so any rebuild path that leaves a
     /// stale ref behind silently no-ops that monitor. Every rebuild site (soft
     /// wake, full-wake teardown, Accessibility re-grant) funnels through here so
     /// the whole set is torn down symmetrically — a Carbon hotkey added later is
@@ -943,14 +973,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// idempotent and `start()` self-stops, so a redundant call is cheap.
     private func teardownHotkeyMonitorsForRebuild() {
         Self.teardownHotkeyMonitorsForRebuild(
-            [hotkey, helpHotkey, historyHotkey, meetingRecordHotkey] + hoverSlotHotkeys
+            [hotkey, helpHotkey, historyHotkey, meetingRecordHotkey] + toolHotkeys
         )
         hotkey = nil
         dropMonitorGeneration = UUID()
         helpHotkey = nil
         historyHotkey = nil
         meetingRecordHotkey = nil
-        hoverSlotHotkeys = []
+        toolHotkeys = []
         // The setting stays; registerHotkey installs the tap again.
         BrightnessKeys.shared.stop()
     }
@@ -1125,6 +1155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.registerIslandHotkeyActivity()
                 PlannerWindowController.shared.show(.calendar)
             },
+            openTranslate: { [weak self] in self?.openTranslation(.text) },
+            openSubtitles: { [weak self] in self?.openTranslation(.subtitles) },
+            openScreenshot: { [weak self] in self?.openScreenshot() },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .apiAndModels)
             },
@@ -1345,7 +1378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         registerHistoryHotkey()
         registerHelpHotkey()
-        registerHoverSlotHotkeys()
+        registerToolHotkeys()
         registerMeetingRecordHotkey()
         // Brightness keys install their tap only when switched on in Settings -> Toolbox.
         BrightnessKeys.shared.start(showStrip: { [weak self] in self?.showBrightnessGlance() })
@@ -1496,18 +1529,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         .store(in: &hotkeyPreferenceCancellables)
 
-        // Re-register the Hover-slot monitors whenever any of the five
-        // positional shortcuts changes (Settings → Hotkeys Save, Stage 4). Each
-        // publisher reregisters the whole block — cheap (five Carbon
-        // registrations) and keeps the registration logic in one place. The
-        // installer threads the freshly published (slot, shortcut) so the
-        // changed slot rebuilds on its NEW value, not the stale stored property
-        // observed mid-willSet (same race as Drop).
-        for cancellable in AppDelegate.observeHoverSlotShortcuts(HotkeyPreferences.shared, onResolved: { [weak self] index, shortcut in
-            self?.reregisterHoverSlotHotkeys(slotIndex: index, shortcut: shortcut)
-        }) {
-            cancellable.store(in: &hotkeyPreferenceCancellables)
-        }
+        Self.observeToolShortcuts(HotkeyPreferences.shared) { [weak self] shortcuts in
+            self?.reregisterToolHotkeys(shortcuts: shortcuts)
+        }.store(in: &hotkeyPreferenceCancellables)
 
         // Re-register the Meeting-record monitor on rebind. Same willSet
         // hazard as Drop / Hover slots: the published value is threaded
@@ -1521,34 +1545,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &hotkeyPreferenceCancellables)
     }
 
-    /// Install the synchronous re-registration sinks for the five positional
-    /// Hover-slot shortcuts, one per `$hoverSlotNShortcut` publisher. `onResolved`
-    /// receives the 1-based slot index and the freshly published shortcut.
-    ///
-    /// As with Drop, `@Published` fires in `willSet`: the registrar reads
-    /// `configuration.hoverSlotShortcuts` (all five stored properties), so
-    /// re-reading the changed slot here would observe its PRIOR value. The
-    /// published value is threaded straight through instead (ROO-234 race).
-    static func observeHoverSlotShortcuts(
+    /// Pass the published dictionary through: @Published emits before storage
+    /// changes, so rereading preferences here would register stale bindings.
+    static func observeToolShortcuts(
         _ preferences: HotkeyPreferences,
-        onResolved: @escaping (_ slotIndex: Int, _ shortcut: HotkeyShortcut) -> Void
-    ) -> [AnyCancellable] {
-        let publishers = [
-            preferences.$hoverSlot1Shortcut,
-            preferences.$hoverSlot2Shortcut,
-            preferences.$hoverSlot3Shortcut,
-            preferences.$hoverSlot4Shortcut,
-            preferences.$hoverSlot5Shortcut
-        ]
-        return publishers.enumerated().map { offset, publisher in
-            let slotIndex = offset + 1
-            return publisher
-                .dropFirst()
-                .removeDuplicates()
-                .sink { newValue in
-                    onResolved(slotIndex, newValue)
-                }
-        }
+        onResolved: @escaping ([HoverTool: HotkeyShortcut]) -> Void
+    ) -> AnyCancellable {
+        preferences.$toolShortcuts.dropFirst().removeDuplicates().sink(receiveValue: onResolved)
     }
 
     /// Install the synchronous re-registration sink for the Drop *shortcut*.
@@ -1592,64 +1595,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AppState.shared.dropHotkeyStatus != .ready { startPermissionRecoveryPollingIfNeeded() }
     }
 
-    /// Carbon hot-key IDs for the five positional Hover-slot shortcuts, in slot
-    /// order (index 0 = slot 1). Contiguous 13..17, after `agentVoiceHotKeyID`.
-    private static let hoverSlotHotKeyIDs: [UInt32] = [
-        CarbonHotkeyMonitor.hoverSlot1HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot2HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot3HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot4HotKeyID,
-        CarbonHotkeyMonitor.hoverSlot5HotKeyID
-    ]
-
-    /// Register one monitor per Hover slot from the configured shortcuts. Each
-    /// fires `onHoverSlotActivated(index:)` with its 1-based slot position, so
-    /// the action always tracks `HoverLayoutStore.slots[index-1]` even after a
-    /// Toolbox reorder (D1). Idempotent: a no-op while monitors are already
-    /// installed (`reregisterHoverSlotHotkeys()` tears them down first).
-    /// - Parameters:
-    ///   - overrideSlotIndex / override: when the runtime sink rebuilds after a
-    ///     single slot changed, it passes the just-published 1-based slot index
-    ///     and shortcut so that slot uses its FRESH value. The other four slots
-    ///     (not mutated in this willSet) read `shared` as usual. The launch path
-    ///     passes neither and reads all five from `shared`.
-    private func registerHoverSlotHotkeys(
-        overrideSlotIndex: Int? = nil,
-        override: HotkeyShortcut? = nil
-    ) {
-        guard hoverSlotHotkeys.isEmpty else { return }
-        var shortcuts = HotkeyPreferences.shared.configuration.hoverSlotShortcuts
-        if let overrideSlotIndex, let override,
-           overrideSlotIndex >= 1, overrideSlotIndex <= shortcuts.count {
-            shortcuts[overrideSlotIndex - 1] = override
-        }
-        var monitors: [HotkeyShortcutMonitor] = []
-        for (offset, shortcut) in shortcuts.enumerated() {
-            let position = offset + 1
+    private func registerToolHotkeys(shortcuts: [HoverTool: HotkeyShortcut]? = nil) {
+        guard toolHotkeys.isEmpty else { return }
+        let shortcuts = shortcuts ?? HotkeyPreferences.shared.toolShortcuts
+        var unavailable = Set<HoverTool>()
+        for binding in ToolHotkeyBinding.resolve(shortcuts) {
             let monitor = HotkeyShortcutMonitor(
-                shortcut: shortcut,
-                hotKeyIDValue: Self.hoverSlotHotKeyIDs[offset],
-                onHotkey: { [weak self] in self?.onHoverSlotActivated(index: position) }
+                shortcut: binding.shortcut,
+                hotKeyIDValue: binding.hotKeyID,
+                onHotkey: { [weak self] in self?.onToolHotkeyActivated(binding.tool) }
             )
             do {
                 try monitor.start()
-                monitors.append(monitor)
+                toolHotkeys.append(monitor)
             } catch {
-                // A single slot failing to register (e.g. Carbon collision with
-                // another app) must not block the rest — log and skip it.
-                os_log(
-                    "registerHoverSlotHotkey failed slot=%{public}d: %{public}@",
-                    log: Self.hotkeyLog, type: .error,
-                    position, String(describing: error)
-                )
+                unavailable.insert(binding.tool)
+                os_log("registerToolHotkey failed: %{public}@", log: Self.hotkeyLog,
+                       type: .error, String(describing: error))
             }
         }
-        hoverSlotHotkeys = monitors
+        HotkeyPreferences.shared.unavailableToolShortcuts = unavailable
     }
 
-    private func stopHoverSlotHotkeys() {
-        hoverSlotHotkeys.forEach { $0.stop() }
-        hoverSlotHotkeys = []
+    private func stopToolHotkeys() {
+        toolHotkeys.forEach { $0.stop() }
+        toolHotkeys = []
     }
 
     /// Register the manual Meeting-record toggle (default ⌥M). Idempotent —
@@ -1694,30 +1664,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func reregisterHoverSlotHotkeys(
-        slotIndex: Int? = nil,
-        shortcut: HotkeyShortcut? = nil
-    ) {
-        stopHoverSlotHotkeys()
-        registerHoverSlotHotkeys(overrideSlotIndex: slotIndex, override: shortcut)
+    private func reregisterToolHotkeys(shortcuts: [HoverTool: HotkeyShortcut]) {
+        stopToolHotkeys()
+        registerToolHotkeys(shortcuts: shortcuts)
     }
 
-    /// Activate the Hover slot at `index` (1-based) — the single entry point for
-    /// the ⌥N hotkeys. Resolves the live tool at `HoverLayoutStore.slots[index-1]`
-    /// and runs its effect through `HoverSlotRouter`, the SAME path a tile click
-    /// uses (D1). Action/navigate tools fire the matching `IslandActions`
-    /// closure WITHOUT requesting expansion — they open their own surfaces
-    /// instantly, so forcing the drawer open would flash an empty Hover (Stage 3
-    /// review fix). Only inline-panel tools (`effect.requiresExpansion`) request
-    /// programmatic Hover expansion (honoured only when
-    /// `IslandHoverPolicy.allowsExpansion`, enforced in `IslandView`, D4) plus
-    /// the specific sub-panel. Only the fact of the trigger is logged — never the
-    /// keystroke (invariant #2).
-    private func onHoverSlotActivated(index: Int) {
+    /// Shares the tile's effect, independent of visibility and layout order.
+    private func onToolHotkeyActivated(_ tool: HoverTool) {
         registerIslandHotkeyActivity()
-        let slots = HoverLayoutStore.shared.slots
-        guard index >= 1, index <= slots.count else { return }
-        let tool = slots[index - 1]
         let effect = HoverSlotRouter.effect(for: tool)
 
         switch effect {
@@ -1738,13 +1692,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // invisible and reads as "the hotkey does nothing".
             let newMode = IslandPanel.shared.actions.toggleDropMode()
             AppState.shared.publishDropModeHotkeyToggle(newMode)
-        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .openTasks, .openCalendar, .quit:
+        case .openSettings, .openHotkeys, .openNotes, .toggleMeetingRecord, .openMonitor, .openTasks, .openCalendar, .openTranslate, .openSubtitles, .openScreenshot, .quit:
             // Action/navigate tools open their own surfaces (window / toggle)
             // instantly — forcing the drawer open here would flash an empty
             // Hover for ~4s (Stage 3 review fix). Run the effect directly
             // without requesting expansion.
             effect.invoke(on: IslandPanel.shared.actions)
         }
+    }
+
+    private func openTranslation(_ mode: TranslationWindowController.Mode) {
+        registerIslandHotkeyActivity()
+        ensureTranslationController().show(mode)
+    }
+
+    private func ensureTranslationController() -> TranslationWindowController {
+        if translationWindowController == nil {
+            translationWindowController = TranslationWindowController(
+                openSettings: { [weak self] feature in self?.openSettingsWindow(tab: .apiAndModels, feature: feature) },
+                activityChanged: { AppState.shared.translationActive = $0 }
+            )
+        }
+        return translationWindowController!
+    }
+
+    private func openScreenshot() {
+        registerIslandHotkeyActivity()
+        AppState.shared.programmaticHoverExpansion = false
+        if screenshotCoordinator == nil {
+            screenshotCoordinator = ScreenshotCoordinator(
+                activityChanged: { AppState.shared.screenshotActive = $0 },
+                excludedWindowIDs: {
+                    Set([IslandPanel.shared.windowNumber, IslandNotificationPanel.shared.windowNumber].compactMap {
+                        $0 > 0 ? CGWindowID($0) : nil
+                    })
+                }
+            )
+        }
+        screenshotCoordinator?.start()
     }
 
     private func openHelpWindow() {
@@ -3617,7 +3602,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 micSource: MicCaptureSource(),
                 systemSource: vadProbe,
                 micInUseProbe: micProbe,
-                stagingRoot: stagingRoot
+                stagingRoot: stagingRoot,
+                testCapture: MeetingLiveTestSettings.makeIfEnabled()
             )
         }
         // Local store + coordinator wire. Store init can throw on
@@ -3673,6 +3659,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// invoked from `startReady()` beside the meetings coordinator so it
     /// only begins after auth + permissions match the rest of the ready
     /// subsystems. When the flag is off, `start()` is a logged no-op.
+    /// Starts the Case broker socket. Only a packaged app serves it (tests
+    /// and `swift run` never do); the helper is trusted by the cdhash of
+    /// `Contents/Helpers/whytap` in this same bundle. Approve requests show the
+    /// island prompt (`CaseApprovalController`).
+    private func installCaseBroker() {
+        guard caseBrokerServer == nil, Bundle.main.bundleURL.pathExtension == "app",
+              let bundleID = Bundle.main.bundleIdentifier
+        else { return }
+        let inspector = CaseSystemProcessInspector()
+        let approvals = CaseApprovalController()
+        caseApprovalController = approvals
+        caseApprovalPanel = CaseApprovalPanel(controller: approvals)
+        caseApprovalCancellable = approvals.$current
+            .map { $0 != nil }
+            .removeDuplicates()
+            .sink { active in AppState.shared.caseApprovalActive = active }
+        let broker = CaseBroker(
+            service: CaseVaultService.shared,
+            resolver: CaseSystemCallerResolver(
+                inspector: inspector,
+                builtInOpenCodePIDs: { CaseBuiltInAgentProcesses.shared.pids }),
+            approvals: approvals,
+            authenticator: LocalCaseAuthenticator())
+        let server = CaseBrokerServer(
+            socketURL: CaseBrokerPaths.socketURL(bundleID: bundleID),
+            broker: broker,
+            inspector: inspector,
+            helperURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/whytap"))
+        do {
+            try server.start()
+            caseBrokerServer = server
+        } catch {
+            os_log("case_broker start_failed", log: Self.lifecycleLog, type: .error)
+        }
+    }
+
     private func installNowPlayingCoordinator() {
         let config = NowPlayingConfig()
         // Pick the data source once per session: the prompt-free MediaRemote
@@ -3749,9 +3771,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingsEventConsumer = Task { [weak self] in
             for await event in coordinator.events {
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self?.handleMeetingsCoordinatorEvent(event)
-                }
+                self?.handleMeetingsCoordinatorEvent(event)
+                await MeetingReadyNotifications.shared.receive(event)
             }
         }
     }
@@ -3897,7 +3918,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard IslandHoverPolicy.allowsExpansion(
             meetingSuggestionActive: appState.meetingSuggestionActive,
             meetingRecordingActive: appState.meetingRecordingActive,
-            agentFlowActive: IslandPanel.shared.agentFlow.isActive
+            agentFlowActive: IslandPanel.shared.agentFlow.isActive,
+            caseApprovalActive: appState.caseApprovalActive
         ) else { return }
         appState.programmaticHoverExpansion = true
         hoverPanelRequestToken += 1
@@ -3931,7 +3953,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nowPlayingActive: appState.nowPlaying != nil,
             rightModifierHeld: appState.rightCommandHeld || appState.rightOptionHeld,
             programmaticHoverExpansion: appState.programmaticHoverExpansion,
-            notificationActive: LocalNotificationHub.shared.current != nil
+            notificationActive: LocalNotificationHub.shared.current != nil,
+            caseApprovalActive: appState.caseApprovalActive
         )
     }
 

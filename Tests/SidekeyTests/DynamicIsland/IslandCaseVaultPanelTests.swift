@@ -8,21 +8,34 @@ final class IslandCaseVaultPanelTests: XCTestCase {
         XCTAssertTrue(source.contains("SecureField"))
         XCTAssertTrue(source.contains("submitValue"))
         XCTAssertTrue(source.contains("copySecret"))
-        XCTAssertTrue(source.contains("copyAll"))
+        XCTAssertFalse(source.contains("copyAll"))
         XCTAssertTrue(source.contains("replaceSecret"))
         XCTAssertTrue(source.contains("deleteSecret"))
         XCTAssertFalse(source.contains("CaseSecretValue"))
         XCTAssertFalse(source.contains(".value(for:"))
     }
 
+    func test_caseListResetsDragStateOnBackgroundDropAndDisappearButNotHoverEnd() throws {
+        let source = try caseVaultPanelSource()
+
+        let drop = try XCTUnwrap(source.range(of: ".onDrop(of: [UTType.text], isTargeted: nil)"))
+        XCTAssertTrue(source[drop.upperBound...].prefix(120).contains("dragState.reset()"))
+        let disappear = try XCTUnwrap(source.range(of: ".onDisappear { dragState.reset() }"))
+        XCTAssertNotNil(disappear)
+
+        let hover = try XCTUnwrap(source.range(of: ".onContinuousHover"))
+        let hoverBody = source[hover.upperBound...].prefix(900)
+        let end = try XCTUnwrap(hoverBody.range(of: ".onDrop"))
+        XCTAssertFalse(hoverBody[..<end.lowerBound].contains("reset()"))
+        XCTAssertFalse(hoverBody[..<end.lowerBound].contains(".ended"))
+    }
+
     func test_caseVaultPanelSupportsGroupsAndDragAutoScroll() throws {
         let source = try caseVaultPanelSource()
 
-        XCTAssertTrue(source.contains("createGroup"))
-        XCTAssertTrue(source.contains("addSecretToGroup"))
-        XCTAssertTrue(source.contains("removeSecretFromGroup"))
-        XCTAssertTrue(source.contains("childRows(forGroupID:"))
-        XCTAssertTrue(source.contains("CaseDragAutoScrollPolicy.velocity"))
+        XCTAssertTrue(source.contains("moveSecret"))
+        XCTAssertTrue(source.contains("projectSections"))
+        XCTAssertTrue(source.contains("dragState.scrollVelocity"))
         XCTAssertTrue(source.contains("UTType.text"))
     }
 
@@ -31,8 +44,8 @@ final class IslandCaseVaultPanelTests: XCTestCase {
 
         XCTAssertTrue(source.contains("unlockIfNeededOnOpen()"))
         XCTAssertTrue(source.contains("hasTriggeredInitialUnlock"))
-        XCTAssertTrue(source.contains("Retry Unlock"))
-        XCTAssertTrue(source.contains("Unlocking..."))
+        XCTAssertTrue(source.contains("Открыть ещё раз"))
+        XCTAssertTrue(source.contains("Открываю…"))
         XCTAssertTrue(source.contains("Touch ID"))
         XCTAssertFalse(source.contains("openSettings"))
         XCTAssertFalse(source.contains("Settings"))
@@ -43,8 +56,8 @@ final class IslandCaseVaultPanelTests: XCTestCase {
 
         // Two-step confirm: armed state must flip the button label AND swap the
         // supporting copy to spell out that the second press is irreversible.
-        XCTAssertTrue(source.contains("Confirm Reset"))
-        XCTAssertTrue(source.contains("This permanently deletes this Case. Press again to confirm."))
+        XCTAssertTrue(source.contains("Подтвердить сброс"))
+        XCTAssertTrue(source.contains("Case будет удалён навсегда. Нажмите ещё раз для подтверждения."))
     }
 
     private func caseVaultPanelSource() throws -> String {

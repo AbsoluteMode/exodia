@@ -106,10 +106,12 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
     private let runScript: URL
     private let framework: URL
+    private let artworkReader: (URL, URL) -> MediaRemoteTrackInfo?
+    private let uptime: () -> TimeInterval
 
     /// Serial queue owning all process lifecycle + stdout handling. The
-    /// controller's `currentSnapshot()` only reads the locked cache, never
-    /// touches this queue.
+    /// controller's `currentSnapshot()` reads the locked cache and schedules
+    /// missing-artwork checks here without waiting for this queue.
     private let queue = DispatchQueue(label: "com.sidekey.nowplaying.mediaremote")
 
     /// Dedicated queue for one-shot transport `send` processes. Kept separate
@@ -121,6 +123,13 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
         label: "com.sidekey.nowplaying.mediaremote.command",
         qos: .userInitiated
     )
+    private let artworkQueue = DispatchQueue(label: "com.sidekey.nowplaying.mediaremote.artwork")
+
+    // Owned by `queue`. One refresh at a time, at most once every five seconds
+    // while artwork is absent. A generation rejects A → DJ → A stale results.
+    private var artworkGeneration = UUID()
+    private var artworkRefreshInFlight = false
+    private var lastArtworkAttempt: TimeInterval?
 
     private let lock = NSLock()
     private var _latest: NowPlayingSnapshot?
@@ -154,9 +163,18 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
     /// Explicit asset paths. Tests point `runScript` at a stand-in perl
     /// script to exercise the real process lifecycle without the adapter.
-    init(runScript: URL, framework: URL) {
+    init(
+        runScript: URL,
+        framework: URL,
+        artworkReader: @escaping (URL, URL) -> MediaRemoteTrackInfo? = {
+            MediaRemoteNowPlayingSource.readArtworkSnapshot(runScript: $0, framework: $1)
+        },
+        uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) {
         self.runScript = runScript
         self.framework = framework
+        self.artworkReader = artworkReader
+        self.uptime = uptime
         _ = Self.ignoreSIGPIPE
     }
 
@@ -193,6 +211,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
             self.teardownProcess()
             self.setLatest(nil)
             self.lock.lock(); self._previousInfo = nil; self.lock.unlock()
+            self.resetArtworkRecovery()
         }
     }
 
@@ -208,6 +227,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
             teardownProcess()
             setLatest(nil)
             lock.lock(); _previousInfo = nil; lock.unlock()
+            resetArtworkRecovery()
         }
     }
 
@@ -215,8 +235,10 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
 
     func currentSnapshot() -> NowPlayingSnapshot? {
         lock.lock()
-        defer { lock.unlock() }
-        return _latest
+        let snapshot = _latest
+        lock.unlock()
+        queue.async { [weak self] in self?.refreshMissingArtwork() }
+        return snapshot
     }
 
     func previous() { sendCommand(.previousTrack) }
@@ -283,6 +305,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
             // `null` / blank line is the adapter's "nothing playing" signal.
             setLatest(nil)
             lock.lock(); _previousInfo = nil; lock.unlock()
+            resetArtworkRecovery()
             return
         }
 
@@ -290,6 +313,9 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
         let previous = _previousInfo
         lock.unlock()
 
+        if previous.map({ !MediaRemoteArtworkPreserver.isSameTrack($0, info) }) ?? true {
+            resetArtworkRecovery()
+        }
         let merged = MediaRemoteArtworkPreserver.merge(previous: previous, incoming: info)
         let snapshot = MediaRemoteSnapshotMapper.snapshot(from: merged, capturedAt: Date())
 
@@ -298,6 +324,92 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
         lock.unlock()
 
         setLatest(snapshot)
+        refreshMissingArtwork()
+    }
+
+    // MARK: - Missing artwork recovery
+
+    private func resetArtworkRecovery() {
+        artworkGeneration = UUID()
+        lastArtworkAttempt = nil
+    }
+
+    /// A DJ/interstitial can leave the stream without artwork even after music
+    /// returns. Re-read through a fresh adapter process without Automation or
+    /// blocking the stream, transport or UI. Preserve current playback metadata.
+    /// WHY: .project-docs/decisions/2026-10-19-nowplaying-artwork-recovery.md
+    private func refreshMissingArtwork() {
+        guard started, !artworkRefreshInFlight,
+              let info = _previousInfo, info.artwork == nil,
+              MediaRemoteSnapshotMapper.snapshot(from: info, capturedAt: Date()) != nil
+        else { return }
+        let now = uptime()
+        if let lastArtworkAttempt, now - lastArtworkAttempt < 5 { return }
+        lastArtworkAttempt = now
+        artworkRefreshInFlight = true
+        let generation = artworkGeneration
+        let reader = artworkReader
+        let runScript = runScript
+        let framework = framework
+        artworkQueue.async { [weak self] in
+            let refreshed = reader(runScript, framework)
+            self?.queue.async { [weak self] in
+                guard let self else { return }
+                self.artworkRefreshInFlight = false
+                guard self.started, self.artworkGeneration == generation,
+                      let current = self._previousInfo, current.artwork == nil,
+                      let refreshed, let image = refreshed.artwork,
+                      MediaRemoteArtworkPreserver.isSameTrack(current, refreshed)
+                else { return }
+                let recovered = current.withArtwork(image)
+                self.lock.lock()
+                self._previousInfo = recovered
+                self.lock.unlock()
+                self.setLatest(MediaRemoteSnapshotMapper.snapshot(from: recovered, capturedAt: Date()))
+            }
+        }
+    }
+
+    /// Both stdout drain and process exit share one deadline. Draining in
+    /// parallel is necessary because a base64 cover can exceed the pipe buffer.
+    /// The same parent-EOF guard as the stream prevents an orphan on app death.
+    static func readArtworkSnapshot(
+        runScript: URL, framework: URL, timeout: TimeInterval = 2
+    ) -> MediaRemoteTrackInfo? {
+        final class Output { var data = Data() }
+        let output = Output()
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        proc.arguments = ["-e", parentWatchGuardScript, "--", runScript.path, framework.path, "get", "--micros"]
+        let stdout = Pipe()
+        proc.standardOutput = stdout
+        proc.standardInput = Pipe()
+        proc.standardError = FileHandle.nullDevice
+        let done = DispatchGroup()
+        done.enter()
+        proc.terminationHandler = { _ in done.leave() }
+        do { try proc.run() } catch { done.leave(); return nil }
+        done.enter()
+        DispatchQueue.global(qos: .utility).async {
+            output.data = stdout.fileHandleForReading.readDataToEndOfFile()
+            done.leave()
+        }
+        guard done.wait(timeout: .now() + timeout) == .success else {
+            proc.terminate()
+            return nil
+        }
+        guard proc.terminationStatus == 0 else { return nil }
+        return MediaRemoteStreamLine.decode(String(decoding: output.data, as: UTF8.self))
+    }
+
+    /// Feed synthetic adapter lines through the real serial ingestion path.
+    func ingestForTesting(_ data: Data) {
+        queue.sync { ingest(data) }
+    }
+
+    func finishArtworkRefreshForTesting() {
+        artworkQueue.sync {}
+        queue.sync {}
     }
 
     private func setLatest(_ snapshot: NowPlayingSnapshot?) {
@@ -309,6 +421,7 @@ final class MediaRemoteNowPlayingSource: NowPlayingSource, @unchecked Sendable {
     private func handleTermination() {
         setLatest(nil)
         lock.lock(); _previousInfo = nil; lock.unlock()
+        resetArtworkRecovery()
         process = nil
         if started {
             os_log("mediaremote stream exited — relaunching", log: Self.log, type: .info)

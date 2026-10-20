@@ -1,6 +1,15 @@
 // Sources/Sidekey/Settings/ToolboxSettingsView.swift
 import SwiftUI
 
+private extension View {
+    /// Embedded island tools preview their actual dark overlay appearance.
+    func settingsIslandPreview() -> some View {
+        self.padding(12)
+            .background(Color(hexCSS: "#1C1C1E"), in: RoundedRectangle(cornerRadius: 10))
+            .environment(\.colorScheme, .dark)
+    }
+}
+
 /// Settings -> Toolbox tab. Three-pane layout:
 ///   Top: chosen tools and one permanent empty add target
 ///   Left: catalog of all non-Settings tools (draggable + clickable)
@@ -32,27 +41,20 @@ struct ToolboxSettingsView: View {
         _vocabVM = StateObject(wrappedValue: IslandVocabularyViewModel(
             vocabulary: deps.vocabulary()))
         _fillerVM = StateObject(wrappedValue: IslandFillerViewModel())
-        _caseVM = StateObject(wrappedValue: CaseViewModel())
+        _caseVM = StateObject(wrappedValue: CaseViewModel(service: .shared))
         _dropMode = State(initialValue: deps.currentDropMode())
         _selectedInputLanguage = State(initialValue: deps.currentLanguage())
         _selectedOutputLanguage = State(initialValue: deps.currentTargetLanguage())
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 20) {
-                hoverRow
-                HStack(alignment: .top, spacing: 16) {
-                    catalogPane
-                        .frame(maxWidth: .infinity)
-                    rightPane
-                        .frame(width: 300)
-                }
-                .frame(minHeight: 300)
-            }
-            .padding(24)
+        ToolboxWorkspace {
+            hoverRow
+        } catalog: {
+            catalogPane
+        } tool: {
+            rightPane
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Hover Row
@@ -62,23 +64,42 @@ struct ToolboxSettingsView: View {
             Text("YOUR HOVER")
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(0.9)
-                .foregroundStyle(.white.opacity(0.42))
+                .foregroundStyle(MacSettingsTheme.text2)
 
             ToolboxHoverEditor(hoverStore: hoverStore, reduceMotion: reduceMotion) { item in
                 switch item {
                 case .tool(let tool):
                     hoverSlotTile(tool: tool)
                 case .add:
-                    ToolboxAddTile()
+                    Menu {
+                        if HoverTool.allCases.allSatisfy({ hoverStore.slots.contains($0) }) {
+                            Text("All tools added")
+                        }
+                        ForEach(HoverTool.allCases.filter { $0 != .settings && !hoverStore.slots.contains($0) }, id: \.self) { tool in
+                            let info = HoverToolRegistry.info(for: tool)
+                            Button {
+                                hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
+                            } label: {
+                                Label(info.title, systemImage: info.sfSymbol)
+                                    .imageScale(.small)
+                            }
+                        }
+                    } label: {
+                        ToolboxAddTile()
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("Add tool to hover")
                 }
             }
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.035))
+                    .fill(MacSettingsTheme.bgCard)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
+                            .strokeBorder(MacSettingsTheme.hover, lineWidth: 1)
                     )
             )
 
@@ -115,9 +136,9 @@ struct ToolboxSettingsView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(MacSettingsTheme.text)
                         .frame(width: 20, height: 20)
-                        .background(Circle().fill(Color(white: 0.18)))
+                        .background(Circle().fill(MacSettingsTheme.controlBg))
                 }
                 .buttonStyle(.plain)
                 .help("Remove \(info.title) from hover")
@@ -134,11 +155,11 @@ struct ToolboxSettingsView: View {
             Text("TOOLBOX")
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(0.9)
-                .foregroundStyle(.white.opacity(0.42))
+                .foregroundStyle(MacSettingsTheme.text2)
 
             let catalogTools = HoverTool.allCases.filter { $0 != .settings }
 
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical) {
                 let columns = [GridItem(.adaptive(minimum: 70, maximum: 90), spacing: 10)]
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(catalogTools, id: \.self) { tool in
@@ -151,10 +172,10 @@ struct ToolboxSettingsView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.025))
+                    .fill(MacSettingsTheme.bgCard)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                            .strokeBorder(MacSettingsTheme.hover, lineWidth: 1)
                     )
             )
         }
@@ -185,21 +206,19 @@ struct ToolboxSettingsView: View {
         .onHover { hovering in
             updateHoveredTool(tool, hovering: hovering)
         }
-        .disabled(isInHover)
         .contextMenu {
-            Button("Add to hover") {
-                hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
+            Button(isInHover ? "Remove from hover" : "Add to hover") {
+                if isInHover { hoverStore.removeTool(tool) }
+                else { hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex) }
             }
-            .disabled(isInHover)
         }
-        .opacity(isInHover ? 0.45 : 1)
         .overlay(alignment: .topTrailing) {
             if isInHover {
                 Image(systemName: "checkmark")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(MacSettingsTheme.text2)
                     .padding(4)
-                    .background(Circle().fill(Color.white.opacity(0.18)))
+                    .background(Circle().fill(MacSettingsTheme.selection))
                     .offset(x: 4, y: -4)
             }
         }
@@ -211,13 +230,13 @@ struct ToolboxSettingsView: View {
                 let description = toolDescription(for: tool)
                 Text(description)
                     .font(.system(size: 11.5, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.48))
+                    .foregroundStyle(MacSettingsTheme.text2)
                     .lineLimit(1)
                 .transition(.opacity)
             } else {
-                Text("Drag tools into the empty slot to add them, or onto another tool to reorder. Settings stays pinned.")
+                Text("Drag tools to Add, or click Add to choose. Drag saved tools to reorder. Settings stays pinned.")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(MacSettingsTheme.text2)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
@@ -231,23 +250,23 @@ struct ToolboxSettingsView: View {
             Text("ACTION")
                 .font(.system(size: 10.5, weight: .semibold))
                 .tracking(0.9)
-                .foregroundStyle(.white.opacity(0.42))
+                .foregroundStyle(MacSettingsTheme.text2)
 
-            ZStack {
+            ToolboxToolViewport {
                 if let tool = selectedTool {
                     rightPaneContent(for: tool)
                 } else {
                     rightPanePlaceholder
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .id(selectedTool)
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.035))
+                    .fill(MacSettingsTheme.bgCard)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
+                            .strokeBorder(MacSettingsTheme.hover, lineWidth: 1)
                     )
             )
         }
@@ -257,10 +276,10 @@ struct ToolboxSettingsView: View {
         VStack(spacing: 6) {
             Image(systemName: "cursorarrow.click")
                 .font(.system(size: 22, weight: .regular))
-                .foregroundStyle(.white.opacity(0.25))
+                .foregroundStyle(MacSettingsTheme.text2)
             Text("Select a tool to use it here")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(MacSettingsTheme.text2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -273,29 +292,45 @@ struct ToolboxSettingsView: View {
             HStack(spacing: 8) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.1))
+                        .fill(MacSettingsTheme.hover)
                         .frame(width: 32, height: 32)
                     Image(systemName: info.sfSymbol)
                         .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(MacSettingsTheme.text)
                 }
                 Text(info.title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(MacSettingsTheme.text)
+                Spacer(minLength: 0)
+                if tool != .settings {
+                    let added = hoverStore.slots.contains(tool)
+                    Button {
+                        if added { hoverStore.removeTool(tool) }
+                        else { hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex) }
+                    } label: {
+                        Image(systemName: added ? "minus.circle" : "plus.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .help(added ? "Remove from hover" : "Add to hover")
+                    .accessibilityLabel(added ? "Remove \(info.title) from hover" : "Add \(info.title) to hover")
+                }
             }
 
             Divider()
-                .background(Color.white.opacity(0.08))
+                .background(MacSettingsTheme.hover)
 
             switch tool {
             case .vocab:
                 IslandVocabularyEditorPanel(viewModel: vocabVM)
+                    .settingsIslandPreview()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .filler:
                 IslandFillerEditorPanel(viewModel: fillerVM)
+                    .settingsIslandPreview()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .caseVault:
                 IslandCaseVaultPanel(viewModel: caseVM)
+                    .settingsIslandPreview()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .inputLang:
                 IslandLanguagePickerPanel(
@@ -305,6 +340,7 @@ struct ToolboxSettingsView: View {
                         deps.setLanguage(language)
                     }
                 )
+                .settingsIslandPreview()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .outputLang:
                 IslandLanguagePickerPanel(
@@ -315,13 +351,16 @@ struct ToolboxSettingsView: View {
                         deps.setTargetLanguage(language)
                     }
                 )
+                .settingsIslandPreview()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .dropMode:
                 dropModePane
             case .notifs:
                 NotifyHoverPanel(showsBackButton: false, onBack: {})
+                    .settingsIslandPreview()
             case .clipboard:
-                clipboardPane
+                ToolboxHistoryPane(deps: deps)
+                    .settingsIslandPreview()
             case .brightness:
                 ToolboxDisplayPane()
             case .tasks, .calendar:
@@ -332,11 +371,28 @@ struct ToolboxSettingsView: View {
                         PlannerWindowController.shared.show(tool == .tasks ? .tasks : .calendar)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .hotkeys, .notes, .meetingRecord, .monitor, .quit, .settings:
-                Color.clear
+            case .monitor:
+                MonitorHoverPanel(onBack: { selectedTool = nil })
+                    .settingsIslandPreview()
+            case .translate, .subtitles:
+                ToolboxTranslationPane(mode: tool == .translate ? .text : .subtitles, deps: deps,
+                                       openFeature: { selection.focus($0) })
+                    .id(tool)
+            case .meetingRecord:
+                ToolboxRecordingPane(toggle: deps.toggleMeetingRecord)
+            case .screenshot:
+                actionPane(tool, title: "Capture area", action: deps.openScreenshot)
+            case .hotkeys:
+                actionPane(tool, title: "Configure hotkeys") { selection.setHighlight(.tab(.hotkeys)) }
+            case .notes:
+                actionPane(tool, title: "Open meeting notes") { selection.setHighlight(.tab(.notes)) }
+            case .quit:
+                actionPane(tool, title: "Quit Whytap", action: deps.quitApplication)
+            case .settings:
+                actionPane(tool, title: "Open API & Models") { selection.select(.apiAndModels) }
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: tool)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: tool)
     }
 
     /// Config-driven Drop trigger label for the caption — e.g. "Hold Space"
@@ -353,7 +409,7 @@ struct ToolboxSettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Transcription speed for Drop (\(dropTriggerLabel)).")
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(MacSettingsTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 10) {
@@ -369,21 +425,21 @@ struct ToolboxSettingsView: View {
                             Text(mode == .fast ? "Fast" : "Smart")
                                 .font(.system(size: 12, weight: .medium))
                         }
-                        .foregroundStyle(dropMode == mode ? .white : .white.opacity(0.55))
+                        .foregroundStyle(dropMode == mode ? MacSettingsTheme.text : MacSettingsTheme.text2)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(dropMode == mode
-                                      ? Color.white.opacity(0.18)
-                                      : Color.white.opacity(0.06))
+                                      ? MacSettingsTheme.selection
+                                      : MacSettingsTheme.hover)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .strokeBorder(
                                     dropMode == mode
-                                        ? Color.white.opacity(0.3)
-                                        : Color.white.opacity(0.1),
+                                        ? MacSettingsTheme.sepStrong
+                                        : MacSettingsTheme.hover,
                                     lineWidth: 1)
                         )
                     }
@@ -418,39 +474,21 @@ struct ToolboxSettingsView: View {
         return IslandLanguageControl.languageCodeBadge(for: language)
     }
 
-    private var clipboardPane: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.on.doc")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(.white.opacity(0.5))
-            Text("Opens the Clipboard strip.")
+    private func actionPane(_ tool: HoverTool, title: String, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(HoverToolRegistry.info(for: tool).description)
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.45))
-                .multilineTextAlignment(.center)
-            Button("Open Clipboard") {
-                deps.openClipboard()
-            }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(0.12)))
-            .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(title, action: action)
+                .buttonStyle(.bordered)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Tap handling
-
+    // Selecting any tool stays in Toolbox; actions require an explicit button.
     private func handleToolTap(_ tool: HoverTool) {
-        let kind = HoverToolRegistry.info(for: tool).kind
-        if case .navigate(let target) = kind {
-            selection.setHighlight(target)
-            selectedTool = nil
-        } else {
-            selectedTool = (selectedTool == tool) ? nil : tool
-        }
+        selectedTool = (selectedTool == tool) ? nil : tool
     }
 
     private func updateHoveredTool(_ tool: HoverTool, hovering: Bool) {
@@ -458,6 +496,40 @@ struct ToolboxSettingsView: View {
             hoveredTool = tool
         } else if hoveredTool == tool {
             hoveredTool = nil
+        }
+    }
+}
+
+/// Only the catalog and selected tool scroll. The header always retains Add.
+struct ToolboxWorkspace<Header: View, Catalog: View, Tool: View>: View {
+    @ViewBuilder var header: Header
+    @ViewBuilder var catalog: Catalog
+    @ViewBuilder var tool: Tool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header.fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 16) {
+                catalog.frame(minWidth: 170, maxWidth: .infinity, maxHeight: .infinity)
+                tool.frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Small Settings windows scroll the mini app instead of compressing its controls.
+struct ToolboxToolViewport<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView(.vertical) {
+                content
+                    .frame(maxWidth: .infinity, minHeight: max(330, geometry.size.height), alignment: .top)
+            }
         }
     }
 }
@@ -486,20 +558,24 @@ struct ToolboxHoverEditor<Tile: View>: View {
         self.tile = tile
     }
 
-    private var items: [ToolboxHoverEditorItem] {
-        // Match the insertion index used by the store: a new tool occupies the
-        // old Add position, while the permanent Add and Settings move together.
-        hoverStore.slots.filter { $0 != .settings }.map(ToolboxHoverEditorItem.tool)
-            + [.add, .tool(.settings)]
-    }
-
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
-                                count: HoverLayoutStore.columns), spacing: 16) {
-            ForEach(items, id: \.self) { item in
-                editorCell(item)
-                    .transition(.opacity)
+        HStack(alignment: .top, spacing: 16) {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 20) {
+                    ForEach(hoverStore.slots.filter { $0 != .settings }, id: \.self) { tool in
+                        editorCell(.tool(tool))
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
             }
+            .frame(height: 106)
+            Divider().frame(height: 88)
+            editorCell(.add)
+                .padding(.top, 4)
+            editorCell(.tool(.settings))
+                .padding(.top, 4)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: hoverStore.slots)
     }
@@ -571,16 +647,16 @@ struct ToolboxAddTile: View {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .light))
                 .frame(width: 56, height: 56)
-                .background(Circle().strokeBorder(Color.white.opacity(0.22),
+                .background(Circle().strokeBorder(MacSettingsTheme.sepStrong,
                                                   style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
             Text("ADD TOOL")
                 .font(.system(size: 8.5, weight: .medium, design: .monospaced))
                 .tracking(0.8)
                 .frame(width: 56, height: 26)
         }
-        .foregroundStyle(.white.opacity(0.45))
+        .foregroundStyle(MacSettingsTheme.text2)
         .contentShape(Rectangle())
-        .help("Drag a tool here to add it to your hover")
+        .help("Click to choose a tool, or drag one here to add it to hover")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Drop a tool here to add it to hover")
     }
@@ -629,34 +705,34 @@ struct ToolboxTileView: View {
             ZStack {
                 Circle()
                     .fill(isSelected
-                          ? Color.white.opacity(0.18)
-                          : Color.white.opacity(0.07))
+                          ? MacSettingsTheme.selection
+                          : MacSettingsTheme.hover)
                     .overlay(
                         Circle()
                             .strokeBorder(isSelected
-                                          ? Color.white.opacity(0.55)
-                                          : Color.white.opacity(0.11),
+                                          ? MacSettingsTheme.accent
+                                          : MacSettingsTheme.sepStrong,
                                           lineWidth: 1)
                     )
                     .frame(width: Self.tileSize, height: Self.tileSize)
 
                 Image(systemName: sfSymbol)
                     .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(.white.opacity(isAdded ? 0.5 : 0.88))
+                    .foregroundStyle(isAdded ? MacSettingsTheme.text2 : MacSettingsTheme.text)
 
                 if let badge {
                     Text(badge)
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .tracking(0.4)
-                        .foregroundStyle(Color.black.opacity(0.78))
+                        .foregroundStyle(MacSettingsTheme.text)
                         .padding(.horizontal, 4)
                         .frame(minWidth: 18, minHeight: 14)
                         .background(
                             Capsule()
-                                .fill(Color.white.opacity(0.92))
+                                .fill(MacSettingsTheme.bgCard)
                                 .overlay(
                                     Capsule()
-                                        .strokeBorder(Color.black.opacity(0.16), lineWidth: 0.5)
+                                        .strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5)
                                 )
                         )
                         .offset(x: Self.tileSize * 0.31, y: -Self.tileSize * 0.34)
@@ -666,11 +742,11 @@ struct ToolboxTileView: View {
                 if isLocked {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .foregroundStyle(MacSettingsTheme.text)
                         .padding(3)
                         .background(Circle()
-                            .fill(Color(red: 0.11, green: 0.11, blue: 0.14))
-                            .overlay(Circle().strokeBorder(.white.opacity(0.2), lineWidth: 1)))
+                            .fill(MacSettingsTheme.controlBg)
+                            .overlay(Circle().strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 1)))
                         .offset(x: Self.tileSize * 0.31, y: Self.tileSize * 0.31)
                 }
             }
@@ -678,7 +754,7 @@ struct ToolboxTileView: View {
             Text(title.uppercased())
                 .font(.system(size: 8.5, weight: .medium, design: .monospaced))
                 .tracking(0.8)
-                .foregroundStyle(isSelected ? .white : .white.opacity(0.6))
+                .foregroundStyle(isSelected ? MacSettingsTheme.text : MacSettingsTheme.text2)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
@@ -686,8 +762,13 @@ struct ToolboxTileView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
+        .focusable()
+        .onKeyPress(.return) { onTap(); return .handled }
+        .onKeyPress(.space) { onTap(); return .handled }
+        .accessibilityAction { onTap() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
+        .accessibilityValue(isAdded ? "Added to hover" : "")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }

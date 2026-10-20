@@ -720,6 +720,13 @@ protocol SystemAudioSourceStreaming: AnyObject, Sendable {
     func stop() async
 }
 
+/// Opt-in one-shot shutdown. Once this returns no callback can publish more
+/// audio, and the stream ends naturally after its buffered samples are read.
+/// Ordinary meeting/VAD `stop()` deliberately keeps subscriptions reusable.
+protocol TerminalSystemAudioSourceStreaming: SystemAudioSourceStreaming {
+    func stopAndFinishStreams() async
+}
+
 // MARK: - FluidAudio adapter
 
 /// Production VAD seam wrapping FluidAudio's `VadManager` actor. The

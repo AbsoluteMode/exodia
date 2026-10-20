@@ -17,6 +17,9 @@ struct CatalogModel: Codable, Equatable, Sendable {
     var supportsReasoning: Bool?
     var reasoning: OpenRouterReasoningCapabilities?
     var expiresAt: Date?
+    /// Deepgram: the date of the model's newest version (`version` is
+    /// `YYYY-MM-DD.N`). Pickers hide a model not updated for a year.
+    var updatedAt: Date?
 
     init(
         id: String,
@@ -27,7 +30,8 @@ struct CatalogModel: Codable, Equatable, Sendable {
         supportsTools: Bool? = nil,
         supportsReasoning: Bool? = nil,
         reasoning: OpenRouterReasoningCapabilities? = nil,
-        expiresAt: Date? = nil
+        expiresAt: Date? = nil,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.uses = uses
@@ -38,6 +42,7 @@ struct CatalogModel: Codable, Equatable, Sendable {
         self.supportsReasoning = supportsReasoning
         self.reasoning = reasoning
         self.expiresAt = expiresAt
+        self.updatedAt = updatedAt
     }
 }
 
@@ -237,11 +242,13 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
             let canonicalName: String?
             let streaming: Bool?
             let batch: Bool?
+            let version: String?
 
             enum CodingKeys: String, CodingKey {
                 case canonicalName = "canonical_name"
                 case streaming
                 case batch
+                case version
             }
         }
         let stt: [Row]
@@ -250,23 +257,41 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
     static func parseDeepgram(_ data: Data) throws -> [CatalogModel] {
         // Rows are split by language and version; one model is the union of its rows.
         var usesByID: [String: Set<ModelUse>] = [:]
+        var updatedByID: [String: Date] = [:]
+        func noteUpdate(_ date: Date?, for id: String) {
+            guard let date else { return }
+            updatedByID[id] = max(updatedByID[id] ?? date, date)
+        }
         for row in try decode(DeepgramResponse.self, from: data).stt {
             guard let id = row.canonicalName, !id.isEmpty else { continue }
             var uses = usesByID[id] ?? []
             if row.streaming == true { uses.insert(.realtimeSTT) }
             if row.batch == true { uses.insert(.asyncSTT) }
             usesByID[id] = uses
+            noteUpdate(row.version.flatMap(deepgramVersionDate), for: id)
         }
         // `nova-3-general` is what the API calls plain `nova-3`.
         let generalSuffix = "-general"
         for (id, uses) in usesByID where id.hasSuffix(generalSuffix) && id.count > generalSuffix.count {
             let architecture = String(id.dropLast(generalSuffix.count))
             usesByID[architecture] = (usesByID[architecture] ?? []).union(uses)
+            noteUpdate(updatedByID[id], for: architecture)
         }
         return usesByID
             .filter { !$0.value.isEmpty }
-            .map { CatalogModel(id: $0.key, uses: $0.value) }
+            .map { CatalogModel(id: $0.key, uses: $0.value, updatedAt: updatedByID[$0.key]) }
             .sorted { $0.id < $1.id }
+    }
+
+    /// `"2026-10-15.0"` → that day (UTC); anything else → `nil`.
+    static func deepgramVersionDate(_ version: String) -> Date? {
+        let day = version.prefix(10)
+        guard day.count == 10 else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: String(day))
     }
 
     private struct OpenRouterResponse: Decodable {

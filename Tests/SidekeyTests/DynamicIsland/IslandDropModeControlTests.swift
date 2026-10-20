@@ -290,8 +290,11 @@ final class IslandDropModeControlTests: XCTestCase {
             (.brightness, "Display", .openPanel(.brightness)),
             (.tasks, "To-do", .openTasks),
             (.calendar, "Calendar", .openCalendar),
+            (.translate, "Translate", .openTranslate),
+            (.subtitles, "Subtitles", .openSubtitles),
             (.quit, "Quit", .quit),
-            (.settings, "Settings", .openSettings)
+            (.settings, "Settings", .openSettings),
+            (.screenshot, "Screenshot", .openScreenshot)
         ]
         XCTAssertEqual(Set(expected.map(\.tool)), Set(HoverTool.allCases))
         for entry in expected {

@@ -5,6 +5,7 @@ enum CaseNameValidationError: Error, Equatable {
     case rawTooLong
     case nonASCII
     case normalizedTooLong
+    case leadingDigit
 }
 
 enum CaseNameNormalizer {
@@ -46,7 +47,31 @@ enum CaseNameNormalizer {
         guard normalized.count <= maxNormalizedLength else {
             throw CaseNameValidationError.normalizedTooLong
         }
+        guard let first = normalized.unicodeScalars.first, !(first.value >= 48 && first.value <= 57) else {
+            throw CaseNameValidationError.leadingDigit
+        }
         return normalized
+    }
+
+    /// Schema-1 vaults allowed a leading digit, which cannot be an
+    /// environment variable name. Migration keeps such keys by prefixing `_`
+    /// (kept within the length limit) instead of dropping them.
+    static func repairedLegacyName(_ name: String) -> String {
+        guard let first = name.unicodeScalars.first, first.value >= 48 && first.value <= 57 else { return name }
+        return String(("_" + name).prefix(maxNormalizedLength))
+    }
+
+    /// `base`, or `base_2`, `base_3`… shortened to fit `maxNormalizedLength`,
+    /// whichever is not in `taken` (uppercased names).
+    static func uniqueName(_ base: String, taken: Set<String>) -> String {
+        var candidate = base
+        var n = 2
+        while taken.contains(candidate.uppercased()) {
+            let suffix = "_\(n)"
+            candidate = String(base.prefix(maxNormalizedLength - suffix.count)) + suffix
+            n += 1
+        }
+        return candidate
     }
 
     static func isDuplicate(_ raw: String, existingNames: [String]) throws -> Bool {
