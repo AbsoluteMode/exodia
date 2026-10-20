@@ -27,7 +27,7 @@ struct MacField: View {
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(
-                    focused ? MacSettingsTheme.accent : MacSettingsTheme.sepStrong,
+                    focused ? MacSettingsTheme.accent : MacSettingsTheme.switchBorder,
                     lineWidth: focused ? 2 : 0.5
                 )
         )

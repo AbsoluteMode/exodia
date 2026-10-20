@@ -123,6 +123,7 @@ private struct GlassSwitchButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: size.track.height / 2, style: .continuous)
                     .strokeBorder(MacSettingsTheme.switchBorder, lineWidth: 0.75)
             }
+            .clipShape(Capsule())
             .overlay(alignment: .leading) {
                 thumb
                     .frame(width: size.thumb.width, height: size.thumb.height)
