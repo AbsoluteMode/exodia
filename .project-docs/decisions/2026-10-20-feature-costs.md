@@ -15,6 +15,9 @@ sources:
     reference: https://soniox.com/docs/openapi.yaml
     confirmed_at: 2026-10-21
   - type: user-confirmed
+    reference: On 2026-10-21 Maxim requested a more convenient Costs calendar, objected to its large blue focus ring and asked how to choose a year.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 Maxim requested verification on existing sessions, approved separate reported usage by API key and directed feature estimates from recorded time with each model.
     confirmed_at: 2026-10-21
   - type: url
@@ -61,9 +64,18 @@ becomes the fourth tab, retaining its offer content and existing add-key form.
 
 Costs shows Today, Last 7 days, This month or Custom dates at the heading. Each
 visit starts at This month; custom dates remain selectable within that visit.
-From/To use the same neutral control fill as the period menu and open a native
-calendar that closes after a changed date, Done/Return or Escape. No selected
-text segment remains on the closed control. Feature-row fill follows actual
+From/To use the same neutral control fill as the period menu. As amended on
+2026-10-21, their calendar has a month menu and an editable year combo with the
+recent 100 years (earlier positive years can be typed). Browsing changes only
+the visible month; choosing a day or Today commits and closes. Done/Return and
+Escape close without applying a browsed month. Future days and navigation past
+the current month are unavailable. Individual controls and days retain visible
+keyboard focus, hover and pressed feedback, replacing the native calendar’s
+large focus ring. The local native month popup draws from its actual enabled/
+highlighted state; its pressed proof does not rely on the shared plain SwiftUI
+menu. Disabled controls suppress highlight and disabled future month actions
+are rejected. Disabled days never react to hover. No selected text segment
+remains on the closed control. Feature-row fill follows actual
 pointer hover rather than the lifetime of its detail popover. Dates
 use the local calendar and include the selected end day. Only feature groups
 with activity in that period appear. Hover, click or keyboard focus reveals all

@@ -395,24 +395,6 @@ struct AIUsageDateControl: View {
 }
 
 @MainActor
-struct AIUsageDateCalendar: View {
-    let title: String
-    @Binding var date: Date
-    let latest: Date
-    let close: () -> Void
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            DatePicker(title, selection: $date, in: ...latest, displayedComponents: .date)
-                .datePickerStyle(.graphical).labelsHidden()
-            AIUsageRefreshButton(title: "Done", isEnabled: true, action: close).keyboardShortcut(.defaultAction)
-        }
-        .padding(12)
-        .onChange(of: date) { _, _ in close() }
-        .onExitCommand(perform: close)
-    }
-}
-
-@MainActor
 struct AIUsageModelsPopover: View {
     let row: AIUsageCostRow
     var body: some View {
