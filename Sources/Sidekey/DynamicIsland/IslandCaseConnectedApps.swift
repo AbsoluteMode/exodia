@@ -24,7 +24,7 @@ struct IslandCaseConnectedApps: View {
                     .background(Capsule().fill(.white.opacity(0.10)))
                     .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle(cornerRadius: 14))
             .foregroundStyle(.white.opacity(0.92))
             .fixedSize()
             .help("Подключить агента и выбрать права доступа")
@@ -70,14 +70,15 @@ private struct CaseConnectedAppButton: View {
     @State private var hovering = false
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
-    private var active: Bool { hovering || focused }
+    private var active: Bool { isEnabled && (hovering || focused) }
 
     var body: some View {
         Button(action: action) {
-            CaseConnectedAppIcon(app: app, isHighlighted: active, isFocused: focused)
+            CaseConnectedAppIcon(app: app, isHighlighted: active, isFocused: focused && isEnabled)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle(cornerRadius: 14))
         .focused($focused)
         .onHover { hovering = $0 }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: active)
