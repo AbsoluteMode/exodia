@@ -67,8 +67,12 @@ struct ToolboxSettingsView: View {
                             Text("All tools added")
                         }
                         ForEach(HoverTool.allCases.filter { $0 != .settings && !hoverStore.slots.contains($0) }, id: \.self) { tool in
-                            Button(HoverToolRegistry.info(for: tool).title) {
+                            let info = HoverToolRegistry.info(for: tool)
+                            Button {
                                 hoverStore.placeTool(tool, at: hoverStore.lockSlotIndex)
+                            } label: {
+                                Label(info.title, systemImage: info.sfSymbol)
+                                    .imageScale(.small)
                             }
                         }
                     } label: {
