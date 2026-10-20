@@ -304,6 +304,8 @@ struct IslandView: View {
         switch mode {
         case .controls, .monitor, .notifications:
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
+        case .tasks:
+            base = IslandDropModeControl.detachedPanelGap + TodoHoverView.contentHeight
         case .history:
             base = IslandDropModeControl.historyHoverPanelHeight
         case .caseVault:
@@ -474,6 +476,8 @@ struct IslandView: View {
         mode: TranscriptionMode
     ) -> IslandHoverPanelMode {
         switch panel {
+        case .tasks:
+            return .tasks
         case .history:
             return .history
         case .notifications:
@@ -1237,7 +1241,6 @@ struct IslandView: View {
                             historyPasteTargetName: actions.historyPasteTargetName,
                             onOpenNotes: actions.openMeetings,
                             onOpenMonitor: actions.openMonitor,
-                            onOpenTasks: actions.openTasks,
                             onOpenCalendar: actions.openCalendar,
                             onOpenTranslate: actions.openTranslate,
                             onOpenSubtitles: actions.openSubtitles,
@@ -1387,6 +1390,9 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: hoverPanelMode) { oldValue, newValue in
+            // A logical opening ends immediately, independently of exit animation.
+            if oldValue == .tasks { TodoHoverModel.shared.end() }
+            if newValue == .tasks { TodoHoverModel.shared.begin() }
             recomputeMouseExpanded()
             if newValue != .vocabularyEditor { hoverVocabularyFocused = false }
             hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
@@ -2467,6 +2473,7 @@ enum IslandHoverPanelMode: Equatable, CaseIterable {
     case languagePicker
     case outputLanguagePicker
     case history
+    case tasks
     case monitor
     case notifications
     case vocabularyEditor
@@ -2478,7 +2485,7 @@ enum IslandHoverPanelMode: Equatable, CaseIterable {
         switch self {
         // Brightness takes key status like Monitor so its slider and switch get clicks.
         case .languagePicker, .outputLanguagePicker, .history, .monitor, .notifications, .vocabularyEditor, .fillerEditor,
-             .caseVault, .brightness:
+             .caseVault, .brightness, .tasks:
             return true
         case .controls:
             return false
@@ -2487,6 +2494,7 @@ enum IslandHoverPanelMode: Equatable, CaseIterable {
 }
 
 private struct IslandDropModeHoverPanel: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let panelWidth: CGFloat
     let mode: TranscriptionMode
     let selectedLanguage: AppLanguage?
@@ -2521,7 +2529,6 @@ private struct IslandDropModeHoverPanel: View {
     let historyPasteTargetName: () -> String?
     let onOpenNotes: () -> Void
     var onOpenMonitor: () -> Void = {}
-    var onOpenTasks: () -> Void = {}
     var onOpenCalendar: () -> Void = {}
     var onOpenTranslate: () -> Void = {}
     var onOpenSubtitles: () -> Void = {}
@@ -2592,6 +2599,9 @@ private struct IslandDropModeHoverPanel: View {
             } else if panelMode == .monitor {
                 MonitorHoverPanel(onBack: { panelMode = .controls })
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if panelMode == .tasks {
+                TodoHoverView(model: .shared, onBack: { panelMode = .controls })
+                    .transition(.opacity)
             } else if panelMode == .brightness {
                 IslandBrightnessStrip(onBack: { panelMode = .controls })
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -2632,7 +2642,7 @@ private struct IslandDropModeHoverPanel: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: panelMode)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: panelMode)
         .onChange(of: panelMode) { _, newMode in
             if newMode != .controls {
                 setSearchFocus(false)
@@ -2857,7 +2867,6 @@ private struct IslandDropModeHoverPanel: View {
         case .openNotes: onOpenNotes()
         case .toggleMeetingRecord: onToggleMeetingRecord()
         case .openMonitor: onOpenMonitor()
-        case .openTasks: onOpenTasks()
         case .openCalendar: onOpenCalendar()
         case .openTranslate: onOpenTranslate()
         case .openSubtitles: onOpenSubtitles()
@@ -2865,6 +2874,7 @@ private struct IslandDropModeHoverPanel: View {
         case .quit: onQuit()
         case .openPanel(let panel):
             switch panel {
+            case .tasks: panelMode = .tasks
             case .history: panelMode = .history
             case .notifications: panelMode = .notifications
             case .monitor: panelMode = .monitor

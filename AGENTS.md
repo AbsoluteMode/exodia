@@ -568,6 +568,21 @@ Hover tool search and pointer routing:
   .project-docs/decisions/2026-10-17-hover-tool-search.md,
   .project-docs/decisions/2026-10-17-native-hover-glass.md
 
+whytap:// links:
+  CFBundleURLTypes registers the whytap scheme; AppDelegate handles kAEGetURL
+  (registered in applicationWillFinishLaunching, queued until launch ends).
+  WhytapLink parses only whytap://tool/<HoverTool rawValue> and
+  whytap://settings/<SettingsWindowTab rawValue>; its switches over both enums
+  are exhaustive, so a new tile or tab needs a destination to compile. The enums
+  are the public registry of linkable places: never rename raw values. A link
+  only shows a place: inline tools open their HoverPanelRequest, navigate tools
+  and tabs open Settings with setHighlight, Planner/Translate/Subtitles windows
+  open idle, Drop Mode/Record/Screenshot select their Toolbox pane
+  (SettingsWindowSelection.focus) and Quit highlights the Quit row. Unknown ids
+  or kinds only wake the island; other schemes, credentials, ports, empty or
+  extra segments and non-alphanumeric ids are rejected and not logged. WHY:
+  .project-docs/decisions/2026-10-20-whytap-links.md
+
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference
   (Settings -> Other -> "Show island on") -> screen with a real notch ->
@@ -761,8 +776,11 @@ Agents get a resolved setup-guide path on every turn.
 Guide: docs/customization/notifications.md. WHY:
 .project-docs/decisions/2026-10-19-script-notifications.md
 
-Planner: catalog/search actions To-do and Calendar open one native planner window
-without changing saved layouts. PlannerStore atomically saves private local tasks
+To-do opens a compact inline hover list with Return-to-add, click-to-complete/reopen
+and a History mode with completion date/time. Completed tasks move below active
+ones for the current opening, then appear only in History. Native tooltips expose
+full truncated titles. Drafts survive closing; saved Toolbox slots remain unchanged.
+Calendar opens the native Planner window. PlannerStore atomically saves private local tasks
 and Whytap events; unreadable archives block writes. CalendarConnections combines
 selected EventKit calendars with direct Google Calendar, Microsoft Graph (including
 Teams links) and Zoom Calendar Service connections. Remote events are read-only;
@@ -778,11 +796,12 @@ shared OAuth registrations are created by the app itself; the owner supplies
 registered native clients during packaging through configure-calendar-clients.py.
 Live accounts require provider setup and separate acceptance. Encrypted backups
 include local Planner content, calendar metadata and saved credentials. Old backups
-preserve current calendar settings. A visible Planner or retained task draft
+preserve current calendar settings. A visible Planner, inline To-do, or retained task draft
 defers update restart and restore; ordinary backups still run. Closing the window
 stops calendar polling; another tool hotkey preserves an attached editor. Tests
 use fake providers and temporary stores. Guide:
-docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md
+docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md,
+.project-docs/decisions/2026-10-20-todo-hover.md
 
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change

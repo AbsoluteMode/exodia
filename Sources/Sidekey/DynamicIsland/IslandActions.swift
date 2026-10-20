@@ -69,7 +69,6 @@ struct IslandActions {
     var openMeetings: () -> Void
     /// Open the local monitoring dashboard chooser.
     var openMonitor: () -> Void = {}
-    var openTasks: () -> Void = {}
     var openCalendar: () -> Void = {}
     var openTranslate: () -> Void = {}
     var openSubtitles: () -> Void = {}

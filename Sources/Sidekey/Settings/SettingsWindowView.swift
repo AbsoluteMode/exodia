@@ -322,6 +322,8 @@ final class SettingsWindowSelection: ObservableObject {
     @Published var notesController: MeetingsContentController?
     /// The feature row API & Models scrolls to and highlights; the tab clears it once shown.
     @Published var focusedFeature: AIFeature?
+    /// The tool Toolbox selects on appear (a `whytap://tool/` link); Toolbox clears it.
+    @Published var focusedTool: HoverTool?
     /// Non-nil for ~1s while a Toolbox navigate-tool click highlights a
     /// sidebar row or the Quit row. Cleared automatically by `setHighlight`.
     @Published private(set) var highlightedTarget: HoverNavigationTarget?
@@ -351,6 +353,12 @@ final class SettingsWindowSelection: ObservableObject {
     func focus(_ feature: AIFeature) {
         select(.apiAndModels)
         focusedFeature = feature
+    }
+
+    /// Opens Toolbox on one tool's pane without running its action.
+    func focus(_ tool: HoverTool) {
+        select(.toolbox)
+        focusedTool = tool
     }
 
     func leaveNotes() {

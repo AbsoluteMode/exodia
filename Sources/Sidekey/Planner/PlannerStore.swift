@@ -5,6 +5,8 @@ struct PlannerTask: Codable, Identifiable, Equatable, Sendable {
     var title: String
     var completed = false
     var createdAt = Date()
+    // Optional for archives saved before completion history was introduced.
+    var completedAt: Date?
 }
 
 struct PlannerEvent: Codable, Identifiable, Equatable, Sendable {
@@ -125,9 +127,13 @@ final class PlannerStore: ObservableObject {
     }
 
     @discardableResult
-    func saveTask(_ task: PlannerTask) -> Bool {
+    func saveTask(_ task: PlannerTask, now: Date = Date()) -> Bool {
         var task = task
         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = archive.tasks.first { $0.id == task.id }
+        if !task.completed { task.completedAt = nil }
+        else if previous?.completed == false || previous == nil { task.completedAt = now }
+        else { task.completedAt = previous?.completedAt }
         guard Self.validationMessage(for: task) == nil else { return false }
         return commit { value in
             if let index = value.tasks.firstIndex(where: { $0.id == task.id }) { value.tasks[index] = task }
@@ -176,7 +182,7 @@ final class PlannerStore: ObservableObject {
         guard loaded.version == 1, loaded.tasks.count <= 10_000, loaded.events.count <= 10_000,
               Set(loaded.tasks.map(\.id)).count == loaded.tasks.count,
               Set(loaded.events.map(\.id)).count == loaded.events.count,
-              loaded.tasks.allSatisfy({ validTitle($0.title) && $0.createdAt.timeIntervalSince1970.isFinite }),
+              loaded.tasks.allSatisfy({ validTitle($0.title) && $0.createdAt.timeIntervalSince1970.isFinite && ($0.completedAt?.timeIntervalSince1970.isFinite ?? true) }),
               loaded.events.allSatisfy(validEvent) else { throw StoreError.invalid }
         return loaded
     }
