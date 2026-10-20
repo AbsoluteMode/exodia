@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-20
 sources:
   - type: user-confirmed
+    reference: On 2026-10-20 the user requested a single toolbar row, faster and cleaner Blur, Copy plus direct Download with filename confirmation, and Enter to copy and close.
+    confirmed_at: 2026-10-20
+  - type: user-confirmed
     reference: On 2026-10-20 the user requested a Screen Recording entry for screenshots in Settings Permissions.
     confirmed_at: 2026-10-20
   - type: user-confirmed
@@ -77,10 +80,40 @@ action in Settings Permissions; PermissionsHelper owns that action's request
 and system-settings link. Passive refresh never requests access. Launch,
 the orb and meeting audio retain the no-screen-capture/no-prompt contract.
 
+# Follow-up polish
+
+The user rejected the second settings row and slow/rough Blur. Keep tool settings
+inline in one row. Download replaces Save, uses a downward arrow and writes PNG
+directly into Downloads under a readable local timestamp, with exclusive creation
+and numbered collision suffixes. Download writes into an owned temporary
+directory first, then publishes the completed PNG using exclusive atomic rename;
+failures remove staging instead of leaving a truncated final file. Success names the actual file and retains the
+editor. Return copies and closes after selection; if Blur is pending it waits for
+the patch, and a failed Blur remains open. Return in the label field also copies/closes, as requested. Typing only prepares
+the label; click the screenshot to place it. The placeholder/help explicitly say
+that an unplaced label is discarded; native clipboard editing stays in the field.
+
+Fresh-executable checks reproduced a 30-second first accurate-OCR call even
+with CPU compute devices. Blur therefore combines fast Vision recognition and
+language-independent regions, with a bounded extra pass for isolated digits.
+That pass examines up to 8192 contours and classifies up to 256 uncovered glyph
+candidates in a repeated-glyph atlas, accepting repeated letters/digits and mapping them
+back to original coordinates. Atlas pixels never reach output. Accurate OCR
+remains in Copy text. Dark crops are normalized for recognition only, preserving
+original screenshot colors. Pure region detection and fast OCR alone were
+rejected because they missed small single digits. Per-region blur strengths
+replace a median strength that could leave a large amount legible beside small
+labels; stronger overlapping masks apply last. Crop-first compositing allocates only the selected
+pixels. Rendering/detection/PNG work happens off the UI thread, and a reusable
+hardware-backed Core Image context replaces per-gesture software setup. Mask
+strength follows text height, with padded, subtly rounded text edges; Entire area
+covers its full rectangle. Geometry and pixel regressions preserve Retina/crop
+alignment and background pixels. See [interface decisions](../../docs/DESIGN.md).
+
 # Consequences
 
 Screen Recording is requested on invocation. Content stays in memory until
-explicit copy/save/pin/system share. System OCR adds no app-managed speech/LLM
+explicit copy/download/pin/system share. System OCR adds no app-managed speech/LLM
 weights or provider traffic. The editor blocks update restarts. Screen/Space
 changes and sleep cancel stale captures. Real permission/capture/dialog flows
 remain installed-app acceptance checks.

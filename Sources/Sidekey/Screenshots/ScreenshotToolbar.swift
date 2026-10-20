@@ -27,11 +27,11 @@ final class ScreenshotToolbar: NSView {
     private let width = MacPopupButton()
     private let color = ScreenshotColorWell()
     private let text = NSTextField()
-    private let toolLabel = NSTextField(labelWithString: "")
     private var tools: [ScreenshotTool: NSButton] = [:]
     private var undoButton: NSButton!
     private var exportButtons: [NSButton] = []
     private var currentTool = ScreenshotTool.select
+    private var layoutTool: ScreenshotTool?
     private let defaults: UserDefaults
 
     init(canvas: ScreenshotCanvas, defaults: UserDefaults = .standard) {
@@ -42,7 +42,7 @@ final class ScreenshotToolbar: NSView {
         material.wantsLayer = true; material.layer?.cornerRadius = 13
         material.translatesAutoresizingMaskIntoConstraints = false
         addSubview(material)
-        stack.orientation = .vertical; stack.spacing = 5; stack.alignment = .centerX
+        stack.orientation = .horizontal; stack.spacing = 6; stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 7, bottom: 6, right: 7)
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([
@@ -60,19 +60,20 @@ final class ScreenshotToolbar: NSView {
             button.setButtonType(.toggle); row.addArrangedSubview(button); tools[tool] = button
         }
         row.addArrangedSubview(makeButton(symbol: "ellipsis", help: "More tools", action: #selector(showMore(_:))))
-        row.addArrangedSubview(separator())
+        stack.addArrangedSubview(row)
+        settings.spacing = 6; settings.alignment = .centerY
+        stack.addArrangedSubview(settings)
+        let actions = NSStackView(); actions.spacing = 4; actions.alignment = .centerY
+        actions.addArrangedSubview(separator())
         undoButton = makeButton(symbol: "arrow.uturn.backward", help: "Undo · ⌘Z", action: #selector(undo(_:)))
-        row.addArrangedSubview(undoButton)
-        row.addArrangedSubview(separator())
-        let save = makeButton(symbol: "square.and.arrow.down", help: "Save · ⌘S", action: #selector(save(_:)))
+        actions.addArrangedSubview(undoButton)
+        actions.addArrangedSubview(separator())
+        let download = makeButton(symbol: "arrow.down.to.line", title: "Download", help: "Download to Downloads · ⌘S", action: #selector(download(_:)))
         let copy = NSButton(title: "Copy", target: self, action: #selector(copyImage(_:)))
         copy.bezelStyle = .rounded; copy.bezelColor = .controlAccentColor
-        copy.setAccessibilityLabel("Copy screenshot"); copy.toolTip = "Copy screenshot and finish · ⌘C"
-        row.addArrangedSubview(save); row.addArrangedSubview(copy); exportButtons = [save, copy]
-        stack.addArrangedSubview(row)
-        settings.spacing = 8; settings.alignment = .centerY
-        toolLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        settings.addArrangedSubview(toolLabel)
+        copy.setAccessibilityLabel("Copy screenshot"); copy.toolTip = "Copy screenshot and finish · Return / ⌘C"
+        actions.addArrangedSubview(download); actions.addArrangedSubview(copy); exportButtons = [download, copy]
+        stack.addArrangedSubview(actions)
         color.target = self; color.action = #selector(updateSettings(_:))
         color.setAccessibilityLabel("Annotation color")
         color.widthAnchor.constraint(equalToConstant: 32).isActive = true
@@ -87,10 +88,12 @@ final class ScreenshotToolbar: NSView {
         mode.addItems(withTitles: ScreenshotBlurMode.allCases.map(\.rawValue))
         mode.target = self; mode.action = #selector(updateSettings(_:)); mode.setAccessibilityLabel("What to blur")
         settings.addArrangedSubview(mode)
-        text.placeholderString = "Enter label…"; text.target = self; text.action = #selector(updateSettings(_:))
-        text.setAccessibilityLabel("Annotation text"); text.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        text.placeholderString = "Label · click to place"; text.target = self; text.action = #selector(finishText(_:))
+        text.setAccessibilityLabel("Annotation text"); text.widthAnchor.constraint(equalToConstant: 160).isActive = true
+        text.toolTip = "Type a label, then click the screenshot to place it. Return copies placed annotations and closes; unplaced text is discarded."
+        text.setAccessibilityHelp(text.toolTip)
         NotificationCenter.default.addObserver(self, selector: #selector(updateSettings(_:)), name: NSControl.textDidChangeNotification, object: text)
-        settings.addArrangedSubview(text); stack.addArrangedSubview(settings)
+        settings.addArrangedSubview(text)
         refresh()
     }
     required init?(coder: NSCoder) { nil }
@@ -112,7 +115,7 @@ final class ScreenshotToolbar: NSView {
         for (kind, button) in tools {
             button.state = tool == kind || (kind == .rectangle && tool == .ellipse) ? .on : .off
             button.isEnabled = !canvas.busy
-            button.contentTintColor = button.state == .on ? .controlAccentColor : .labelColor
+            button.contentTintColor = .labelColor
             button.wantsLayer = true
             button.layer?.cornerRadius = 6
             button.layer?.backgroundColor = button.state == .on ? NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor : NSColor.clear.cgColor
@@ -120,7 +123,6 @@ final class ScreenshotToolbar: NSView {
         undoButton.isEnabled = canvas.canUndo
         for button in exportButtons { button.isEnabled = !canvas.busy && !canvas.selection.isEmpty }
         settings.isHidden = tool == .select
-        toolLabel.stringValue = tool == .blur ? "Blur" : tool == .text ? "Text" : tool.rawValue.capitalized
         color.isHidden = [.select, .blur, .spotlight].contains(tool)
         width.isHidden = ![.arrow, .rectangle, .ellipse, .pen, .text].contains(tool)
         shape.isHidden = tool != .rectangle && tool != .ellipse
@@ -129,7 +131,10 @@ final class ScreenshotToolbar: NSView {
         mode.selectItem(withTitle: canvas.blurMode.rawValue)
         text.isHidden = tool != .text
         for control in [color as NSControl, width, shape, mode, text] { control.isEnabled = !canvas.busy }
-        layoutSubtreeIfNeeded(); onLayout?()
+        if layoutTool != tool {
+            layoutTool = tool
+            layoutSubtreeIfNeeded(); onLayout?()
+        }
     }
 
     private func makeButton(symbol: String, title: String = "", help: String, action: Selector) -> NSButton {
@@ -166,7 +171,11 @@ final class ScreenshotToolbar: NSView {
         defaults.set(width.indexOfSelectedItem, forKey: "sidekey.screenshot.width.\(canvas.tool.rawValue)")
     }
     @objc private func undo(_ sender: Any?) { canvas?.undo() }
-    @objc private func save(_ sender: Any?) { onCommand?(.save) }
+    @objc private func finishText(_ sender: Any?) {
+        updateSettings(sender)
+        onCommand?(.copy)
+    }
+    @objc private func download(_ sender: Any?) { onCommand?(.download) }
     @objc private func copyImage(_ sender: Any?) { onCommand?(.copy) }
     @objc private func menuTool(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let tool = ScreenshotTool(rawValue: raw) else { return }
