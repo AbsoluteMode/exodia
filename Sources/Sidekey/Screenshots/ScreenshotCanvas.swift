@@ -15,7 +15,7 @@ final class ScreenshotCanvas: NSView {
     var blurMode = ScreenshotBlurMode.textAndNumbers
     var busy = false { didSet { needsDisplay = true; onChange?() } }
     var busyMessage = "Processing on this Mac…"
-    var message = "Drag to select an area · Return or double-click for full display · Esc to cancel"
+    var message = "Drag to select · Return: copy full display · Double-click: edit · Esc: cancel"
     var onChange: (() -> Void)?
     var onSelection: (() -> Void)?
     var onBlur: ((CGRect, ScreenshotBlurMode) -> Void)?
@@ -239,8 +239,11 @@ final class ScreenshotCanvas: NSView {
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { cancelOperation(nil); return }
         if [36, 76].contains(event.keyCode) {
-            if selection.isEmpty { if !busy { _ = selectDisplayAccessibility() } }
-            else { onCommand?(.copy) }
+            if selection.isEmpty {
+                guard !busy else { return }
+                _ = selectDisplayAccessibility()
+            }
+            onCommand?(.copy)
             return
         }
         guard !busy else { return }

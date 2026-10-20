@@ -368,8 +368,8 @@ come from `ScreenshotEditorKeys.tools` and are included in Help. V selects
 and crops; A/R/O/P/T/B/M/N choose Arrow/Rectangle/Oval/Pen/Text/Blur/Highlighter/
 Numbered steps. ⌘C copies, ⌘S downloads PNG directly into Downloads, ⌘Z undoes and ⇧⌘Z redoes. Arrows move
 the crop (Shift: 10 points, Option: resize); Delete removes a selected
-annotation. Return selects the full display before selection; after selection
-it copies and closes, waiting for an active Blur to finish. Escape cancels
+annotation. Without a crop, Return copies the full display and closes; after selection
+it copies and closes, waiting for active Blur or Download to finish. Escape cancels
 the current stroke, then the capture. Native text
 entry keeps ordinary clipboard editing commands; Return commits the field and
 copies/closes the editor. See [screenshots](screenshots.md).

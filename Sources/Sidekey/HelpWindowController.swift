@@ -186,12 +186,12 @@ enum HelpWindowContent {
         } + [
             HelpHotkeyRowSpec(title: "Screenshot — copy", detail: "Copy the edited image and finish capture.", iconName: "doc.on.doc", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("C")]),
             HelpHotkeyRowSpec(title: "Screenshot — download", detail: "Download PNG to Downloads and show its filename.", iconName: "arrow.down.to.line", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("S")]),
-            HelpHotkeyRowSpec(title: "Screenshot — copy and close", detail: "After selecting an area, copy the edited image and close the editor. Waits for pending Blur.", iconName: "return", prefix: nil, contents: [.text("Return")]),
+            HelpHotkeyRowSpec(title: "Screenshot — copy and close", detail: "After selecting an area, copy the edited image and close the editor. Waits for pending Blur or Download.", iconName: "return", prefix: nil, contents: [.text("Return")]),
             HelpHotkeyRowSpec(title: "Screenshot — undo", detail: "Undo a crop or annotation.", iconName: "arrow.uturn.backward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("Z")]),
             HelpHotkeyRowSpec(title: "Screenshot — redo", detail: "Redo the last undone change.", iconName: "arrow.uturn.forward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text(HotkeyGlyph.shift), .text("Z")]),
             HelpHotkeyRowSpec(title: "Screenshot — move crop", detail: "Arrow keys move the crop; Shift moves 10 points; Option resizes.", iconName: "arrow.up.left.and.arrow.down.right", prefix: nil, contents: [.text("←"), .text("↑"), .text("↓"), .text("→")]),
             HelpHotkeyRowSpec(title: "Screenshot — cancel", detail: "Cancel the current drawing, then cancel capture.", iconName: "escape", prefix: nil, contents: [.text("Esc")]),
-            HelpHotkeyRowSpec(title: "Screenshot — full display", detail: "Select the entire display before drawing a crop.", iconName: "viewfinder", prefix: nil, contents: [.text("Return")]),
+            HelpHotkeyRowSpec(title: "Screenshot — full display", detail: "Without a crop, copy the full display and close. Double-click instead to keep editing it.", iconName: "viewfinder", prefix: nil, contents: [.text("Return")]),
             HelpHotkeyRowSpec(title: "Screenshot — delete annotation", detail: "Remove the selected annotation.", iconName: "delete.left", prefix: nil, contents: [.text("Delete")])
         ]
     }

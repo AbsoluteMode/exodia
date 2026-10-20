@@ -90,11 +90,17 @@ editor. Return copies and closes after selection; if Blur is pending it waits fo
 the patch, and a failed Blur remains open. Return in the label field commits it
 and also copies/closes; native clipboard editing remains local to the field.
 
-Blur and Copy text retain accurate Vision recognition, supplemented by
-language-independent region detection. CPU compute devices avoid the long cold
-accelerator startup seen in generated-image checks; lightweight detector/fast OCR
-alternatives were rejected because they missed small single digits. Dark crops
-are normalized for recognition only, preserving original screenshot colors. Crop-first compositing allocates only the selected
+Fresh-executable checks reproduced a 30-second first accurate-OCR call even
+with CPU compute devices. Blur therefore combines fast Vision recognition and
+language-independent regions, with a bounded extra pass for isolated digits.
+That pass examines up to 8192 contours and classifies up to 256 uncovered glyph
+candidates in a repeated-glyph atlas, accepting repeated letters/digits and mapping them
+back to original coordinates. Atlas pixels never reach output. Accurate OCR
+remains in Copy text. Dark crops are normalized for recognition only, preserving
+original screenshot colors. Pure region detection and fast OCR alone were
+rejected because they missed small single digits. Per-region blur strengths
+replace a median strength that could leave a large amount legible beside small
+labels; stronger overlapping masks apply last. Crop-first compositing allocates only the selected
 pixels. Rendering/detection/PNG work happens off the UI thread, and a reusable
 hardware-backed Core Image context replaces per-gesture software setup. Mask
 strength follows text height, with padded, subtly rounded text edges; Entire area

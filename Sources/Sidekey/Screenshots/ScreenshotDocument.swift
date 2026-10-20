@@ -157,29 +157,38 @@ enum ScreenshotRenderer {
 
     /// Composite replacement pixels before encoding. Export never carries editable originals.
     static func blurred(_ image: CGImage, boxes: [CGRect]) throws -> CGImage {
-        let ci = CIImage(cgImage: image)
-        let heights = boxes.map { $0.height * CGFloat(image.height) }.sorted()
-        guard !heights.isEmpty else { return image }
-        // Follow text height, rather than making small labels smear with a large crop.
-        let radius = max(10, min(40, heights[heights.count / 2] * 0.55))
-        let filtered = ci.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius]).cropped(to: ci.extent)
-        guard let blurred = blurContext.createCGImage(filtered, from: ci.extent),
-              let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ScreenshotImageError.rendering }
+        guard !boxes.isEmpty else { return image }
         let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-        context.draw(image, in: bounds)
-        context.saveGState()
+        var groups: [Int: [CGRect]] = [:]
         for box in boxes {
-            let pixelBox = CGRect(x: box.minX * bounds.width, y: box.minY * bounds.height,
-                                  width: box.width * bounds.width, height: box.height * bounds.height)
+            let pixels = CGRect(x: box.minX * bounds.width, y: box.minY * bounds.height,
+                                width: box.width * bounds.width, height: box.height * bounds.height)
                 .insetBy(dx: -3, dy: -3).intersection(bounds)
-            if !pixelBox.isEmpty {
-                let corner: CGFloat = pixelBox == bounds ? 0 : min(3, pixelBox.height * 0.18)
-                context.addPath(CGPath(roundedRect: pixelBox, cornerWidth: corner, cornerHeight: corner, transform: nil))
-            }
+            guard !pixels.isEmpty, !pixels.isNull else { continue }
+            let entireArea = boxes.count == 1 && box == CGRect(x: 0, y: 0, width: 1, height: 1)
+            let strength = entireArea ? max(14, min(bounds.width, bounds.height) * 0.06) : max(12, min(256, box.height * bounds.height * 0.65))
+            let radius = Int(ceil(strength / 4)) * 4
+            groups[radius, default: []].append(pixels)
         }
-        context.clip(); context.draw(blurred, in: bounds); context.restoreGState()
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ScreenshotImageError.rendering }
+        context.draw(image, in: bounds)
+        let ci = CIImage(cgImage: image)
+        // Stronger masks go last so a small overlapping detection cannot reveal large text.
+        for radius in groups.keys.sorted() {
+            try Task.checkCancellation()
+            let regions = groups[radius]!
+            let extent = regions.reduce(CGRect.null) { $0.union($1) }.integral.intersection(bounds)
+            let filtered = ci.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius])
+            guard let blurred = blurContext.createCGImage(filtered, from: extent) else { throw ScreenshotImageError.rendering }
+            context.saveGState()
+            for region in regions {
+                let corner: CGFloat = region == bounds ? 0 : min(3, region.height * 0.18)
+                context.addPath(CGPath(roundedRect: region, cornerWidth: corner, cornerHeight: corner, transform: nil))
+            }
+            context.clip(); context.draw(blurred, in: extent); context.restoreGState()
+        }
         guard let result = context.makeImage() else { throw ScreenshotImageError.rendering }
         return result
     }
@@ -203,12 +212,29 @@ struct ScreenshotTextAnalysis {
 }
 
 enum ScreenshotTextDetector {
-    /// Keep accurate single-digit coverage without the accelerator's cold-start stall.
+    /// Avoid the accurate recognizer's per-build cold start. An isolated-glyph pass
+    /// supplements fast text regions without loading that model.
     static func boxes(_ image: CGImage) throws -> [CGRect] {
-        try analyze(image).boxes
+        let image = try recognitionImage(image)
+        let detection = VNDetectTextRectanglesRequest()
+        detection.reportCharacterBoxes = false
+        let recognition = fastRequest()
+        try useCPU(detection)
+        try VNImageRequestHandler(cgImage: image, options: [:]).perform([detection, recognition])
+        let boxes = (detection.results ?? []).map(\.boundingBox) + (recognition.results ?? []).map(\.boundingBox)
+        try Task.checkCancellation()
+        return boxes + (try ScreenshotGlyphDetector.boxes(in: image, excluding: boxes))
     }
 
-    private static func useCPU(_ request: VNRequest) throws {
+    static func fastRequest() -> VNRecognizeTextRequest {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .fast; request.usesLanguageCorrection = false
+        request.automaticallyDetectsLanguage = false; request.recognitionLanguages = ["en-US"]
+        request.minimumTextHeight = 0
+        return request
+    }
+
+    static func useCPU(_ request: VNRequest) throws {
         for (stage, devices) in try request.supportedComputeStageDevices {
             if let cpu = devices.first(where: { if case .cpu = $0 { return true }; return false }) {
                 request.setComputeDevice(cpu, for: stage)
@@ -216,7 +242,7 @@ enum ScreenshotTextDetector {
         }
     }
 
-    private static func recognitionImage(_ image: CGImage) throws -> CGImage {
+    static func recognitionImage(_ image: CGImage) throws -> CGImage {
         let bitmap = NSBitmapImageRep(cgImage: image)
         let corners = [(0, 0), (image.width - 1, 0), (0, image.height - 1), (image.width - 1, image.height - 1)]
         let brightness = corners.compactMap { x, y -> CGFloat? in

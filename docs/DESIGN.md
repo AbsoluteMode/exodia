@@ -9,6 +9,8 @@ its settings beside it, and finish with Copy/Return or Download.
 - Tools, contextual controls and export actions share a 42 pt horizontal row.
   Why: the user explicitly rejected settings on a second row. Keep system
   typography, adaptive popover material and semantic accent/label colors.
+  Selected tools retain label-color text on an accent wash; accent-blue text
+  on that wash had insufficient contrast in the native dark snapshot.
 - Show only settings relevant to the active tool. Color/width use existing
   per-tool preferences; the label field is 160 pt. Why: the screenshot is the
   workspace, and tool configuration should stay nearby without a permanent form.
@@ -17,16 +19,17 @@ its settings beside it, and finish with Copy/Return or Download.
   its actual filename. Why: file destination and success must be visible without
   a Save dialog or interpreting a Share symbol. Name collisions never overwrite.
 - Return/keypad Enter copies and closes after selection; during Blur the command
-  waits for the completed patch. Before selection it selects the whole display.
+  waits for the completed patch; during Download it waits for the file. Without a crop it copies the whole display and closes in one action.
   Return in the label field commits it and also copies/closes. Failed processing stays open.
 - No entrance, resize or tool-switch animation delays input; reduced motion uses
   the same immediate behavior. Busy state disables mutating/export controls and
   reports processing; Escape stays available. Copy and Download encode off the
-  main thread. Accurate Vision recognition and region detection use CPU to avoid long
-  accelerator startup without dropping small single digits; dark crops are
-  normalized for detection only.
-- Text masks have 3 px padded, subtly rounded edges; strength follows text height,
-  rather than the selected area's dimensions. Entire area covers every pixel.
+  main thread. Fast Vision regions plus a bounded isolated-glyph atlas avoid accurate
+  OCR’s per-build cold start; dark crops are normalized for detection only.
+  Copy text retains accurate OCR as a separate action.
+- Text masks have 3 px padded, subtly rounded edges; strength follows each text region’s height,
+  rather than the selected area's dimensions or the median of other labels.
+  Overlapping masks apply stronger blur last. Entire area covers every pixel.
   Why: avoid oversized smears while preserving the existing text/number contract.
 
 Native offscreen fixtures cover the real AppKit toolbar in both appearances,

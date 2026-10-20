@@ -110,6 +110,49 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(try pixels(actual), try pixels(expected))
     }
 
+    func testIsolatedDigitsAcrossFontSizesAndRetinaScales() throws {
+        for scale in [1, 2] { for fontSize: CGFloat in [11, 14, 18] { for dark in [false, true] {
+            let context = try XCTUnwrap(CGContext(data: nil, width: 500 * scale, height: 100 * scale, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+            context.setFillColor((dark ? NSColor.black : NSColor.white).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: 500, height: 100))
+            let previous = NSGraphicsContext.current
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            for (digit, x) in [("7", 40), ("3", 150), ("1", 260), ("9", 370)] {
+                (digit as NSString).draw(at: CGPoint(x: x, y: 40), withAttributes: [.font: NSFont.systemFont(ofSize: fontSize),
+                    .foregroundColor: dark ? NSColor.white : NSColor.black])
+            }
+            NSGraphicsContext.current = previous
+            let boxes = try ScreenshotTextDetector.boxes(XCTUnwrap(context.makeImage()))
+            for x: CGFloat in [40, 150, 260, 370] {
+                let point = CGPoint(x: (x + fontSize * 0.3) / 500, y: (40 + fontSize * 0.6) / 100)
+                XCTAssertTrue(boxes.contains { $0.insetBy(dx: -0.005, dy: -0.01).contains(point) }, "Missing digit at \(x), \(fontSize)pt, \(scale)x, dark=\(dark)")
+            }
+        } } }
+    }
+
+    func testLargeTextGetsItsOwnBlurStrengthBesideSmallLabels() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 1400, height: 640, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.white.cgColor); context.fill(CGRect(x: 0, y: 0, width: 1400, height: 640))
+        let previous = NSGraphicsContext.current
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        ("$48,213.07" as NSString).draw(at: CGPoint(x: 40, y: 380), withAttributes: [.font: NSFont.systemFont(ofSize: 128), .foregroundColor: NSColor.black])
+        for index in 0..<8 {
+            ("Small label \(index)" as NSString).draw(at: CGPoint(x: 40 + (index % 2) * 500, y: 40 + (index / 2) * 60),
+                withAttributes: [.font: NSFont.systemFont(ofSize: 24), .foregroundColor: NSColor.black])
+        }
+        NSGraphicsContext.current = previous
+        let source = try XCTUnwrap(context.makeImage())
+        let result = try ScreenshotRenderer.blurred(source, boxes: ScreenshotTextDetector.boxes(source))
+        let readable = try ScreenshotTextDetector.analyze(result, detectAdditionalBoxes: false).text.filter(\.isNumber)
+        XCTAssertFalse(readable.contains("4821307"), "Small labels must not weaken the large amount's mask")
+        if let directory = ProcessInfo.processInfo.environment["SCREENSHOT_TEST_RENDER_DIR"] {
+            try ScreenshotDownload.png(result).write(to: URL(fileURLWithPath: directory).appendingPathComponent("blur-mixed-font-sizes.png"))
+        }
+    }
+
     func testDownloadUsesReadableUniquePNGNamesAndPreservesExistingFiles() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ScreenshotDownloadTests-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -244,10 +287,13 @@ final class ScreenshotTests: XCTestCase {
         let canvas = ScreenshotCanvas(image: try fixture(), size: CGSize(width: 800, height: 400))
         var selectionEvents = 0
         canvas.onSelection = { selectionEvents += 1 }
+        var fullDisplayCopies = 0
+        canvas.onCommand = { if case .copy = $0 { fullDisplayCopies += 1 } }
         let fullDisplay = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                         windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
         canvas.keyDown(with: fullDisplay)
         XCTAssertEqual(canvas.selection, canvas.bounds); XCTAssertEqual(selectionEvents, 1)
+        XCTAssertEqual(fullDisplayCopies, 1, "Return without a crop copies the full display in one action")
         for entry in ScreenshotEditorKeys.tools {
             let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                        windowNumber: 0, context: nil, characters: entry.key,

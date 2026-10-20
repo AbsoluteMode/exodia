@@ -113,7 +113,7 @@ final class ScreenshotToolbar: NSView {
         for (kind, button) in tools {
             button.state = tool == kind || (kind == .rectangle && tool == .ellipse) ? .on : .off
             button.isEnabled = !canvas.busy
-            button.contentTintColor = button.state == .on ? .controlAccentColor : .labelColor
+            button.contentTintColor = .labelColor
             button.wantsLayer = true
             button.layer?.cornerRadius = 6
             button.layer?.backgroundColor = button.state == .on ? NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor : NSColor.clear.cgColor

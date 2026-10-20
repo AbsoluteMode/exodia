@@ -811,15 +811,15 @@ Guide: `docs/backup.md`. WHY:
 Screenshot is an action tool in hover search/Toolbox with an optional named
 hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
 then shows a frozen selection canvas and one horizontal native toolbar with
-inline contextual settings, Copy and Download. Return copies and closes after
-selection, waiting for pending Blur. Download writes collision-safe timestamped
+inline contextual settings, Copy and Download. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
 Shape,
 Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
 system sharing live in More. Blur defaults to Text and numbers, including
-standalone digits, using accurate CPU Vision recognition plus language-independent
-region detection without language correction. Dark crops are normalized only for
-detection; output keeps original colors. Copy text uses the same OCR. Crop-first compositing, Blur and PNG export run off the UI
+standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
+without language correction; accurate OCR belongs to Copy text. Dark crops are
+normalized only for detection; output keeps original colors. Each text region
+gets its own blur strength, with stronger masks applied last. Crop-first compositing, Blur and PNG export run off the UI
 thread; a shared hardware Core Image context avoids per-gesture setup.
 Entire area is the alternative. Detection is
 best-effort and the visible result must be checked. Exports flatten edited

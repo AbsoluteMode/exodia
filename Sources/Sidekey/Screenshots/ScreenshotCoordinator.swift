@@ -28,8 +28,8 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var sharePicker: NSSharingServicePicker?
     private var observers: [NSObjectProtocol] = []
     private var outputWidth: Int?
-    private var blurInProgress = false
-    private var copyAfterBlur = false
+    private var copyWaitReason: String?
+    private var copyAfterProcessing = false
     private let activityChanged: (Bool) -> Void
     private let excludedWindowIDs: () -> Set<CGWindowID>
     var isActive: Bool { generation != nil }
@@ -156,7 +156,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
 
     func cancel(restoreFocus: Bool = true) {
         generation = nil; task?.cancel(); task = nil
-        blurInProgress = false; copyAfterBlur = false
+        copyWaitReason = nil; copyAfterProcessing = false
         toolbar?.closeAuxiliaryWindows()
         if let toolbarPanel { toolbarPanel.parent?.removeChildWindow(toolbarPanel); toolbarPanel.orderOut(nil); toolbarPanel.close() }
         toolbarPanel = nil; toolbar = nil; selectedCanvas = nil
@@ -179,7 +179,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         guard !canvas.busy, let token = generation else { return }
         let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations
         canvas.busyMessage = "Blurring on this Mac… · Return to copy when ready · Esc to cancel"
-        canvas.busy = true; blurInProgress = true
+        canvas.busy = true; copyWaitReason = "Blur"
         task = Task { [weak self, weak canvas] in
             do {
                 let worker = Task.detached(priority: .userInitiated) { () throws -> CGImage in
@@ -196,12 +196,12 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                 let patch = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
                 guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
                 canvas.commit(ScreenshotAnnotation(tool: .blur, points: [rect.origin, CGPoint(x: rect.maxX, y: rect.maxY)], patch: patch))
-                canvas.busy = false; self.blurInProgress = false
+                canvas.busy = false; self.copyWaitReason = nil
                 self.report(mode == .textAndNumbers ? "Text and numbers blurred · Check the result · ⌘Z Undo" : "Area blurred · ⌘Z Undo", canvas: canvas)
-                if self.copyAfterBlur { self.copyAfterBlur = false; self.perform(.copy) }
+                if self.copyAfterProcessing { self.copyAfterProcessing = false; self.perform(.copy) }
             } catch {
                 guard let self, let canvas, self.generation == token else { return }
-                canvas.busy = false; self.blurInProgress = false; self.copyAfterBlur = false
+                canvas.busy = false; self.copyWaitReason = nil; self.copyAfterProcessing = false
                 self.report(error is ScreenshotImageError ? error.localizedDescription : "Text detection failed. Try Entire area, or try again.", canvas: canvas)
             }
         }
@@ -211,10 +211,10 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         if case .cancel = command { cancel(); return }
         guard let canvas = selectedCanvas, !canvas.selection.isEmpty else { return }
         if canvas.busy {
-            if case .copy = command, blurInProgress {
-                copyAfterBlur = true
-                canvas.busyMessage = "Copying when Blur finishes… · Esc to cancel"
-                report("Copying when Blur finishes… · Esc to cancel", canvas: canvas)
+            if case .copy = command, let reason = copyWaitReason {
+                copyAfterProcessing = true
+                canvas.busyMessage = "Copying when \(reason) finishes… · Esc to cancel"
+                report(canvas.busyMessage, canvas: canvas)
             }
             return
         }
@@ -243,6 +243,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations, crop = canvas.selection
         let width = outputWidth
         canvas.busyMessage = download ? "Downloading to Downloads…" : "Preparing clipboard…"
+        copyWaitReason = download ? "Download" : nil
         canvas.busy = true
         task = Task { [weak self, weak canvas] in
             do {
@@ -257,11 +258,12 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                 }
                 let (bytes, url) = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
                 guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
-                canvas.busy = false
+                canvas.busy = false; self.copyWaitReason = nil
                 if let url {
                     self.report("Downloaded to Downloads as “\(url.lastPathComponent)”", canvas: canvas)
                     NSAccessibility.post(element: canvas, notification: .announcementRequested,
                                          userInfo: [.announcement: canvas.message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+                    if self.copyAfterProcessing { self.copyAfterProcessing = false; self.perform(.copy) }
                 } else {
                     let board = NSPasteboard.general; board.clearContents()
                     guard board.setData(bytes, forType: .png) else { throw ScreenshotImageError.rendering }
@@ -270,6 +272,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             } catch {
                 guard let self, let canvas, self.generation == token else { return }
                 canvas.busy = false
+                self.copyWaitReason = nil; self.copyAfterProcessing = false
                 self.report(download ? "Couldn’t download to Downloads. Check folder access and free space, then try again." : error.localizedDescription, canvas: canvas)
             }
         }
