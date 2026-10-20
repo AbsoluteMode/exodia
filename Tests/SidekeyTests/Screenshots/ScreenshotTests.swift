@@ -62,6 +62,17 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(result.text.isEmpty); XCTAssertTrue(result.boxes.isEmpty)
     }
 
+    func testPackagedPermissionCopyDescribesOnlyExplicitScreenshotUse() throws {
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0..<4 { root.deleteLastPathComponent() }
+        let data = try Data(contentsOf: root.appendingPathComponent("Resources/Info.plist.template"))
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        let description = try XCTUnwrap(plist["NSScreenCaptureUsageDescription"] as? String)
+        XCTAssertTrue(description.contains("only when you choose Screenshot"))
+        XCTAssertTrue(description.contains("text and numbers"))
+        XCTAssertFalse(description.contains("context"))
+    }
+
     func testTextBlurChangesOnlyDetectedRegionsAndLeavesBackgroundUntouched() throws {
         let source = try fixture(), result = try ScreenshotTextDetector.analyze(source)
         let blurred = try ScreenshotRenderer.blurred(source, boxes: result.boxes)
