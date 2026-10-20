@@ -37,6 +37,8 @@ struct IslandCaseConnectedApps: View {
         switch CaseKnownClient(identity: identity) {
         case .claudeCode: return "claude-code"
         case .codex: return "codex"
+        case .cursor: return "cursor"
+        case .builtInOpenCode: return "opencode"
         default: return nil
         }
     }
@@ -96,7 +98,7 @@ struct CaseConnectedAppIcon: View {
     private var accent: Color { IslandCaseConnectedApps.highlight(for: app.identity).color }
 
     var body: some View {
-            icon
+            CaseAppBrandIcon(identity: app.identity, size: 18, color: active ? accent : .white.opacity(0.88))
                 .foregroundStyle(active ? accent : .white.opacity(0.88))
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(active ? accent.opacity(0.15) : .clear))
@@ -105,20 +107,28 @@ struct CaseConnectedAppIcon: View {
                 .contentShape(Rectangle())
     }
 
+}
+
+/// The same bundled brand mark is used for Connect and saved registrations.
+struct CaseAppBrandIcon: View {
+    let identity: CaseAppIdentity
+    var size: CGFloat = 18
+    var color: Color = .white
+
     @ViewBuilder
-    private var icon: some View {
-        if let asset = IslandCaseConnectedApps.brandAsset(for: app.identity) {
-            ProviderBrandIcon(assetName: asset, size: 18, color: active ? accent : .white.opacity(0.88))
-        } else if case let .executablePath(path) = app.identity,
+    var body: some View {
+        if let asset = IslandCaseConnectedApps.brandAsset(for: identity) {
+            ProviderBrandIcon(assetName: asset, size: size, color: color)
+        } else if case let .executablePath(path) = identity,
                   FileManager.default.fileExists(atPath: path) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: path))
                 .resizable()
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: size, height: size)
                 .accessibilityHidden(true)
         } else {
-            Image(systemName: app.identity == .builtInOpenCode ? "terminal" : "cursorarrow.rays")
-                .font(.system(size: 17, weight: .medium))
+            Image(systemName: "cursorarrow.rays")
+                .font(.system(size: size * 0.9, weight: .medium))
                 .accessibilityHidden(true)
         }
     }

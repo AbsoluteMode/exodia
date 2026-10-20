@@ -532,7 +532,7 @@ rights. No alternative composition or decorative screen is needed.
 | --- | --- |
 | Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
-| Client picker | Discovers installed clients only after Connect. Shows loading, an explicit empty message and Choose program. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. |
+| Client picker | Discovers installed OpenCode and Cursor only after Connect. Shows bundled brand marks, loading, no installed clients or already-connected states. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. The arbitrary program picker is removed. |
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
@@ -603,3 +603,52 @@ and 500pt. Native text-field Return dispatch was exercised in an invisible windo
 without activating the app. The history-date fixture measures 9.67:1 against its
 row background (RGB 211/41). Physical keyboard/VoiceOver, native tooltip timing and compositor glass
 appearance require acceptance on the one installed application.
+
+
+### Case Connect polish — 2026-10-21
+
+The person comes to connect an installed agent. First they see OpenCode and/or
+Cursor with their logos. Clicking one opens its access mode and project scope;
+only Connect commits the draft after authentication. The user chose this flow.
+
+- Offer OpenCode then Cursor, only when their existing locators find them and
+  they are not registered. Do not offer a program chooser, Claude Code or Codex
+  for a new connection. Keep all saved legacy registrations and their policy
+  editors. Why: limit new setup to the two requested integrations without
+  silently revoking existing rights.
+- Bundle the official OpenCode mark and Cursor 2D cube as square transparent PDF
+  templates, reused by the picker, policy header and connected strip. Why: the
+  same agent should remain recognizable throughout setup, even in fixtures or
+  after its app is removed. Sources: [OpenCode](https://opencode.ai/brand) and
+  [Cursor](https://cursor.com/brand); SVG sources live beside their PDFs.
+- Use 44 pt logo/name/disclosure rows, 22 pt marks, 10 pt corners, system 12 pt
+  medium labels and the existing white-on-dark island palette. Hover changes
+  the fill; keyboard focus adds an outline without moving the row. Native
+  buttons expose the agent name and setup action. No new animation is added.
+- Put Accept/Спрашивать and Bypass/Без запроса inside the mode choices, with an
+  outline for selection and amber Bypass. Keep the shared-terminal consequence
+  visible inside this group when Bypass applies. Why: the decision and its
+  consequence should read together, without detached explanatory lines.
+- Put all/selected project controls and their summary/checklist in a separate
+  group. All explicitly includes current and new projects; unchecked projects
+  remain denied. Existing project overrides get their own group. Why: scope
+  must stay clear without a loose footer between unrelated controls.
+- The primary Connect/Save button contains a Touch ID glyph. Native help and its
+  accessibility hint explain which changes require authentication. Why: this
+  explanation belongs to the commit action; normal mode/scope navigation does
+  not request authentication. Errors and retry remain visible above the editor.
+- Loading and both empty states are contained surfaces. With no installation,
+  explain to install OpenCode or Cursor and reopen Connect; with saved supported
+  registrations, point to their icons for editing rights. No client config,
+  secret, route or vault migration changes are part of this polish.
+
+Validation uses synthetic native offscreen fixtures at 310/390 pt and the
+320 pt viewport, fake authentication, isolated connector files and the four
+installed/absent client combinations. Calculated contrast on the synthetic
+0.08-gray backdrop: group headings 10.56:1, selected/unselected mode text
+10.15:1/9.58:1, picker labels 13.19:1, selected-mode border 4.35:1 and primary
+button text 4.52:1. These do not establish contrast on every live backdrop.
+Physical focus/VoiceOver, real Cursor
+reconnection and live glass contrast remain shared-app acceptance after the
+builder promotes the reviewed source. Grouping and logo recognition follow the
+user's chosen direction; they have not been tested with other people.
