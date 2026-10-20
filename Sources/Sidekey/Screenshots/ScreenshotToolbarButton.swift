@@ -1,9 +1,38 @@
 import AppKit
+import SwiftUI
 
 /// Native button tracking/focus/pressed states, with an explicit whole-button hover.
 @MainActor
 final class ScreenshotToolbarButton: NSButton {
     var isPrimaryAction = false
+    var showsReturnKeycap = false {
+        didSet {
+            returnHint?.removeFromSuperview(); returnHint = nil
+            if showsReturnKeycap {
+                let hint = ScreenshotKeycapHostingView(rootView:
+                    HotkeyHintView(contents: [.symbol("return", accessibilityLabel: "Return key")], style: .keycaps)
+                        .accessibilityHidden(true))
+                hint.identifier = NSUserInterfaceItemIdentifier("screenshot.return-keycap")
+                hint.alphaValue = isEnabled ? 1 : 0.45
+                addSubview(hint); returnHint = hint
+            }
+            invalidateIntrinsicContentSize(); needsLayout = true; needsDisplay = true
+        }
+    }
+    private var returnHint: NSView?
+    private var keycapSize: CGSize { returnHint?.fittingSize ?? CGSize(width: 22, height: 22) }
+    private var labelSize: CGSize { (title as NSString).size(withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 13)]) }
+    override var intrinsicContentSize: NSSize {
+        guard showsReturnKeycap else { return super.intrinsicContentSize }
+        return NSSize(width: ceil(labelSize.width) + 8 + keycapSize.width + 20, height: max(30, keycapSize.height + 8))
+    }
+    override func layout() {
+        super.layout()
+        guard let returnHint else { return }
+        let size = keycapSize, groupWidth = labelSize.width + 8 + size.width
+        returnHint.frame = CGRect(x: bounds.midX + groupWidth / 2 - size.width,
+                                  y: bounds.midY - size.height / 2, width: size.width, height: size.height)
+    }
     private var hoverTracking: NSTrackingArea?
     private var hovered = false
     override var acceptsFirstResponder: Bool { isEnabled }
@@ -16,6 +45,7 @@ final class ScreenshotToolbarButton: NSButton {
                     .font: font ?? NSFont.systemFont(ofSize: 13)
                 ])
             }
+            returnHint?.alphaValue = isEnabled ? 1 : 0.45
             needsDisplay = true
         }
     }
@@ -62,7 +92,11 @@ final class ScreenshotToolbarButton: NSButton {
             symbol.draw(in: rect, from: .zero, operation: .sourceOver,
                         fraction: 1, respectFlipped: true, hints: nil)
         }
-        if !title.isEmpty {
+        if showsReturnKeycap {
+            let size = labelSize, groupWidth = size.width + 8 + keycapSize.width
+            (title as NSString).draw(at: CGPoint(x: bounds.midX - groupWidth / 2, y: bounds.midY - size.height / 2),
+                                    withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 13), .foregroundColor: foreground])
+        } else if !title.isEmpty {
             let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
             (title as NSString).draw(in: cell.titleRect(forBounds: bounds), withAttributes: [
                 .font: font ?? NSFont.systemFont(ofSize: 13), .foregroundColor: foreground,
@@ -76,3 +110,10 @@ final class ScreenshotToolbarButton: NSButton {
     override var focusRingMaskBounds: NSRect { bounds }
 }
 
+
+/// The keycap is a hint within the button's single hit/focus area.
+@MainActor
+private final class ScreenshotKeycapHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var acceptsFirstResponder: Bool { false }
+}

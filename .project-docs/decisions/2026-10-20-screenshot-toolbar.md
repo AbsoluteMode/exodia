@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user requested highlighting Enter within Copy and exit, suggesting a square keycap or vertical separator, and centering it.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user removed Select/crop, Highlighter, Spotlight, Copy text, Pin above windows and Output size, retaining initial area selection, Arrow, Shape, Pen, Text, Blur, Numbered steps, Share and the existing finish/edit actions.
     confirmed_at: 2026-10-21
   - type: user-confirmed
@@ -196,6 +199,15 @@ foreground application through ScreenshotCaptureEnvironment. They still post
 unchanged-display and Space-change events explicitly, verifying the real
 cancellation handlers while avoiding interference with the user's desktop.
 Production defaults retain the system centers and previous-app focus behavior.
+
+# Return-key presentation revision
+
+Copy & exit keeps one native button and one click/focus target. Its Return
+symbol uses the shared HotkeyHintView keycap style in a click-through hosting
+view, separated from the label by an 8-point gap. Center the label/keycap group
+horizontally and both elements vertically; disabled state dims the hint with
+the button. This distinguishes the finish shortcut without adding a second
+action or changing Return behavior.
 
 # Consequences
 

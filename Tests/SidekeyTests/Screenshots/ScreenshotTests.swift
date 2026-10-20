@@ -374,7 +374,7 @@ final class ScreenshotTests: XCTestCase {
         let mode = try XCTUnwrap(settings.compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles.contains("Text and numbers") })
         XCTAssertEqual(mode.titleOfSelectedItem, "Text and numbers")
         XCTAssertEqual(mode.itemTitles, ["Text and numbers", "Entire area"])
-        let copy = try XCTUnwrap(buttons.first { $0.title == "Copy & exit  ↩" })
+        let copy = try XCTUnwrap(buttons.first { $0.title == "Copy & exit" })
         XCTAssertEqual(copy.accessibilityLabel(), "Copy screenshot and exit")
         let download = try XCTUnwrap(buttons.first { $0.toolTip?.hasPrefix("Download to Downloads") == true })
         var copyRequests = 0

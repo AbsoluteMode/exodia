@@ -31,7 +31,10 @@ with the visible **Copy & exit ↩** action or Enter.
   retaining order, full hit areas and every command. Why: exposing more tools
   must not hide Copy or clip controls on smaller displays.
 - Enter and the copy button both copy the selected area and exit. The button
-  names the outcome and shows ↩. No passive instruction strip remains; errors,
+  names the outcome and shows ↩ in its own square keycap via HotkeyHintView.
+  Center the label/keycap group and both elements vertically; the hint passes
+  clicks through to the same button. Why: the user asked to distinguish and
+  center Enter. No passive instruction strip remains; errors,
   processing and download results still appear when relevant. There is no
   full-display Enter/double-click mode. Why: the user wants area capture only.
 - Cmd-Z / Shift-Cmd-Z undo/redo edits from both panels;

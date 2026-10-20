@@ -900,7 +900,9 @@ Guide: `docs/backup.md`. WHY:
 Screenshot is an action tool in hover search/Toolbox with an optional named
 hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
 then shows a frozen selection canvas and a wrapping native toolbar exposing all
-commands, Copy & exit ↩ and Download. Color/width and other contextual controls
+commands, Copy & exit with a centered Return keycap, and Download. The keycap
+uses HotkeyHintView through a click-through hosting view inside the same native
+button; its label and keycap group are centered together. Color/width and other contextual controls
 live in a separate adjacent ScreenshotToolSettings panel. Capture requests the
 filter's full Retina pixel dimensions with best resolution; PNG export keeps
 those pixels without resizing. Repeated activation

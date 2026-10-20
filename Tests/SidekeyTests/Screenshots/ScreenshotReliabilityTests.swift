@@ -148,7 +148,7 @@ final class ScreenshotReliabilityTests: XCTestCase {
 
     func testButtonsShowHoverAndPressedFeedbackAndSuppressDisabledHover() throws {
         _ = NSApplication.shared
-        let button = ScreenshotToolbarButton(title: "Copy & exit  ↩", target: nil, action: nil)
+        let button = ScreenshotToolbarButton(title: "Copy & exit", target: nil, action: nil)
         button.bezelStyle = .inline; button.isBordered = false
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 160, height: 32), styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false; window.contentView = button
@@ -176,13 +176,18 @@ final class ScreenshotReliabilityTests: XCTestCase {
 
     func testPrimaryCopyButtonKeepsAccentInNonKeyWindowInBothAppearances() throws {
         _ = NSApplication.shared
-        let button = ScreenshotToolbarButton(title: "Copy & exit  ↩", target: nil, action: nil)
-        button.isPrimaryAction = true
+        let button = ScreenshotToolbarButton(title: "Copy & exit", target: nil, action: nil)
+        button.isPrimaryAction = true; button.showsReturnKeycap = true
         let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 160, height: 32), styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false; window.contentView = button
         defer { window.contentView = nil; window.close() }
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             window.appearance = NSAppearance(named: appearance)
+            button.layoutSubtreeIfNeeded()
+            let hint = try XCTUnwrap(button.subviews.first { $0.identifier?.rawValue == "screenshot.return-keycap" })
+            XCTAssertEqual(hint.frame.midY, button.bounds.midY, accuracy: 0.5)
+            XCTAssertTrue(button.bounds.contains(hint.frame))
+            XCTAssertNil(hint.hitTest(CGPoint(x: hint.bounds.midX, y: hint.bounds.midY)), "The keycap must preserve the button's full click area")
             let bitmap = try XCTUnwrap(button.bitmapImageRepForCachingDisplay(in: button.bounds))
             button.cacheDisplay(in: button.bounds, to: bitmap)
             let color = try XCTUnwrap(bitmap.colorAt(x: Int(4 * CGFloat(bitmap.pixelsWide) / button.bounds.width), y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))

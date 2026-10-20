@@ -27,6 +27,7 @@ The main toolbar exposes Arrow, Shape, Pen, Text, **Blur**, Numbered steps,
 Share, Undo, Redo, **Download**, **Copy & exit ↩**, and Cancel. There is no More
 menu or separate Select/crop control. Initial region selection is still a drag;
 Highlighter, Spotlight, Copy text, Pin above windows and Output size are removed.
+Copy & exit shows Return in a separate centered keycap within the same button.
 Blur is text-only; Download is the downward arrow with a tooltip. On narrower
 displays the toolbar wraps onto more rows.
 Color, width, shape, blur mode and text controls appear in a **separate adjacent

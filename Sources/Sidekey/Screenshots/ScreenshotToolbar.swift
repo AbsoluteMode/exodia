@@ -55,10 +55,12 @@ final class ScreenshotToolbar: NSView {
         controls += [undoButton, redoButton, separator()]
         let download = makeButton(symbol: "arrow.down.to.line", help: "Download to Downloads · ⌘S — save PNG and keep editing", action: #selector(command(_:)))
         commands[.download] = download; controls.append(download)
-        let copy = ScreenshotToolbarButton(title: "Copy & exit  ↩", target: self, action: #selector(command(_:)))
+        let copy = ScreenshotToolbarButton(title: "Copy & exit", target: self, action: #selector(command(_:)))
         copy.bezelStyle = .rounded; copy.bezelColor = .controlAccentColor; copy.focusRingType = .exterior
         copy.isPrimaryAction = true; copy.font = .systemFont(ofSize: 13, weight: .semibold)
+        copy.showsReturnKeycap = true
         copy.setAccessibilityLabel("Copy screenshot and exit"); copy.toolTip = "Copy screenshot and close editor · Enter / Return / ⌘C"
+        copy.setAccessibilityHelp(copy.toolTip)
         commands[.copy] = copy; controls.append(copy)
         let cancel = makeButton(symbol: "xmark", help: "Cancel capture · Esc — close without copying", action: #selector(command(_:)))
         commands[.cancel] = cancel; controls.append(cancel)
