@@ -4,9 +4,14 @@ Find **Screenshot** in the island's **Search all tools**, or add it from
 Settings → Toolbox. Settings → Hotkeys → Tools can assign its optional named
 shortcut. Existing layouts and shortcuts are preserved.
 
-Whytap requests macOS Screen Recording access only when invoked. Enable it in
-System Settings → Privacy & Security → Screen & System Audio Recording.
-Follow macOS's reopen instruction after finishing current work.
+Settings → Permissions → **Screen Recording** shows **Allowed** or **Not allowed**
+for screenshots. Click **Allow** to request access; **Open** returns to its system
+settings when already allowed. A previous denial opens System Settings →
+Privacy & Security → Screen & System Audio Recording. Returning to Whytap or
+clicking Refresh updates the status. Screenshot invocation can also request
+this access; opening Settings or launching Whytap never requests it. It is
+optional for other features. Follow macOS's reopen instruction after finishing
+current work.
 
 Drag an area on a frozen display, or press Return / double-click for the whole display.
 Selection belongs to the display where it starts. The floating toolbar stays

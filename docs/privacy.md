@@ -146,7 +146,9 @@ Cancel and sleep stop capture and cancel requests. See [translation](translation
 
 ## Screenshots
 
-Screenshot capture is explicit and requests macOS Screen Recording permission
+Screenshot capture is explicit. Screen Recording access can be requested from
+the Screenshot tool or its Allow button in Settings → Permissions; refreshing
+the displayed status never requests access. Screenshot capture requests permission
 on invocation. Captures and edit history remain in memory until the user
 copies, saves, pins or chooses a system share destination. Text-and-number
 blur and Copy text use on-device Vision; no provider receives the screenshot.

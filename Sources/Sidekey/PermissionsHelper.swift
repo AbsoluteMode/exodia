@@ -114,6 +114,27 @@ enum PermissionsHelper {
         await AVCaptureDevice.requestAccess(for: .audio)
     }
 
+    /// Passive check for the optional Screenshot tool; never part of launch readiness.
+    static func screenRecordingGranted() -> Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    /// Called only by the explicit Screen Recording button in Settings.
+    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+    static func requestScreenRecording() {
+        if screenRecordingGranted() {
+            openScreenRecordingSettings()
+        } else if !CGRequestScreenCaptureAccess() {
+            // A previous denial cannot show another native prompt.
+            openScreenRecordingSettings()
+        }
+    }
+
+    static func openScreenRecordingSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     /// Opens the Privacy & Security → Accessibility pane of System Settings.
     static func openAccessibilitySettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
