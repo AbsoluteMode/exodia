@@ -219,21 +219,19 @@ private struct MeetingListRow: View {
         HStack(spacing: 10) {
             Image(systemName: "note.text")
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isSelected ? Color.white : MacSettingsTheme.text2)
+                .foregroundStyle(isSelected ? MacSettingsTheme.text : MacSettingsTheme.text2)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.white : MacSettingsTheme.text)
+                    .foregroundStyle(MacSettingsTheme.text)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if item.progressStatus != .ready {
                     Text(item.progressStatus.displayLabel)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(
-                            isSelected
-                                ? Color.white.opacity(0.78)
-                                : (item.progressStatus == .failed ? Color.red : MacSettingsTheme.text2)
+                            isSelected ? MacSettingsTheme.text : (item.progressStatus == .failed ? MacSettingsTheme.red : MacSettingsTheme.text2)
                         )
                         .lineLimit(1)
                 }
@@ -241,7 +239,7 @@ private struct MeetingListRow: View {
             Spacer(minLength: 8)
             Text(item.dateLabel)
                 .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(isSelected ? Color.white.opacity(0.8) : MacSettingsTheme.text3)
+                .foregroundStyle(isSelected ? MacSettingsTheme.text : MacSettingsTheme.text3)
                 .lineLimit(1)
         }
         .padding(.horizontal, 10)

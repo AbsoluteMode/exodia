@@ -639,6 +639,16 @@ centers the menu and enable switch, moving Notification type into the adjacent
 question-mark tooltip/popover. Bindings and saved selections are unchanged.
 WHY: .project-docs/decisions/2026-10-20-compact-selection-menus.md
 
+Settings follows macOS light/dark appearance while open. MacSettingsTheme owns
+dynamic SwiftUI/AppKit colors; the shell uses inset groups and SF Symbol sidebar
+tiles. MacSwitch adapts the supplied glass switch in SwiftUI with click/drag,
+keyboard and native Toggle accessibility, respecting Reduce Motion/Transparency.
+The island keeps its compact blue switch and explicitly dark Toolbox previews.
+UI decisions and verification limits: docs/DESIGN.md.
+API & Models separates function rows; missing setup uses a static orange contour
+and soft glow instead of Not set/triangle status lines. Actual problem text and
+recovery actions remain. Shared settings rows use spaced, full-point dividers.
+
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
 Settings -> API & Models (the agent's model is chosen there too; Settings ->

@@ -25,7 +25,7 @@ struct MacSegmented<Value: Hashable>: View {
                 } label: {
                     Text(item.label)
                         .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(isSel ? Color.white : MacSettingsTheme.text)
+                        .foregroundStyle(MacSettingsTheme.text)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                         .frame(maxWidth: .infinity)

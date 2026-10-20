@@ -116,7 +116,7 @@ struct SettingsOtherView: View {
                             title: "Lower other audio while speaking",
                             subtitle: "Lowers built-in-speaker volume while you record voice, restores after. External outputs (USB/Bluetooth DACs) are never touched."
                         ) {
-                            MacSwitch(isOn: volumeDuckToggleBinding)
+                            MacSwitch(isOn: volumeDuckToggleBinding, label: "Lower other audio while speaking")
                         }
                     }
                 }
@@ -128,14 +128,15 @@ struct SettingsOtherView: View {
                             title: "Meeting Notes",
                             subtitle: "Detect calls, record, and summarize. Off until you turn it on."
                         ) {
-                            MacSwitch(isOn: meetingsToggleBinding)
+                            MacSwitch(isOn: meetingsToggleBinding, label: "Meeting Notes")
                         }
 
+                        MacRowSeparator()
                         MacRow(
                             title: "Google search",
                             subtitle: "Right Option searches your selection on Google."
                         ) {
-                            MacSwitch(isOn: googleToggleBinding)
+                            MacSwitch(isOn: googleToggleBinding, label: "Google search")
                         }
 
                     }
@@ -148,14 +149,9 @@ struct SettingsOtherView: View {
                             title: "Screenshot protection",
                             subtitle: "Hide the island from screenshots and screen shares."
                         ) {
-                            MacSwitch(isOn: screenshotProtectionToggleBinding)
+                            MacSwitch(isOn: screenshotProtectionToggleBinding, label: "Screenshot protection")
                         }
                     }
-                    MacBanner(
-                        tone: .privacy,
-                        systemImage: "lock.shield",
-                        text: "Audio and text are processed on this Mac or sent only to the providers you configure with your own keys."
-                    )
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -165,9 +161,10 @@ struct SettingsOtherView: View {
                             title: "Auto-hide island",
                             subtitle: "Fades into the notch after a while of no use. Hover it or press a hotkey to bring it back."
                         ) {
-                            MacSwitch(isOn: islandAutoHideToggleBinding)
+                            MacSwitch(isOn: islandAutoHideToggleBinding, label: "Auto-hide island")
                         }
 
+                        MacRowSeparator()
                         MacRow(
                             title: "Show island on",
                             subtitle: "Automatic picks the screen with the notch, else your primary display."
