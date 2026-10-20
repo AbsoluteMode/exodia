@@ -9,6 +9,9 @@ canonical_for: [provider-key-tiles, direct-llm-providers, automatic-model-catalo
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user rejected the technical Keychain helper and requested only Save/Remove, no extra text, and a small Key accepted or Key not accepted notification.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user requested square provider tiles that expand into API-key forms, checking that each key works, direct OpenAI and Anthropic LLM support without restricting setup by feature, and removal of Refresh models and Other model ID from the model picker.
     confirmed_at: 2026-10-21
   - type: repository
@@ -42,10 +45,20 @@ form and asked for ordinary OpenAI and Anthropic LLM connections.
 
 Show all built-in providers plus a custom-server square and saved servers.
 Clicking a tile opens a full-width form below its grid row. One form is open;
-Cancel, Escape or repeating the tile closes it. The grid uses 2/3/4 columns
+Escape or repeating the tile closes it. The grid uses 2/3/4 columns
 according to available width and never recreates the form on resize.
 
-Check & save validates first. Invalid, out-of-credit and unreachable checks
+Save validates first. As amended later on 2026-10-21, the form has only the key
+field and Save/Remove (plus required name/URL fields for custom servers). It has
+no helper, persistent form-status/error copy, Check now, Cancel or extra removal
+confirmation. Remove is disabled until there is a saved connection. Inline Save
+does not open a model-assignment proposal; a panel-level noninteractive notice
+shows only Key accepted / Key not accepted for 2.5 seconds, including after the
+custom-server form closes. Repeated results restart its lifetime. Models/API hints also route add-key actions to this same minimal surface.
+Legacy add-key model methods retain their existing assignment defaults for
+callers outside this form.
+
+Invalid, out-of-credit and unreachable checks
 keep the previous key and form. Scoped speech keys retain their explicit
 limited status. OpenAI requires model-list access before its new key is saved.
 Key checking authenticates a provider request; it does not guarantee credit or

@@ -93,6 +93,13 @@ final class APIAndModelsRenderTests: XCTestCase {
                 }
             }
         }
+        for dark in [false, true] {
+            for accepted in [false, true] {
+                try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
+                    initialSection: .keys, initialKeyResult: accepted), size: NSSize(width: 600, height: 700), dark: dark,
+                    to: directory.appendingPathComponent("key-notice-\(accepted ? "accepted" : "rejected")-\(dark ? "dark" : "light").png"))
+            }
+        }
         // Costs use a temporary journal and synthetic provider metadata only.
         let usageURL = directory.appendingPathComponent("fixture-usage.sqlite")
         try? FileManager.default.removeItem(at: usageURL)

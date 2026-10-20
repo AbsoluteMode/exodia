@@ -365,7 +365,8 @@ closes. Opening the picker automatically refreshes stale or failed catalogs;
 cached results remain available offline. There are no Refresh models or Other
 model ID actions. Search and refresh keep the current route until an explicit
 verified pick. API keys shows all providers as square tiles; clicking a tile
-opens its inline Check & save form. Failed or unreachable checks preserve the
+opens its inline form with only Save and Remove. Validation stays automatic;
+the only result message is a brief Key accepted / Key not accepted notice. Failed or unreachable checks preserve the
 previous key and keep the form open. OpenAI and Anthropic are available to all
 LLM routes with their own provider keys.
 Подписей real-time, recorded и LLM with tools в списке нет. Функции: Drop Fast,

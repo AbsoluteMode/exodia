@@ -167,6 +167,28 @@ final class APIAndModelsViewModelTests: XCTestCase {
         vm.rows.first { $0.feature == feature }
     }
 
+    func test_inline_first_key_save_checks_without_proposing_or_assigning_models() async throws {
+        let env = try makeEnv(snapshots: [.openAI: fresh([CatalogModel(id: "text-model", uses: [.chat])])])
+        let vm = env.makeViewModel()
+        let failure = await vm.replaceKey("new-inline-key", for: .openAI)
+        XCTAssertNil(failure)
+        XCTAssertEqual(env.lookup(.openAI), .key("new-inline-key"))
+        XCTAssertEqual(env.checker.calls.map(\.account), [.openAI])
+        XCTAssertNil(vm.proposal)
+        XCTAssertTrue(AIFeature.allCases.allSatisfy { env.routing.route(for: $0) == nil })
+    }
+
+    func test_inline_server_save_can_skip_the_model_proposal() async throws {
+        let fetcher = SequencedFetcher([.success([CatalogModel(id: "text-model", uses: [.chat])])])
+        let env = try makeEnv(fetcher: fetcher)
+        let vm = env.makeViewModel()
+        let failure = await vm.addServer(name: "My server", baseURL: "http://localhost:8000/v1", key: "inline-key", proposeModels: false)
+        XCTAssertNil(failure)
+        XCTAssertEqual(env.routing.state.servers.count, 1)
+        XCTAssertNil(vm.proposal)
+        XCTAssertTrue(AIFeature.allCases.allSatisfy { env.routing.route(for: $0) == nil })
+    }
+
     // MARK: - Chips
 
     func test_opening_picker_uses_fresh_cache_without_requests_or_model_probes() async throws {
