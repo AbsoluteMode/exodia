@@ -63,7 +63,10 @@ to be committed; failure leaves the audio staged for recovery. Launch recovery
 processes parts in chronological order and never skips an unfinished continuation
 merely because the original note exists. Wake recovery excludes a live recording
 and its suspended start. An interrupted continuation retains its association;
-recovery discovers its flushed WAV chunks.
+recovery discovers its flushed WAV chunks and derives the part's end from its
+start and recovered audio duration. A recovery pass re-reads a manifest after
+waiting, so a final Stop snapshot supersedes an earlier partial snapshot,
+including the pinned language.
 
 The store commits metadata, an idempotency receipt and a complete note/transcript
 snapshot in one SQLite transaction. Canonical sidecars are materialized after

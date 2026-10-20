@@ -772,6 +772,46 @@ final class MeetingsCoordinatorTests: XCTestCase {
         }
     }
 
+    func test_recovery_uses_latest_manifest_after_an_earlier_part_finishes() async throws {
+        for finalizeDuringRecovery in [false, true] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let firstId = UUID(), secondId = UUID()
+            let manifests = MeetingFinalizeManifestStore()
+            func stage(_ id: UUID, start: Double, final: Bool) throws -> MeetingFinalizeManifest {
+                let dir = root.appendingPathComponent(id.uuidString)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try Data(repeating: 1, count: 32000).write(to: dir.appendingPathComponent("chunk-000.wav"))
+                let manifest = MeetingFinalizeManifest(recorderMeetingId: id,
+                    startedAt: Date(timeIntervalSince1970: start), endedAt: Date(timeIntervalSince1970: start),
+                    durationSeconds: final ? 1 : 0, language: "en", chunkFileNames: ["chunk-000.wav"], isFinal: final)
+                try manifests.write(manifest, to: dir)
+                return manifest
+            }
+            _ = try stage(firstId, start: 1000, final: true)
+            _ = try stage(secondId, start: 1100, final: false)
+            let processor = RecordingMeetingDirectProcessor(active: true)
+            processor.onProcess = { event in
+                if finalizeDuringRecovery && event.meetingId == firstId {
+                    let finalized = MeetingFinalizeManifest(recorderMeetingId: secondId,
+                        startedAt: Date(timeIntervalSince1970: 1100), endedAt: Date(timeIntervalSince1970: 1101),
+                        durationSeconds: 1, language: "ru", chunkFileNames: ["chunk-000.wav"], isFinal: true)
+                    try? manifests.write(finalized, to: root.appendingPathComponent(secondId.uuidString))
+                }
+            }
+            let coordinator = MeetingsCoordinator(config: MeetingsConfig(defaults: testDefaults),
+                detector: StubMeetingDetector(), stagingRoot: { root }, directProcessor: processor,
+                meetingsEnabled: { true })
+            await coordinator.recoverFinalizeManifestsOnLaunch()
+            XCTAssertEqual(processor.calls.map(\.meetingId), [firstId, secondId])
+            XCTAssertEqual(processor.calls.last?.language, finalizeDuringRecovery ? "ru" : "en",
+                "Stop's final language supersedes the startup snapshot")
+            XCTAssertEqual(processor.calls.last?.endedAt, Date(timeIntervalSince1970: 1101),
+                "A recovered partial recording must include its recorded duration in the end time")
+        }
+    }
+
     func test_duplicate_finalize_does_not_reset_edited_metadata_or_call_processor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -2202,6 +2242,7 @@ private final class RecordingMeetingDirectProcessor: MeetingDirectProcessing {
         let storeProvided: Bool
         let chunkURLs: [URL]
         let reason: MeetingRecorderStopReason
+        let endedAt: Date?
         let continuation: MeetingContinuation?
     }
 
@@ -2238,7 +2279,7 @@ private final class RecordingMeetingDirectProcessor: MeetingDirectProcessing {
             language: language,
             storeProvided: meetingsStore != nil,
             chunkURLs: event.chunkURLs,
-            reason: event.reason, continuation: continuation
+            reason: event.reason, endedAt: endedAt, continuation: continuation
         ))
         onProcess?(event)
         if delaySeconds > 0 {

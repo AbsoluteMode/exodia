@@ -1306,13 +1306,19 @@ final class MeetingsCoordinator {
             entries.count
         )
 
-        for entry in entries.sorted(by: { $0.manifest.startedAt < $1.manifest.startedAt }) {
+        for scannedEntry in entries.sorted(by: { $0.manifest.startedAt < $1.manifest.startedAt }) {
+            var entry = scannedEntry
             let dir = entry.dir
             // Wake recovery must never consume or clean a live recorder's
             // partial continuation manifest, including its suspended start.
             if entry.manifest.recorderMeetingId == activeRecorder?.meetingId
                 || entry.manifest.recorderMeetingId == activeReconnect?.recordingId { continue }
             if let task = processingTasks[entry.manifest.recorderMeetingId] { await task.value }
+            // Earlier work can suspend this pass while Stop replaces a partial
+            // manifest. Preserve the final chunk list, language and end time.
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent(MeetingFinalizeManifest.fileName)),
+                  let latest = try? JSONDecoder().decode(MeetingFinalizeManifest.self, from: data) else { continue }
+            entry = MeetingFinalizeManifestStore.Entry(dir: dir, manifest: latest)
             // A meeting that already reached the store (note on disk) needs no
             // re-processing, and its staged recording is the leftover of a run
             // that stopped after the insert: release it and move on.
@@ -1346,7 +1352,8 @@ final class MeetingsCoordinator {
             await dispatchFinalizedForProcessing(
                 event: event,
                 startedAt: entry.manifest.startedAt,
-                endedAt: entry.manifest.endedAt,
+                endedAt: entry.manifest.isFinal ? entry.manifest.endedAt
+                    : entry.manifest.startedAt.addingTimeInterval(event.totalDurationSeconds),
                 reconnectMarkers: entry.manifest.reconnectMarkers ?? [],
                 language: entry.manifest.language, continuation: entry.manifest.continuation
             )
