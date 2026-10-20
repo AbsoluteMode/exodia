@@ -33,6 +33,103 @@ final class ArtifactBackupCoverageTests: XCTestCase {
 
     // MARK: - Owned Notify and Monitor bytes
 
+    private let cacheTag = "Signature: 8a477f597d28d172789f06886806bc55\n# Rebuildable worker dependencies\n"
+
+    func testTaggedPythonEnvironmentDoesNotBlockBackupAndWorkingFilesRoundTrip() async throws {
+        let source = try profile(), target = try profile()
+        let worker = source.locations.notifyRoot.appendingPathComponent("workers/example")
+        let environment = worker.appendingPathComponent("venv")
+        try source.write("print('worker')", to: worker.appendingPathComponent("main.py"))
+        try source.write("{\"cursor\":42}", to: worker.appendingPathComponent("state.json"))
+        try source.write(cacheTag, to: environment.appendingPathComponent("CACHEDIR.TAG"))
+        try source.write("generated", to: environment.appendingPathComponent(".lock"))
+        try source.write("generated", to: environment.appendingPathComponent("lib/python/site-packages/pkg/deep/file.py"))
+        try FileManager.default.createDirectory(at: environment.appendingPathComponent("bin"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: environment.appendingPathComponent("bin/python").path,
+                                                 withDestinationPath: "/nonexistent/python")
+        let url = archive(in: source), key = ArtifactBackupTestKeys.make()
+        let engine = ArtifactBackupEngine(environment: source.environment())
+        _ = try await engine.createArchive(at: url, key: key, sections: [.workspace])
+        let paths = Set(try manifest(of: url, key: key).entries.map(\.path))
+        XCTAssertTrue(paths.contains("workspace/notify/workers/example/main.py"))
+        XCTAssertTrue(paths.contains("workspace/notify/workers/example/state.json"))
+        XCTAssertFalse(paths.contains { $0.contains("/venv/") })
+        let preview = try await engine.inspectArchive(at: url, key: key)
+        XCTAssertTrue(preview.warnings.contains { $0.contains("1 explicitly tagged cache") })
+        let targetEnvironment = target.environment()
+        try await ArtifactBackupEngine(environment: targetEnvironment)
+            .stageRestore(from: url, key: key, sections: [.workspace])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
+        let restored = target.locations.notifyRoot.appendingPathComponent("workers/example")
+        XCTAssertEqual(target.contents(of: restored.appendingPathComponent("main.py")), "print('worker')")
+        XCTAssertEqual(target.contents(of: restored.appendingPathComponent("state.json")), "{\"cursor\":42}")
+        XCTAssertFalse(target.exists(restored.appendingPathComponent("venv")))
+    }
+
+    func testHiddenTaggedCacheIsRecognizedBeforeArchiveNameValidation() async throws {
+        let source = try profile()
+        let root = source.locations.monitorRoot
+        try source.write("{}", to: root.appendingPathComponent("dashboards/board.json"))
+        try source.write(cacheTag, to: root.appendingPathComponent(".cache/CACHEDIR.TAG"))
+        try source.write("generated", to: root.appendingPathComponent(".cache/.lock"))
+        let url = archive(in: source), key = ArtifactBackupTestKeys.make()
+        _ = try await ArtifactBackupEngine(environment: source.environment())
+            .createArchive(at: url, key: key, sections: [.workspace])
+        let paths = Set(try manifest(of: url, key: key).entries.map(\.path))
+        XCTAssertEqual(paths, ["workspace/monitor/dashboards/board.json"])
+    }
+
+    func testEnvironmentNameOrInvalidCacheTagDoesNotBypassSafetyChecks() async throws {
+        for tag in ["", "Signature: not-a-cache"] {
+            let source = try profile()
+            let environment = source.locations.notifyRoot.appendingPathComponent("venv")
+            try source.write("unknown data", to: environment.appendingPathComponent(".lock"))
+            if !tag.isEmpty { try source.write(tag, to: environment.appendingPathComponent("CACHEDIR.TAG")) }
+            do {
+                _ = try await ArtifactBackupEngine(environment: source.environment())
+                    .createArchive(at: archive(in: source), key: ArtifactBackupTestKeys.make(), sections: [.workspace])
+                XCTFail("An untagged directory must not be silently omitted")
+            } catch { XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Notifications/venv/.lock")) }
+        }
+    }
+
+    func testSymlinkedCacheTagCannotExcludeWorkingFiles() async throws {
+        let source = try profile()
+        let tag = source.root.appendingPathComponent("real-tag")
+        try source.write(cacheTag, to: tag)
+        let worker = source.locations.notifyRoot.appendingPathComponent("workers/example")
+        try source.write("owned", to: worker.appendingPathComponent("main.py"))
+        try FileManager.default.createSymbolicLink(atPath: worker.appendingPathComponent("CACHEDIR.TAG").path,
+                                                 withDestinationPath: tag.path)
+        do {
+            _ = try await ArtifactBackupEngine(environment: source.environment())
+                .createArchive(at: archive(in: source), key: ArtifactBackupTestKeys.make(), sections: [.workspace])
+            XCTFail("A linked tag must not make a directory disappear")
+        } catch { XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Notifications/workers/example/CACHEDIR.TAG")) }
+    }
+
+    func testChangeProbeIgnoresTaggedCacheChurnButTracksWorkingFiles() throws {
+        let source = try profile()
+        let root = source.locations.notifyRoot
+        try source.write("script", to: root.appendingPathComponent("main.py"))
+        try source.write(cacheTag, to: root.appendingPathComponent("venv/CACHEDIR.TAG"))
+        try source.write("old", to: root.appendingPathComponent("venv/.lock"))
+        let before = BackupChangeProbe.stamp(locations: source.locations)
+        try source.write("new cache content", to: root.appendingPathComponent("venv/.lock"))
+        try source.write("new package", to: root.appendingPathComponent("venv/lib/python/pkg.py"))
+        XCTAssertEqual(BackupChangeProbe.stamp(locations: source.locations), before)
+        try source.write("changed script", to: root.appendingPathComponent("main.py"))
+        XCTAssertNotEqual(BackupChangeProbe.stamp(locations: source.locations), before)
+
+        let recording = source.locations.meetingsStaging.appendingPathComponent(UUID().uuidString)
+        try source.write(cacheTag, to: recording.appendingPathComponent("CACHEDIR.TAG"))
+        try source.write("audio", to: recording.appendingPathComponent("chunk-000.wav"))
+        let withRecording = BackupChangeProbe.stamp(locations: source.locations)
+        try source.write("more audio", to: recording.appendingPathComponent("chunk-000.wav"))
+        XCTAssertNotEqual(BackupChangeProbe.stamp(locations: source.locations), withRecording,
+                          "A cache marker must never hide retained recording changes")
+    }
+
     func testNestedWorkerScriptsCursorsAndLargeLogosAreAllIncluded() async throws {
         let source = try profile()
         try source.write("#!/usr/bin/env python3\nprint('hi')",
@@ -64,6 +161,99 @@ final class ArtifactBackupCoverageTests: XCTestCase {
             .appendingPathComponent("logos/big.png")).count, 2 * 1024 * 1024)
     }
 
+    func testBackupAfterRestoreRetainsInertRecordsAndExcludesMultipartUploadBodies() async throws {
+        let source = try profile(), target = try profile(), third = try profile()
+        let meetings = try MeetingsStore(rootDirectory: source.locations.meetingsCatalog)
+        openMeetingStores.append(meetings)
+        let id = UUID().uuidString
+        let recording = source.locations.meetingsStaging.appendingPathComponent(id)
+        let parked = "manifest.json.restored-inactive"
+        try source.write("retained record", to: recording.appendingPathComponent(parked))
+        try source.write("retained audio", to: recording.appendingPathComponent("chunk-000.wav"))
+        let upload = recording.appendingPathComponent("soniox-upload-\(UUID().uuidString).tmp")
+        try source.write("disposable multipart", to: upload)
+        try FileManager.default.setAttributes([.modificationDate: Date.distantPast], ofItemAtPath: upload.path)
+        try source.write("preserved source", to: source.locations.notifyRoot
+            .appendingPathComponent("sources/example.json.restored-invalid"))
+        try source.write("guide", to: source.locations.notifyRoot.appendingPathComponent("sources/README.md"))
+        let key = ArtifactBackupTestKeys.make(), first = archive(in: source)
+        let sourceEngine = ArtifactBackupEngine(environment: source.environment(meetings: meetings))
+        _ = try await sourceEngine.createArchive(at: first, key: key, sections: [.workspace, .meetings])
+        let entries = try manifest(of: first, key: key).entries
+        XCTAssertFalse(entries.contains { $0.path.contains("soniox-upload-") })
+        for entry in entries { XCTAssertNoThrow(try ArtifactRestoreDestination.resolve(entry.path, in: target.locations)) }
+        let targetEnvironment = target.environment()
+        try await ArtifactBackupEngine(environment: targetEnvironment)
+            .stageRestore(from: first, key: key, sections: [.workspace, .meetings])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
+
+        let targetMeetings = try MeetingsStore(rootDirectory: target.locations.meetingsCatalog)
+        openMeetingStores.append(targetMeetings)
+        let second = archive(in: target)
+        let targetEngine = ArtifactBackupEngine(environment: target.environment(meetings: targetMeetings))
+        _ = try await targetEngine.createArchive(at: second, key: key, sections: [.workspace, .meetings])
+        _ = try await targetEngine.inspectArchive(at: second, key: key)
+        let thirdEnvironment = third.environment()
+        try await ArtifactBackupEngine(environment: thirdEnvironment)
+            .stageRestore(from: second, key: key, sections: [.workspace, .meetings])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: thirdEnvironment)
+        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/\(parked)")), "retained record")
+        XCTAssertFalse(third.exists(third.locations.meetingsStaging.appendingPathComponent("\(id)/manifest.json")))
+        XCTAssertEqual(third.contents(of: third.locations.notifyRoot
+            .appendingPathComponent("sources/example.json.restored-invalid")), "preserved source")
+    }
+
+    func testActiveAndEarlierInactiveConfigurationsBothSurviveRecovery() async throws {
+        let source = try profile(), target = try profile()
+        try source.write("active servers", to: source.locations.monitorRoot.appendingPathComponent("servers.json"))
+        try source.write("earlier servers", to: source.locations.monitorRoot.appendingPathComponent("servers.json.restored-inactive"))
+        try source.write("unreadable new source", to: source.locations.notifyRoot.appendingPathComponent("sources/example.json"))
+        try source.write("earlier source", to: source.locations.notifyRoot.appendingPathComponent("sources/example.json.restored-invalid"))
+        let key = ArtifactBackupTestKeys.make(), file = archive(in: source)
+        let engine = ArtifactBackupEngine(environment: source.environment())
+        _ = try await engine.createArchive(at: file, key: key, sections: [.workspace])
+        _ = try await engine.inspectArchive(at: file, key: key)
+        let environment = target.environment()
+        try await ArtifactBackupEngine(environment: environment).stageRestore(from: file, key: key, sections: [.workspace])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
+        XCTAssertEqual(target.contents(of: target.locations.monitorRoot.appendingPathComponent("servers.json.restored-inactive")), "active servers")
+        XCTAssertEqual(target.contents(of: target.locations.notifyRoot.appendingPathComponent("sources/example.json.restored-invalid")), "unreadable new source")
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: target.locations.bundleRoot,
+            includingPropertiesForKeys: [.isRegularFileKey]))
+        var retained: [String] = []
+        for case let url as URL in enumerator where url.path.contains("/restored-files-") {
+            if let value = target.contents(of: url) { retained.append(value) }
+        }
+        XCTAssertTrue(retained.contains("earlier servers"))
+        XCTAssertTrue(retained.contains("earlier source"))
+        XCTAssertFalse(target.exists(target.locations.monitorRoot.appendingPathComponent("servers.json")))
+        XCTAssertFalse(target.exists(target.locations.notifyRoot.appendingPathComponent("sources/example.json")))
+    }
+
+    func testLegacyArchiveWithActiveAndInactiveConfigurationPreservesBoth() async throws {
+        let target = try profile(), key = ArtifactBackupTestKeys.make(), file = archive(in: target)
+        _ = try ArtifactBackupTestArchive.make(at: file, key: key, entries: [
+            ("workspace/monitor/servers.json", .workspace, Data("current".utf8)),
+            ("workspace/monitor/servers.json.restored-inactive", .workspace, Data("previous".utf8)),
+            ("workspace/notify/sources/demo.json", .workspace, Data("unreadable current".utf8)),
+            ("workspace/notify/sources/demo.json.restored-invalid", .workspace, Data("previous source".utf8))
+        ], schema: 2)
+        let environment = target.environment()
+        let engine = ArtifactBackupEngine(environment: environment)
+        _ = try await engine.inspectArchive(at: file, key: key)
+        try await engine.stageRestore(from: file, key: key, sections: [.workspace])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
+        XCTAssertEqual(target.contents(of: target.locations.monitorRoot.appendingPathComponent("servers.json.restored-inactive")), "current")
+        XCTAssertEqual(target.contents(of: target.locations.notifyRoot.appendingPathComponent("sources/demo.json.restored-invalid")), "unreadable current")
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: target.locations.bundleRoot, includingPropertiesForKeys: nil))
+        var previous: [String] = []
+        for case let url as URL in enumerator where url.path.contains("/restored-files-") {
+            if let value = target.contents(of: url) { previous.append(value) }
+        }
+        XCTAssertTrue(previous.contains("previous"))
+        XCTAssertTrue(previous.contains("previous source"))
+    }
+
     func testFinderMetadataIsSkippedButAnyOtherHiddenEntryIsReported() async throws {
         let source = try profile()
         try source.write("logo", to: source.locations.notifyRoot.appendingPathComponent("logos/a.png"))
@@ -84,7 +274,7 @@ final class ArtifactBackupCoverageTests: XCTestCase {
                 .createArchive(at: archive(in: source), key: key, sections: [.workspace])
             XCTFail("expected an explicit failure")
         } catch {
-            XCTAssertEqual(error as? ArtifactBackupError, .unsafeContent)
+            XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Notifications/.env"))
         }
     }
 
@@ -136,7 +326,7 @@ final class ArtifactBackupCoverageTests: XCTestCase {
                                sections: [.workspace])
             XCTFail("expected an unsafe-content failure")
         } catch {
-            XCTAssertEqual(error as? ArtifactBackupError, .unsafeContent)
+            XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Notifications/logos/link.png"))
         }
     }
 
@@ -155,7 +345,7 @@ final class ArtifactBackupCoverageTests: XCTestCase {
                                sections: [.workspace])
             XCTFail("expected an unsafe-content failure")
         } catch {
-            XCTAssertEqual(error as? ArtifactBackupError, .unsafeContent)
+            XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Monitor"))
         }
     }
 

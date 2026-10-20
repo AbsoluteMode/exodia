@@ -40,7 +40,7 @@ struct ArtifactBackupPreview: Equatable {
 enum BackupVersionLocation: Equatable { case local, folder, github, localAndFolder, localAndGitHub }
 
 enum BackupSyncState: Equatable {
-    case disconnected, checking, notCreated, waiting, syncing, synced, paused, needsAttention, restoring, restoreReady
+    case disconnected, checking, notCreated, waiting, syncing, synced, paused, needsAttention, restoring, restoreReady, recoveryCodeNeeded
 
     var title: String {
         switch self {
@@ -54,6 +54,7 @@ enum BackupSyncState: Equatable {
         case .needsAttention: return "Backup needs attention"
         case .restoring: return "Restoring backup…"
         case .restoreReady: return "Restore is ready"
+        case .recoveryCodeNeeded: return "Save your recovery code"
         }
     }
 

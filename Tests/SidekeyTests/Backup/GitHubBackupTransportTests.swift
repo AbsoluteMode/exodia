@@ -18,6 +18,26 @@ final class GitHubBackupTransportTests: XCTestCase {
         json(["name": "Exodia-Backup", "private": isPrivate, "permissions": ["push": true]])
     }
 
+    func testRateLimitedForbiddenResponsesCarryTheirRetryDeadline() async throws {
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        let deadline = Date().addingTimeInterval(3_600)
+        for headers in [["Retry-After": "3600"],
+                        ["X-RateLimit-Remaining": "0", "X-RateLimit-Reset": String(deadline.timeIntervalSince1970)]] {
+            StubURLProtocol.handler = { _ in (403, headers, Data()) }
+            do { try await transport.checkConnection(); XCTFail("Expected rate limit") }
+            catch {
+                guard case .rateLimited(let until) = error as? GitHubBackupTransport.Failure else {
+                    XCTFail("Unexpected failure: \(error)"); continue
+                }
+                XCTAssertGreaterThanOrEqual(until.timeIntervalSince(deadline), -1)
+                XCTAssertFalse((error as? GitHubBackupTransport.Failure)!.requiresReconnect)
+            }
+        }
+        StubURLProtocol.handler = { _ in (403, [:], Data()) }
+        do { try await transport.checkConnection(); XCTFail("Expected permission failure") }
+        catch { XCTAssertEqual(error as? GitHubBackupTransport.Failure, .permission) }
+    }
+
     func testExplicitDeletionWorksForPublicRepositoryAndIncludesDraftsButKeepsUnrelatedReleases() async throws {
         let kept = UUID(), old = UUID(), draft = UUID()
         func release(_ id: Int, _ tag: String, _ marker: String, draft: Bool = false) -> [String: Any] {

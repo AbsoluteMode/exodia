@@ -21,6 +21,7 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
     case truncated
     case tooLarge
     case unsafeContent
+    case unsupportedFile(String)
     case readFailed
     case writeFailed
     case busy
@@ -52,7 +53,9 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
         case .tooLarge:
             return "This backup is larger than Whytap can process."
         case .unsafeContent:
-            return "This backup contains a file path Whytap will not write. Nothing has been restored."
+            return "A file path did not pass Whytap's safety checks. Your current data and previous backups are kept."
+        case .unsupportedFile(let path):
+            return "The file “\(path)” uses a name or link this backup format cannot restore. Your current data and previous backups are kept."
         case .readFailed:
             return "Whytap could not read all the files it needs. Check the disk and try again."
         case .writeFailed:
@@ -92,7 +95,9 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
 /// Logical, section-scoped entry paths. The restore side maps every path
 /// explicitly; anything it does not recognise is refused rather than written.
 struct ArtifactBackupManifest: Codable, Equatable, Sendable {
-    static let currentSchema = 2
+    // Schema 3 includes retained inactive-record names. Older applications must
+    // request an update instead of rejecting a backup as an unsafe path.
+    static let currentSchema = 3
     static let maxBytes = 16 * 1024 * 1024
     static let maxEntries = 200_000
     static let maxEntryBytes: Int64 = 8 * 1024 * 1024 * 1024
