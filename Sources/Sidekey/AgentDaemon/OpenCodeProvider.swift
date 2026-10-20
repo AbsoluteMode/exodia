@@ -152,7 +152,9 @@ final class OpenCodeProvider: CLIProvider {
             if options.allowActions { args.append("--auto") }
             continuation.yield(.started(turnId: UUID().uuidString, requestId: "", sessionId: resumeSessionID ?? ""))
             var mapper = OpenCodeEventMapper(provider: provider)
+            let meter = AIUsageAgentMeter(account: provider == .anthropic ? .anthropic : .openRouter, model: model)
             let handle = runStreaming(binary, args, workingDir, env, prompt, { [weak self] line in
+                meter.consume(line)
                 let events = mapper.map(line: line)
                 if let self, let id = mapper.sessionID {
                     self.sessionLock.withLock {
@@ -161,6 +163,7 @@ final class OpenCodeProvider: CLIProvider {
                 }
                 events.forEach { continuation.yield($0) }
             }, { code in
+                meter.finish(interrupted: code != 0 || mapper.failed)
                 if code != 0 && !mapper.failed {
                     continuation.yield(.error(code: "opencode_exit", message: "OpenCode stopped before completing the request. Check your model and \(provider.displayName) key, then retry.", retryable: true))
                 } else if code == 0 && !mapper.failed {

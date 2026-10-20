@@ -1,5 +1,46 @@
 # Interface decisions
 
+## Screenshot editor polish — 2026-10-20
+
+The person comes to mark a screenshot and copy or download it quickly. First
+they see their crop and a single toolbar row. Next they choose a tool, adjust
+its settings beside it, and finish with Copy/Return or Download.
+
+- Tools, contextual controls and export actions share a 42 pt horizontal row.
+  Why: the user explicitly rejected settings on a second row. Keep system
+  typography, adaptive popover material and semantic accent/label colors.
+  Selected tools retain label-color text on an accent wash; accent-blue text
+  on that wash had insufficient contrast in the native dark snapshot.
+- Show only settings relevant to the active tool. Color/width use existing
+  per-tool preferences; the label field is 160 pt. Why: the screenshot is the
+  workspace, and tool configuration should stay nearby without a permanent form.
+- Copy remains the accented primary action. Download has a downward arrow and
+  explicit text, writes directly to Downloads and keeps the editor open with
+  its actual filename. Why: file destination and success must be visible without
+  a Save dialog or interpreting a Share symbol. Name collisions never overwrite.
+- Return/keypad Enter copies and closes after selection; during Blur the command
+  waits for the completed patch; during Download it waits for the file. Without a crop it copies the whole display and closes in one action.
+  Return in the label field also copies/closes. Typing is preparation;
+  click the screenshot to place the label first. The placeholder/help explicitly
+  say that an unplaced label is discarded, keeping the requested one-Return finish. Failed processing stays open.
+- No entrance, resize or tool-switch animation delays input; reduced motion uses
+  the same immediate behavior. Busy state disables mutating/export controls and
+  reports processing; Escape stays available. Copy and Download encode off the
+  main thread. Fast Vision regions plus a bounded isolated-glyph atlas avoid accurate
+  OCR’s per-build cold start; dark crops are normalized for detection only.
+  Copy text retains accurate OCR as a separate action.
+- Text masks have 3 px padded, subtly rounded edges; strength follows each text region’s height,
+  rather than the selected area's dimensions or the median of other labels.
+  Overlapping masks apply stronger blur last. Entire area covers every pixel.
+  Why: avoid oversized smears while preserving the existing text/number contract.
+
+Native offscreen fixtures cover the real AppKit toolbar in both appearances,
+all main tool states and 640/768/1024 pt available widths; generated images cover region detection, crop/annotation
+alignment, flattened pixels, unique downloads and keyboard commands. These
+checks do not establish live capture permission, real clipboard delivery, physical
+keyboard focus or perceived smoothness in the installed application. Those remain
+acceptance after the designated builder promotes the reviewed source.
+
 ## Searchable model selection — 2026-10-20
 
 The user comes to choose a model without scrolling a long catalog. First they
@@ -32,6 +73,38 @@ keyboard bounds and IME Return. These checks do not prove physical focus,
 popover dismissal or VoiceOver on the installed app; those remain acceptance.
 The interpretation that a family plus size is the useful search input follows
 the user's example; typo correction and model aliases are outside this change.
+
+## API & Models costs — 2026-10-20
+
+The user chose four tabs in one surface: API keys, Models, Costs, API hints.
+Costs first shows the nearby period, then used features and separate USD/
+ElevenLabs credit totals; model details appear on the feature. Why: compare
+feature expenses without a permanent model-level grid or scattered period control.
+
+- One existing bgCard surface, 14 pt corners, shared underlined tabs and quiet
+  separators. No extra metric cards, chart, entrance or number animation.
+- Period choices are Today, Last 7 days, This month and inclusive Custom dates;
+  local-calendar date labels stay beside the table header. Invalid dates, loading,
+  empty history and a recoverable storage error have explicit states.
+- System typography: 15 pt heading, 13 pt feature/value rows, 11.5 pt secondary
+  labels. Aligned numeric columns use monospaced digits; colors reuse adaptive
+  MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
+  so meaning does not rely on color.
+- Hover opens model details; click pins, keyboard focus opens, Escape closes.
+  A short delayed dismissal permits pointer transfer into the native popover.
+  The model list scrolls at 320 pt while its heading and explanation stay visible.
+  Rows retain their geometry during disclosure; no new motion needs reduction.
+- Historical feature/provider/model snapshots drive expenses. Unknown price is
+  Unavailable, never free; ≈ denotes a calculated estimate and + excluded unknown
+  costs. ElevenLabs credits are never combined with dollars or inferred from a plan.
+
+Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
+long model histories, custom dates, empty/error states and synthetic temporary-store
+usage. Calculated text contrast on the card is 17.01:1 / 6.62:1 for primary/
+secondary text in light appearance and 12.49:1 / 6.84:1 in dark appearance; the
+selected-tab underline uses the primary text color. Physical pointer
+transfer, keyboard/VoiceOver and live provider billing remain shared-app
+acceptance. Tracking starts with this update; earlier history is not inferred.
 
 ## Model disclosure — 2026-10-20
 
