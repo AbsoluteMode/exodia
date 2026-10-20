@@ -64,9 +64,17 @@ protocol BYOKUpstreamSession: AnyObject {
     func sendAudio(_ pcm: Data) async
     func endInput() async
     func close() async
+    func usageSnapshot() async -> BYOKUsageSnapshot?
+}
+
+struct BYOKUsageSnapshot: Sendable {
+    var acceptedAudioBytes: Int?
+    var failed = false
+    var providerReference: String? = nil
 }
 
 extension BYOKUpstreamSession {
+    func usageSnapshot() async -> BYOKUsageSnapshot? { nil }
     /// Default matches the historical behavior: BYOK providers emit whole
     /// words/segments, so segments are joined at word boundaries.
     var finalsJoin: BYOKTranscriptJoin { .wordBoundary }
