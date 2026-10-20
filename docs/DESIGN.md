@@ -58,7 +58,10 @@ feature expenses without a permanent model-level grid or scattered period contro
   costs. ElevenLabs credits are never combined with dollars or inferred from a plan.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
-long model histories and synthetic temporary-store usage. Physical pointer
+long model histories, custom dates, empty/error states and synthetic temporary-store
+usage. Calculated text contrast on the card is 17.01:1 / 6.62:1 for primary/
+secondary text in light appearance and 12.49:1 / 6.84:1 in dark appearance; the
+selected-tab underline uses the primary text color. Physical pointer
 transfer, keyboard/VoiceOver and live provider billing remain shared-app
 acceptance. Tracking starts with this update; earlier history is not inferred.
 

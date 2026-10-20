@@ -4,7 +4,7 @@ enum APIAndModelsSection: String, CaseIterable {
     case keys = "API keys", models = "Models", costs = "Costs", hints = "API hints"
 }
 
-/// The "API keys" and "Models" blocks of the API & Models tab. One model menu
+/// Four sections in one API & Models surface. One model menu
 /// per feature row: a provider is never picked on its own, only through the
 /// model it serves.
 @MainActor
@@ -19,6 +19,7 @@ struct APIAndModelsView: View {
     @State private var section: APIAndModelsSection
     @StateObject private var usage: AIUsageCostsViewModel
     @FocusState private var focusedGroup: String?
+    @FocusState private var focusedSection: APIAndModelsSection?
     /// Bumped by "Show": the scroll reader then finds the features with no model.
     @State private var showUnsetTick = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -128,12 +129,15 @@ struct APIAndModelsView: View {
                         }
                 }
                 .buttonStyle(.plain)
+                .focused($focusedSection, equals: item)
+                .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(focusedSection == item ? MacSettingsTheme.accent : .clear, lineWidth: 1.5) }
                 .accessibilityValue(section == item ? "Selected" : "")
                 .onMoveCommand { direction in
                     let items = APIAndModelsSection.allCases
                     guard let index = items.firstIndex(of: section) else { return }
                     if direction == .right { section = items[(index + 1) % items.count] }
                     if direction == .left { section = items[(index + items.count - 1) % items.count] }
+                    focusedSection = section
                 }
             }
             Spacer(minLength: 0)

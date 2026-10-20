@@ -110,6 +110,15 @@ final class AIUsageTests: XCTestCase {
         }
     }
 
+    func test_agent_cancel_during_child_work_without_tool_event_remains_incomplete() {
+        var events: [AIUsageEvent] = []
+        let meter = AIUsageAgentMeter(account: .openRouter, model: "paid-model", record: { events.append($0) })
+        meter.consume(#"{"type":"step_finish","part":{"id":"parent","cost":0.02}}"#)
+        meter.finish(interrupted: true); meter.finish(interrupted: true)
+        XCTAssertEqual(events.count, 2)
+        XCTAssertEqual(AIUsageTotal(events: events, currency: .usd).text, "≈ $0.02 +")
+    }
+
     func test_agent_missing_pricing_and_early_exit_remain_unknown() {
         var events: [AIUsageEvent] = []
         let meter = AIUsageAgentMeter(account: .openRouter, model: "not-free", record: { events.append($0) })

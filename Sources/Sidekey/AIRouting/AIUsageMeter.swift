@@ -89,10 +89,12 @@ final class AIUsageAgentMeter {
     private var emitted = false
     private var activeStep = false
     private var usedChildAgent = false
+    private var finished = false
     init(account: ProviderAccount, model: String, record: @escaping (AIUsageEvent) -> Void = AIUsageRecorder.record) {
         self.context = .init(feature: .agent, account: account, model: model); self.record = record
     }
     func consume(_ line: String) {
+        guard !finished else { return }
         guard let data = line.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         let type = object["type"] as? String
@@ -111,8 +113,10 @@ final class AIUsageAgentMeter {
         emitted = true
         activeStep = false
     }
-    func finish() {
-        guard !emitted || activeStep || usedChildAgent else { return }
+    func finish(interrupted: Bool = false) {
+        guard !finished else { return }
+        finished = true
+        guard interrupted || !emitted || activeStep || usedChildAgent else { return }
         emitted = true
         activeStep = false; usedChildAgent = false
         record(AIUsageEvent(id: "opencode-run:\(runID)", context: context, currency: .usd,

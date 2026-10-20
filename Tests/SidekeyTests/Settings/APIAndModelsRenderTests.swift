@@ -92,6 +92,17 @@ final class APIAndModelsRenderTests: XCTestCase {
         for event in usageEvents { try await usageStore.insert(event) }
         let interval = AIUsagePeriod.month.interval(now: fixtureNow, start: fixtureNow, end: fixtureNow)!
         await usageModel.load(interval)
+        let emptyModel = AIUsageCostsViewModel(store: AIUsageStore(url: directory.appendingPathComponent("empty-usage.sqlite")))
+        await emptyModel.load(interval)
+        let blockedFile = directory.appendingPathComponent("blocked-parent")
+        try Data().write(to: blockedFile)
+        let errorModel = AIUsageCostsViewModel(store: AIUsageStore(url: blockedFile.appendingPathComponent("usage.sqlite")))
+        await errorModel.load(interval)
+        let customModel = AIUsageCostsViewModel(store: usageStore)
+        customModel.period = .custom
+        customModel.start = fixtureNow.addingTimeInterval(-86400 * 5)
+        customModel.end = fixtureNow
+        await customModel.load(AIUsagePeriod.custom.interval(now: fixtureNow, start: customModel.start, end: customModel.end)!)
         for dark in [false, true] {
             for width in [600.0, 900.0] {
                 for section in APIAndModelsSection.allCases {
@@ -99,6 +110,11 @@ final class APIAndModelsRenderTests: XCTestCase {
                         initialSection: section, usageModel: usageModel), size: NSSize(width: width, height: 700), dark: dark,
                         to: directory.appendingPathComponent("sections-\(section)-\(dark ? "dark" : "light")-\(Int(width)).png"))
                 }
+            }
+            for (name, stateModel) in [("empty", emptyModel), ("error", errorModel), ("custom", customModel)] {
+                try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
+                    initialSection: .costs, usageModel: stateModel), size: NSSize(width: 600, height: 700), dark: dark,
+                    to: directory.appendingPathComponent("costs-\(name)-\(dark ? "dark" : "light").png"))
             }
             let manyModels = (0..<20).map { index in
                 AIUsageEvent(createdAt: fixtureNow, context: .init(feature: .agent, account: .openRouter,

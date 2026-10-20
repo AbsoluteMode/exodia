@@ -213,6 +213,7 @@ private struct AIUsageFeatureCostRow: View {
                 .padding(.vertical, 5).contentShape(Rectangle())
             }
             .buttonStyle(.plain).focused($focused)
+            .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(focused ? MacSettingsTheme.accent : .clear, lineWidth: 1.5) }
             .accessibilityLabel("\(row.title), \(row.models.count) models used. Show model costs")
             .onHover { inside in
                 hovered = inside

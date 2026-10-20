@@ -163,7 +163,7 @@ final class OpenCodeProvider: CLIProvider {
                 }
                 events.forEach { continuation.yield($0) }
             }, { code in
-                meter.finish()
+                meter.finish(interrupted: code != 0 || mapper.failed)
                 if code != 0 && !mapper.failed {
                     continuation.yield(.error(code: "opencode_exit", message: "OpenCode stopped before completing the request. Check your model and \(provider.displayName) key, then retry.", retryable: true))
                 } else if code == 0 && !mapper.failed {
