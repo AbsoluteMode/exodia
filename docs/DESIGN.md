@@ -151,6 +151,18 @@ feature expenses without a permanent model-level grid or scattered period contro
   help and model details explain these marks. ElevenLabs credits are never
   combined with dollars or inferred from a plan.
 
+Update 2026-10-21: ElevenLabs feature rows estimate credits using their
+recorded audio time and the matching model's reported credits/minute. The ≈
+mark remains on values; model details show recorded minutes. A separate
+ElevenLabs Reported usage section lists actual workspace charges by API key and
+model for the selected period, with scope visible beside its heading. It includes
+other apps and is never added to feature Total. Refresh retries history/billing;
+permission, key and network errors have useful text. Refresh, period/date and
+calendar actions visibly highlight their full hit area on hover and press,
+outline keyboard focus, and dim while disabled without active hover feedback.
+Feature disclosures retain row hover and explicit press/focus feedback. This preserves the chosen
+table while making its available evidence useful and its scope explicit.
+
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
 long model histories, custom dates, empty/error states and synthetic temporary-store
 usage. Calculated text contrast on the card is 17.01:1 / 6.62:1 for primary/

@@ -2,120 +2,127 @@ import XCTest
 @testable import Sidekey
 
 final class ElevenLabsCreditUsageTests: XCTestCase {
-    private func response(rows: [[Any]], columns: [String] = ["request_id", "model_id", "cost"],
-                          units: [Any] = [NSNull(), NSNull(), "credits"]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: ["columns": columns, "column_units": units, "rows": rows])
+    private func table(_ rows: [[Any]], creditUnit: String = "credits") throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "columns": ["model", "product_type", "hashed_xi_api_key", "api_key_name", "timestamp", "total_usage", "total_minutes", "total_cost"],
+            "column_units": [NSNull(), NSNull(), NSNull(), NSNull(), NSNull(), creditUnit, "min", "usd"],
+            "rows": rows
+        ])
+    }
+    private func row(_ credits: Any = 180, minutes: Any = 10, model: String = "scribe_v2_realtime", key: String = "fixture-key-id") -> [Any] {
+        [model, "STT", key, "My key", "2026-10-20T00:00:00Z", credits, minutes, 0.065]
     }
 
-    func test_exact_request_and_model_match_with_provider_credit_unit() throws {
-        let data = try response(rows: [["other-app", "scribe", 900], ["ours", "scribe", 12.5]])
-        XCTAssertEqual(ElevenLabsCreditUsage.credits(in: data, reference: "ours", model: "scribe"), 12.5)
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: data, reference: "our", model: "scribe"))
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: data, reference: "ours", model: "another-model"))
-        let free = try response(rows: [["ours", "scribe", 0]])
-        XCTAssertEqual(ElevenLabsCreditUsage.credits(in: free, reference: "ours", model: "scribe"), 0)
+    func test_live_usage_schema_sums_days_per_key_and_model_without_summing_usd() throws {
+        let usage = try ElevenLabsCreditUsage.parse(table([
+            row("180", minutes: "10"), row(36, minutes: 2),
+            row(90, minutes: 5, key: "another-key"), row(15, minutes: 5, model: "different-model")
+        ]))
+        XCTAssertEqual(usage.rows.count, 3)
+        XCTAssertEqual(usage.credits, 321)
+        XCTAssertEqual(usage.rows.first { $0.id.hasPrefix("fixture-key-id|") && $0.model == "scribe_v2_realtime" }?.credits, 216)
     }
 
-    func test_documented_string_credit_cells_and_exact_filter_without_id_column() throws {
-        let data = try response(rows: [["ours", "scribe", "1250"]])
-        XCTAssertEqual(ElevenLabsCreditUsage.credits(in: data, reference: "ours", model: "scribe"), 1250)
-        for invalid in ["true", "", "NaN", "Infinity", "-1", "1,000"] {
-            let bad = try response(rows: [["ours", "scribe", invalid]])
-            XCTAssertNil(ElevenLabsCreditUsage.credits(in: bad, reference: "ours", model: "scribe"))
+    func test_real_request_log_and_invalid_amounts_never_become_free_usage() throws {
+        let requestLog = try JSONSerialization.data(withJSONObject: [
+            "columns": ["event_id", "trace_id", "response_code"],
+            "column_units": [NSNull(), NSNull(), NSNull()], "rows": [["event", "trace", 200]]
+        ])
+        XCTAssertThrowsError(try ElevenLabsCreditUsage.parse(requestLog))
+        for value: Any in [true, -1, "NaN", "Infinity", NSNull()] {
+            XCTAssertThrowsError(try ElevenLabsCreditUsage.parse(table([row(value)])))
         }
-        let noID = try response(rows: [["/v1/speech-to-text/realtime", "1250"]],
-                                columns: ["endpoint", "credits_used"], units: [NSNull(), "credits"])
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: noID, reference: "ours", model: "scribe"), "search is not an exact attribution")
-        XCTAssertEqual(ElevenLabsCreditUsage.credits(in: noID, reference: "ours", model: "scribe", exactRequestFilter: true), 1250)
-        let ambiguous = try response(rows: [["a", "1250"], ["b", "400"]],
-                                    columns: ["endpoint", "credits_used"], units: [NSNull(), "credits"])
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: ambiguous, reference: "ours", model: "scribe", exactRequestFilter: true))
+        XCTAssertThrowsError(try ElevenLabsCreditUsage.parse(table([row()], creditUnit: "usd")))
+        XCTAssertThrowsError(try ElevenLabsCreditUsage.parse(table([["short"]])))
+        XCTAssertEqual(try ElevenLabsCreditUsage.parse(table([])).credits, 0)
     }
 
-    func test_no_usd_conversion_or_ambiguous_component_summing() throws {
-        let usd = try response(rows: [["ours", "scribe", 0.1]], units: [NSNull(), NSNull(), "usd"])
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: usd, reference: "ours", model: "scribe"))
-        let ambiguous = try response(rows: [["ours", "scribe", 10, 20]],
-            columns: ["request_id", "model_id", "cost", "another_cost"], units: [NSNull(), NSNull(), "credits", "credits"])
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: ambiguous, reference: "ours", model: "scribe"))
-        let duplicate = try response(rows: [["ours", "scribe", 1], ["ours", "scribe", 2]])
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: duplicate, reference: "ours", model: "scribe"))
-        let boolean = try response(rows: [["ours", "scribe", true]])
-        XCTAssertNil(ElevenLabsCreditUsage.credits(in: boolean, reference: "ours", model: "scribe"))
+    func test_features_use_their_own_recorded_duration_and_model_not_a_share_of_total() throws {
+        let usage = try ElevenLabsCreditUsage.parse(table([
+            row(180, minutes: 10), row(1800, minutes: 100, key: "other-app-key"),
+            row(50, minutes: 10, model: "other-model")
+        ]))
+        let first = AIUsageEvent.speech(.init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), seconds: 60)
+        let second = AIUsageEvent.speech(.init(feature: .agentVoice, account: .elevenLabs, model: "scribe_v2_realtime"), seconds: 120)
+        let otherModel = AIUsageEvent.speech(.init(feature: .dropSmart, account: .elevenLabs, model: "other-model"), seconds: 60)
+        let a = usage.estimating(first), b = usage.estimating(second)
+        XCTAssertEqual(a.amount, 18); XCTAssertEqual(b.amount, 36)
+        XCTAssertEqual(usage.estimating(otherModel).amount, 5)
+        XCTAssertEqual(a.basis, .estimated)
+        XCTAssertEqual(a.id, first.id); XCTAssertEqual(a.context, first.context); XCTAssertEqual(a.createdAt, first.createdAt)
+        XCTAssertNil(first.amount, "the durable journal is not rewritten as a reported debit")
+        let unknown = AIUsageEvent.speech(.init(feature: .dropFast, account: .elevenLabs, model: "unknown"), seconds: 60)
+        XCTAssertNil(usage.estimating(unknown).amount)
+        var reported = first; reported = .init(id: first.id, createdAt: first.createdAt, context: first.context,
+            currency: .elevenLabsCredits, amount: 7, basis: .reported, audioSeconds: 60)
+        XCTAssertEqual(usage.estimating(reported).amount, 7)
     }
 
-    func test_analytics_reconciles_one_event_without_duplicate_or_changed_attribution() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("credits-\(UUID())")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = AIUsageStore(url: directory.appendingPathComponent("usage.sqlite"))
+    func test_missing_or_zero_minutes_cannot_establish_a_rate() throws {
+        for minutes: Any in [0, NSNull(), true, "-1", "NaN"] {
+            let usage = try ElevenLabsCreditUsage.parse(table([row(180, minutes: minutes)]))
+            let event = AIUsageEvent.speech(.init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), seconds: 60)
+            XCTAssertNil(usage.estimating(event).amount)
+        }
+    }
+
+    func test_billing_read_uses_selected_dates_and_key_only_in_header() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel(); StubURLProtocol.reset() }
-        let now = Date()
-        let event = AIUsageEvent(id: "elevenlabs:ours", createdAt: now,
-            context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe"),
-            currency: .elevenLabsCredits, amount: nil, basis: .unavailable, audioSeconds: 10)
-        try await store.insert(event)
-        let data = try response(rows: [["ours", "scribe", 123]])
+        let data = try table([row()])
+        let interval = DateInterval(start: Date(timeIntervalSince1970: 1_792_512_000), duration: 86400)
         StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/workspace/analytics/query/usage-by-product-over-time")
             XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.path, "/v1/workspace/analytics/requests")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "xi-api-key"), "fixture-key")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "xi-api-key"), "fixture-secret")
+            let body = try XCTUnwrap(StubURLProtocol.capturedBodies.last)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["start_time"] as? Double, interval.start.timeIntervalSince1970 * 1000)
+            XCTAssertEqual(json["end_time"] as? Double, interval.end.timeIntervalSince1970 * 1000)
+            XCTAssertEqual(Set(json["group_by"] as? [String] ?? []), Set(["hashed_xi_api_key", "model", "product_type"]))
+            XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("fixture-secret"))
             return (200, [:], data)
         }
-        let client = ElevenLabsCreditUsage(session: session, readKey: { "fixture-key" })
-        await client.refresh(events: [event], store: store, now: now)
-        // Repeated unknown records and another feature with the same ID cannot
-        // erase a known debit or assign that debit to a different feature.
-        try await store.insert(event)
-        try await store.insert(.init(id: event.id, createdAt: now,
-            context: .init(feature: .agentVoice, account: .elevenLabs, model: "scribe"),
-            currency: .elevenLabsCredits, amount: 999, basis: .reported))
-        let rows = try await store.events(from: now.addingTimeInterval(-1), to: now.addingTimeInterval(1))
-        XCTAssertEqual(rows.count, 1); XCTAssertEqual(rows.first?.amount, 123)
-        XCTAssertEqual(rows.first?.basis, .reported); XCTAssertEqual(rows.first?.context.feature, .dropFast)
-        XCTAssertEqual(try XCTUnwrap(rows.first).createdAt.timeIntervalSince1970, event.createdAt.timeIntervalSince1970, accuracy: 0.00001)
+        let usage = try await ElevenLabsCreditUsage(session: session, readKey: { "fixture-secret" }).usage(in: interval)
+        XCTAssertEqual(usage?.credits, 180)
     }
 
-    func test_analytics_permission_error_keeps_credits_unknown() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("credits-\(UUID())")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = AIUsageStore(url: directory.appendingPathComponent("usage.sqlite"))
+    func test_permission_failure_is_an_error_and_missing_key_does_not_request() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel(); StubURLProtocol.reset() }
-        let now = Date(), event = AIUsageEvent(id: "elevenlabs:ours",
-            context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe"),
-            currency: .elevenLabsCredits, amount: nil, basis: .unavailable)
-        try await store.insert(event)
         StubURLProtocol.handler = { _ in (403, [:], Data()) }
-        await ElevenLabsCreditUsage(session: session, readKey: { "fixture" }).refresh(events: [event], store: store)
-        let rows = try await store.events(from: now.addingTimeInterval(-1), to: now.addingTimeInterval(60))
-        XCTAssertEqual(rows.count, 1); XCTAssertNil(rows.first?.amount)
+        let interval = DateInterval(start: Date(), duration: 60)
+        do {
+            _ = try await ElevenLabsCreditUsage(session: session, readKey: { "fixture" }).usage(in: interval)
+            XCTFail("permission failure became empty billing")
+        } catch ElevenLabsBillingError.http(403) {} catch { XCTFail("unexpected error") }
+        StubURLProtocol.reset()
+        let absent = try await ElevenLabsCreditUsage(session: session, readKey: { nil }).usage(in: interval)
+        XCTAssertNil(absent); XCTAssertTrue(StubURLProtocol.capturedBodies.isEmpty)
     }
 
-    func test_missing_id_column_retries_with_exact_request_filter_before_reconciliation() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("credits-\(UUID())")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = AIUsageStore(url: directory.appendingPathComponent("usage.sqlite"))
-        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]
-        let session = URLSession(configuration: config)
-        defer { session.invalidateAndCancel(); StubURLProtocol.reset() }
-        let now = Date(), event = AIUsageEvent(id: "elevenlabs:ours",
-            context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe"),
-            currency: .elevenLabsCredits, amount: nil, basis: .unavailable)
+    @MainActor func test_costs_preserves_raw_history_and_keeps_reported_total_separate() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = AIUsageStore(url: dir.appendingPathComponent("usage.sqlite"))
+        let event = AIUsageEvent.speech(.init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), seconds: 60)
         try await store.insert(event)
-        let noID = try response(rows: [["1250"]], columns: ["credits_used"], units: ["credits"])
-        StubURLProtocol.handler = { _ in (200, [:], noID) }
-        await ElevenLabsCreditUsage(session: session, readKey: { "fixture" }).refresh(events: [event], store: store)
-        XCTAssertEqual(StubURLProtocol.capturedBodies.count, 2)
-        let query = try XCTUnwrap(JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies[1]) as? [String: Any])
-        XCTAssertNil(query["search"])
-        let filter = try XCTUnwrap((query["filters"] as? [[String: Any]])?.first)
-        XCTAssertEqual(filter["column"] as? String, "request_id")
-        XCTAssertEqual(filter["operation"] as? String, "eq")
-        XCTAssertEqual(filter["values"] as? [String], ["ours"])
-        let rows = try await store.events(from: now.addingTimeInterval(-1), to: now.addingTimeInterval(60))
-        XCTAssertEqual(rows.count, 1); XCTAssertEqual(rows.first?.amount, 1250)
+        let billing = try ElevenLabsCreditUsage.parse(table([row(1800, minutes: 100)]))
+        let model = AIUsageCostsViewModel(store: store, loadBilling: { _ in billing })
+        let interval = DateInterval(start: event.createdAt.addingTimeInterval(-1), duration: 86400)
+        await model.load(interval)
+        XCTAssertNil(model.events.first?.amount)
+        XCTAssertEqual(model.pricedEvents.first?.amount, 18)
+        XCTAssertEqual(model.billing?.credits, 1800)
+        XCTAssertTrue(AIUsagePrice(events: model.pricedEvents).text.hasPrefix("≈ "))
+        let saved = try await store.events(from: interval.start, to: interval.end)
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(saved.first?.id, event.id)
+        XCTAssertNil(saved.first?.amount)
+        XCTAssertEqual(saved.first?.basis, .unavailable)
+        XCTAssertEqual(saved.first?.audioSeconds, 60)
+        XCTAssertEqual(try XCTUnwrap(saved.first).createdAt.timeIntervalSince1970, event.createdAt.timeIntervalSince1970, accuracy: 0.00001)
     }
 }

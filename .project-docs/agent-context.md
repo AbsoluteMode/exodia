@@ -681,10 +681,16 @@ rewrite past usage. Only used feature groups appear for the selected local-date
 period; hover/click/keyboard focus reveals their models. One Price column
 retains explicit USD and ElevenLabs credit units, both when mixed. Each visit
 starts at This month; matching neutral From/To controls open a dismissing native
-calendar. No permanent bottom explanation or sticky text-segment highlight. OpenRouter response costs and exact matched ElevenLabs
-analytics debits are reported; Soniox public hourly equivalents and OpenCode's
-computed step prices are estimates. Missing prices stay unavailable, never zero;
-partial totals show +. No account-wide balance deltas or USD-to-credit conversion.
+calendar. No permanent bottom explanation or sticky text-segment highlight.
+OpenRouter response costs are reported; Soniox public hourly equivalents and
+OpenCode's computed step prices are estimates. ElevenLabs feature estimates use
+recorded audio minutes times the matching STT model's reported credits/minute,
+marked ≈ without rewriting journal amounts. A separate Reported usage section
+reads the workspace usage API for the same dates, grouped by API key/model;
+it explicitly includes other apps and is never added to feature Total. The live
+request log has no credit column; do not restore speculative request-ID billing.
+Missing rates or billing failures stay unavailable with a retryable explanation,
+never zero. Partial totals show +. No balance deltas or USD-to-credit conversion.
 Tracking starts with this update; synthetic model checks are excluded. WHY:
 .project-docs/decisions/2026-10-20-feature-costs.md
 
