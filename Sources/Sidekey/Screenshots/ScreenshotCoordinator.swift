@@ -33,6 +33,20 @@ final class ScreenshotCapturePanel: NSPanel {
     override func cancelOperation(_ sender: Any?) { keyboardCanvas?.cancelOperation(sender) }
 }
 
+/// System observation and focus are injectable so generated-fixture tests stay
+/// independent of the user's actual Space/display changes and foreground app.
+@MainActor
+struct ScreenshotCaptureEnvironment {
+    let applicationNotifications: NotificationCenter
+    let workspaceNotifications: NotificationCenter
+    let frontmostApplication: () -> NSRunningApplication?
+
+    static var system: Self {
+        Self(applicationNotifications: .default, workspaceNotifications: NSWorkspace.shared.notificationCenter,
+             frontmostApplication: { NSWorkspace.shared.frontmostApplication })
+    }
+}
+
 /// One in-memory capture session. Files are written only on explicit Download.
 @MainActor
 final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
@@ -47,6 +61,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var previousApp: NSRunningApplication?
     private var sharePicker: NSSharingServicePicker?
     private var observers: [NSObjectProtocol] = []
+    private let environment: ScreenshotCaptureEnvironment
     private var copyWaitReason: String?
     private var copyAfterProcessing = false
     private let activityChanged: (Bool) -> Void
@@ -61,30 +76,32 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
 
     init(activityChanged: @escaping (Bool) -> Void, preparationChanged: @escaping (Bool) -> Void = { _ in },
          captureOverride: (() async throws -> [(NSScreen, CGImage)])? = nil,
-         captureTimeout: Duration = .seconds(10), captureFailure: ((String) -> Void)? = nil) {
+         captureTimeout: Duration = .seconds(10), captureFailure: ((String) -> Void)? = nil,
+         environment: ScreenshotCaptureEnvironment? = nil) {
         self.activityChanged = activityChanged; self.preparationChanged = preparationChanged; self.captureOverride = captureOverride
         self.captureTimeout = captureTimeout
+        self.environment = environment ?? .system
         self.captureFailure = captureFailure ?? { message in
             let alert = NSAlert(); alert.messageText = "Screenshot unavailable"
             alert.informativeText = message; alert.addButton(withTitle: "OK"); alert.runModal()
         }
         super.init()
-        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+        observers.append(self.environment.applicationNotifications.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                 object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isActive, self.displayLayout != Self.currentDisplayLayout() else { return }
                 self.cancel(restoreFocus: false, reason: "display_changed")
             }
         })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
+        observers.append(self.environment.workspaceNotifications.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                                                           object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.cancel(restoreFocus: false, reason: "space_changed") }
         })
     }
     deinit {
         for observer in observers {
-            NotificationCenter.default.removeObserver(observer)
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            environment.applicationNotifications.removeObserver(observer)
+            environment.workspaceNotifications.removeObserver(observer)
         }
     }
 
@@ -93,7 +110,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             os_log("screenshot_start ignored_already_active", log: Self.log, type: .info)
             return
         }
-        previousApp = NSWorkspace.shared.frontmostApplication
+        previousApp = environment.frontmostApplication()
         let token = UUID(); generation = token; activityChanged(true)
         setPreparing(true)
         displayLayout = Self.currentDisplayLayout()

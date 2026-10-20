@@ -186,6 +186,17 @@ as an independent oracle for blur/orientation regressions; its copying action
 and runtime recognition path are removed. This supersedes the earlier expanded
 tool catalog and the copying/pinning/resizing behavior in this record.
 
+# Capture-test isolation
+
+A 21 October focused run received a real `space_changed` cancellation before
+its fake provider began; static lifecycle diagnostics confirmed the source.
+The deadline/retry assertions consequently failed despite unchanged tool code.
+Tests now inject private application/workspace notification centers and no
+foreground application through ScreenshotCaptureEnvironment. They still post
+unchanged-display and Space-change events explicitly, verifying the real
+cancellation handlers while avoiding interference with the user's desktop.
+Production defaults retain the system centers and previous-app focus behavior.
+
 # Consequences
 
 Screen Recording is requested on invocation. Content stays in memory until

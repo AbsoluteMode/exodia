@@ -4,6 +4,11 @@ import XCTest
 
 @MainActor
 final class ScreenshotReliabilityTests: XCTestCase {
+    private func isolatedEnvironment() -> ScreenshotCaptureEnvironment {
+        ScreenshotCaptureEnvironment(applicationNotifications: NotificationCenter(), workspaceNotifications: NotificationCenter(),
+                                     frontmostApplication: { nil })
+    }
+
     func testHoverKeepsItsExistingStateUntilPixelsAreFrozen() {
         XCTAssertTrue(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false, wasExpanded: true,
                                                   glance: false, screenshotPreparing: true))
@@ -45,7 +50,7 @@ final class ScreenshotReliabilityTests: XCTestCase {
         }, captureTimeout: .milliseconds(50), captureFailure: {
             failures.append($0)
             if failures.count == 1 { timeout.fulfill() }
-        })
+        }, environment: isolatedEnvironment())
         defer { coordinator.cancel(restoreFocus: false); pending.forEach { $0.resume(throwing: CancellationError()) } }
         coordinator.start()
         await fulfillment(of: [first, timeout], timeout: 2)
@@ -62,19 +67,21 @@ final class ScreenshotReliabilityTests: XCTestCase {
         var activity: [Bool] = [], preparing: [Bool] = []
         var requests = 0
         let started = expectation(description: "Capture requested")
+        let environment = isolatedEnvironment()
         let coordinator = ScreenshotCoordinator(activityChanged: { activity.append($0) }, preparationChanged: { preparing.append($0) }, captureOverride: {
             requests += 1
             return try await withCheckedThrowingContinuation { continuation = $0; started.fulfill() }
-        })
+        }, environment: environment)
         coordinator.start()
         await fulfillment(of: [started], timeout: 2)
         coordinator.start(); coordinator.start()
         XCTAssertTrue(coordinator.isActive)
         XCTAssertEqual(requests, 1); XCTAssertEqual(preparing, [true])
         XCTAssertEqual(activity, [true], "Repeated hotkey events must not toggle capture off")
-        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        environment.applicationNotifications.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
         XCTAssertTrue(coordinator.isActive, "An unchanged display layout must not dismiss capture")
-        coordinator.cancel(restoreFocus: false)
+        environment.workspaceNotifications.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        XCTAssertFalse(coordinator.isActive, "The isolated Space notification still cancels a stale capture")
         continuation?.resume(throwing: CancellationError())
         await Task.yield()
         XCTAssertFalse(coordinator.isActive)

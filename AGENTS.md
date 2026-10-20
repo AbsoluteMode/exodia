@@ -907,7 +907,10 @@ those pixels without resizing. Repeated activation
 preserves the editor; unchanged display notifications are ignored. Capture has
 its own 10-second deadline with retry, cancelled before editing. Unknown keys
 are consumed locally to avoid recursion through ScreenshotCapturePanel; Tab
-traverses both bars. Both bars avoid the display's top safe area. PNG stores
+traverses both bars. Generated-fixture capture tests inject private notification
+centers and no foreground app through ScreenshotCaptureEnvironment, isolating
+real Space/display changes and focus. Production uses the system environment.
+Both bars avoid the display's top safe area. PNG stores
 Retina point scale as well as full-resolution pixels. The visible Hover state
 is held until capture freezes its pixels; Whytap surfaces are included, and no
 island wake or dismissal happens first. Only a dragged area is exported: Enter
