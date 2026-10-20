@@ -348,7 +348,7 @@ API keys, Models, Costs и API hints в одной панели. При откр
 *API keys* — прямоугольные чипы провайдеров без цветных индикаторов (статус
 ключа — «Key works», «Limited key», «Key not accepted» и т. п. — во всплывающем
 окне чипа) и «Add key»: Soniox, Deepgram, ElevenLabs, OpenRouter,
-Anthropic (только для строки Agent) и свои OpenAI-compatible серверы. Ключи
+Anthropic и OpenAI (для LLM) и свои OpenAI-compatible серверы. Ключи
 лежат в Keychain, на экран не возвращаются; проверка ключа — бесплатный запрос
 к провайдеру. *Models* — компактная строка одинаковой высоты на функцию: название,
 краткая сводка выбранных моделей и стрелка раскрытия. Нажатие открывает настройки
@@ -357,7 +357,13 @@ Anthropic (только для строки Agent) и свои OpenAI-compatible
 The model picker opens a searchable popover: all query terms match in any
 order across model ID/provider, ignoring case and separators (`qwen 27` and
 `qwen27` find `qwen/qwen3.8-27b`). Up/Down and Return select; Escape clears then
-closes. Search and refresh keep the current route until an explicit verified pick.
+closes. Opening the picker automatically refreshes stale or failed catalogs;
+cached results remain available offline. There are no Refresh models or Other
+model ID actions. Search and refresh keep the current route until an explicit
+verified pick. API keys shows all providers as square tiles; clicking a tile
+opens its inline Check & save form. Failed or unreachable checks preserve the
+previous key and keep the form open. OpenAI and Anthropic are available to all
+LLM routes with their own provider keys.
 Подписей real-time, recorded и LLM with tools в списке нет. Функции: Drop Fast,
 Drop Smart (распознавание + очистка текста), Meetings (расшифровка + заметки),
 Agent, Agent voice, Voice search, Translation и Subtitles (Speech + отдельная LLM). Ошибки и

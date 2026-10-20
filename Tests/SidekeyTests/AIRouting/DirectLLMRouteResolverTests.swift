@@ -39,6 +39,32 @@ final class DirectLLMRouteResolverTests: XCTestCase {
         XCTAssertEqual(notes?.endpoint.apiKey, "or-key")
     }
 
+    func test_direct_providers_use_only_their_own_key_and_endpoint() async throws {
+        let routing = makeRouting()
+        let keys = makeKeys()
+        try keys.save("openai-key", account: ProviderAccount.openAIKeychainAccount)
+        try keys.save("anthropic-key", account: ProviderAccount.anthropicKeychainAccount)
+        try keys.save("unrelated-key", account: OpenRouterLLMKeyStore.account)
+        for feature in AIFeature.allCases where feature.mode == .llm {
+            for (account, host, key) in [(ProviderAccount.openAI, "api.openai.com", "openai-key"),
+                                         (.anthropic, "api.anthropic.com", "anthropic-key")] {
+                routing.setRoute(FeatureRoute(account: account, model: "chosen-model"), for: feature)
+                let route = try await DirectLLMRouteResolver(feature: feature, routing: routing, keys: keys).routeIfEnabled()
+                XCTAssertEqual(route?.endpoint.baseURL.host, host)
+                XCTAssertEqual(route?.endpoint.apiKey, key)
+                XCTAssertEqual(route?.endpoint.sendsOpenRouterHeaders, false)
+                XCTAssertEqual(route?.model, "chosen-model")
+                XCTAssertEqual(route?.usageContext?.account, account)
+            }
+        }
+        try keys.delete(account: ProviderAccount.openAIKeychainAccount)
+        routing.setRoute(FeatureRoute(account: .openAI, model: "chosen-model"), for: .translation)
+        do {
+            _ = try await DirectLLMRouteResolver(feature: .translation, routing: routing, keys: keys).routeIfEnabled()
+            XCTFail("A missing OpenAI key must not borrow another provider's key")
+        } catch { XCTAssertEqual(error as? OpenRouterLLMError, .missingKey) }
+    }
+
     func test_live_resolver_reads_the_shared_store() async throws {
         let feature = AIFeature.meetingNotes
         let shared = AIRoutingStore.shared

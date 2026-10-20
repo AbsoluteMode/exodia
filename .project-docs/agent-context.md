@@ -101,7 +101,7 @@ Voice flow (Drop / dictation):
        finalize + text EOF. A final <fin> acknowledgement completes the take;
        finished=true also completes it. The 10s watchdog remains the backstop.
        -> cleanup (PostProcessor, route of dropSmartCleanup):
-            OpenRouter with the user's key / a custom OpenAI-compatible
+            OpenRouter, OpenAI or Anthropic with the user's key / a custom OpenAI-compatible
             server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
             The mode is captured at take start:
             Fast bypasses the LLM; Smart requires processed text and never
@@ -149,32 +149,31 @@ Voice flow (Drop / dictation):
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
 
-Agent flow (OpenCode + OpenRouter or Anthropic):
+Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop, route of agentVoice
        -> OpenCodeProvider -> opencode run --format json --model
-          <openrouter|anthropic>/<selected-model> --dir <local workspace>,
+          <openrouter|openai|anthropic>/<selected-model> --dir <local workspace>,
           prompt on stdin; provider and model come from the agent feature's
           route in AIRoutingStore
        -> complete text/tool events rendered progressively in the island
   Settings -> Agents installs an app-managed OpenCode binary from its official
   GitHub release after SHA-256 digest verification, or locates an existing CLI.
   The agent's key and model are chosen in Settings -> API & Models (the
-  Agent row: OpenRouter from the live catalog or an exact ID, or Anthropic
-  from its /v1/models list); the Agents tab shows "Model: <provider> · <id>"
+  Agent row: OpenRouter, OpenAI or Anthropic from their live catalogs); the Agents tab shows "Model: <provider> · <id>"
   with Change in API & Models, and Save & connect only checks the local
   version and the free key endpoint of the route's provider (OpenRouter
-  /key, Anthropic /v1/models). Connecting does not submit a model request.
-  Keys are the Keychain items byok.openrouter.llm_api_key and
-  byok.anthropic.api_key and enter only the child process environment
-  (OPENROUTER_API_KEY or ANTHROPIC_API_KEY), never a credential JSON file or
+  /key, OpenAI/Anthropic /v1/models). Connecting does not submit a model request.
+  Keys are the Keychain items byok.openrouter.llm_api_key,
+  byok.openai.llm_api_key and byok.anthropic.api_key and enter only the child process environment
+  (OPENROUTER_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY), never a credential JSON file or
   argv. The runtime enables only the route's provider, declares the selected
   model with its limits and tool support from the provider catalog (so
   OpenCode keeps context compaction), disables sharing/default plugins/
   automatic updates and excludes inherited provider credential/config
-  environment variables. Anthropic is offered for the Agent row only, not
-  for Drop Smart cleanup or Meeting notes. WHY:
-  .project-docs/decisions/2026-10-19-api-and-models.md
+  environment variables. OpenAI uses OpenCode's own model metadata when its
+  /models list omits limits. Both direct APIs serve every LLM mode. WHY:
+  .project-docs/decisions/2026-10-21-provider-key-tiles.md
   Actions are allowed by default so the agent can edit and run tests; the user
   can turn them off in Settings. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
@@ -652,7 +651,7 @@ Update flow (download-on-action):
 
 Presentation: Settings -> API & Models has four internal tabs: API keys,
 Models (the initial tab), Costs and API hints. API keys holds the provider keys (Soniox,
-Deepgram, ElevenLabs, OpenRouter, Anthropic for the Agent row, and the user's
+Deepgram, ElevenLabs, OpenRouter, OpenAI, Anthropic, and the user's
 OpenAI-compatible servers) and one model per AI feature (Drop Fast, Drop
 Smart, Drop Smart cleanup, Meetings, Meeting notes, Agent, Agent voice, Voice
 search); Local was removed. Models come from provider catalogs plus the
@@ -690,7 +689,12 @@ form. Opening hints never checks balances or changes routes. WHY:
 Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
 MacPopupLabel. Name/size terms match in any order (`qwen 27`, `qwen27`), ignoring
 case/separators. Search never changes routes; explicit picks retain verification.
-Up/Down and Return choose enabled results; Escape clears then closes. WHY:
+Up/Down and Return choose enabled results; Escape clears then closes. Opening
+the picker refreshes stale/failed catalogs automatically; the footer has no
+Refresh models or Other model ID actions. Custom servers without /models offer
+a contextual model-name field. API keys uses square provider tiles opening an
+inline Check & save form; failed checks keep the previous key. WHY:
+.project-docs/decisions/2026-10-21-provider-key-tiles.md;
 .project-docs/decisions/2026-10-20-model-search.md
 
 Other selection menus use MacMenu/MacPopup: a 30 pt neutral control with 8 pt corners

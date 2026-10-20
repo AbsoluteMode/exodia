@@ -4,6 +4,7 @@ import Foundation
 /// `Agent` route. There is no fallback from one to the other.
 enum OpenCodeModelProvider: String, Equatable, Sendable {
     case openRouter = "openrouter"
+    case openAI = "openai"
     case anthropic
 
     /// OpenCode's provider id, the prefix of `--model <id>/<model>`.
@@ -12,6 +13,7 @@ enum OpenCodeModelProvider: String, Equatable, Sendable {
     var displayName: String {
         switch self {
         case .openRouter: return "OpenRouter"
+        case .openAI: return "OpenAI"
         case .anthropic: return "Anthropic"
         }
     }
@@ -20,6 +22,7 @@ enum OpenCodeModelProvider: String, Equatable, Sendable {
     var keyEnvironmentName: String {
         switch self {
         case .openRouter: return "OPENROUTER_API_KEY"
+        case .openAI: return "OPENAI_API_KEY"
         case .anthropic: return "ANTHROPIC_API_KEY"
         }
     }
@@ -27,6 +30,7 @@ enum OpenCodeModelProvider: String, Equatable, Sendable {
     var account: ProviderAccount {
         switch self {
         case .openRouter: return .openRouter
+        case .openAI: return .openAI
         case .anthropic: return .anthropic
         }
     }
@@ -35,6 +39,7 @@ enum OpenCodeModelProvider: String, Equatable, Sendable {
     init?(account: ProviderAccount) {
         switch account {
         case .openRouter: self = .openRouter
+        case .openAI: self = .openAI
         case .anthropic: self = .anthropic
         case .soniox, .deepgram, .elevenLabs, .server: return nil
         }
