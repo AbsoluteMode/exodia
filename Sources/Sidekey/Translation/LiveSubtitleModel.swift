@@ -95,7 +95,7 @@ final class LiveSubtitleModel: ObservableObject {
             let adapter = try RealtimeAdapterFactory.make(resolver.resolve(route, for: .subtitlesAudio))
             return try await adapter.open(language: language, terms: [])
         },
-        makeService: @escaping () async throws -> TextTranslating = { try await TranslationService.live() }
+        makeService: @escaping () async throws -> TextTranslating = { try await TranslationService.live(for: .subtitlesTranslation) }
     ) {
         self.connectionTimeout = connectionTimeout
         self.flushInterval = flushInterval
@@ -204,7 +204,7 @@ final class LiveSubtitleModel: ObservableObject {
                 self.setPhase(.idle)
             } catch {
                 guard self.generation == token, !Task.isCancelled else { return }
-                self.fail(.from(error, feature: self.service == nil ? .translation : .subtitlesAudio), token: token)
+                self.fail(.from(error, feature: self.service == nil ? .subtitlesTranslation : .subtitlesAudio), token: token)
             }
         }
         runTask = task
@@ -273,7 +273,7 @@ final class LiveSubtitleModel: ObservableObject {
     private func flush(token: UUID, force: Bool = false) {
         while let text = segmenter.take(now: ProcessInfo.processInfo.systemUptime, force: force) {
             guard queue.count < 8 else {
-                fail(.init(message: "Translation cannot keep up with speech. Choose a faster Translation model, then start again."), token: token)
+                fail(.init(message: "Translation cannot keep up with speech. Choose a faster Subtitles LLM model, then start again.", feature: .subtitlesTranslation), token: token)
                 return
             }
             let line = SubtitleLine(source: text)
@@ -299,7 +299,7 @@ final class LiveSubtitleModel: ObservableObject {
                     if let index = self.lines.firstIndex(where: { $0.id == id }) { self.lines[index].translation = value }
                 } catch {
                     guard self.generation == token, !Task.isCancelled else { return }
-                    self.fail(.from(error, feature: .translation), token: token)
+                    self.fail(.from(error, feature: .subtitlesTranslation), token: token)
                     return
                 }
             }

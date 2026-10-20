@@ -6,8 +6,11 @@ summary: Isolate feature work, serialize checked main integration and update one
 status: confirmed
 tags: [development, agents, worktrees, integration, main, build, rollback, queue]
 canonical_for: [parallel-development, shared-working-application]
-verified_at: 2026-10-19
+verified_at: 2026-10-20
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-20 the user authorized the builder to check for meetings itself and restart without asking outside meetings, accepting interruption of other work.
+    confirmed_at: 2026-10-20
   - type: user-confirmed
     reference: On 2026-10-19 the user requested a persistent FIFO build queue, one builder, automatic submissions by finished feature agents, and messages to the originating sessions when their build starts and finishes.
     confirmed_at: 2026-10-19
@@ -35,7 +38,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsStore.swift
     confirmed_at: 2026-10-19
-related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md, ../decisions/2026-10-19-whytap-name.md, ../decisions/2026-10-19-build-queue.md]
+related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md, ../decisions/2026-10-19-whytap-name.md, ../decisions/2026-10-19-build-queue.md, ../decisions/2026-10-20-meeting-aware-builder-refresh.md]
 ---
 
 # Parallel development, one working Whytap
@@ -273,16 +276,44 @@ Under the lock:
    A data migration also needs a consistent private backup using the store's
    backup mechanism or a quiescent copy; copying an open SQLite file is not a
    reliable backup. Never inspect user content as part of a build check.
-   Recheck app activity immediately before promotion. A meeting recording,
-   dictation, agent operation, unfinished save/processing, or unknown activity
-   means **pending**. Do not infer idle from the process existing or low CPU.
-   Current Sparkle guards do not protect an external script. If there is no
-   reliable activity signal, wait for a known safe handoff; never force-quit.
+   Check for meetings immediately before a normal quit using
+   `python3 scripts/build-queue-meeting-gate.py` from checked main. Only exit 0
+   with a fresh `status: clear` permits the next step; never reuse a cached
+   result or replace an error/timeout with an empty activity list. An ongoing
+   or suspected meeting, microphone use (including manual Notes capture),
+   browser audio that could be a muted call, or an unknown result means
+   **pending**: release the lock and retry silently on a later queue turn.
+   Do not ask for a saved/idle confirmation on each build. On 2026-10-20 the
+   user gave standing permission to interrupt other work outside meetings,
+   including dictation, agent work, editors and backup. The conservative probe
+   may temporarily defer on such work when it cannot distinguish it from a
+   call. This permission does not waive migration backups or data consistency.
+   Current Sparkle guards do not protect an external script. Never force-quit;
+   if normal quit is declined or does not finish, defer instead.
 6. Only at that safe handoff, quit normally, verify exit, replace the canonical
    installed bundle without exposing a partial copy, then launch that exact
    path. Keep one runtime instance and verify its identity and a focused smoke
    scenario. Do not reset TCC, delete stores, overwrite a live database backup
    or change bundle/channel identity to make a check pass.
+
+### Meeting probe and its limits
+
+The builder-only script reads CoreAudio process input/output flags three times
+one second apart. It never records audio, reads browser URLs or calendar data,
+opens UI, or requests permissions. Any input stream defers, including an
+unrecognized calling app or Whytap itself. Output from known call apps defers;
+browser/WebKit output is uncertain because a muted call and media share this
+signal. Merely leaving Zoom or a browser open is not a meeting signal.
+Property/list failures, stale results and the 20-second timeout defer.
+
+This is an activity check, not a guarantee that every possible meeting can be
+detected: a call with both input and output fully closed is invisible, and a
+listening-only call in an unrecognized native app may be missed. Browser media
+can delay an update. Preserve these limits in the local handoff evidence rather
+than claiming an authoritative in-process meeting status. A future reliable
+runtime signal may strengthen this gate; it must not invent an idle result.
+The decision and standing authorization are recorded in
+[meeting-aware builder refresh](../decisions/2026-10-20-meeting-aware-builder-refresh.md).
 
 ## Build receipt and acceptance
 
