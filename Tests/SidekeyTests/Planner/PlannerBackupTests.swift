@@ -39,6 +39,11 @@ final class PlannerBackupTests: XCTestCase {
         try profile.credentialStores["byok.openrouter.llm_api_key"]?.save("fixture-replaced-api-key")
         await model.poll()
         XCTAssertEqual(model.localSettingsVersions.count, 4, "Other provider keys retain normal change detection")
+        try profile.credentialStores["byok.openrouter.llm_api_key"]?.save("")
+        await model.poll()
+        XCTAssertEqual(model.localSettingsVersions.count, 5)
+        await model.poll()
+        XCTAssertEqual(model.localSettingsVersions.count, 5, "Unchanged bytes keep the earlier comparison behavior even for an invalid key")
         XCTAssertNil(model.errorMessage)
         await model.stopAndWait()
     }

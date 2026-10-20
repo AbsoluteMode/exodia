@@ -10,7 +10,7 @@ struct CalendarSourcesView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("Your calendars").font(.headline); Spacer(); Button("Connect account", action: onConnect) }
             if let message = connections.errors["visibility"] {
-                Text(message).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Text(message).font(.caption).foregroundStyle(MacSettingsTheme.text2).fixedSize(horizontal: false, vertical: true)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
