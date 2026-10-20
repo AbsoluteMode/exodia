@@ -31,7 +31,7 @@ enum HoverNavigationTarget: Equatable {
     case quitRow
 }
 
-/// What happens when a tile is tapped.
+/// Activation in the live island. Toolbox first selects the tool’s pane.
 enum HoverToolKind: Equatable {
     /// Opens an inline sub-panel in the hover or in the Toolbox right pane.
     case inlinePanel

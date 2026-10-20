@@ -9,6 +9,8 @@ final class TranslationWindowController: NSObject, NSWindowDelegate {
     let text: TextTranslationModel
     let subtitles: LiveSubtitleModel
     private let presentation = Presentation()
+    private var embeddingID: UUID?
+    var isEmbedded: Bool { embeddingID != nil }
     private let panel: TranslationPanel
     private var modeObservation: AnyCancellable?
     private var preferences = Set<AnyCancellable>()
@@ -47,7 +49,7 @@ final class TranslationWindowController: NSObject, NSWindowDelegate {
         ))
         let publish = { [weak self] in
             guard let self else { return }
-            activityChanged(self.panel.isVisible || self.text.isTranslating || self.subtitles.phase.isActive)
+            activityChanged(self.isEmbedded || self.panel.isVisible || self.text.isTranslating || self.subtitles.phase.isActive)
         }
         text.onActivityChange = publish
         subtitles.onActivityChange = publish
@@ -79,7 +81,27 @@ final class TranslationWindowController: NSObject, NSWindowDelegate {
         panel.setFrame(frame, display: panel.isVisible)
     }
 
-    func cancel() { text.cancel(); subtitles.cancel() }
+    @discardableResult
+    func beginEmbedding() -> UUID {
+        let id = UUID()
+        embeddingID = id
+        text.onActivityChange?()
+        return id
+    }
+
+    @discardableResult
+    func endEmbedding(_ id: UUID? = nil) -> Task<Void, Never>? {
+        guard isEmbedded, id == nil || id == embeddingID else { return nil }
+        embeddingID = nil
+        // Keep the activity guard until asynchronous capture cleanup finishes.
+        // A separately visible translator still owns the shared session.
+        let cleanup = panel.isVisible ? nil : cancel()
+        text.onActivityChange?()
+        return cleanup
+    }
+
+    @discardableResult
+    func cancel() -> Task<Void, Never> { text.cancel(); return subtitles.cancel() }
     func windowWillClose(_ notification: Notification) { panel.orderOut(nil); cancel() }
 }
 
