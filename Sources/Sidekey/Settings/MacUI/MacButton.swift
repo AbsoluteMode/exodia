@@ -40,7 +40,7 @@ struct MacButton: View {
 
     private var bg: Color {
         switch style {
-        case .primary: return MacSettingsTheme.accent
+        case .primary: return MacSettingsTheme.accentFill
         case .tinted: return MacSettingsTheme.accent.opacity(0.16)
         case .ghost: return .clear
         case .default, .danger: return MacSettingsTheme.controlBg

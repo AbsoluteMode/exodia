@@ -38,7 +38,7 @@ struct ToolboxDisplayPane: View {
             if !controller.supportsExtra {
                 Text(controller.isAvailable ? Self.noExtraText : IslandBrightnessStrip.unavailableText)
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(MacSettingsTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

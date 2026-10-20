@@ -16,8 +16,8 @@ struct MeetingProtocolView: View {
 
     private static let columnWidth: CGFloat = 680
     private let headingColor = MacSettingsTheme.text
-    private let bodyColor = Color.white.opacity(0.82)
-    private let mutedColor = Color.white.opacity(0.5)
+    private let bodyColor = MacSettingsTheme.text
+    private let mutedColor = MacSettingsTheme.text2
 
     var body: some View {
         ScrollView {
@@ -113,7 +113,7 @@ private struct TaskRow: View {
             HStack(alignment: .top, spacing: 10) {
                 Text(task.task)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.9))
+                    .foregroundStyle(MacSettingsTheme.text)
                     .lineSpacing(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -139,7 +139,7 @@ private struct TaskRow: View {
             if task.assignee != nil || task.deadline != nil {
                 HStack(spacing: 6) {
                     if let assignee = task.assignee {
-                        chip(assignee, systemImage: "person.fill", tint: Color.white.opacity(0.7))
+                        chip(assignee, systemImage: "person.fill", tint: MacSettingsTheme.text2)
                     }
                     if let deadline = task.deadline {
                         chip(deadline, systemImage: "calendar", tint: MacSettingsTheme.accent)
@@ -150,7 +150,7 @@ private struct TaskRow: View {
             if let comment = task.comment {
                 Text(comment)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Color.white.opacity(0.5))
+                    .foregroundStyle(MacSettingsTheme.text2)
             }
         }
         .padding(.horizontal, 12)
@@ -158,11 +158,11 @@ private struct TaskRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(hovering && onTap != nil ? 0.06 : 0.035))
+                .fill(hovering && onTap != nil ? MacSettingsTheme.hover : MacSettingsTheme.bgCard)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
+                .strokeBorder(MacSettingsTheme.sep, lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onHover { hovering = $0 }
@@ -210,6 +210,6 @@ private struct TaskRow: View {
         .foregroundStyle(tint)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Capsule().fill(Color.white.opacity(0.06)))
+        .background(Capsule().fill(MacSettingsTheme.controlBg))
     }
 }

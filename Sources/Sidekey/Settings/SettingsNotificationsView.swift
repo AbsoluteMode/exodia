@@ -39,7 +39,7 @@ struct SettingsNotificationsView: View {
                         } trailing: {
                             NotificationPresentationControl(selection: $meetingNotifications.presentation,
                                                             sourceName: "meeting notes")
-                            MacSwitch(isOn: $meetingNotifications.enabled)
+                            MacSwitch(isOn: $meetingNotifications.enabled, label: "Meeting-ready notifications")
                                 .accessibilityLabel("Enable meeting notes notifications")
                         }
                     }

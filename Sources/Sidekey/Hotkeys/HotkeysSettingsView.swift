@@ -799,7 +799,7 @@ private struct ShortcutGestureSlot: View {
     private var slotStroke: some View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
             .strokeBorder(
-                hasConflict ? MacSettingsTheme.red.opacity(0.82) : Color.white.opacity(0.12),
+                hasConflict ? MacSettingsTheme.red.opacity(0.82) : MacSettingsTheme.sepStrong,
                 lineWidth: hasConflict ? 1.2 : 1
             )
     }

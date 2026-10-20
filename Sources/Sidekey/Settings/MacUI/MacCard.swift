@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Grouped container: a rounded card holding stacked `MacRow`s separated by hairlines,
-/// mirroring the mockup's `.mac-card`.
+/// iOS-style inset group. Rows share one surface with quiet, inset separators.
 struct MacCard<Content: View>: View {
     @ViewBuilder var content: Content
 
@@ -13,7 +12,7 @@ struct MacCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: MacSettingsTheme.radiusCard, style: .continuous)
-                    .strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5)
+                    .strokeBorder(MacSettingsTheme.sep, lineWidth: 0.5)
             )
             .clipShape(RoundedRectangle(cornerRadius: MacSettingsTheme.radiusCard, style: .continuous))
     }
@@ -46,10 +45,12 @@ struct MacRow<Leading: View, Trailing: View>: View {
                 Text(title)
                     .font(.system(size: 13))
                     .foregroundStyle(MacSettingsTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
                     Text(subtitle)
                         .font(.system(size: 11.5))
                         .foregroundStyle(MacSettingsTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)

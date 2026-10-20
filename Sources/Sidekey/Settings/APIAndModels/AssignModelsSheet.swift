@@ -34,7 +34,7 @@ struct AssignModelsSheet: View {
                                 set: { isOn in
                                     if isOn { selected.insert(item.feature) } else { selected.remove(item.feature) }
                                 }
-                            ))
+                            ), label: item.feature.title)
                         },
                         trailing: { ProviderKindIcon(kind: item.account.kind) }
                     )

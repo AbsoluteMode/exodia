@@ -22,9 +22,9 @@ final class MacUIContractTests: XCTestCase {
 
     func test_macSwitch_is_ios_style_not_textual() throws {
         let s = try source("Sources/Sidekey/Settings/MacUI/MacSwitch.swift")
-        XCTAssertTrue(s.contains("MacSettingsTheme.accent"))      // on-fill = accent
+        XCTAssertTrue(s.contains("MacSettingsTheme.switchOn"))
         XCTAssertFalse(s.contains("Text(\"ON\")"))                // no textual ON/OFF
-        XCTAssertFalse(s.contains("Toggle("))                      // not the system toggle
+        XCTAssertTrue(s.contains(".accessibilityRepresentation")) // native switch semantics
     }
 
     func test_macButton_has_primary_and_danger_styles() throws {
