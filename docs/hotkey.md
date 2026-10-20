@@ -47,6 +47,13 @@ Modifier glyphs and their VoiceOver pronunciations live on
   multi-character cap horizontally while keeping the canonical 22pt
   vertical envelope, so a wide cap sits flush next to single-glyph caps
   without clipping.
+- **Use English physical-key labels in every input layout.** Letter caps
+  always show uppercase US English letters: pressing the Russian `Ф` key
+  records and displays `A`. Digits and punctuation use the unshifted US label
+  too. `HotkeyTapCombo` resolves these labels from the hardware key code during
+  recording and decoding, so existing saved Russian titles also display in
+  English without rebinding. Live recorder caps, Help, hints and VoiceOver use
+  the same title; modifiers and activation behavior are unchanged.
 - **Outer chip is part of the standard.** Every `HotkeyHintView`
   renders inside an `.ultraThinMaterial` capsule with a subtle
   black overlay and white border. The chip is built into
