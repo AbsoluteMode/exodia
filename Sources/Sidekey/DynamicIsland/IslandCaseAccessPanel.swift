@@ -28,9 +28,9 @@ struct IslandCaseAccessPanel: View {
     }
 
     static let title = "Доступ к ключам"
-    static let explanation = "Подключите Claude Code, Codex или Cursor, чтобы они использовали ключи в командах. Case сам подставляет значения в команды. Новое приложение спрашивает разрешение перед использованием."
-    static let footer = "Регистрация и включение Bypass — Touch ID. Approve и удаление — сразу, без Touch ID. Незарегистрированным приложениям — отказ."
-    static let sharedTerminalHint = "В Bypass команды человека в общем терминале этого приложения тоже идут без вопросов."
+    static let explanation = "Approve — спрашивать. Bypass — без запроса."
+    static let footer = "Подключение и Bypass — через Touch ID."
+    static let sharedTerminalHint = "Bypass действует и для ваших команд в этом терминале."
     static let builtInSubtitle = "встроенный агент Whytap"
     static let inheritLabel = "как у приложения"
 
@@ -58,7 +58,7 @@ struct IslandCaseAccessPanel: View {
                     minutesRow
                     Text(Self.footer)
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(.white.opacity(0.60))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 2)
@@ -87,7 +87,7 @@ struct IslandCaseAccessPanel: View {
                 Button(action: onBack) {
                     Text("‹ Ключи")
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Color(red: 0.44, green: 0.61, blue: 1.0))
+                        .foregroundStyle(.white.opacity(0.88))
                         .padding(.vertical, 3)
                         .contentShape(Rectangle())
                 }
