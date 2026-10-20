@@ -21,14 +21,15 @@ struct MeetingReconnectMarker: Codable, Equatable, Sendable {
 /// the pinned language, and the chunk filenames.
 ///
 /// Lifecycle (see `MeetingsCoordinator.dispatchFinalizedForProcessing`):
-/// 1. Written atomically before processing is attempted.
+/// 1. Written atomically before processing is attempted. A continuation also
+///    writes a partial manifest before capture starts to preserve its parent.
 /// 2. Deleted together with the staging dir once the processor stored the
 ///    note.
 /// 3. Left on disk if processing fails, so the next launch can retry.
 struct MeetingFinalizeManifest: Codable, Equatable, Sendable {
     /// The recorder-side meeting id. This is the directory name under the
-    /// staging root (`meetings-staging/<recorderMeetingId>/`) and the id the
-    /// stored note carries.
+    /// staging root (`meetings-staging/<recorderMeetingId>/`). A continuation
+    /// stores its result under the separate logical meeting id below.
     let recorderMeetingId: UUID
     /// Absolute wall-clock start of the recording, so the recovered meeting
     /// carries the real recording time, not the recovery time.
@@ -36,7 +37,7 @@ struct MeetingFinalizeManifest: Codable, Equatable, Sendable {
     /// Absolute wall-clock end of the recording (the moment the
     /// coordinator built the manifest at Stop time).
     let endedAt: Date
-    /// Rounded total recording duration in seconds. Matches the value
+    /// Rounded duration of this recording part in seconds. Matches the value
     /// `dispatchFinalizedForProcessing` derives from
     /// `FinalizedEvent.totalDurationSeconds`.
     let durationSeconds: Int
@@ -49,10 +50,9 @@ struct MeetingFinalizeManifest: Codable, Equatable, Sendable {
     /// the manifest's own dir, so the on-disk record stays portable if
     /// the staging root ever moves). Order is chunk-000 → chunk-NNN.
     let chunkFileNames: [String]
-    /// Whether the recording is fully finalised (Stop emitted). Always
-    /// `true` for the current single-shot finalize path; stored per the
-    /// durability spec so a future partial-finalize flow can distinguish
-    /// "recover + finalize" from "recover chunks only".
+    /// Whether Stop emitted. An interrupted continuation starts with `false`;
+    /// recovery discovers its flushed WAV files and their duration. Stop
+    /// replaces that partial record with the complete chunk list and `true`.
     let isFinal: Bool
 
     /// Transcript boundaries created by reconnecting to an auto-ended
