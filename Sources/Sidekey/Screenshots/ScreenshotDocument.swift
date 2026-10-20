@@ -82,6 +82,9 @@ enum ScreenshotImageError: LocalizedError {
 }
 
 enum ScreenshotRenderer {
+    // Reuse the hardware renderer instead of creating a software context per gesture.
+    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+    private static let blurContext = CIContext(options: [.cacheIntermediates: false])
     static func draw(_ annotation: ScreenshotAnnotation, in context: CGContext, bounds: CGRect) {
         let points = annotation.points
         guard let start = points.first else { return }
@@ -137,24 +140,30 @@ enum ScreenshotRenderer {
     }
 
     static func image(source: CGImage, size: CGSize, annotations: [ScreenshotAnnotation], crop: CGRect) throws -> CGImage {
-        guard let context = CGContext(data: nil, width: source.width, height: source.height, bitsPerComponent: 8,
+        let pixelRect = ScreenshotGeometry.pixelRect(crop, size: size, pixels: CGSize(width: source.width, height: source.height))
+        guard !pixelRect.isNull, !pixelRect.isEmpty, let cropped = source.cropping(to: pixelRect) else { throw ScreenshotImageError.emptySelection }
+        guard !annotations.isEmpty else { return cropped }
+        guard let context = CGContext(data: nil, width: cropped.width, height: cropped.height, bitsPerComponent: 8,
                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ScreenshotImageError.rendering }
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
         context.scaleBy(x: CGFloat(source.width) / size.width, y: CGFloat(source.height) / size.height)
-        context.draw(source, in: CGRect(origin: .zero, size: size))
+        context.translateBy(x: -pixelRect.minX * size.width / CGFloat(source.width),
+                            y: -(CGFloat(source.height) - pixelRect.maxY) * size.height / CGFloat(source.height))
         for annotation in annotations { draw(annotation, in: context, bounds: CGRect(origin: .zero, size: size)) }
-        let pixelRect = ScreenshotGeometry.pixelRect(crop, size: size, pixels: CGSize(width: source.width, height: source.height))
-        guard !pixelRect.isNull, let result = context.makeImage()?.cropping(to: pixelRect) else { throw ScreenshotImageError.emptySelection }
+        guard let result = context.makeImage() else { throw ScreenshotImageError.rendering }
         return result
     }
 
     /// Composite replacement pixels before encoding. Export never carries editable originals.
     static func blurred(_ image: CGImage, boxes: [CGRect]) throws -> CGImage {
         let ci = CIImage(cgImage: image)
-        let radius = max(14, min(CGFloat(image.width), CGFloat(image.height)) * 0.06)
+        let heights = boxes.map { $0.height * CGFloat(image.height) }.sorted()
+        guard !heights.isEmpty else { return image }
+        // Follow text height, rather than making small labels smear with a large crop.
+        let radius = max(10, min(40, heights[heights.count / 2] * 0.55))
         let filtered = ci.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: radius]).cropped(to: ci.extent)
-        let renderer = CIContext(options: [.useSoftwareRenderer: true])
-        guard let blurred = renderer.createCGImage(filtered, from: ci.extent),
+        guard let blurred = blurContext.createCGImage(filtered, from: ci.extent),
               let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ScreenshotImageError.rendering }
@@ -165,7 +174,10 @@ enum ScreenshotRenderer {
             let pixelBox = CGRect(x: box.minX * bounds.width, y: box.minY * bounds.height,
                                   width: box.width * bounds.width, height: box.height * bounds.height)
                 .insetBy(dx: -3, dy: -3).intersection(bounds)
-            if !pixelBox.isEmpty { context.addRect(pixelBox) }
+            if !pixelBox.isEmpty {
+                let corner: CGFloat = pixelBox == bounds ? 0 : min(3, pixelBox.height * 0.18)
+                context.addPath(CGPath(roundedRect: pixelBox, cornerWidth: corner, cornerHeight: corner, transform: nil))
+            }
         }
         context.clip(); context.draw(blurred, in: bounds); context.restoreGState()
         guard let result = context.makeImage() else { throw ScreenshotImageError.rendering }
@@ -191,6 +203,37 @@ struct ScreenshotTextAnalysis {
 }
 
 enum ScreenshotTextDetector {
+    /// Keep accurate single-digit coverage without the accelerator's cold-start stall.
+    static func boxes(_ image: CGImage) throws -> [CGRect] {
+        try analyze(image).boxes
+    }
+
+    private static func useCPU(_ request: VNRequest) throws {
+        for (stage, devices) in try request.supportedComputeStageDevices {
+            if let cpu = devices.first(where: { if case .cpu = $0 { return true }; return false }) {
+                request.setComputeDevice(cpu, for: stage)
+            }
+        }
+    }
+
+    private static func recognitionImage(_ image: CGImage) throws -> CGImage {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let corners = [(0, 0), (image.width - 1, 0), (0, image.height - 1), (image.width - 1, image.height - 1)]
+        let brightness = corners.compactMap { x, y -> CGFloat? in
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return nil }
+            return color.redComponent * 0.2126 + color.greenComponent * 0.7152 + color.blueComponent * 0.0722
+        }
+        guard !brightness.isEmpty, brightness.reduce(0, +) / CGFloat(brightness.count) < 0.45 else { return image }
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw ScreenshotImageError.rendering
+        }
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.draw(image, in: bounds)
+        context.setBlendMode(.difference); context.setFillColor(CGColor(gray: 1, alpha: 1)); context.fill(bounds)
+        guard let inverted = context.makeImage() else { throw ScreenshotImageError.rendering }
+        return inverted
+    }
     /// Vision stays on device. Correction is off so standalone numbers and codes survive.
     // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
     static func analyze(_ image: CGImage, detectAdditionalBoxes: Bool = true) throws -> ScreenshotTextAnalysis {
@@ -203,8 +246,14 @@ enum ScreenshotTextDetector {
         let languages = ["en-US", "ru-RU"].filter { supported.contains($0) }
         if !languages.isEmpty { recognition.recognitionLanguages = languages }
         let detection = VNDetectTextRectanglesRequest()
-        detection.reportCharacterBoxes = true
-        try VNImageRequestHandler(cgImage: image, options: [:]).perform(detectAdditionalBoxes ? [recognition, detection] : [recognition])
+        detection.reportCharacterBoxes = false
+        // Small OCR crops are faster on CPU and avoid long accelerator model setup.
+        // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+        try useCPU(recognition)
+        if detectAdditionalBoxes { try useCPU(detection) }
+        // Dark UI crops use the same geometry with light-background OCR input only.
+        // Export and blur always keep the original screenshot colors.
+        try VNImageRequestHandler(cgImage: recognitionImage(image), options: [:]).perform(detectAdditionalBoxes ? [recognition, detection] : [recognition])
         let observations = recognition.results ?? []
         var boxes = observations.map(\.boundingBox)
         if detectAdditionalBoxes { boxes += (detection.results ?? []).map(\.boundingBox) }

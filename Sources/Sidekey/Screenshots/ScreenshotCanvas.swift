@@ -1,6 +1,6 @@
 import AppKit
 
-enum ScreenshotCommand { case cancel, copy, save, copyText, pin, share, resize }
+enum ScreenshotCommand { case cancel, copy, download, copyText, pin, share, resize }
 
 @MainActor
 final class ScreenshotCanvas: NSView {
@@ -14,6 +14,7 @@ final class ScreenshotCanvas: NSView {
     var labelText = ""
     var blurMode = ScreenshotBlurMode.textAndNumbers
     var busy = false { didSet { needsDisplay = true; onChange?() } }
+    var busyMessage = "Processing on this Mac…"
     var message = "Drag to select an area · Return or double-click for full display · Esc to cancel"
     var onChange: (() -> Void)?
     var onSelection: (() -> Void)?
@@ -86,7 +87,7 @@ final class ScreenshotCanvas: NSView {
                 path.setLineDash([4, 3], count: 2, phase: 0); path.stroke()
             }
         }
-        let text = busy ? "Processing on this Mac…" : message
+        let text = busy ? busyMessage : message
         (text as NSString).draw(at: CGPoint(x: 20, y: bounds.height - 38), withAttributes: [
             .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white,
             .backgroundColor: NSColor.black.withAlphaComponent(0.65)
@@ -124,7 +125,7 @@ final class ScreenshotCanvas: NSView {
     func selectTool(_ value: ScreenshotTool) {
         guard !busy else { return }
         tool = value; selectedAnnotation = nil
-        message = value == .select ? "Drag the edges to crop · ⌘C Copy · ⌘S Save · Esc Cancel" :
+        message = value == .select ? "Drag the edges to crop · Return Copy · ⌘S Download · Esc Cancel" :
             value == .blur ? "Select an area to blur text and numbers · Check the result before sharing" :
             value == .text ? "Enter a label in the toolbar, then click the screenshot" : "Draw inside the selection · V to select and move annotations"
         window?.invalidateCursorRects(for: self); needsDisplay = true; onChange?()
@@ -167,6 +168,8 @@ final class ScreenshotCanvas: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard !busy, beforeDrag != nil else { return }
+        let oldSelection = selection
+        let oldDrawing = drawing?.rect
         let point = bounded(convert(event.locationInWindow, from: nil), to: bounds)
         if var annotation = drawing {
             let inside = bounded(point, to: selection)
@@ -185,7 +188,12 @@ final class ScreenshotCanvas: NSView {
             // An immovable Blur is selection-only. Only an explicit crop gesture may replace the crop.
             selection = ScreenshotGeometry.rect(from: start, to: point)
         }
-        needsDisplay = true
+        if let drawing, let oldDrawing, ![.text, .counter, .spotlight].contains(drawing.tool) {
+            let padding = max(20, drawing.width * 5)
+            setNeedsDisplay(oldDrawing.union(drawing.rect).insetBy(dx: -padding, dy: -padding))
+        } else if oldSelection != selection {
+            setNeedsDisplay(oldSelection.union(selection).insetBy(dx: -12, dy: -12))
+        } else { needsDisplay = true }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -213,10 +221,13 @@ final class ScreenshotCanvas: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if [36, 76].contains(event.keyCode), !(window?.firstResponder is NSTextView) {
+            keyDown(with: event); return true
+        }
         guard !(window?.firstResponder is NSTextView), event.modifierFlags.contains(.command) else { return super.performKeyEquivalent(with: event) }
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "c": if !busy { onCommand?(.copy) }; return true
-        case "s": if !busy { onCommand?(.save) }; return true
+        case "c": onCommand?(.copy); return true
+        case "s": if !busy { onCommand?(.download) }; return true
         case "z": event.modifierFlags.contains(.shift) ? redo() : undo(); return true
         default: return super.performKeyEquivalent(with: event)
         }
@@ -227,8 +238,12 @@ final class ScreenshotCanvas: NSView {
     }
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { cancelOperation(nil); return }
+        if [36, 76].contains(event.keyCode) {
+            if selection.isEmpty { if !busy { _ = selectDisplayAccessibility() } }
+            else { onCommand?(.copy) }
+            return
+        }
         guard !busy else { return }
-        if [36, 76].contains(event.keyCode), selection.isEmpty { _ = selectDisplayAccessibility(); return }
         if [51, 117].contains(event.keyCode), let id = selectedAnnotation {
             checkpoint(snapshot()); annotations.removeAll { $0.id == id }; selectedAnnotation = nil
             needsDisplay = true; onChange?(); return

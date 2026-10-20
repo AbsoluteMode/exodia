@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-20
 sources:
   - type: user-confirmed
+    reference: On 2026-10-20 the user requested a single toolbar row, faster and cleaner Blur, Copy plus direct Download with filename confirmation, and Enter to copy and close.
+    confirmed_at: 2026-10-20
+  - type: user-confirmed
     reference: On 2026-10-20 the user requested a Screen Recording entry for screenshots in Settings Permissions.
     confirmed_at: 2026-10-20
   - type: user-confirmed
@@ -77,10 +80,31 @@ action in Settings Permissions; PermissionsHelper owns that action's request
 and system-settings link. Passive refresh never requests access. Launch,
 the orb and meeting audio retain the no-screen-capture/no-prompt contract.
 
+# Follow-up polish
+
+The user rejected the second settings row and slow/rough Blur. Keep tool settings
+inline in one row. Download replaces Save, uses a downward arrow and writes PNG
+directly into Downloads under a readable local timestamp, with exclusive creation
+and numbered collision suffixes. Success names the actual file and retains the
+editor. Return copies and closes after selection; if Blur is pending it waits for
+the patch, and a failed Blur remains open. Return in the label field commits it
+and also copies/closes; native clipboard editing remains local to the field.
+
+Blur and Copy text retain accurate Vision recognition, supplemented by
+language-independent region detection. CPU compute devices avoid the long cold
+accelerator startup seen in generated-image checks; lightweight detector/fast OCR
+alternatives were rejected because they missed small single digits. Dark crops
+are normalized for recognition only, preserving original screenshot colors. Crop-first compositing allocates only the selected
+pixels. Rendering/detection/PNG work happens off the UI thread, and a reusable
+hardware-backed Core Image context replaces per-gesture software setup. Mask
+strength follows text height, with padded, subtly rounded text edges; Entire area
+covers its full rectangle. Geometry and pixel regressions preserve Retina/crop
+alignment and background pixels. See [interface decisions](../../docs/DESIGN.md).
+
 # Consequences
 
 Screen Recording is requested on invocation. Content stays in memory until
-explicit copy/save/pin/system share. System OCR adds no app-managed speech/LLM
+explicit copy/download/pin/system share. System OCR adds no app-managed speech/LLM
 weights or provider traffic. The editor blocks update restarts. Screen/Space
 changes and sleep cancel stale captures. Real permission/capture/dialog flows
 remain installed-app acceptance checks.

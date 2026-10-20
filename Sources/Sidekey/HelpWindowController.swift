@@ -185,7 +185,8 @@ enum HelpWindowContent {
                               iconName: "viewfinder", prefix: nil, contents: [.text(entry.key.uppercased())])
         } + [
             HelpHotkeyRowSpec(title: "Screenshot — copy", detail: "Copy the edited image and finish capture.", iconName: "doc.on.doc", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("C")]),
-            HelpHotkeyRowSpec(title: "Screenshot — save", detail: "Save as PNG or JPEG.", iconName: "square.and.arrow.down", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("S")]),
+            HelpHotkeyRowSpec(title: "Screenshot — download", detail: "Download PNG to Downloads and show its filename.", iconName: "arrow.down.to.line", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("S")]),
+            HelpHotkeyRowSpec(title: "Screenshot — copy and close", detail: "After selecting an area, copy the edited image and close the editor. Waits for pending Blur.", iconName: "return", prefix: nil, contents: [.text("Return")]),
             HelpHotkeyRowSpec(title: "Screenshot — undo", detail: "Undo a crop or annotation.", iconName: "arrow.uturn.backward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("Z")]),
             HelpHotkeyRowSpec(title: "Screenshot — redo", detail: "Redo the last undone change.", iconName: "arrow.uturn.forward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text(HotkeyGlyph.shift), .text("Z")]),
             HelpHotkeyRowSpec(title: "Screenshot — move crop", detail: "Arrow keys move the crop; Shift moves 10 points; Option resizes.", iconName: "arrow.up.left.and.arrow.down.right", prefix: nil, contents: [.text("←"), .text("↑"), .text("↓"), .text("→")]),

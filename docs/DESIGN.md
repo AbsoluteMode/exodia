@@ -1,5 +1,41 @@
 # Interface decisions
 
+## Screenshot editor polish — 2026-10-20
+
+The person comes to mark a screenshot and copy or download it quickly. First
+they see their crop and a single toolbar row. Next they choose a tool, adjust
+its settings beside it, and finish with Copy/Return or Download.
+
+- Tools, contextual controls and export actions share a 42 pt horizontal row.
+  Why: the user explicitly rejected settings on a second row. Keep system
+  typography, adaptive popover material and semantic accent/label colors.
+- Show only settings relevant to the active tool. Color/width use existing
+  per-tool preferences; the label field is 160 pt. Why: the screenshot is the
+  workspace, and tool configuration should stay nearby without a permanent form.
+- Copy remains the accented primary action. Download has a downward arrow and
+  explicit text, writes directly to Downloads and keeps the editor open with
+  its actual filename. Why: file destination and success must be visible without
+  a Save dialog or interpreting a Share symbol. Name collisions never overwrite.
+- Return/keypad Enter copies and closes after selection; during Blur the command
+  waits for the completed patch. Before selection it selects the whole display.
+  Return in the label field commits it and also copies/closes. Failed processing stays open.
+- No entrance, resize or tool-switch animation delays input; reduced motion uses
+  the same immediate behavior. Busy state disables mutating/export controls and
+  reports processing; Escape stays available. Copy and Download encode off the
+  main thread. Accurate Vision recognition and region detection use CPU to avoid long
+  accelerator startup without dropping small single digits; dark crops are
+  normalized for detection only.
+- Text masks have 3 px padded, subtly rounded edges; strength follows text height,
+  rather than the selected area's dimensions. Entire area covers every pixel.
+  Why: avoid oversized smears while preserving the existing text/number contract.
+
+Native offscreen fixtures cover the real AppKit toolbar in both appearances,
+all main tool states and 640/768/1024 pt available widths; generated images cover region detection, crop/annotation
+alignment, flattened pixels, unique downloads and keyboard commands. These
+checks do not establish live capture permission, real clipboard delivery, physical
+keyboard focus or perceived smoothness in the installed application. Those remain
+acceptance after the designated builder promotes the reviewed source.
+
 ## Model disclosure — 2026-10-20
 
 The user chose compact function rows that open their settings on click. The
