@@ -21,49 +21,6 @@ enum MeetingLiveTestSettings {
     }
 }
 
-struct MeetingSourceActivity: Codable, Equatable, Sendable {
-    let startMS: Double
-    let endMS: Double
-    let micRMS: Double
-    let systemRMS: Double
-
-    /// Signal activity is evidence, not a speech detector or a voice identity.
-    var exclusiveSource: String? {
-        let mic = micRMS >= 0.003, system = systemRMS >= 0.003
-        if mic && !system { return "local" }
-        if system && !mic { return "remote" }
-        return nil
-    }
-}
-
-/// Causal mapping: uses only activity already submitted for the token's audio.
-/// Both-active, silence and conflicting anchors remain unknown.
-struct MeetingSpeakerSourceMapper {
-    private var evidence: [String: (local: Double, remote: Double)] = [:]
-
-    mutating func classify(speaker: String?, startMS: Double, endMS: Double,
-                           activity: [MeetingSourceActivity]) -> String {
-        var local = 0.0, remote = 0.0
-        for frame in activity where frame.endMS > startMS && frame.startMS < endMS {
-            let overlap = max(0, min(endMS, frame.endMS) - max(startMS, frame.startMS))
-            if frame.exclusiveSource == "local" { local += overlap }
-            if frame.exclusiveSource == "remote" { remote += overlap }
-        }
-        let duration = max(1, endMS - startMS)
-        let immediate = local / duration >= 0.8 ? "local" : remote / duration >= 0.8 ? "remote" : "unknown"
-        guard let speaker, !speaker.isEmpty else { return "unknown" }
-        var total = evidence[speaker] ?? (0, 0)
-        if immediate == "local" { total.local += min(local, 1000) }
-        if immediate == "remote" { total.remote += min(remote, 1000) }
-        evidence[speaker] = total
-        // Require useful word duration; never label a speaker from
-        // one tiny punctuation token, and withdraw a conflicting association.
-        if total.local >= 500 && total.remote <= total.local * 0.1 { return "local" }
-        if total.remote >= 500 && total.local <= total.remote * 0.1 { return "remote" }
-        return "unknown"
-    }
-}
-
 struct MeetingLiveTestPacket: Sendable {
     let mixed: Data
     let mic: Data
@@ -142,6 +99,7 @@ private actor MeetingLiveTestWriter {
     private var receiveTask: Task<Void, Never>?
     private var keepaliveTask: Task<Void, Never>?
     private var activity: [MeetingSourceActivity] = []
+    private var activityDetector = MeetingSourceActivityDetector()
     private var mapper = MeetingSpeakerSourceMapper()
     private var errorCode: String?
     private var finished = false
@@ -171,6 +129,7 @@ private actor MeetingLiveTestWriter {
             for await event in stream {
                 switch event {
                 case .marker(let name):
+                    if name == "resumed" { activityDetector = MeetingSourceActivityDetector() }
                     if name.contains("clock_gap") || name.hasPrefix("late_or_out_of_range") { timingWarnings += 1 }
                     try appendJSON(["event": name, "audio_ms": Double(samples) / 16,
                                     "received_elapsed_ms": elapsedMS], file: "events.jsonl")
@@ -180,7 +139,8 @@ private actor MeetingLiveTestWriter {
                     try handles["mic.pcm"]?.write(contentsOf: packet.mic)
                     try handles["system.pcm"]?.write(contentsOf: packet.system)
                     samples += packet.mixed.count / 2
-                    activity.append(packet.activity)
+                    let sourceActivity = activityDetector.observe(packet.activity)
+                    activity.append(sourceActivity)
                     // Keep only recent activity: Soniox final tokens can lag,
                     // but never map an older token against unrelated audio.
                     let cutoff = packet.activity.endMS - 120_000
@@ -189,6 +149,9 @@ private actor MeetingLiveTestWriter {
                     }
                     try appendJSON(["start_ms": packet.activity.startMS, "end_ms": packet.activity.endMS,
                                     "mic_rms": packet.activity.micRMS, "system_rms": packet.activity.systemRMS,
+                                    "mic_threshold": sourceActivity.micThreshold,
+                                    "system_threshold": sourceActivity.systemThreshold,
+                                    "source_calibrated": sourceActivity.calibrated,
                                     "emitted_elapsed_ms": (packet.emittedUptime - started) * 1000,
                                     "written_elapsed_ms": elapsedMS], file: "activity.jsonl")
                     if let socket {
@@ -242,7 +205,7 @@ private actor MeetingLiveTestWriter {
         let value: [String: Any] = ["schema_version": 1, "state": state,
             "sample_rate": 16_000, "audio_format": "pcm_s16le", "channels_per_file": 1,
             "samples": samples, "final_tokens": tokenCount, "timing_warnings": timingWarnings, "model": "stt-rt-v5",
-            "speaker_mapping": "experimental_signal_activity_not_voice_identity",
+            "speaker_mapping": "adaptive_noise_floor_v2_not_voice_identity",
             "clock": "exact_test_mixed_audio_samples; source placement approximated from callback arrival; pause removed; prerecord excluded",
             "capture_latency": "independent 100ms frames with 150ms jitter buffer; emitted/written/token receipt times saved",
             "created_at": ISO8601DateFormatter().string(from: createdAt)]

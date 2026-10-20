@@ -262,7 +262,11 @@ Meeting Notes:
   times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
   no automatic suggestions are enabled. The independent 100ms test mixer uses
   a 150ms jitter allowance and approximate callback timing; source-role labels
-  are experimental. Guide: docs/meeting-assistant-testing.md. WHY:
+  are experimental. Per-source background calibration warms up for two seconds;
+  unique-time speaker anchors check surrounding audio and never override current
+  overlap or an opposing source. Meeting mic capture keeps its quiet-input boost
+  with a peak limiter and gradual gain release. Guide: docs/meeting-assistant-testing.md. WHY:
+  .project-docs/decisions/2026-10-20-meeting-source-noise-floor.md,
   .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
 
 Hover capsules and materials:
