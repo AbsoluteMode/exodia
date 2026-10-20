@@ -7,10 +7,17 @@ import SwiftUI
 final class TodoHoverModel: ObservableObject {
     static let shared = TodoHoverModel(store: .shared, activityChanged: { AppState.shared.todoActive = $0 })
     let store: PlannerStore
-    @Published var draft = "" { didSet { validationMessage = nil; publishActivity() } }
+    @Published var draft = "" {
+        didSet {
+            guard draft != oldValue else { return }
+            validationMessage = nil
+            publishActivity()
+        }
+    }
     @Published var showingHistory = false
     @Published private(set) var completedThisOpening: Set<UUID> = []
     @Published private(set) var validationMessage: String?
+    @Published private(set) var lastAddedID: UUID?
     private(set) var visible = false
     private let activityChanged: (Bool) -> Void
 
@@ -24,6 +31,7 @@ final class TodoHoverModel: ObservableObject {
         completedThisOpening = []
         showingHistory = false
         validationMessage = nil
+        lastAddedID = nil
         visible = true
         publishActivity()
     }
@@ -52,6 +60,7 @@ final class TodoHoverModel: ObservableObject {
         validationMessage = PlannerStore.validationMessage(for: task)
         guard validationMessage == nil, store.saveTask(task) else { return false }
         draft = ""
+        lastAddedID = task.id
         return true
     }
 
@@ -63,7 +72,9 @@ final class TodoHoverModel: ObservableObject {
         else { completedThisOpening.remove(id) }
     }
 
-    private func publishActivity() { activityChanged(visible || !draft.isEmpty) }
+    private func publishActivity() {
+        activityChanged(visible || !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 }
 
 struct TodoHoverView: View {
@@ -117,39 +128,42 @@ struct TodoHoverView: View {
                     .accessibilityLabel("New task. Press Return to add")
             }
 
-            if let message = model.validationMessage ?? store.errorMessage {
+            if let message = (model.showingHistory ? nil : model.validationMessage) ?? store.errorMessage {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message).font(.system(size: 11)).foregroundStyle(.white)
                     if !store.canWrite { Button("Retry") { store.reload() } }
                 }
                 .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.red.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .contain)
             }
 
-            ScrollView {
-                LazyVStack(spacing: 3) {
-                    if model.tasks.isEmpty {
-                        Text(model.showingHistory ? "No completed tasks" : "No tasks yet")
-                            .font(.system(size: 12)).foregroundStyle(.white.opacity(0.76))
-                            .frame(maxWidth: .infinity).padding(.vertical, 28)
-                    } else {
-                        ForEach(model.tasks) { task in
-                            TodoHoverRow(task: task, showingHistory: model.showingHistory) { model.toggle(task.id) }
-                                .disabled(!store.canWrite)
+            ScrollViewReader { scroll in
+                ScrollView {
+                    LazyVStack(spacing: 3) {
+                        if model.tasks.isEmpty {
+                            Text(model.showingHistory ? "No completed tasks" : "No tasks yet")
+                                .font(.system(size: 12)).foregroundStyle(.white.opacity(0.76))
+                                .frame(maxWidth: .infinity).padding(.vertical, 28)
+                        } else {
+                            ForEach(model.tasks) { task in
+                                TodoHoverRow(task: task, showingHistory: model.showingHistory) { model.toggle(task.id) }
+                                    .disabled(!store.canWrite)
+                            }
                         }
                     }
                 }
+                .scrollIndicators(.visible)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(model.showingHistory)
+                .onChange(of: model.lastAddedID) { _, id in
+                    if let id, !model.showingHistory { scroll.scrollTo(id, anchor: .bottom) }
+                }
             }
-            .scrollIndicators(.visible)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .id(model.showingHistory)
         }
         .padding(12)
         .frame(height: Self.contentHeight)
-        .onAppear { model.begin() }
         .task { await Task.yield(); inputFocused = true }
-        .onDisappear { model.end() }
         // Rows move immediately, keeping repeated completion/reopen actions precise.
         .transaction { if reduceMotion { $0.disablesAnimations = true } }
     }

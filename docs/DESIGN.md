@@ -506,6 +506,7 @@ catalog entry's former large-window direction.
   compact and its native pointer band matches visible content.
 - Input has a stable 32pt height and a visible focus outline. Return adds; empty
   input does nothing; invalid input or failed persistence keeps the draft.
+  A successful Return scrolls the new row into view, including in a long list.
   Opening the tool explicitly acquires keyboard focus, ordinary hover does not.
   Why: capture takes one action without stealing focus from the user's editor.
 - Clicking the entire task row toggles completion. Completed rows stay at the
@@ -519,7 +520,8 @@ catalog entry's former large-window direction.
 - Rows keep fixed geometry on hover. A native help tooltip exposes the full title;
   accessibility labels retain the full title and completion state/date. Native
   buttons and text input provide keyboard access. Why: long titles remain readable
-  without shifting the next target.
+  without shifting the next target. Native keyboard navigation to buttons follows
+  the macOS Keyboard Navigation / Full Keyboard Access preference.
 - Back returns to tools; Escape/outside click closes through the existing menu
   observer. Pointer exit keeps an explicitly opened panel available. The input
   draft survives dismissal and defers restore/update restart until saved or

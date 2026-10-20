@@ -1390,6 +1390,9 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: hoverPanelMode) { oldValue, newValue in
+            // A logical opening ends immediately, independently of exit animation.
+            if oldValue == .tasks { TodoHoverModel.shared.end() }
+            if newValue == .tasks { TodoHoverModel.shared.begin() }
             recomputeMouseExpanded()
             if newValue != .vocabularyEditor { hoverVocabularyFocused = false }
             hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
@@ -2526,7 +2529,6 @@ private struct IslandDropModeHoverPanel: View {
     let historyPasteTargetName: () -> String?
     let onOpenNotes: () -> Void
     var onOpenMonitor: () -> Void = {}
-    var onOpenTasks: () -> Void = {}
     var onOpenCalendar: () -> Void = {}
     var onOpenTranslate: () -> Void = {}
     var onOpenSubtitles: () -> Void = {}

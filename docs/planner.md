@@ -11,8 +11,11 @@ Completed rows move below active tasks for this opening; reopening To-do hides
 them from the active list. **History** shows completed tasks with their local
 completion date and time; click one to reopen it. Older completed tasks show
 “Completion time unknown”. Hover a truncated row to read its full native tooltip.
-The draft survives closing the panel. Escape or a click outside dismisses it;
-Back returns to tools. Tasks remain local and also stay available in the Planner
+The draft survives closing the panel. Whitespace-only input does not block restore
+or update restart. Escape or a click outside dismisses it;
+Back returns to tools. Like other inline tools, To-do follows Hover visibility and
+meeting/agent priority: temporarily unavailable Hover does not open a second window,
+and interrupted input is retained for the next opening. Tasks remain local and also stay available in the Planner
 window for search, editing and confirmed deletion. Whytap events support
 titles, start/end times, all-day spans, locations, notes, https meeting links and
 confirmed deletion. All-day end dates in the editor are inclusive; storage uses
@@ -200,8 +203,8 @@ they do not restart remote-account requests. Disconnecting an account or removin
 a calendar prunes its hidden-feed IDs. Visibility supports up to 256 hidden
 calendars with the same bound in settings backup validation.
 An open editor keeps its draft when another tool hotkey brings Planner forward.
-The visible window or a retained new-task draft defers Sparkle restart and backup
-restore. Ordinary backups continue to capture saved content while Planner is open.
+Planner or inline To-do being visible, or a retained new-task draft, defers Sparkle
+restart and backup restore. Ordinary backups continue to capture saved content while Planner is open.
 
 ## Public verification preparation
 

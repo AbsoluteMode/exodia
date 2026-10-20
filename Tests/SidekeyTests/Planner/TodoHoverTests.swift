@@ -84,6 +84,7 @@ final class TodoHoverTests: XCTestCase {
         XCTAssertTrue(store.archive.tasks.isEmpty)
         fail = false
         XCTAssertTrue(model.submit()); XCTAssertEqual(model.draft, "")
+        XCTAssertEqual(model.lastAddedID, store.archive.tasks.last?.id)
         let id = try XCTUnwrap(model.tasks.first?.id)
         fail = true; model.toggle(id)
         XCTAssertFalse(try XCTUnwrap(model.tasks.first).completed)
@@ -91,8 +92,14 @@ final class TodoHoverTests: XCTestCase {
         model.end(); XCTAssertEqual(activity.last, false)
         model.draft = String(repeating: "x", count: 501)
         XCTAssertFalse(model.submit()); XCTAssertNotNil(model.validationMessage)
+        let invalid = model.draft
+        model.draft = invalid
+        XCTAssertNotNil(model.validationMessage, "An unchanged native binding write must preserve the error")
         model.draft = ""; XCTAssertNil(model.validationMessage)
         XCTAssertEqual(activity.last, false)
+        model.draft = " \n\t "
+        model.begin(); model.end()
+        XCTAssertEqual(activity.last, false, "Invisible whitespace is not an unsaved task")
     }
 
     func testInlineRoutingKeyboardAndNativeHitBand() {
@@ -136,6 +143,14 @@ final class TodoHoverTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(40))
         XCTAssertEqual(model.store.archive.tasks.map(\.title), ["Written with native Return"])
         XCTAssertEqual(model.draft, "")
+        // Native Return must keep both the rejected text and its explanation.
+        field.stringValue = String(repeating: "x", count: 501)
+        field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
+        XCTAssertTrue(field.sendAction(field.action, to: field.target))
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertNotNil(model.validationMessage)
+        XCTAssertEqual(model.draft.count, 501)
+        XCTAssertEqual(model.store.archive.tasks.count, 1)
         XCTAssertFalse(window.isVisible || window.isKeyWindow)
     }
 
@@ -164,6 +179,7 @@ final class TodoHoverTests: XCTestCase {
         }
         model.draft = String(repeating: "long ", count: 110); XCTAssertFalse(model.submit())
         try await render(model, width: 310, name: "validation", destination: destination)
+        try await render(model, width: 310, name: "long-list", destination: destination)
     }
 
     private func render(_ model: TodoHoverModel, width: CGFloat, name: String, destination: URL) async throws {
@@ -177,6 +193,11 @@ final class TodoHoverTests: XCTestCase {
             fixture.toggle(completed.id, now: completed.completedAt ?? Date())
         }
         if name == "validation" { XCTAssertFalse(fixture.submit()) }
+        if name == "long-list" {
+            for index in 1...12 {
+                fixture.draft = "Existing task \(index)"; XCTAssertTrue(fixture.submit())
+            }
+        }
         let host = NSHostingView(rootView: TodoHoverView(model: fixture, onBack: {})
             .background(Color(white: 0.12)).environment(\.colorScheme, .dark))
         let size = NSSize(width: width, height: TodoHoverView.contentHeight)
@@ -188,6 +209,12 @@ final class TodoHoverTests: XCTestCase {
         defer { window.contentView = nil; window.close() }
         try await Task.sleep(for: .milliseconds(40))
         host.layoutSubtreeIfNeeded()
+        if name == "long-list" {
+            fixture.draft = "Newest task is visible after Return"
+            XCTAssertTrue(fixture.submit())
+            try await Task.sleep(for: .milliseconds(40))
+            host.layoutSubtreeIfNeeded()
+        }
         let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
