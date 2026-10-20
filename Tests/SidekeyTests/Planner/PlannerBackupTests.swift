@@ -3,6 +3,46 @@ import XCTest
 
 @MainActor
 final class PlannerBackupTests: XCTestCase {
+    func testRefreshRotationDoesNotConsumeSettingsHistoryButRealChangesCaptureIt() async throws {
+        var profile = try ArtifactBackupTestProfile()
+        let account = ConnectedCalendarAccount(id: UUID(), provider: .microsoft, label: "Synthetic")
+        profile.defaults.set(try JSONEncoder().encode([account]), forKey: CalendarAccountSettings.accountsKey)
+        let name = CalendarKeychain.account(account.id)
+        var credential = CalendarCredential(provider: .microsoft, clientID: "fixture-client",
+            accessToken: "fixture-access", refreshToken: "fixture-first", expiresAt: .distantFuture)
+        profile.addCredential(name, String(decoding: try JSONEncoder().encode(credential), as: UTF8.self))
+        profile.addCredential("byok.openrouter.llm_api_key", "fixture-api-key")
+        let model = BackupViewModel(defaults: profile.defaults,
+            keyStore: MemoryTokenStore(ConfigBackupArchive.makeKey().base64EncodedString()), githubTokenStore: MemoryTokenStore(),
+            local: BackupLocalStore(root: profile.root.appendingPathComponent("archives")),
+            settingsFiles: ConfigBackupFiles(root: profile.root.appendingPathComponent("settings")),
+            changeProbe: { "isolated-planner-fixture" }, idle: { false },
+            providerStore: { profile.credentialStores[$0] ?? MemoryTokenStore() }, previousRestoreOutcome: { nil },
+            archivedKeyStore: { _ in MemoryTokenStore() }, pendingKeyStore: MemoryTokenStore())
+        defer { model.stop(); profile.tearDown() }
+        await model.start()?.value
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.localSettingsVersions.count, 1)
+        credential.refreshToken = "fixture-rotated"
+        let rotated = String(decoding: try JSONEncoder().encode(credential), as: UTF8.self)
+        try profile.credentialStores[name]?.save(rotated)
+        await model.poll()
+        XCTAssertEqual(model.localSettingsVersions.count, 1, "The minute poll must ignore token-only rotation")
+        profile.defaults.set(true, forKey: "sidekey.preferences.hideHelpers")
+        await model.poll()
+        XCTAssertEqual(model.localSettingsVersions.count, 2)
+        XCTAssertEqual(model.localSettingsVersions.first?.credentials?[name], rotated)
+        credential.clientID = "fixture-new-client"
+        try profile.credentialStores[name]?.save(String(decoding: try JSONEncoder().encode(credential), as: UTF8.self))
+        await model.poll()
+        XCTAssertEqual(model.localSettingsVersions.count, 3, "A changed OAuth client must be backed up")
+        try profile.credentialStores["byok.openrouter.llm_api_key"]?.save("fixture-replaced-api-key")
+        await model.poll()
+        XCTAssertEqual(model.localSettingsVersions.count, 4, "Other provider keys retain normal change detection")
+        XCTAssertNil(model.errorMessage)
+        await model.stopAndWait()
+    }
+
     func testTasksEventsAccountsAndCredentialsRestoreIntoAnIsolatedProfile() async throws {
         var source = try ArtifactBackupTestProfile(), target = try ArtifactBackupTestProfile()
         defer { source.tearDown(); target.tearDown() }

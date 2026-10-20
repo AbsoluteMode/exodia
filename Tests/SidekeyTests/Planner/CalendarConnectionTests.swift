@@ -7,9 +7,15 @@ final class PlannerMemoryCredentials: CalendarCredentialStorage, @unchecked Send
     private let lock = NSLock()
     private var values: [UUID: CalendarCredential] = [:]
     private var saves = 0
+    private var backupSaves = 0
     var saveCount: Int { lock.lock(); defer { lock.unlock() }; return saves }
+    var backupRelevantSaves: Int { lock.lock(); defer { lock.unlock() }; return backupSaves }
     func read(_ id: UUID) throws -> CalendarCredential? { lock.lock(); defer { lock.unlock() }; return values[id] }
-    func save(_ credential: CalendarCredential, id: UUID) throws { lock.lock(); defer { lock.unlock() }; values[id] = credential; saves += 1 }
+    func save(_ credential: CalendarCredential, id: UUID, backupRelevant: Bool) throws {
+        lock.lock(); defer { lock.unlock() }
+        values[id] = credential; saves += 1
+        if backupRelevant { backupSaves += 1 }
+    }
     func delete(_ id: UUID) throws { lock.lock(); defer { lock.unlock() }; values.removeValue(forKey: id) }
 }
 
@@ -70,6 +76,7 @@ final class CalendarConnectionTests: XCTestCase {
         XCTAssertEqual(tokens, ["fixture-updated", "fixture-updated"])
         XCTAssertEqual(requests, 1)
         XCTAssertEqual(storage.saveCount, 2)
+        XCTAssertEqual(storage.backupRelevantSaves, 1, "Rotation is durable without requesting a full backup")
         XCTAssertEqual(try storage.read(id)?.refreshToken, "fixture-rotated")
     }
 

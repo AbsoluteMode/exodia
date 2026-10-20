@@ -12,8 +12,11 @@ struct CalendarCredential: Codable, Sendable {
     var expiresAt: Date
 
     func hasSameAuthorization(as other: Self) -> Bool {
-        provider == other.provider && clientID == other.clientID &&
-        clientSecret == other.clientSecret && refreshToken == other.refreshToken
+        hasSameClient(as: other) && refreshToken == other.refreshToken
+    }
+
+    func hasSameClient(as other: Self) -> Bool {
+        provider == other.provider && clientID == other.clientID && clientSecret == other.clientSecret
     }
 }
 
@@ -47,8 +50,14 @@ extension CalendarCredential {
 
 protocol CalendarCredentialStorage: Sendable {
     func read(_ id: UUID) throws -> CalendarCredential?
-    func save(_ credential: CalendarCredential, id: UUID) throws
+    func save(_ credential: CalendarCredential, id: UUID, backupRelevant: Bool) throws
     func delete(_ id: UUID) throws
+}
+
+extension CalendarCredentialStorage {
+    func save(_ credential: CalendarCredential, id: UUID) throws {
+        try save(credential, id: id, backupRelevant: true)
+    }
 }
 
 struct CalendarKeychain: CalendarCredentialStorage {
@@ -58,9 +67,11 @@ struct CalendarKeychain: CalendarCredentialStorage {
         guard let text = try store(id).read(), let data = text.data(using: .utf8) else { return nil }
         return try JSONDecoder().decode(CalendarCredential.self, from: data)
     }
-    func save(_ credential: CalendarCredential, id: UUID) throws {
+    func save(_ credential: CalendarCredential, id: UUID, backupRelevant: Bool) throws {
         try store(id).save(String(decoding: JSONEncoder().encode(credential), as: UTF8.self))
-        Task { @MainActor in NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil) }
+        if backupRelevant {
+            Task { @MainActor in NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil) }
+        }
     }
     func delete(_ id: UUID) throws {
         try store(id).delete()
@@ -272,7 +283,7 @@ actor CalendarOAuthClient {
                 try Task.checkCancellation()
                 guard !self.removed.contains(id) else { throw CancellationError() }
                 if !credential.hasSameAuthorization(as: updated) {
-                    do { try self.storage.save(updated, id: id) } catch { throw CalendarConnectionError.keychain }
+                    do { try self.storage.save(updated, id: id, backupRelevant: false) } catch { throw CalendarConnectionError.keychain }
                 }
                 self.cached[id] = updated
                 return updated

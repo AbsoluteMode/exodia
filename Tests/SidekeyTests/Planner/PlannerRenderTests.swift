@@ -52,6 +52,16 @@ final class PlannerRenderTests: XCTestCase {
                 }
             }
         }
+        defaults.set((0..<CalendarAccountSettings.maximumHiddenFeeds).map { "fixture:\($0)" },
+            forKey: CalendarAccountSettings.hiddenFeedsKey)
+        let capped = CalendarConnections(defaults: defaults)
+        capped.setVisible(false, feedID: "local")
+        XCTAssertNotNil(capped.errors["visibility"])
+        for scheme in [ColorScheme.light, .dark] {
+            try render(CalendarSourcesView(connections: capped, onConnect: {})
+                .background(Color(nsColor: .windowBackgroundColor)), size: NSSize(width: 410, height: 400),
+                to: destination.appendingPathComponent("calendar-limit-\(scheme).png"), scheme: scheme)
+        }
     }
 
     private func render<V: View>(_ view: V, size: NSSize, to url: URL, scheme: ColorScheme = .dark) throws {

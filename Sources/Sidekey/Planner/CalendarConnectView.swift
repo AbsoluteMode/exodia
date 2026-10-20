@@ -9,6 +9,9 @@ struct CalendarSourcesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("Your calendars").font(.headline); Spacer(); Button("Connect account", action: onConnect) }
+            if let message = connections.errors["visibility"] {
+                Text(message).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     feedToggle(id: "local", title: "Whytap · On this Mac")

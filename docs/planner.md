@@ -23,6 +23,10 @@ Local tasks and events are not uploaded by calendar connections.
 Encrypted backups include the Planner archive, calendar account settings and saved
 OAuth credentials. The local content has its own To-do & calendar archive section;
 connection metadata travels with settings and sign-in travels with credentials.
+Token rotation alone does not create settings versions or full archive uploads;
+the next ordinary or manual backup captures the current refresh token. A restored
+calendar connection can ask you to sign in again if its saved token has expired
+or been replaced by the provider.
 Restore keeps the previous local archive for rollback. Archives from before
 Planner support preserve connections already configured on the target Mac.
 

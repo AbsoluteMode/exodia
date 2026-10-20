@@ -348,7 +348,8 @@ and detail pane remain the selected direction.
   under Reduce Motion as well as ordinary settings.
 
 Offscreen synthetic fixtures cover empty/populated tasks, the month/day calendar,
-connect and event editors, at 820 and 980pt in both appearances. Measured metadata contrast is 6.62:1 on the light surface; white selected-date
+connect and event editors, at 820 and 980pt in both appearances, plus calendar
+visibility-limit feedback in both appearances. Measured metadata contrast is 6.62:1 on the light surface; white selected-date
 labels on the shared blue fill are 5.59:1. Separate Codex and Claude Opus 5.5 reviews
 inspected layouts and data/backup contracts. The Claude review led to repairs in
 token backup behavior, editor errors, date editing, accessibility and packaging

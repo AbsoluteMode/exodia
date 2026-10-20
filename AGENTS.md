@@ -738,7 +738,9 @@ view is visible, and matching UID/occurrence bounds collapse duplicate sources.
 OAuth uses browser S256 PKCE/state, a numeric loopback listener (Microsoft redirects
 to localhost), and Keychain credentials with durable refresh-token rotation.
 Short-lived access tokens stay in memory and are excluded from backup; only a
-refresh-token/client change updates the saved authorization. No
+refresh-token/client change updates the saved authorization. Token rotation alone
+does not create a settings version or full backup; subsequent backups capture the
+latest token, and restored sign-in can require reconnecting. No
 shared OAuth registrations are created by the app itself; the owner supplies
 registered native clients during packaging through configure-calendar-clients.py.
 Live accounts require provider setup and separate acceptance. Encrypted backups

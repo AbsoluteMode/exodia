@@ -94,6 +94,22 @@ enum ConfigBackupRegistry {
         return account == "byok.server.\(id.uuidString.lowercased()).api_key"
     }
 
+    /// Token rotation keeps the live Keychain current without consuming settings
+    /// rollback points. The next real snapshot/archive captures the latest token.
+    /// WHY: .project-docs/decisions/2026-10-19-planner.md
+    static func settingsCredentialsMatch(_ first: [String: String], _ second: [String: String]) -> Bool {
+        guard Set(first.keys) == Set(second.keys) else { return false }
+        do { try validate([:], credentials: first); try validate([:], credentials: second) }
+        catch { return false }
+        return first.allSatisfy { account, value in
+            guard let other = second[account] else { return false }
+            if !account.hasPrefix("calendar.") { return value == other }
+            guard let left = try? JSONDecoder().decode(CalendarCredential.self, from: Data(value.utf8)),
+                  let right = try? JSONDecoder().decode(CalendarCredential.self, from: Data(other.utf8)) else { return false }
+            return left.hasSameClient(as: right)
+        }
+    }
+
     private struct RoutingDocument: Decodable {
         var servers: [ServerEndpoint]?
         var migrationVersion: Int?
