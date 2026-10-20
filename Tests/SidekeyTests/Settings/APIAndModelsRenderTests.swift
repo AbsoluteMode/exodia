@@ -81,12 +81,15 @@ final class APIAndModelsRenderTests: XCTestCase {
         try? FileManager.default.removeItem(at: usageURL)
         let usageStore = AIUsageStore(url: usageURL)
         let fixtureNow = Date()
-        let usageModel = AIUsageCostsViewModel(store: usageStore)
+        let billing = ElevenLabsBillingUsage(rows: [
+            .init(id: "fixture", keyName: "Whytap key", model: "scribe_v2_realtime", product: "STT", credits: 180, minutes: 10)
+        ])
+        let usageModel = AIUsageCostsViewModel(store: usageStore, loadBilling: { _ in billing })
         let usageEvents: [AIUsageEvent] = [
             .speech(.init(feature: .dropSmart, account: .soniox, model: "stt-rt-v5"), seconds: 300, at: fixtureNow),
             .init(createdAt: fixtureNow, context: .init(feature: .dropSmartCleanup, account: .openRouter, model: "google/gemini-3.8-flash"), currency: .usd, amount: 0.02, basis: .reported),
             .init(createdAt: fixtureNow, context: .init(feature: .dropSmart, account: .elevenLabs, model: "scribe_v2_realtime"), currency: .elevenLabsCredits, amount: 125, basis: .reported),
-            .init(createdAt: fixtureNow, context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), currency: .elevenLabsCredits, amount: 1234, basis: .reported),
+            .speech(.init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), seconds: 300, at: fixtureNow),
             .init(createdAt: fixtureNow, context: .init(feature: .agent, account: .anthropic, model: "claude-opus-5-5"), currency: .usd, amount: 0.48, basis: .estimated),
             .init(createdAt: fixtureNow, context: .init(feature: .agent, account: .anthropic, model: "claude-sonnet-5-5"), currency: .usd, amount: nil, basis: .unavailable)
         ]
