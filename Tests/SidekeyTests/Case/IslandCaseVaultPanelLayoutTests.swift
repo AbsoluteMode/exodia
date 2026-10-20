@@ -25,14 +25,6 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
         }
     }
 
-    func test_import_screen_at_actual_case_size() async throws {
-        let fixture = try await PanelFixture(payload: samplePayload(), width: 310,
-                                            height: IslandCaseVaultStyle.panelHeight, showImport: true)
-        defer { fixture.close() }
-        try fixture.saveImage("case-import-310-320")
-        XCTAssertFalse(fixture.isWindowVisible)
-    }
-
     func test_general_section_first_and_expanded() async throws {
         let fixture = try await PanelFixture(payload: samplePayload())
         defer { fixture.close() }
@@ -110,7 +102,9 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
     func test_access_row_opens_the_access_screen() throws {
         XCTAssertTrue(IslandCaseVaultPanel.isAccessScreenAvailable)
         let sources = try panelSources()
-        XCTAssertTrue(sources.contains("Доступ к ключам ›"))
+        XCTAssertTrue(sources.contains("IslandCaseConnectedApps"))
+        XCTAssertEqual(IslandCaseConnectedApps.brandAsset(for: CaseKnownClient.claudeCode.identity), "claude-code")
+        XCTAssertEqual(IslandCaseConnectedApps.brandAsset(for: CaseKnownClient.codex.identity), "codex")
     }
 
     func test_renders_at_310pt_without_horizontal_overflow() async throws {
@@ -184,7 +178,11 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
         return CaseVaultPayload(
             projects: projects,
             secrets: secrets,
-            values: secrets.map { CaseSecretValue(secretID: $0.id, value: "fixture") }
+            values: secrets.map { CaseSecretValue(secretID: $0.id, value: "fixture") },
+            apps: [CaseKnownClient.claudeCode, .codex].map {
+                CaseAppRegistration(id: UUID(), displayName: $0.displayName, identity: $0.identity,
+                                    defaultMode: .approve, projectModes: [:], createdAt: date)
+            }
         )
     }
 
@@ -215,8 +213,13 @@ private final class PanelFixture {
     let host: NSHostingView<AnyView>
     private let service: CaseVaultService
 
-    init(payload: CaseVaultPayload, width: CGFloat = 310, height: CGFloat = 480, showImport: Bool = false) async throws {
+    init(payload: CaseVaultPayload, width: CGFloat = 310, height: CGFloat = 480) async throws {
         _ = NSApplication.shared
+        var sourceRoot = URL(fileURLWithPath: #filePath)
+        while sourceRoot.path != "/", !FileManager.default.fileExists(atPath: sourceRoot.appendingPathComponent("Package.swift").path) {
+            sourceRoot.deleteLastPathComponent()
+        }
+        ProviderBrandIconAsset.setResourceDirectoryForTesting(sourceRoot.appendingPathComponent("Resources/UsefulLinkIcons"))
         service = CaseVaultService(store: LayoutStubStore(payload: payload), keyProvider: LayoutStubKeys())
         viewModel = CaseViewModel(
             service: service,
@@ -233,13 +236,7 @@ private final class PanelFixture {
         window.isReleasedWhenClosed = false
         let modelForRendering = viewModel
         host = NSHostingView(rootView: AnyView(
-            Group {
-                if showImport {
-                    IslandCaseDopplerImportPanel(viewModel: modelForRendering, onBack: {})
-                } else {
-                    IslandCaseVaultPanel(viewModel: modelForRendering)
-                }
-            }
+            IslandCaseVaultPanel(viewModel: modelForRendering)
                 .frame(width: width, height: height)
                 .background(Color(white: 0.08))
                 .environment(\.colorScheme, .dark)
@@ -270,6 +267,8 @@ private final class PanelFixture {
     func close() {
         window.contentView = nil
         window.close()
+        ProviderBrandIconAsset.setResourceDirectoryForTesting(nil)
+        ProviderBrandIconAsset.clearCacheForTesting()
     }
 }
 

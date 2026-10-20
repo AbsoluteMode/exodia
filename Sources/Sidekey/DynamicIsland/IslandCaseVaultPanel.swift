@@ -23,7 +23,7 @@ enum IslandCaseVaultStyle {
 struct IslandCaseVaultPanel: View {
     @ObservedObject var viewModel: CaseViewModel
 
-    /// The «ИИ … / Подключить ›» row opens «Доступ приложений» in place.
+    /// Connected app icons open access settings in place.
     static let isAccessScreenAvailable = true
 
     /// While searching every matching project is shown expanded.
@@ -49,7 +49,6 @@ struct IslandCaseVaultPanel: View {
     @State private var dragState = CaseDragState()
     @State private var lastError: String?
     @State private var showingAccess = false
-    @State private var showingImport = false
     @FocusState private var inputFocused: Bool
 
     private let topScrollID = "case-list-top"
@@ -60,9 +59,7 @@ struct IslandCaseVaultPanel: View {
     var body: some View {
         Group {
             if viewModel.isUnlocked {
-                if showingImport {
-                    IslandCaseDopplerImportPanel(viewModel: viewModel, onBack: { showingImport = false })
-                } else if showingAccess {
+                if showingAccess {
                     IslandCaseAccessPanel(viewModel: viewModel, onBack: {
                         viewModel.dismissClientSetupProblems()
                         showingAccess = false
@@ -74,8 +71,6 @@ struct IslandCaseVaultPanel: View {
                 lockedPanel
             }
         }
-        .background(CasePanelDismissObserver(enabled: viewModel.holdsPanelOpen && !viewModel.isSystemInteractionActive,
-                                             onDismiss: onDismiss))
         .onExitCommand {
             if !viewModel.isSystemInteractionActive { onDismiss() }
         }
@@ -185,15 +180,6 @@ struct IslandCaseVaultPanel: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding + 2)
             }
-
-            Button("Импорт из Doppler") { showingImport = true }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.88))
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding + 2)
-                .accessibilityIdentifier("case.doppler.open")
 
             caseList
                 .padding(.horizontal, IslandCaseVaultStyle.horizontalPadding)
@@ -484,32 +470,9 @@ struct IslandCaseVaultPanel: View {
     )
 
     private var accessRow: some View {
-        let names = viewModel.registeredAppNames
-        return HStack(spacing: 6) {
-            Circle()
-                .fill(names.isEmpty ? Color.white.opacity(0.30) : Color.green.opacity(0.85))
-                .frame(width: 6, height: 6)
-            Text(names.isEmpty ? "Нет приложений" : names.joined(separator: ", "))
-                .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .medium))
-                .foregroundStyle(.white.opacity(0.70))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(-1)
-            Spacer(minLength: 4)
-            Button {
-                showingAccess = true
-                onOpenAccessScreen?()
-            } label: {
-                Text("Доступ к ключам ›")
-                    .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.88))
-                    .fixedSize()
-                    .padding(.horizontal, 9)
-                    .frame(height: 22)
-                    .background(Capsule().fill(Color.white.opacity(0.10)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("case.access.open")
+        IslandCaseConnectedApps(registrations: viewModel.registrations) {
+            showingAccess = true
+            onOpenAccessScreen?()
         }
         .padding(.top, 6)
         .overlay(alignment: .top) {

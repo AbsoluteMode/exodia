@@ -5,35 +5,29 @@ import XCTest
 
 @MainActor
 final class CaseViewModelTests: XCTestCase {
-    func test_returning_directly_to_held_case_drawer_hands_control_back_to_hover() {
-        var expanded = false // Touch ID interrupted the original hover.
-        expanded = IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: true,
-            wasExpanded: expanded, glance: false, interactionHeld: true)
-        XCTAssertTrue(expanded, "The visible held drawer accepts re-entry without visiting the pill")
-        expanded = IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false,
-            wasExpanded: expanded, glance: false, interactionHeld: false)
-        XCTAssertFalse(expanded, "After pointer return releases the hold, mouse exit collapses normally")
+    func test_explicitly_opened_menus_survive_pointer_exit() {
+        for mode in IslandHoverPanelMode.allCases {
+            let held = IslandView.menuStaysOpen(mode, glance: false)
+            XCTAssertEqual(held, mode != .controls)
+            XCTAssertEqual(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false,
+                wasExpanded: true, glance: false, interactionHeld: held), held)
+        }
+        XCTAssertFalse(IslandView.menuStaysOpen(.brightness, glance: true), "Hardware brightness feedback still expires")
         XCTAssertFalse(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: true,
-            wasExpanded: false, glance: false), "Fading panels must still be unable to reopen themselves")
+            wasExpanded: false, glance: false), "A dismissed drawer cannot reopen from a stale hover band")
     }
 
-    func test_system_authentication_holds_panel_through_success_or_cancel_until_return() async throws {
+    func test_system_authentication_suspends_dismissal_through_success_or_cancel() async throws {
         for denied in [false, true] {
             let env = TestCaseEnvironment(payload: CaseVaultPayload())
             let vm = env.makeViewModel()
             env.authenticator.duringAuthentication = {
                 XCTAssertTrue(vm.isSystemInteractionActive)
-                XCTAssertTrue(vm.holdsPanelOpen)
-                vm.releasePanelHold()
-                XCTAssertTrue(vm.holdsPanelOpen, "Hover loss cannot dismiss a system prompt")
                 await Task.yield()
             }
             if denied { env.authenticator.error = CaseAuthenticationError.denied }
             do { try await vm.unlock() } catch { XCTAssertTrue(denied) }
             XCTAssertFalse(vm.isSystemInteractionActive)
-            XCTAssertTrue(vm.holdsPanelOpen, "Keep the result until the pointer returns or outside click")
-            vm.releasePanelHold()
-            XCTAssertFalse(vm.holdsPanelOpen)
         }
     }
 
