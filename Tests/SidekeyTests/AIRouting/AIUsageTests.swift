@@ -47,6 +47,20 @@ final class AIUsageTests: XCTestCase {
         XCTAssertEqual(AIUsageTotal(events: [event(0.01, account: .elevenLabs)], currency: .elevenLabsCredits).text, "< 0.1")
     }
 
+    func test_one_price_preserves_mixed_units_and_unknown_portions() {
+        let events = [event(0.02), event(1234, account: .elevenLabs)]
+        XCTAssertEqual(AIUsagePrice(events: events).text, "$0.02\n\(1234.formatted()) credits")
+        XCTAssertEqual(AIUsagePrice(events: [event(nil, account: .elevenLabs)]).text, "Credits unavailable")
+        XCTAssertEqual(AIUsagePrice(events: [event(0.02), event(nil)]).text, "$0.02 +")
+    }
+
+    @MainActor func test_each_costs_visit_defaults_to_this_month() {
+        let model = AIUsageCostsViewModel(store: AIUsageStore(url: storeURL()))
+        XCTAssertEqual(model.period, .month)
+        model.period = .custom; model.beginVisit()
+        XCTAssertEqual(model.period, .month)
+    }
+
     func test_invalid_amounts_and_currency_are_rejected() async throws {
         let store = AIUsageStore(url: storeURL())
         for value in [-1.0, Double.nan, .infinity] {

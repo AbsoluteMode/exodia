@@ -119,7 +119,7 @@ struct APIAndModelsView: View {
     private var sectionTabs: some View {
         HStack(spacing: 22) {
             ForEach(APIAndModelsSection.allCases, id: \.self) { item in
-                Button { section = item } label: {
+                Button { selectSection(item) } label: {
                     Text(item.rawValue)
                         .font(.system(size: 12.5, weight: section == item ? .medium : .regular))
                         .foregroundStyle(section == item ? MacSettingsTheme.text : MacSettingsTheme.text2)
@@ -136,13 +136,18 @@ struct APIAndModelsView: View {
                     let items = APIAndModelsSection.allCases
                     guard direction == .left || direction == .right,
                           let index = items.firstIndex(of: item) else { return }
-                    if direction == .right { section = items[(index + 1) % items.count] }
-                    if direction == .left { section = items[(index + items.count - 1) % items.count] }
+                    if direction == .right { selectSection(items[(index + 1) % items.count]) }
+                    if direction == .left { selectSection(items[(index + items.count - 1) % items.count]) }
                     focusedSection = section
                 }
             }
             Spacer(minLength: 0)
         }.padding(.horizontal, 18)
+    }
+
+    private func selectSection(_ next: APIAndModelsSection) {
+        if next == .costs, section != .costs { usage.beginVisit() }
+        section = next
     }
 
     private var presentedSheet: Binding<PresentedSheet?> {

@@ -654,8 +654,10 @@ Costs: the local ai-usage.sqlite journal records only feature/provider/model,
 request ID, time, duration, currency and expense metadata from actual runtime
 calls. Historical routes are captured before sending; switching models does not
 rewrite past usage. Only used feature groups appear for the selected local-date
-period; hover/click/keyboard focus reveals their models. USD and ElevenLabs
-credits stay separate. OpenRouter response costs and exact matched ElevenLabs
+period; hover/click/keyboard focus reveals their models. One Price column
+retains explicit USD and ElevenLabs credit units, both when mixed. Each visit
+starts at This month; matching neutral From/To controls open a dismissing native
+calendar. No permanent bottom explanation or sticky text-segment highlight. OpenRouter response costs and exact matched ElevenLabs
 analytics debits are reported; Soniox public hourly equivalents and OpenCode's
 computed step prices are estimates. Missing prices stay unavailable, never zero;
 partial totals show +. No account-wide balance deltas or USD-to-credit conversion.

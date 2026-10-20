@@ -85,6 +85,7 @@ final class APIAndModelsRenderTests: XCTestCase {
         let usageEvents: [AIUsageEvent] = [
             .speech(.init(feature: .dropSmart, account: .soniox, model: "stt-rt-v5"), seconds: 300, at: fixtureNow),
             .init(createdAt: fixtureNow, context: .init(feature: .dropSmartCleanup, account: .openRouter, model: "google/gemini-3.8-flash"), currency: .usd, amount: 0.02, basis: .reported),
+            .init(createdAt: fixtureNow, context: .init(feature: .dropSmart, account: .elevenLabs, model: "scribe_v2_realtime"), currency: .elevenLabsCredits, amount: 125, basis: .reported),
             .init(createdAt: fixtureNow, context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), currency: .elevenLabsCredits, amount: 1234, basis: .reported),
             .init(createdAt: fixtureNow, context: .init(feature: .agent, account: .anthropic, model: "claude-opus-5-5"), currency: .usd, amount: 0.48, basis: .estimated),
             .init(createdAt: fixtureNow, context: .init(feature: .agent, account: .anthropic, model: "claude-sonnet-5-5"), currency: .usd, amount: nil, basis: .unavailable)
@@ -124,6 +125,9 @@ final class APIAndModelsRenderTests: XCTestCase {
             try await render(AIUsageModelsPopover(row: .init(title: "Agent", events: manyModels)),
                 size: NSSize(width: 390, height: 390), dark: dark,
                 to: directory.appendingPathComponent("cost-models-many-\(dark ? "dark" : "light").png"))
+            try await render(AIUsageDateCalendar(title: "From", date: .constant(fixtureNow), latest: fixtureNow, close: {}),
+                size: NSSize(width: 300, height: 310), dark: dark,
+                to: directory.appendingPathComponent("cost-date-calendar-\(dark ? "dark" : "light").png"))
         }
         // What the Agent row's provider menu lists (a menu itself is not drawn offscreen).
         try await render(
