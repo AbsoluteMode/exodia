@@ -568,6 +568,21 @@ Hover tool search and pointer routing:
   .project-docs/decisions/2026-10-17-hover-tool-search.md,
   .project-docs/decisions/2026-10-17-native-hover-glass.md
 
+whytap:// links:
+  CFBundleURLTypes registers the whytap scheme; AppDelegate handles kAEGetURL
+  (registered in applicationWillFinishLaunching, queued until launch ends).
+  WhytapLink parses only whytap://tool/<HoverTool rawValue> and
+  whytap://settings/<SettingsWindowTab rawValue>; its switches over both enums
+  are exhaustive, so a new tile or tab needs a destination to compile. The enums
+  are the public registry of linkable places: never rename raw values. A link
+  only shows a place: inline tools open their HoverPanelRequest, navigate tools
+  and tabs open Settings with setHighlight, Planner/Translate/Subtitles windows
+  open idle, Drop Mode/Record/Screenshot select their Toolbox pane
+  (SettingsWindowSelection.focus) and Quit highlights the Quit row. Unknown ids
+  or kinds only wake the island; other schemes, credentials, ports, empty or
+  extra segments and non-alphanumeric ids are rejected and not logged. WHY:
+  .project-docs/decisions/2026-10-20-whytap-links.md
+
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference
   (Settings -> Other -> "Show island on") -> screen with a real notch ->
