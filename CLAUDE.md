@@ -295,16 +295,24 @@ Meeting Notes:
 Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
-  appear as app icons; clicking one opens access settings. With no connected
-  clients a link icon opens setup. Navigation is white and explanations are
+  appear as app icons; clicking one opens that client's policy. An always-visible
+  Connect button opens the agent picker, then project scope and Accept/Bypass
+  before registration. Codex highlights blue, Claude orange and Cursor white
+  on hover/keyboard focus. Search matches key names/descriptions only; + Key
+  opens a separate creation field. Navigation is white and explanations are
   short. Case has no Doppler integration or import screen.
   All explicitly opened hover submenus survive pointer exit until Back, an
   outside click or bare Escape. The root tools grid follows ordinary hover;
   hardware brightness glances still expire. System authentication and native
   menu/file-picker interaction suspend outside dismissal. Activity/preemption
   policy remains authoritative. UI design: docs/DESIGN.md.
-  The encrypted schema-2 vault has projects, descriptions and registered AI
-  clients with Approve/Bypass per app and project. `Contents/Helpers/whytap`
+  The encrypted schema-3 vault has projects, descriptions and registered AI
+  clients with Accept (stored as approve)/Bypass per app and project. A client's
+  allowedProjectIDs is nil for all current/future projects or an explicit set
+  (empty denies all). The broker filters listings/ambiguity and enforces scope
+  again before value/grant release. Scope/mode changes revoke timed grants.
+  Schema 2 migrates without changing existing access; older apps refuse schema 3.
+  WHY: docs/decisions/2026-10-20-case-connect-and-scope.md. `Contents/Helpers/whytap`
   exposes `case ls`, `case run [-p project] [--only A,B] '<command>'` and
   names-only `case mcp` (`WhytapCaseKit` / `WhytapCLI`). The app's local Unix
   socket broker accepts only its bundled helper by audit-token cdhash and
@@ -318,7 +326,8 @@ Case secrets manager:
   invalidates its pending requests, including queued approvals.
   Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
-  grants. Registration configures the client's names-only MCP entry. The
+  grants. The prompt's Stepper selects 1–240 minutes (default 15); physical A
+  uses the displayed duration. Each new prompt resets its duration. Registration configures the client's names-only MCP entry. The
   helper injects authorized values into the child command's environment and
   applies best-effort masking to stdout/stderr. Deliberately transformed
   output, files and values shorter than four bytes can expose values; this is
@@ -856,11 +865,18 @@ Guide: `docs/backup.md`. WHY:
 
 Screenshot is an action tool in hover search/Toolbox with an optional named
 hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
-then shows a frozen selection canvas and compact native toolbar. Arrow, Shape,
+then shows a frozen selection canvas and one horizontal native toolbar with
+inline contextual settings, Copy and Download. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
+PNG files into Downloads and shows the actual filename without closing. Arrow,
+Shape,
 Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
 system sharing live in More. Blur defaults to Text and numbers, including
-standalone digits, using system Vision without language correction and with
-additional text detection; Entire area is the alternative. Detection is
+standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
+without language correction; accurate OCR belongs to Copy text. Dark crops are
+normalized only for detection; output keeps original colors. Each text region
+gets its own blur strength, with stronger masks applied last. Crop-first compositing, Blur and PNG export run off the UI
+thread; a shared hardware Core Image context avoids per-gesture setup.
+Entire area is the alternative. Detection is
 best-effort and the visible result must be checked. Exports flatten edited
 pixels; Copy text analyzes those pixels too. No capture is persisted before an
 explicit export. Active editing/processing/dialogs block app-initiated update

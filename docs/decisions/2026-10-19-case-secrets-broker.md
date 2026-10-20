@@ -17,7 +17,7 @@ sources:
   - type: user-confirmed
     reference: On 2026-10-20 the user requested a larger Case hover, clearer AI connection wording, copying all Doppler secrets into Case, and a fix for hover closing during Touch ID.
     confirmed_at: 2026-10-20
-related: []
+related: [, 2026-10-20-case-connect-and-scope.md]
 ---
 
 # Case secrets broker

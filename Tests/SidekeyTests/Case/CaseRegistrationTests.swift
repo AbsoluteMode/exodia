@@ -52,6 +52,21 @@ final class CaseRegistrationTests: XCTestCase {
         XCTAssertEqual(fx.vm.clientSetupProblems, ["Claude Code: программа не найдена"], "shown in the UI")
     }
 
+    func test_partial_connector_setup_can_retry_without_changing_rights_or_registering_again() async throws {
+        let fx = try await Fixture(payload: payload())
+        fx.clients.connectProblems = ["Codex: настройка не удалась"]
+        let id = try await fx.vm.registerApp(claude, name: "Claude Code", projects: [serversID]).appID
+        fx.clients.connectProblems = []
+        fx.auth.reasons.removeAll()
+        let result = try await fx.vm.retryClientSetup(for: id)
+        XCTAssertTrue(result.problems.isEmpty)
+        XCTAssertTrue(fx.vm.clientSetupProblems.isEmpty)
+        XCTAssertEqual(fx.clients.connected, [claude, claude])
+        XCTAssertEqual(fx.vm.registrations.count, 1)
+        XCTAssertEqual(fx.app(id)?.allowedProjectIDs, [serversID])
+        XCTAssertTrue(fx.auth.reasons.isEmpty)
+    }
+
     func test_duplicate_and_invalid_registrations_are_refused() async throws {
         let fx = try await Fixture(payload: payload())
         _ = try await fx.vm.registerApp(claude, name: "Claude Code")
@@ -68,6 +83,29 @@ final class CaseRegistrationTests: XCTestCase {
         let fx = try await Fixture(payload: payload())
         fx.vm.lock()
         await assertThrows(.locked) { _ = try await fx.vm.registerApp(self.claude, name: "Claude Code") }
+    }
+
+    func test_connect_saves_chosen_scope_and_mode_atomically_and_widening_needs_touch_id() async throws {
+        let fx = try await Fixture(payload: payload())
+        fx.auth.reasons.removeAll()
+        let id = try await fx.vm.registerApp(claude, name: "Claude Code", mode: .bypass, projects: [serversID]).appID
+        XCTAssertEqual(fx.auth.reasons.count, 1)
+        XCTAssertEqual(fx.app(id)?.allowedProjectIDs, [serversID])
+        XCTAssertEqual(fx.app(id)?.defaultMode, .bypass)
+        fx.auth.reasons.removeAll()
+        try await fx.vm.setAccess(for: id, mode: .approve, projects: [], projectModes: [:])
+        XCTAssertTrue(fx.auth.reasons.isEmpty, "closing access needs no authentication")
+        fx.auth.fail = true
+        await assertThrows(.authenticationFailed) {
+            try await fx.vm.setAccess(for: id, mode: .approve, projects: nil, projectModes: [:])
+        }
+        XCTAssertEqual(fx.app(id)?.allowedProjectIDs, [])
+        fx.auth.fail = false
+        try await fx.vm.setAccess(for: id, mode: .approve, projects: nil, projectModes: [:])
+        XCTAssertNil(fx.app(id)?.allowedProjectIDs)
+        await assertThrows(.missingProject) {
+            try await fx.vm.setAccess(for: id, mode: .approve, projects: [UUID()], projectModes: [:])
+        }
     }
 
     // MARK: Modes

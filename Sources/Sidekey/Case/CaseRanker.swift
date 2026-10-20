@@ -47,11 +47,12 @@ enum CaseRanker {
                 )
             }
 
+        var childScores: [UUID: Double] = [:]
+        for entry in individualEntries {
+            childScores[entry.projectID] = max(childScores[entry.projectID] ?? 0, entry.score)
+        }
         let groupEntries = groupProjects.map { project in
-            let childScore = secrets
-                .filter { $0.projectID == project.id }
-                .map { score(copyCount: $0.copyCount, lastCopiedAt: $0.lastCopiedAt, createdAt: $0.createdAt, now: now) }
-                .max() ?? 0
+            let childScore = childScores[project.id] ?? 0
             let ownScore = score(copyCount: 0, lastCopiedAt: nil, createdAt: project.createdAt, now: now)
             return CaseListEntry(
                 id: project.id,
@@ -64,13 +65,14 @@ enum CaseRanker {
         }
 
         let entries = groupEntries + individualEntries
-        let filtered = searchText.isEmpty ? entries : entries.filter {
-            matchBucket(entry: $0, query: searchText, rawQuery: trimmedQuery) != .none
+        let matched = entries.compactMap { entry -> (entry: CaseListEntry, bucket: MatchBucket)? in
+            let bucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: entry, query: searchText, rawQuery: trimmedQuery)
+            return searchText.isEmpty || bucket != .none ? (entry, bucket) : nil
         }
 
-        return filtered.sorted { lhs, rhs in
-            let lhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: lhs, query: searchText, rawQuery: trimmedQuery)
-            let rhsBucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: rhs, query: searchText, rawQuery: trimmedQuery)
+        return matched.sorted { left, right in
+            let lhs = left.entry, rhs = right.entry
+            let lhsBucket = left.bucket, rhsBucket = right.bucket
             if lhsBucket.sortOrder != rhsBucket.sortOrder {
                 return lhsBucket.sortOrder < rhsBucket.sortOrder
             }
@@ -82,7 +84,7 @@ enum CaseRanker {
                 return nameComparison == .orderedAscending
             }
             return lhs.displayName < rhs.displayName
-        }
+        }.map(\.entry)
     }
 
     static func score(copyCount: Int, lastCopiedAt: Date?, createdAt: Date, now: Date = Date()) -> Double {
