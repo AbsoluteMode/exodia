@@ -48,7 +48,7 @@ private struct NotifyPanelRoot: View {
 
     private func activate(_ event: LocalNotificationEvent) {
         guard hub.isPresented(event.id) else { return }
-        if let link = event.link { NSWorkspace.shared.open(link) }
+        hub.activate(event)
         hub.dismiss(id: event.id)
     }
     private func dismiss(_ event: LocalNotificationEvent) {

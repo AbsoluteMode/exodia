@@ -40,6 +40,15 @@ Role estimates use signal activity and online speaker anchors. `unknown` is
 expected for early words, overlap and uncertainty. Echo, background sound and
 shared microphones can invalidate the source assumption.
 
+Source activity now learns each track's background independently, with a two-second
+warmup. Activity rows include `mic_threshold`, `system_threshold` and
+`source_calibrated`; older bundles do not have those fields. Speaker evidence
+counts unique token time and checks the surrounding 100ms. Capture preserves
+the quiet microphone boost while limiting loud buffers before clipping. These
+changes apply after a safe application update; they do not rewrite existing
+test files or change a running recording. See the
+[calibration decision](../.project-docs/decisions/2026-10-20-meeting-source-noise-floor.md).
+
 The report measures final-token delay from frame emission, excluding the
 test mixer's jitter buffer. Full live latency and attribution need real-call
 acceptance. A confusion matrix also needs independent human labels for

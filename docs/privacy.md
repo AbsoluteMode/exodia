@@ -143,3 +143,13 @@ phrases to the Translation route. It never opens the microphone or creates a
 recording/meeting note. Forty recent lines stay in memory, with no automatic
 history saved. Copy writes translations only after a click. Window close,
 Cancel and sleep stop capture and cancel requests. See [translation](translation.md).
+
+## Screenshots
+
+Screenshot capture is explicit and requests macOS Screen Recording permission
+on invocation. Captures and edit history remain in memory until the user
+copies, saves, pins or chooses a system share destination. Text-and-number
+blur and Copy text use on-device Vision; no provider receives the screenshot.
+Exports contain flattened edited pixels. Clipboard copies may enter ordinary
+clipboard history. OCR and blur do not guarantee irreversible anonymization;
+check the visible result. See [screenshots](screenshots.md).

@@ -23,7 +23,7 @@ sources:
   - type: url
     reference: https://soniox.com/docs/api-reference/stt/websocket-api
     confirmed_at: 2026-10-19
-related: []
+related: [2026-10-20-meeting-source-noise-floor.md]
 ---
 
 # Live meeting test capture
@@ -65,8 +65,11 @@ recording. Pauses and prerecord are excluded; reconnect starts a fresh session.
 
 Signal activity is a cheap source hint, not VAD or identity proof. Exclusive
 source word intervals accumulate at least 500 ms of consistent speaker anchors.
-Overlap, silence and conflicting anchors remain unknown. No future text or
-LLM naming pass is used. The test tracks align to the test mix, not archival WAVs.
+The [background-aware calibration](2026-10-20-meeting-source-noise-floor.md)
+replaces the original fixed activity threshold and prevents repeated timestamps
+and short source gaps from manufacturing anchors. Current overlap or an opposing
+source remains unknown even for an anchored speaker. No future text or LLM naming
+pass is used. The test tracks align to the test mix, not archival WAVs.
 
 The queue is bounded to 100 frames. Overflow is explicit. A session stops at
 two hours of test audio or a large scheduling gap. File/network failures never

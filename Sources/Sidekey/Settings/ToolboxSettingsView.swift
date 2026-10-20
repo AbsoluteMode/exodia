@@ -324,7 +324,7 @@ struct ToolboxSettingsView: View {
                 clipboardPane
             case .brightness:
                 ToolboxDisplayPane()
-            case .hotkeys, .notes, .meetingRecord, .monitor, .translate, .subtitles, .quit, .settings:
+            case .hotkeys, .notes, .meetingRecord, .monitor, .translate, .subtitles, .screenshot, .quit, .settings:
                 Color.clear
             }
         }

@@ -262,7 +262,11 @@ Meeting Notes:
   times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
   no automatic suggestions are enabled. The independent 100ms test mixer uses
   a 150ms jitter allowance and approximate callback timing; source-role labels
-  are experimental. Guide: docs/meeting-assistant-testing.md. WHY:
+  are experimental. Per-source background calibration warms up for two seconds;
+  unique-time speaker anchors check surrounding audio and never override current
+  overlap or an opposing source. Meeting mic capture keeps its quiet-input boost
+  with a peak limiter and gradual gain release. Guide: docs/meeting-assistant-testing.md. WHY:
+  .project-docs/decisions/2026-10-20-meeting-source-noise-floor.md,
   .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
 
 Hover capsules and materials:
@@ -585,6 +589,17 @@ Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
 
+Notify includes a built-in Meeting notes source, enabled by default for new and
+existing users unless explicitly switched off. MeetingReadyNotifications sends
+successful newMeetingAvailable events to the local queue/history with the
+packaged Whytap app icon in color and Small as the initial type. Settings ->
+Notifications has a persistent switch and Large / Small selector; Notify ->
+Sources also has the switch. An optional internal meetingID in the archived
+event opens that exact note through SettingsWindowController.selectNoteMeeting;
+scripts cannot supply this target. Failed processing does not announce success,
+and loading history does not replay old popups. WHY:
+.project-docs/decisions/2026-10-20-meeting-ready-notifications.md
+
 Notify: agent-configured local scripts emit JSON lines with title, body, event
 ID, optional link, color, logo and duration. NotifyScriptSupervisor reads private
 sources/<id>.json manifests, supervises child process groups only during the app
@@ -702,7 +717,27 @@ backend, automatic GitHub Actions, silent source changes or forced restart.
 Guide: `docs/backup.md`. WHY:
 `.project-docs/decisions/2026-10-19-config-backup.md`.
 
+## Screenshots
+
+Screenshot is an action tool in hover search/Toolbox with an optional named
+hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
+then shows a frozen selection canvas and compact native toolbar. Arrow, Shape,
+Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
+system sharing live in More. Blur defaults to Text and numbers, including
+standalone digits, using system Vision without language correction and with
+additional text detection; Entire area is the alternative. Detection is
+best-effort and the visible result must be checked. Exports flatten edited
+pixels; Copy text analyzes those pixels too. No capture is persisted before an
+explicit export. Active editing/processing/dialogs block app-initiated update
+restarts; screen/Space changes and sleep cancel stale captures. This system OCR
+is separate from the removed app-managed speech/LLM models. Guide:
+`docs/screenshots.md`. WHY:
+`.project-docs/decisions/2026-10-20-screenshot-toolbar.md`.
+
 ## Permissions
+
+- **Screen Recording** for explicit screenshot capture (Screenshot tool only).
+  Request on invocation with `CGRequestScreenCaptureAccess`, never at launch.
 
 - **Accessibility** gates `NSEvent.addGlobalMonitorForEvents`
   (`RightCmdGestureMonitor`; `EscapeCloseEventMonitor` is a passive bare-Esc

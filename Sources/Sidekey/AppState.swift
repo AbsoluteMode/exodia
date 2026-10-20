@@ -37,6 +37,8 @@ final class AppState: ObservableObject {
     @Published var agentPhase: AgentPhase = .idle
     /// Visible translation work (including unsent input) or an active session.
     @Published var translationActive = false
+    /// A screenshot selection/editor, including in-flight local OCR and unsaved edits.
+    @Published var screenshotActive = false
 
     /// Dynamic Island idle-hide visibility, mirrored from `IslandIdleController`
     /// by `AppDelegate` (controller-owns-logic / AppState-mirrors-for-view).

@@ -93,7 +93,7 @@ struct IslandNotificationStackContent: View {
                 .allowsHitTesting(index == 0 || hovered)
                 .accessibilityLabel("\(event.sourceName), \(event.title)")
                 .accessibilityValue(index == 0 && events.count > 1 ? "\(events.count) notifications" : "")
-                .accessibilityHint(event.link == nil ? "Dismiss notification" : "Open notification")
+                .accessibilityHint(event.canActivate ? "Open notification" : "Dismiss notification")
                 .accessibilityAction(named: Text("Dismiss notification")) { onDismiss(event) }
             }
 

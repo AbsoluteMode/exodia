@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 
@@ -53,6 +54,7 @@ final class LocalNotificationHub: ObservableObject {
     @Published private(set) var deadline: Date?
     @Published private(set) var error: String?
     var unreadCount: Int { history.filter { !$0.read }.count }
+    var openMeeting: ((UUID) -> Void)?
     private let archive: NotifyArchive
     private var historyRevision = -1
     private var queue: [LocalNotificationEvent] = []
@@ -112,6 +114,11 @@ final class LocalNotificationHub: ObservableObject {
     }
     func isPresented(_ id: String) -> Bool {
         iconStack.isEmpty ? current?.id == id : iconStack.contains { $0.id == id }
+    }
+    func activate(_ event: LocalNotificationEvent,
+                  openLink: (URL) -> Void = { NSWorkspace.shared.open($0) }) {
+        if let id = event.meetingID { openMeeting?(id) }
+        else if let link = event.link { openLink(link) }
     }
     func dismiss() {
         guard let id = current?.id else { return }

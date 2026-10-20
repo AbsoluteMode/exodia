@@ -59,6 +59,17 @@
       "guide": "docs/customization/dashboards.md",
       "entry_points": ["Sources/Sidekey/Monitor/MonitorDashboard.swift", "Sources/Sidekey/Monitor/MonitorServer.swift", "Sources/Sidekey/Monitor/MonitorServerCollector.swift", "Sources/Sidekey/Monitor/MonitorHoverPanel.swift", "Sources/Sidekey/Monitor/MonitorStore.swift", "Sources/Sidekey/DynamicIsland/HoverSlotRouter.swift"],
       "contract": "Inline hover picker -> Server status/custom dashboard -> Back; shared MonitorStore/collectors. Declarative JSON snapshots remain passive and compatible with ez-monitor."
+    },
+    "screenshots": {
+      "guide": "docs/screenshots.md",
+      "entry_points": [
+        "Sources/Sidekey/Screenshots/ScreenshotCoordinator.swift",
+        "Sources/Sidekey/Screenshots/ScreenshotCanvas.swift",
+        "Sources/Sidekey/Screenshots/ScreenshotToolbar.swift",
+        "Sources/Sidekey/Screenshots/ScreenshotDocument.swift"
+      ],
+      "focused_test_filter": "ScreenshotTests|UpdateControllerTests",
+      "contract": "Explicit ScreenCaptureKit capture; on-device Vision blur of text and numbers; no automatic file or provider request; flattened export and active-editor restart guard."
     }
   }
 }

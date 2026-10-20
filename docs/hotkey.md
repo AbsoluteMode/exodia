@@ -347,3 +347,16 @@ This keeps a rebound shortcut in sync across every surface.
       up in the Help window
 - [ ] Pure-logic test for the register / unregister lifecycle
       (`Tests/SidekeyTests/CarbonHotkeyMonitorTests.swift` pattern)
+
+
+## Screenshot editor
+
+Screenshot uses the existing optional named tool shortcut in Settings →
+Hotkeys → Tools; no new default global key is reserved. Local editor keys
+come from `ScreenshotEditorKeys.tools` and are included in Help. V selects
+and crops; A/R/O/P/T/B/M/N choose Arrow/Rectangle/Oval/Pen/Text/Blur/Highlighter/
+Numbered steps. ⌘C copies, ⌘S saves, ⌘Z undoes and ⇧⌘Z redoes. Arrows move
+the crop (Shift: 10 points, Option: resize); Delete removes a selected
+annotation. Return selects the full display before selection. Escape cancels
+the current stroke, then the capture. Native text
+entry keeps ordinary editing commands. See [screenshots](screenshots.md).

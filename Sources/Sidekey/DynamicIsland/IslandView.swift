@@ -1213,6 +1213,7 @@ struct IslandView: View {
                             onOpenMonitor: actions.openMonitor,
                             onOpenTranslate: actions.openTranslate,
                             onOpenSubtitles: actions.openSubtitles,
+                            onOpenScreenshot: actions.openScreenshot,
                             onOpenHelp: actions.openHelp,
                             onQuit: actions.quitApplication,
                             onToggleMeetingRecord: actions.toggleMeetingRecord,
@@ -2471,6 +2472,7 @@ private struct IslandDropModeHoverPanel: View {
     var onOpenMonitor: () -> Void = {}
     var onOpenTranslate: () -> Void = {}
     var onOpenSubtitles: () -> Void = {}
+    var onOpenScreenshot: () -> Void = {}
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
     /// Manual meeting-record toggle (the "Record" tile). Defaults to a
@@ -2801,6 +2803,7 @@ private struct IslandDropModeHoverPanel: View {
         case .openMonitor: onOpenMonitor()
         case .openTranslate: onOpenTranslate()
         case .openSubtitles: onOpenSubtitles()
+        case .openScreenshot: onOpenScreenshot()
         case .quit: onQuit()
         case .openPanel(let panel):
             switch panel {
