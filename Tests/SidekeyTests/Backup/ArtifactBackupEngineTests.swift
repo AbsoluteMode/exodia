@@ -311,7 +311,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
 
     // MARK: - Case merge
 
-    func test_v1_case_archive_restores_into_v2_vault() async throws {
+    func test_v1_case_archive_restores_into_current_vault() async throws {
         let source = try await makeSource()
         // Replace the source vault with a schema-1 file: a group, a grouped
         // key, an ungrouped key and a key whose name starts with a digit.
@@ -348,7 +348,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
 
         let merged = try CaseVaultStore(fileURL: target.locations.caseVault).load(using: localKey)
-        XCTAssertEqual(merged.schemaVersion, 2)
+        XCTAssertEqual(merged.schemaVersion, CaseVaultPayload.currentSchemaVersion)
         XCTAssertTrue(Set(merged.secrets.map(\.name)).isSuperset(of: ["LOCAL_ONLY", "SSH_PASS", "LOOSE_KEY", "_1PASSWORD"]))
         let projectIDs = Set(merged.projects.map(\.id))
         XCTAssertTrue(merged.secrets.allSatisfy { projectIDs.contains($0.projectID) })
@@ -363,6 +363,17 @@ final class ArtifactBackupEngineTests: XCTestCase {
 
     func testCaseRestoreMergesAndKeepsThisMacsOtherSecrets() async throws {
         let source = try await makeSource()
+        let imported = CaseAppRegistration(id: UUID(), displayName: "Synthetic scoped agent",
+            identity: .executablePath("/fixture/scoped-agent"), defaultMode: .bypass, projectModes: [:],
+            createdAt: Date(timeIntervalSinceReferenceDate: 0), allowedProjectIDs: [CaseProject.generalID])
+        var paused = imported
+        paused.id = UUID()
+        paused.identity = .executablePath("/fixture/paused-agent")
+        paused.allowedProjectIDs = []
+        let sourceStore = CaseVaultStore(fileURL: source.profile.locations.caseVault)
+        var sourcePayload = try sourceStore.load(using: source.caseKey)
+        sourcePayload.apps = [imported, paused]
+        try sourceStore.save(sourcePayload, using: source.caseKey)
         let key = ArtifactBackupTestKeys.make()
         let archive = archiveURL(in: source.profile)
         _ = try await ArtifactBackupEngine(environment: source.environment)
@@ -391,6 +402,8 @@ final class ArtifactBackupEngineTests: XCTestCase {
         XCTAssertEqual(Set(merged.secrets.map(\.name)), ["Local only", "Netcup root"])
         XCTAssertEqual(merged.value(for: localID), "local-secret-value")
         XCTAssertTrue(merged.values.contains { $0.value == "synthetic-case-secret" })
+        XCTAssertEqual(merged.apps.first { $0.id == imported.id }?.allowedProjectIDs, [CaseProject.generalID])
+        XCTAssertEqual(merged.apps.first { $0.id == paused.id }?.allowedProjectIDs, [], "restore must not turn no access into all projects")
         // Still this Mac's own key: the source key must not open it.
         XCTAssertThrowsError(try CaseVaultStore(fileURL: target.locations.caseVault)
             .load(using: source.caseKey))

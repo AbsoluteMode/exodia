@@ -84,10 +84,19 @@ struct CaseAppRegistration: Identifiable, Codable, Equatable {
     var defaultMode: CaseAccessMode
     var projectModes: [UUID: CaseAccessMode]
     var createdAt: Date
+    /// nil = all current and future projects; an empty set grants no projects.
+    /// Missing in schema 2, whose registrations retain their previous access.
+    var allowedProjectIDs: Set<UUID>? = nil
+
+    func allows(projectID: UUID) -> Bool {
+        allowedProjectIDs?.contains(projectID) ?? true
+    }
 }
 
 struct CaseVaultPayload: Codable, Equatable {
-    static let currentSchemaVersion = 2
+    // Older binaries must refuse scoped registrations rather than ignore them.
+    // WHY: docs/decisions/2026-10-20-case-connect-and-scope.md
+    static let currentSchemaVersion = 3
     static let defaultTimedApprovalMinutes = 15
 
     var schemaVersion: Int

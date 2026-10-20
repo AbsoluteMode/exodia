@@ -708,6 +708,46 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertEqual(vm.query, "")
     }
 
+    func test_search_only_matches_key_names_and_descriptions_and_never_creates_a_key() async throws {
+        let projectID = UUID()
+        var project = group(id: projectID, name: "billing")
+        project.description = "invoices"
+        var key = secret(name: "PAYMENT_TOKEN", groupID: projectID)
+        key.description = "Stripe webhooks"
+        let env = TestCaseEnvironment(payload: CaseVaultPayload(projects: [.general(now: Date()), project], secrets: [key]))
+        let vm = env.makeViewModel()
+        try await vm.unlock()
+        vm.query = "invoices"
+        XCTAssertTrue(vm.projectSections.isEmpty, "project descriptions are not key matches")
+        vm.query = "stripe"
+        XCTAssertEqual(vm.projectSections.first?.secrets.map(\.id), [key.id])
+        XCTAssertEqual(vm.inputMode, .name)
+        XCTAssertNil(env.savedPayload, "search never writes the vault")
+        vm.lock()
+        XCTAssertTrue(vm.projectSections.isEmpty)
+    }
+
+    func test_large_vault_search_and_cached_sections() async throws {
+        let date = Date()
+        let projects = (0..<120).map { group(name: "project-\($0)") }
+        let keys = (0..<2400).map { secret(name: "TOKEN_\($0)", groupID: projects[$0 % 120].id) }
+        let env = TestCaseEnvironment(payload: CaseVaultPayload(projects: [.general(now: date)] + projects, secrets: keys,
+            values: keys.map { CaseSecretValue(secretID: $0.id, value: "fake-test-value") }))
+        let vm = env.makeViewModel()
+        let start = Date()
+        try await vm.unlock()
+        let unlocked = Date().timeIntervalSince(start)
+        let searchStart = Date()
+        for q in ["T", "TO", "TOK", "TOKEN_1", "no_match", ""] {
+            vm.query = q
+            _ = vm.projectSections
+        }
+        print("Case synthetic 2400 keys / 120 projects: unlock_ms=\(unlocked * 1000), search_ms_per_query=\(Date().timeIntervalSince(searchStart) * 1000 / 6)")
+        XCTAssertEqual(vm.projectSections.count, 121)
+        XCTAssertEqual(vm.projectSections.reduce(0) { $0 + $1.secrets.count }, 2400)
+        XCTAssertNil(env.savedPayload)
+    }
+
     private func secret(id: UUID = UUID(), name: String, groupID: UUID? = nil) -> CaseSecret {
         CaseSecret(id: id, name: name, projectID: groupID ?? CaseProject.generalID, description: "", copyCount: 0, lastCopiedAt: nil, createdAt: Date(), updatedAt: Date())
     }

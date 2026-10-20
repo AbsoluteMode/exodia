@@ -147,6 +147,56 @@ final class CaseBrokerTests: XCTestCase {
         await broker.handle(.resolveRun(project: project, only: only, command: command, cwd: "/tmp"), peerPID: 900)
     }
 
+    func test_scope_limits_listing_lookup_and_bypass_even_with_a_timed_grant() async throws {
+        var app = registration(.bypass)
+        app.allowedProjectIDs = [alphaID]
+        makeBroker(caller: .registered(app))
+        let projects = await broker.handle(.listProjects, peerPID: 900)
+        XCTAssertEqual(projects, .projects([CaseProjectInfo(name: "alpha", description: "Alpha web app", keyCount: 2)]))
+        let outsideKeys = await broker.handle(.listKeys(project: "beta"), peerPID: 900)
+        XCTAssertEqual(outsideKeys, .denied(reason: .unknownProject))
+        let keys = await broker.handle(.listKeys(project: nil), peerPID: 900)
+        guard case .keys(let visible) = keys else { return XCTFail("expected keys") }
+        XCTAssertEqual(Set(visible.map(\.project)), ["alpha"])
+        let outsideRun = await run(project: "beta")
+        XCTAssertEqual(outsideRun, .denied(reason: .unknownProject))
+        let unqualified = await run(only: ["OPENAI_API_KEY"])
+        XCTAssertEqual(unqualified, .runEnvironment(["OPENAI_API_KEY": "fake-alpha-openai-0001"]),
+                       "a duplicate in an inaccessible project is not disclosed")
+        try service.mutate { $0.apps[0].allowedProjectIDs = [] }
+        let none = await broker.handle(.listProjects, peerPID: 900)
+        XCTAssertEqual(none, .projects([]))
+        let denied = await run(project: "alpha")
+        XCTAssertEqual(denied, .denied(reason: .unknownProject))
+    }
+
+    func test_scope_revocation_while_approval_is_open_releases_neither_keys_nor_grant() async {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        useMutatingApprovals(.allowTimed(minutes: 15)) {
+            try self.service.mutate { $0.apps[0].allowedProjectIDs = [] }
+        }
+        let response = await run(project: "alpha")
+        XCTAssertEqual(response, .denied(reason: .unknownProject))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+    }
+
+    func test_timed_bypass_uses_selected_duration_and_scope_changes_revoke_it() async throws {
+        let app = registration(.approve)
+        makeBroker(caller: .registered(app))
+        approvals.outcome = .allowTimed(minutes: 2)
+        _ = await run(project: "alpha")
+        XCTAssertTrue(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock + 119))
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock + 120))
+        try service.mutate { $0.apps[0].allowedProjectIDs = [betaID] }
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+        try service.mutate { $0.apps[0].allowedProjectIDs = nil }
+        XCTAssertFalse(broker.grants.isGranted(appID: app.id, projectID: alphaID, now: clock))
+        approvals.outcome = .allowTimed(minutes: 241)
+        let invalid = await run(project: "alpha")
+        XCTAssertEqual(invalid, .denied(reason: .userDeclined))
+    }
+
     // MARK: Brief scenarios
 
     func test_bypass_returns_environment_without_prompt() async {
@@ -165,7 +215,7 @@ final class CaseBrokerTests: XCTestCase {
     func test_approve_prompts_and_timed_grant_skips_next_prompt() async {
         let app = registration(.approve)
         makeBroker(caller: .registered(app))
-        approvals.outcome = .allowTimed
+        approvals.outcome = .allowTimed(minutes: 15)
 
         let first = await run(project: "alpha", only: ["DB_URL"], command: "psql \"$DB_URL\"")
 
@@ -401,7 +451,7 @@ final class CaseBrokerTests: XCTestCase {
     func test_unregister_during_timed_allow_creates_no_grant() async {
         let app = registration(.approve)
         makeBroker(caller: .registered(app))
-        useMutatingApprovals(.allowTimed) {
+        useMutatingApprovals(.allowTimed(minutes: 15)) {
             XCTAssertNoThrow(try self.service.mutate { $0.apps.removeAll { $0.id == app.id } })
         }
 
@@ -414,7 +464,7 @@ final class CaseBrokerTests: XCTestCase {
     func test_rebound_registration_during_approval_denies_values_and_grant() async {
         let app = registration(.approve)
         makeBroker(caller: .registered(app))
-        useMutatingApprovals(.allowTimed) {
+        useMutatingApprovals(.allowTimed(minutes: 15)) {
             XCTAssertNoThrow(try self.service.mutate {
                 $0.apps[0].identity = .executablePath("/fake/replacement-client")
             })
@@ -429,7 +479,7 @@ final class CaseBrokerTests: XCTestCase {
     func test_changed_peer_during_approval_denies_values_and_grant() async {
         let app = registration(.approve)
         makeBroker(caller: .registered(app))
-        useMutatingApprovals(.allowTimed) { self.resolver.caller = .human }
+        useMutatingApprovals(.allowTimed(minutes: 15)) { self.resolver.caller = .human }
 
         let response = await run(project: "alpha", only: ["DB_URL"])
 
@@ -442,7 +492,7 @@ final class CaseBrokerTests: XCTestCase {
         var replacement = app
         replacement.id = UUID()
         makeBroker(caller: .registered(app))
-        useMutatingApprovals(.allowTimed) {
+        useMutatingApprovals(.allowTimed(minutes: 15)) {
             XCTAssertNoThrow(try self.service.mutate { $0.apps = [replacement] })
             self.resolver.caller = .registered(replacement)
         }
@@ -457,7 +507,7 @@ final class CaseBrokerTests: XCTestCase {
     func test_deleted_project_during_timed_allow_creates_no_grant() async {
         let app = registration(.approve)
         makeBroker(caller: .registered(app))
-        useMutatingApprovals(.allowTimed) {
+        useMutatingApprovals(.allowTimed(minutes: 15)) {
             XCTAssertNoThrow(try self.service.mutate { payload in
                 let ids = Set(payload.secrets.filter { $0.projectID == alphaID }.map(\.id))
                 payload.projects.removeAll { $0.id == alphaID }
@@ -475,7 +525,7 @@ final class CaseBrokerTests: XCTestCase {
     func test_deleted_key_during_timed_allow_creates_no_grant() async {
         let app = registration(.approve)
         makeBroker(caller: .registered(app))
-        useMutatingApprovals(.allowTimed) {
+        useMutatingApprovals(.allowTimed(minutes: 15)) {
             XCTAssertNoThrow(try self.service.mutate { payload in
                 let ids = Set(payload.secrets.filter { $0.name == "DB_URL" }.map(\.id))
                 payload.secrets.removeAll { ids.contains($0.id) }
@@ -502,7 +552,7 @@ final class CaseBrokerTests: XCTestCase {
         XCTAssertEqual(prompts.queuedCount, 2)
         XCTAssertNoThrow(try service.mutate { $0.apps.removeAll { $0.id == app.id } })
 
-        prompts.resolve(.allowTimed)
+        prompts.resolve(.allowTimed(minutes: 15))
         let firstResponse = await first.value
         let secondResponse = await second.value
 
@@ -532,7 +582,7 @@ final class CaseBrokerTests: XCTestCase {
     func test_registration_label_change_during_approval_keeps_authorized_run() async {
         let app = registration(.approve)
         makeBroker(caller: .registered(app))
-        useMutatingApprovals(.allowTimed) {
+        useMutatingApprovals(.allowTimed(minutes: 15)) {
             XCTAssertNoThrow(try self.service.mutate { $0.apps[0].displayName = "New label" })
         }
 

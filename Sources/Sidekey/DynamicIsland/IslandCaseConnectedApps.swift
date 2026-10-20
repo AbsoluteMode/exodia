@@ -4,38 +4,33 @@ import SwiftUI
 /// Registrations are persistent connections, not live process activity.
 struct IslandCaseConnectedApps: View {
     let registrations: [CaseAppRegistration]
-    let onOpenAccess: () -> Void
+    let onOpenAccess: (UUID) -> Void
+    let onConnect: () -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 5) {
-                if registrations.isEmpty {
-                    Button(action: onOpenAccess) {
-                        Image(systemName: "link.badge.plus")
-                            .font(.system(size: 15, weight: .medium))
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .help("Подключить приложение")
-                    .accessibilityLabel("Подключить приложение к Case")
-                    .accessibilityIdentifier("case.access.open")
-                } else {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
                     ForEach(registrations) { app in
-                        Button(action: onOpenAccess) {
-                            appIcon(app)
-                                .frame(width: 28, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .help(app.displayName)
-                        .accessibilityLabel("\(app.displayName), подключено к Case. Настроить доступ")
-                        .accessibilityIdentifier("case.access.app.\(app.id)")
+                        CaseConnectedAppButton(app: app) { onOpenAccess(app.id) }
                     }
                 }
             }
+            Button(action: onConnect) {
+                Label("Connect", systemImage: "plus")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .padding(.horizontal, 9)
+                    .frame(height: 28)
+                    .background(Capsule().fill(.white.opacity(0.10)))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.92))
+            .fixedSize()
+            .help("Подключить агента и выбрать права доступа")
+            .accessibilityIdentifier("case.access.open")
         }
-        .frame(height: 28)
-        .buttonStyle(.plain)
-        .foregroundStyle(.white.opacity(0.88))
+        .frame(height: 30)
     }
 
     static func brandAsset(for identity: CaseAppIdentity) -> String? {
@@ -46,10 +41,74 @@ struct IslandCaseConnectedApps: View {
         }
     }
 
+    static func highlight(for identity: CaseAppIdentity) -> CaseAppHighlight {
+        switch CaseKnownClient(identity: identity) {
+        case .claudeCode: return .orange
+        case .codex: return .blue
+        default: return .neutral
+        }
+    }
+}
+
+enum CaseAppHighlight: Equatable {
+    case blue, orange, neutral
+
+    var color: Color {
+        switch self {
+        case .blue: return Color(red: 0.35, green: 0.65, blue: 1)
+        case .orange: return Color(red: 1, green: 0.61, blue: 0.34)
+        case .neutral: return .white
+        }
+    }
+}
+
+private struct CaseConnectedAppButton: View {
+    let app: CaseAppRegistration
+    let action: () -> Void
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var active: Bool { hovering || focused }
+
+    var body: some View {
+        Button(action: action) {
+            CaseConnectedAppIcon(app: app, isHighlighted: active, isFocused: focused)
+        }
+        .buttonStyle(.plain)
+        .focused($focused)
+        .onHover { hovering = $0 }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: active)
+        .help(app.displayName)
+        .accessibilityLabel("\(app.displayName), подключено к Case. Настроить доступ")
+        .accessibilityIdentifier("case.access.app.\(app.id)")
+    }
+
+
+}
+
+/// Shared visual for hover/focus and native offscreen verification.
+struct CaseConnectedAppIcon: View {
+    let app: CaseAppRegistration
+    let isHighlighted: Bool
+    var isFocused = false
+    private var active: Bool { isHighlighted }
+    private var accent: Color { IslandCaseConnectedApps.highlight(for: app.identity).color }
+
+    var body: some View {
+            icon
+                .foregroundStyle(active ? accent : .white.opacity(0.88))
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(active ? accent.opacity(0.15) : .clear))
+                .overlay(Circle().strokeBorder(isFocused ? accent : .clear, lineWidth: 1))
+                .shadow(color: active ? accent.opacity(0.45) : .clear, radius: 4)
+                .contentShape(Rectangle())
+    }
+
     @ViewBuilder
-    private func appIcon(_ app: CaseAppRegistration) -> some View {
-        if let asset = Self.brandAsset(for: app.identity) {
-            ProviderBrandIcon(assetName: asset, size: 18, color: .white.opacity(0.88))
+    private var icon: some View {
+        if let asset = IslandCaseConnectedApps.brandAsset(for: app.identity) {
+            ProviderBrandIcon(assetName: asset, size: 18, color: active ? accent : .white.opacity(0.88))
         } else if case let .executablePath(path) = app.identity,
                   FileManager.default.fileExists(atPath: path) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: path))
@@ -58,7 +117,7 @@ struct IslandCaseConnectedApps: View {
                 .frame(width: 18, height: 18)
                 .accessibilityHidden(true)
         } else {
-            Image(systemName: app.identity == .builtInOpenCode ? "terminal" : "app")
+            Image(systemName: app.identity == .builtInOpenCode ? "terminal" : "cursorarrow.rays")
                 .font(.system(size: 17, weight: .medium))
                 .accessibilityHidden(true)
         }

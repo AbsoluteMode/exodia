@@ -61,7 +61,7 @@ final class CaseVaultMigrationTests: XCTestCase {
         let a = s("OPENAI_KEY"), b = s("STRIPE_KEY")
         let payload = try CaseVaultMigration.decodePayload(try v1([a, b]))
 
-        XCTAssertEqual(payload.schemaVersion, 2)
+        XCTAssertEqual(payload.schemaVersion, CaseVaultPayload.currentSchemaVersion)
         XCTAssertEqual(payload.projects.first?.id, CaseProject.generalID)
         XCTAssertEqual(payload.projects.count, 1)
         XCTAssertEqual(payload.secrets.map(\.projectID), [CaseProject.generalID, CaseProject.generalID])
@@ -177,8 +177,24 @@ final class CaseVaultMigrationTests: XCTestCase {
         XCTAssertEqual(payload.secrets.first?.description, "")
     }
 
-    func test_schema_3_throws_needsNewerApp() throws {
-        let (store, key) = try storeWithPlaintext(Data(#"{"schemaVersion":3,"future":true}"#.utf8))
+    func test_schema_2_registrations_keep_all_projects_and_schema_3_roundtrips_selected_scope() throws {
+        let app = CaseAppRegistration(id: UUID(), displayName: "Codex", identity: CaseKnownClient.codex.identity,
+                                      defaultMode: .approve, projectModes: [:], createdAt: t0)
+        let legacy = CaseVaultPayload(schemaVersion: 2, apps: [app])
+        let migrated = try CaseVaultMigration.decodePayload(JSONEncoder.caseVault.encode(legacy))
+        XCTAssertEqual(migrated.schemaVersion, 3)
+        XCTAssertNil(migrated.apps.first?.allowedProjectIDs)
+        var scoped = migrated
+        scoped.apps[0].allowedProjectIDs = [CaseProject.generalID]
+        let decoded = try CaseVaultMigration.decodePayload(JSONEncoder.caseVault.encode(scoped))
+        XCTAssertEqual(decoded.apps[0].allowedProjectIDs, [CaseProject.generalID])
+        scoped.apps[0].allowedProjectIDs = []
+        let empty = try CaseVaultMigration.decodePayload(JSONEncoder.caseVault.encode(scoped))
+        XCTAssertEqual(empty.apps[0].allowedProjectIDs, [])
+    }
+
+    func test_future_schema_throws_needsNewerApp() throws {
+        let (store, key) = try storeWithPlaintext(Data(#"{"schemaVersion":4,"future":true}"#.utf8))
         XCTAssertThrowsError(try CaseVaultStore.decode(envelope: Data(contentsOf: store.fileURL), using: key)) {
             XCTAssertEqual($0 as? CaseVaultStoreError, .needsNewerApp)
         }
@@ -193,7 +209,7 @@ final class CaseVaultMigrationTests: XCTestCase {
         let v1Bytes = try Data(contentsOf: store.fileURL)
 
         let loaded = try store.load(using: key)
-        XCTAssertEqual(loaded.schemaVersion, 2)
+        XCTAssertEqual(loaded.schemaVersion, CaseVaultPayload.currentSchemaVersion)
         try store.save(loaded, using: key)
 
         XCTAssertEqual(try store.load(using: key), loaded)

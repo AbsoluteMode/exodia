@@ -61,8 +61,8 @@ struct CaseVaultStore {
         }
 
         let envelopeData = try Data(contentsOf: fileURL)
-        // decode migrates schema 1 to 2 in memory; the file is rewritten as
-        // schema 2 on the next save, which keeps the schema-1 bytes in `.bak`.
+        // Decode migrates supported old schemas in memory; the file is rewritten
+        // as the current schema on the next save, keeping prior bytes in `.bak`.
         // A newer schema throws needsNewerApp (decryption succeeded, data is
         // intact; must NOT be treated as undecryptable or offer Reset). An
         // older, unknown schema throws unsupportedEnvelope.
