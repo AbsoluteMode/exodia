@@ -53,6 +53,7 @@ enum HoverSlotEffect: Equatable {
     case openMonitor
     case openTranslate
     case openSubtitles
+    case openScreenshot
     case quit
     case openPanel(HoverInlinePanel)
 
@@ -64,7 +65,7 @@ enum HoverSlotEffect: Equatable {
         case .openPanel:
             return true
         case .toggleDropMode, .openSettings, .openHotkeys, .openNotes,
-             .toggleMeetingRecord, .openMonitor, .openTranslate, .openSubtitles, .quit:
+             .toggleMeetingRecord, .openMonitor, .openTranslate, .openSubtitles, .openScreenshot, .quit:
             return false
         }
     }
@@ -96,6 +97,8 @@ enum HoverSlotEffect: Equatable {
             actions.openTranslate()
         case .openSubtitles:
             actions.openSubtitles()
+        case .openScreenshot:
+            actions.openScreenshot()
         case .quit:
             actions.quitApplication()
         case .openPanel:
@@ -136,6 +139,8 @@ enum HoverSlotRouter {
             return .openTranslate
         case .subtitles:
             return .openSubtitles
+        case .screenshot:
+            return .openScreenshot
         case .quit:
             return .quit
         case .vocab:
