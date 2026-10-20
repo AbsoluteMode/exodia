@@ -120,6 +120,7 @@ final class AIUsageCalendarYearTests: XCTestCase {
                 host.layoutSubtreeIfNeeded()
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
                 host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
                 let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent("calendar-\(locale)-\(dark ? "dark" : "light").png"))
@@ -157,14 +158,21 @@ final class AIUsageCalendarMonthFeedbackTests: XCTestCase {
         let output = ProcessInfo.processInfo.environment["EXODIA_COST_CALENDAR_RENDER_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         if let output { try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true) }
         for dark in [false, true] {
-            let button = AIUsageCalendarMonthButton(frame: NSRect(x: 4, y: 4, width: 114, height: 30), pullsDown: false)
-            let control = selector(), coordinator = control.makeCoordinator()
-            control.configure(button, coordinator: coordinator)
-            let host = NSView(frame: NSRect(x: 0, y: 0, width: 122, height: 38))
-            host.addSubview(button)
+            let face = selector().frame(width: 114, height: 30).padding(4)
+                .background(MacSettingsTheme.bgContent).environment(\.colorScheme, dark ? .dark : .light)
+            let host = NSHostingView(rootView: face)
+            host.frame = NSRect(x: 0, y: 0, width: 122, height: 38)
+            host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 122, height: 38), styleMask: .borderless, backing: .buffered, defer: true)
-            window.isReleasedWhenClosed = false; window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.isReleasedWhenClosed = false; window.appearance = host.appearance
             window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+            func find(_ view: NSView) -> AIUsageCalendarMonthButton? {
+                if let button = view as? AIUsageCalendarMonthButton { return button }
+                return view.subviews.compactMap(find).first
+            }
+            let button = try XCTUnwrap(find(host))
             defer { window.contentView = nil; window.close() }
             var pictures: [String: Data] = [:]
             for (name, pressed, enabled) in [("rest", false, true), ("pressed", true, true), ("disabled", false, false), ("disabled-pressed", true, false)] {
@@ -173,6 +181,7 @@ final class AIUsageCalendarMonthFeedbackTests: XCTestCase {
                 button.needsDisplay = true
                 XCTAssertEqual(button.isHighlighted, pressed && enabled)
                 host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
                 let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let picture = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
