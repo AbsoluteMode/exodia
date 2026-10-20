@@ -205,7 +205,7 @@ struct IslandCaseVaultPanel: View {
         HStack(spacing: 6) {
             ZStack(alignment: .leading) {
                 if viewModel.query.isEmpty {
-                    Text("Поиск ключей")
+                    Text("Поиск ключей и проектов")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.70))
                         .lineLimit(1)
@@ -215,7 +215,7 @@ struct IslandCaseVaultPanel: View {
                 }
 
                 TextField("", text: $viewModel.query)
-                    .accessibilityLabel("Поиск ключей")
+                    .accessibilityLabel("Поиск ключей и проектов")
                     .accessibilityIdentifier("case.search")
                     .font(.system(size: IslandCaseVaultStyle.inputFontSize, weight: .medium))
                     .textFieldStyle(.plain)
@@ -300,7 +300,7 @@ struct IslandCaseVaultPanel: View {
                     LazyVStack(spacing: 4) {
                         Color.clear.frame(height: 1).id(topScrollID)
                         if sections.isEmpty, searching {
-                            Text("Ключи не найдены")
+                            Text("Ничего не найдено")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.78))
                                 .padding(.vertical, 12)
@@ -392,12 +392,10 @@ struct IslandCaseVaultPanel: View {
                 .padding(.leading, IslandCaseVaultStyle.childIndent)
             }
 
-            if !viewModel.isSearching {
-                IslandCaseAddKeyRow(projectName: section.name) {
-                    startAddingKey(to: section.id)
-                }
-                .padding(.leading, IslandCaseVaultStyle.childIndent)
+            IslandCaseAddKeyRow(projectName: section.name) {
+                startAddingKey(to: section.id)
             }
+            .padding(.leading, IslandCaseVaultStyle.childIndent)
         }
     }
 
@@ -567,6 +565,7 @@ struct IslandCaseVaultPanel: View {
     }
 
     private func startAddingKey(to projectID: UUID) {
+        viewModel.expandedProjectIDs.insert(projectID)
         addingProjectID = projectID
         nameDraft = ""
         valueDraft = ""

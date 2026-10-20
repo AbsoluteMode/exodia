@@ -83,8 +83,7 @@ struct TranslationService: TextTranslating {
     }
 
     func translate(_ text: String, target: TranslationTarget) async throws -> String {
-        let translated = try await client.complete(endpoint: route.endpoint, model: route.model,
-                                                   messages: Self.messages(text, target: target))
+        let translated = try await client.complete(route: route, messages: Self.messages(text, target: target))
         try Task.checkCancellation()
         let value = translated.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { throw OpenRouterLLMError.emptyContent }

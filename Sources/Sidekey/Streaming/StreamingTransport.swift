@@ -15,6 +15,7 @@ enum StreamingFrame {
 /// Concurrency: `send` / `receive` are async; the transport is expected
 /// to serialize one outstanding receive at a time.
 protocol StreamingTransporting: AnyObject, Sendable {
+    var responseRequestID: String? { get }
     func resume()
     func cancel(reason: String?)
     func send(_ frame: StreamingFrame) async throws
@@ -22,11 +23,20 @@ protocol StreamingTransporting: AnyObject, Sendable {
 }
 
 /// Concrete `StreamingTransporting` backed by `URLSessionWebSocketTask`.
+extension StreamingTransporting { var responseRequestID: String? { nil } }
+
 final class URLSessionWebSocketTransport: StreamingTransporting, @unchecked Sendable {
     private let task: URLSessionWebSocketTask
 
     init(task: URLSessionWebSocketTask) {
         self.task = task
+    }
+
+    var responseRequestID: String? {
+        guard let response = task.response as? HTTPURLResponse else { return nil }
+        return response.value(forHTTPHeaderField: "request-id")
+            ?? response.value(forHTTPHeaderField: "xi-request-id")
+            ?? response.value(forHTTPHeaderField: "x-request-id")
     }
 
     func resume() {

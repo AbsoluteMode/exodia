@@ -9,10 +9,13 @@ canonical_for: [case-connect-and-project-scope]
 verified_at: 2026-10-20
 sources:
   - type: user-confirmed
-    reference: On 2026-10-20 the user requested Connect, per-agent project selection, Accept or Bypass, adjustable temporary Bypass defaulting to 15 minutes, key-only search and provider-colored hover logos.
+    reference: On 2026-10-20 the user requested Connect, per-agent project selection, Accept or Bypass, adjustable temporary Bypass defaulting to 15 minutes, search separated from key creation and provider-colored hover logos.
     confirmed_at: 2026-10-20
   - type: user-confirmed
     reference: On 2026-10-20 the user clarified that perceived Case/search lag may have been caused by many concurrent builds.
+    confirmed_at: 2026-10-20
+  - type: user-confirmed
+    reference: On 2026-10-20 the user reported that a newly created project could not be found; this corrects the earlier key-only search interpretation.
     confirmed_at: 2026-10-20
   - type: repository
     reference: Sources/Sidekey/Case/Broker/CaseBroker.swift
@@ -53,7 +56,10 @@ Access changes invalidate that app's temporary grants.
 The prompt selects 1–240 minutes for temporary Bypass, default 15. The button
 and physical A use the displayed duration; the broker validates the range.
 The grant covers only the same app/project and remains memory-only. Search
-matches keys and their descriptions; adding uses a separate explicit form.
+matches projects and keys and their descriptions, including empty projects and
+General; adding uses a separate explicit form. Project matches show their full
+key list; key-only matches show just the matching keys. Search-result projects
+retain the explicit + Key action.
 
 ## Rationale
 
@@ -78,6 +84,8 @@ benchmarks can compare code paths but cannot establish the cause of that report.
 
 Implement the requested interaction and remove redundant display work. Keep
 opening Touch ID and make no claim that the user's live lag was reproduced.
+The created-project search report supersedes the original key-only interpretation;
+find projects as well as keys while keeping creation explicit.
 
 ## Consequences
 

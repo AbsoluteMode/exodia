@@ -83,7 +83,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
         checks: ModelCheckStore? = nil,
         fileManager: FileManager = .default,
         sonioxSession: URLSession = .shared,
-        makeAdapter: @escaping (ResolvedRoute) throws -> BYOKTranscriptionAdapter = RealtimeAdapterFactory.make
+        makeAdapter: @escaping (ResolvedRoute) throws -> BYOKTranscriptionAdapter = RealtimeAdapterFactory.makeMetered
     ) {
         self.routing = routing
         self.keys = keys
@@ -134,7 +134,8 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
                 throw MeetingBYOKProcessingError.missingTranscriptionKey
             }
             let result = try await SonioxMeetingTranscriber(
-                apiKey: key, model: transcriptionRoute.model, session: sonioxSession
+                apiKey: key, model: transcriptionRoute.model, session: sonioxSession,
+                audioSeconds: event.totalDurationSeconds
             ).transcribe(chunkURLs: event.chunkURLs, language: language, terms: vocab.terms)
             // WHY: .project-docs/decisions/2026-10-18-silent-meetings.md
             if result.segments.isEmpty {
@@ -272,8 +273,7 @@ final class MeetingBYOKProcessor: MeetingDirectProcessing {
 
         do {
             let markdown = try await openRouterClient.complete(
-                endpoint: route.endpoint,
-                model: route.model,
+                route: route,
                 messages: [
                     OpenRouterChatMessage(role: "system", content: Self.noteSystemPrompt),
                     OpenRouterChatMessage(role: "user", content: context.joined(separator: "\n\n")),

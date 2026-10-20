@@ -6,6 +6,7 @@ import SwiftUI
 struct APIHintsView: View {
     let onAddKey: () -> Void
     let onClose: () -> Void
+    var embedded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -37,7 +38,7 @@ struct APIHintsView: View {
 
             footer
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(embedded ? MacSettingsTheme.bgCard : Color(nsColor: .windowBackgroundColor))
         .onExitCommand(perform: onClose)
     }
 
@@ -118,9 +119,11 @@ struct APIHintsView: View {
                 Spacer(minLength: 16)
                 Button("Add API key", action: onAddKey)
                     .buttonStyle(.bordered)
-                Button("Done", action: onClose)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
+                if !embedded {
+                    Button("Done", action: onClose)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                }
             }
             .controlSize(.regular)
         }

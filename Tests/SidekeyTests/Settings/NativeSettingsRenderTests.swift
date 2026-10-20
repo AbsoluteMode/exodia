@@ -137,17 +137,22 @@ final class NativeSettingsRenderTests: XCTestCase {
         }
         let directory = URL(fileURLWithPath: output, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        for granted in [false, true] {
+        let states = [
+            (name: "allowed", keyboard: true, microphone: true, screen: true),
+            (name: "not-allowed", keyboard: false, microphone: false, screen: false),
+            (name: "mixed", keyboard: true, microphone: false, screen: true)
+        ]
+        for state in states {
             let model = PermissionsSettingsViewModel(onComplete: {}, autoComplete: false,
-                snapshotProvider: { .init(accessibilityGranted: true, microphoneStatus: .authorized) },
-                screenRecordingAccessProvider: { granted }, screenRecordingRequester: {},
+                snapshotProvider: { .init(accessibilityGranted: state.keyboard, microphoneStatus: state.microphone ? .authorized : .denied) },
+                screenRecordingAccessProvider: { state.screen }, screenRecordingRequester: {},
                 runtimeRefresh: { _, _ in })
             for dark in [false, true] {
                 // Content widths in the existing 960 pt minimum and 1280 pt Settings shell.
                 for width in [739.0, 1059.0] {
                     try render(SettingsPermissionsView(viewModel: model).background(MacSettingsTheme.bgContent),
                                size: NSSize(width: width, height: 560), dark: dark,
-                               to: directory.appendingPathComponent("permissions-\(granted ? "allowed" : "not-allowed")-\(dark ? "dark" : "light")-\(Int(width)).png"))
+                               to: directory.appendingPathComponent("permissions-\(state.name)-\(dark ? "dark" : "light")-\(Int(width)).png"))
                 }
             }
         }

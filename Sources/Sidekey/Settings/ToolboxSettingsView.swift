@@ -55,6 +55,14 @@ struct ToolboxSettingsView: View {
         } tool: {
             rightPane
         }
+        .onAppear(perform: takeFocusedTool)
+        .onChange(of: selection.focusedTool) { _, _ in takeFocusedTool() }
+    }
+
+    private func takeFocusedTool() {
+        guard let tool = selection.focusedTool else { return }
+        selectedTool = tool
+        selection.focusedTool = nil
     }
 
     // MARK: - Hover Row

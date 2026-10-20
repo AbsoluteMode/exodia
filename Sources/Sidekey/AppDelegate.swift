@@ -127,6 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// consecutive ⌥N presses opening the same inline panel are distinct
     /// `@Published` events the island's `onChange` can both observe.
     private var hoverPanelRequestToken = 0
+    /// A `whytap://` link that arrived before launch finished (cold start).
+    private var pendingLinkDestination: WhytapLinkDestination?
+    private var acceptsLinkDestinations = false
     private var helpWindowController: HelpWindowController?
     private var panel: FloatingDotPanel?
     private var keybindingsHintPanel: KeybindingsHintPanel?
@@ -337,9 +340,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accepted ? "true" : "false",
             NSApp.activationPolicy().rawValue
         )
+        // Before launch finishes, so a link that launched the app is delivered.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Runs after this method returns, once the island and its actions exist.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.acceptsLinkDestinations = true
+            if let destination = self.pendingLinkDestination {
+                self.pendingLinkDestination = nil
+                self.show(destination)
+            }
+        }
         LocalNotificationHub.shared.openMeeting = { [weak self] id in
             guard let self else { return }
             self.openSettingsWindow(tab: .notes)
@@ -1694,6 +1713,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Hover for ~4s (Stage 3 review fix). Run the effect directly
             // without requesting expansion.
             effect.invoke(on: IslandPanel.shared.actions)
+        }
+    }
+
+    // MARK: - whytap:// links
+
+    /// `kAEGetURL` handler. Malformed links are ignored; the URL itself is not logged.
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor,
+                                         withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: string),
+              let destination = WhytapLink.destination(for: url)
+        else {
+            os_log("whytap_link rejected", log: Self.log, type: .info)
+            return
+        }
+        if acceptsLinkDestinations {
+            show(destination)
+        } else {
+            pendingLinkDestination = destination
+        }
+    }
+
+    /// Shows the link's place. Never runs a tool's action.
+    /// WHY: .project-docs/decisions/2026-10-20-whytap-links.md
+    private func show(_ destination: WhytapLinkDestination) {
+        registerIslandHotkeyActivity()
+        switch destination {
+        case .hoverPanel(let panel):
+            AppState.shared.programmaticHoverExpansion = true
+            hoverPanelRequestToken += 1
+            AppState.shared.programmaticHoverPanelRequest = HoverPanelRequest(
+                panel: panel, token: hoverPanelRequestToken
+            )
+        case .settings(let target):
+            let controller = ensureSettingsWindowController()
+            if case .tab(let tab) = target {
+                controller.show(tab: tab)
+            } else {
+                controller.show()
+            }
+            controller.selection.setHighlight(target)
+        case .toolboxTool(let tool):
+            let controller = ensureSettingsWindowController()
+            controller.show(tab: .toolbox)
+            controller.selection.focus(tool)
+            controller.selection.setHighlight(.tab(.toolbox))
+        case .planner(let section):
+            PlannerWindowController.shared.show(section)
+        case .translation(let mode):
+            openTranslation(mode)
+        case .island:
+            // Already woken above: a link this version does not know.
+            break
         }
     }
 

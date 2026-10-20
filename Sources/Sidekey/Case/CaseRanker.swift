@@ -30,11 +30,11 @@ enum CaseRanker {
         let normalizedQuery = try? CaseNameNormalizer.normalizedName(trimmedQuery)
         let searchText = normalizedQuery ?? trimmedQuery.uppercased()
 
-        // Every key is an entry of its own, and every project except General
-        // is one too, so a query finds keys (any project) by name and
+        // Every key is an entry of its own; General joins project entries
+        // while searching, so a query finds keys (any project) by name and
         // description and projects by name and description. The island draws
         // projects itself and reads these entries only while searching.
-        let groupProjects = projects.filter { $0.id != CaseProject.generalID }
+        let groupProjects = projects.filter { $0.id != CaseProject.generalID || !trimmedQuery.isEmpty }
         let individualEntries = secrets
             .map { secret in
                 CaseListEntry(

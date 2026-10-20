@@ -67,7 +67,7 @@ final class APIAndModelsRenderTests: XCTestCase {
             for width in [600.0, 900.0] {
                 for expanded in [nil, "Drop Smart", "Subtitles"] as [String?] {
                     let state = expanded == "Subtitles" ? "subtitles-expanded" : (expanded == nil ? "collapsed" : "expanded")
-                    try render(
+                    try await render(
                         APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
                                          initiallyExpandedGroup: expanded),
                         size: NSSize(width: width, height: 980), dark: dark,
@@ -76,8 +76,57 @@ final class APIAndModelsRenderTests: XCTestCase {
                 }
             }
         }
+        // Costs use a temporary journal and synthetic provider metadata only.
+        let usageURL = directory.appendingPathComponent("fixture-usage.sqlite")
+        try? FileManager.default.removeItem(at: usageURL)
+        let usageStore = AIUsageStore(url: usageURL)
+        let fixtureNow = Date()
+        let usageModel = AIUsageCostsViewModel(store: usageStore)
+        let usageEvents: [AIUsageEvent] = [
+            .speech(.init(feature: .dropSmart, account: .soniox, model: "stt-rt-v5"), seconds: 300, at: fixtureNow),
+            .init(createdAt: fixtureNow, context: .init(feature: .dropSmartCleanup, account: .openRouter, model: "google/gemini-3.8-flash"), currency: .usd, amount: 0.02, basis: .reported),
+            .init(createdAt: fixtureNow, context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"), currency: .elevenLabsCredits, amount: 1234, basis: .reported),
+            .init(createdAt: fixtureNow, context: .init(feature: .agent, account: .anthropic, model: "claude-opus-5-5"), currency: .usd, amount: 0.48, basis: .estimated),
+            .init(createdAt: fixtureNow, context: .init(feature: .agent, account: .anthropic, model: "claude-sonnet-5-5"), currency: .usd, amount: nil, basis: .unavailable)
+        ]
+        for event in usageEvents { try await usageStore.insert(event) }
+        let interval = AIUsagePeriod.month.interval(now: fixtureNow, start: fixtureNow, end: fixtureNow)!
+        await usageModel.load(interval)
+        let emptyModel = AIUsageCostsViewModel(store: AIUsageStore(url: directory.appendingPathComponent("empty-usage.sqlite")))
+        await emptyModel.load(interval)
+        let blockedFile = directory.appendingPathComponent("blocked-parent")
+        try Data().write(to: blockedFile)
+        let errorModel = AIUsageCostsViewModel(store: AIUsageStore(url: blockedFile.appendingPathComponent("usage.sqlite")))
+        await errorModel.load(interval)
+        let customModel = AIUsageCostsViewModel(store: usageStore)
+        customModel.period = .custom
+        customModel.start = fixtureNow.addingTimeInterval(-86400 * 5)
+        customModel.end = fixtureNow
+        await customModel.load(AIUsagePeriod.custom.interval(now: fixtureNow, start: customModel.start, end: customModel.end)!)
+        for dark in [false, true] {
+            for width in [600.0, 900.0] {
+                for section in APIAndModelsSection.allCases {
+                    try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
+                        initialSection: section, usageModel: usageModel), size: NSSize(width: width, height: 700), dark: dark,
+                        to: directory.appendingPathComponent("sections-\(section)-\(dark ? "dark" : "light")-\(Int(width)).png"))
+                }
+            }
+            for (name, stateModel) in [("empty", emptyModel), ("error", errorModel), ("custom", customModel)] {
+                try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
+                    initialSection: .costs, usageModel: stateModel), size: NSSize(width: 600, height: 700), dark: dark,
+                    to: directory.appendingPathComponent("costs-\(name)-\(dark ? "dark" : "light").png"))
+            }
+            let manyModels = (0..<20).map { index in
+                AIUsageEvent(createdAt: fixtureNow, context: .init(feature: .agent, account: .openRouter,
+                    model: "provider/very-long-model-name-for-history-\(index)-with-an-extended-version-identifier"),
+                    currency: .usd, amount: Double(index) / 100, basis: .reported)
+            }
+            try await render(AIUsageModelsPopover(row: .init(title: "Agent", events: manyModels)),
+                size: NSSize(width: 390, height: 390), dark: dark,
+                to: directory.appendingPathComponent("cost-models-many-\(dark ? "dark" : "light").png"))
+        }
         // What the Agent row's provider menu lists (a menu itself is not drawn offscreen).
-        try render(
+        try await render(
             VStack(alignment: .leading, spacing: 6) {
                 Text("   Auto")
                 Divider()
@@ -93,7 +142,7 @@ final class APIAndModelsRenderTests: XCTestCase {
         )
     }
 
-    private func render<V: View>(_ view: V, size: NSSize, dark: Bool = true, to url: URL) throws {
+    private func render<V: View>(_ view: V, size: NSSize, dark: Bool = true, to url: URL) async throws {
         let host = NSHostingView(rootView: view.background(MacSettingsTheme.bgContent)
             .environment(\.colorScheme, dark ? .dark : .light))
         host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -104,7 +153,7 @@ final class APIAndModelsRenderTests: XCTestCase {
         window.contentView = host
         defer { window.contentView = nil; window.close() }
         host.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        try await Task.sleep(for: .milliseconds(100))
         host.layoutSubtreeIfNeeded()
         let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)

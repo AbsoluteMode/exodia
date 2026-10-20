@@ -74,6 +74,38 @@ popover dismissal or VoiceOver on the installed app; those remain acceptance.
 The interpretation that a family plus size is the useful search input follows
 the user's example; typo correction and model aliases are outside this change.
 
+## API & Models costs — 2026-10-20
+
+The user chose four tabs in one surface: API keys, Models, Costs, API hints.
+Costs first shows the nearby period, then used features and separate USD/
+ElevenLabs credit totals; model details appear on the feature. Why: compare
+feature expenses without a permanent model-level grid or scattered period control.
+
+- One existing bgCard surface, 14 pt corners, shared underlined tabs and quiet
+  separators. No extra metric cards, chart, entrance or number animation.
+- Period choices are Today, Last 7 days, This month and inclusive Custom dates;
+  local-calendar date labels stay beside the table header. Invalid dates, loading,
+  empty history and a recoverable storage error have explicit states.
+- System typography: 15 pt heading, 13 pt feature/value rows, 11.5 pt secondary
+  labels. Aligned numeric columns use monospaced digits; colors reuse adaptive
+  MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
+  so meaning does not rely on color.
+- Hover opens model details; click pins, keyboard focus opens, Escape closes.
+  A short delayed dismissal permits pointer transfer into the native popover.
+  The model list scrolls at 320 pt while its heading and explanation stay visible.
+  Rows retain their geometry during disclosure; no new motion needs reduction.
+- Historical feature/provider/model snapshots drive expenses. Unknown price is
+  Unavailable, never free; ≈ denotes a calculated estimate and + excluded unknown
+  costs. ElevenLabs credits are never combined with dollars or inferred from a plan.
+
+Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
+long model histories, custom dates, empty/error states and synthetic temporary-store
+usage. Calculated text contrast on the card is 17.01:1 / 6.62:1 for primary/
+secondary text in light appearance and 12.49:1 / 6.84:1 in dark appearance; the
+selected-tab underline uses the primary text color. Physical pointer
+transfer, keyboard/VoiceOver and live provider billing remain shared-app
+acceptance. Tracking starts with this update; earlier history is not inferred.
+
 ## Model disclosure — 2026-10-20
 
 The user chose compact function rows that open their settings on click. The
@@ -131,21 +163,35 @@ real provider output remain acceptance in the shared app after promotion.
 ## Screenshot permission — 2026-10-20
 
 The user requested a screenshot access entry in Settings -> Permissions.
-Keep the existing permission group, MacRow, MacPill and MacButton: this is one
-more permission in the same workflow. The person first sees Screen Recording,
-then Allowed/Not allowed, then Allow/Open. A persistent explanation names
+Keep the existing permission group, MacRow and MacButton: this is one
+more permission in the same workflow. A persistent explanation names
 screenshots and tells them to finish current work before a macOS-requested reopen.
 
-Only clicking Allow requests access. Open manages an existing grant; a denial
+Only clicking Allow requests access; a denial
 opens the system privacy pane. Returning to the app and Refresh reread access
 without prompting. A missing grant never blocks launch or Drop. Existing native
 button focus, keyboard activation, semantic colors and scroll behavior apply;
-there is no new hover-only action or animation. A denied Bool cannot distinguish
-an unasked grant from a previous denial, so use Not allowed rather than Denied.
+there is no new hover-only action or animation.
 
-Offscreen native fixtures cover allowed/missing access in light/dark at 739 and
-1059 pt content widths (the existing 960 and 1280 pt Settings shells). Real TCC
-prompts, keyboard focus and post-promotion refresh remain installed-app acceptance.
+### Permission row status — 2026-10-20
+
+The user requested one quiet indicator instead of dot chips and differently
+labelled buttons. All three permissions use the same trailing slot:
+
+- Granted: a 22 pt green `checkmark.circle.fill`, with no button or status chip.
+  The icon exposes the permission name and Allowed to accessibility.
+- Missing, not requested or denied: one Allow button, with the permission name
+  in its accessibility label. Existing request handlers still choose the native
+  permission prompt or the appropriate System Settings pane.
+- The 60 × 26 pt slot keeps row height and text wrapping stable when access
+  changes. The adaptive success color retains contrast in both appearances.
+  No motion or hover-only information is added.
+
+Offscreen native fixtures cover all granted, all missing and mixed access in
+light/dark at 739 and 1059 pt content widths (the existing 960 and 1280 pt
+Settings shells). Real TCC prompts, keyboard focus, VoiceOver and post-promotion
+refresh remain installed-app acceptance. This presentation assumes the circled
+checkmark is recognizable without a visible Allowed label.
 
 
 ## Meetings overview — 2026-10-20
@@ -474,7 +520,7 @@ rights. No alternative composition or decorative screen is needed.
 
 | Component | Behavior and reason |
 | --- | --- |
-| Search | Always searches key names/descriptions; Return cannot create a key. New key name/value fields appear separately after + Key, so a search cannot become a write. Empty results say Keys not found; projects are contextual headings, never search hits. |
+| Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
 | Client picker | Discovers installed clients only after Connect. Shows loading, an explicit empty message and Choose program. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. |
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
@@ -492,6 +538,17 @@ authentication. The installed application is reserved for acceptance through the
 shared builder. These fixtures do not prove live keyboard focus or glass
 contrast on every desktop; those remain runtime acceptance checks. The user's
 reported lag may have been concurrent build load, not a confirmed app fault.
+
+
+### Case search correction — 2026-10-20
+
+A newly created empty project must be findable before it has keys. The user's
+report corrects the earlier key-only interpretation: search is separate from
+creation and includes projects too. Project matches reuse cached full sections;
+key-only matches remain filtered. Search results expose + Key so the found
+project can be used without clearing the query manually. Adding explicitly
+expands that project before leaving search; existing cached metadata and
+lazy rendering remain.
 
 
 ## Compact To-do in hover — 2026-10-20

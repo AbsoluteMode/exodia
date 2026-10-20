@@ -8,7 +8,7 @@ final class SettingsPermissionsViewTests: XCTestCase {
             .appendingPathComponent("Sources/Sidekey/Settings/SettingsPermissionsView.swift")
         let s = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(s.contains("MacCard"))
-        XCTAssertTrue(s.contains("MacPill"))
+        XCTAssertFalse(s.contains("MacPill"))
         XCTAssertTrue(s.contains("MacButton"))
         XCTAssertFalse(s.contains("SettingsRowShell"))
         XCTAssertTrue(s.contains("title: \"Screen Recording\""))
