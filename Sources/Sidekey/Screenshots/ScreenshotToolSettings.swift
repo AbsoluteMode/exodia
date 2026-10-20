@@ -83,13 +83,13 @@ final class ScreenshotToolSettings: NSView {
             closeAuxiliaryWindows()
             currentTool = tool
             let saved = defaults.array(forKey: "sidekey.screenshot.color.\(tool.rawValue)") as? [Double]
-            color.color = saved?.count == 4 ? NSColor(srgbRed: saved![0], green: saved![1], blue: saved![2], alpha: saved![3]) : tool == .marker ? .systemYellow : .systemRed
+            color.color = saved?.count == 4 ? NSColor(srgbRed: saved![0], green: saved![1], blue: saved![2], alpha: saved![3]) : .systemRed
             width.selectItem(at: min(3, max(0, defaults.object(forKey: "sidekey.screenshot.width.\(tool.rawValue)") as? Int ?? 1)))
             canvas.color = color.color; canvas.lineWidth = [2, 3, 5, 8][width.indexOfSelectedItem]
         }
-        title.stringValue = tool == .ellipse || tool == .rectangle ? "Shape" : tool == .counter ? "Steps" : tool == .marker ? "Highlight" : tool.rawValue.capitalized
-        isHidden = [.select, .spotlight].contains(tool)
-        color.isHidden = [.select, .blur, .spotlight].contains(tool)
+        title.stringValue = tool == .ellipse || tool == .rectangle ? "Shape" : tool == .counter ? "Steps" : tool.rawValue.capitalized
+        isHidden = tool == .select
+        color.isHidden = [.select, .blur].contains(tool)
         width.isHidden = ![.arrow, .rectangle, .ellipse, .pen, .text].contains(tool)
         shape.isHidden = tool != .rectangle && tool != .ellipse
         shape.selectItem(at: tool == .ellipse ? 1 : 0)

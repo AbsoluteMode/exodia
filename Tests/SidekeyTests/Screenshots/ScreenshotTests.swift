@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import Vision
 @testable import Sidekey
 
 @MainActor
@@ -73,19 +74,6 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(CGRect(x: 0, y: 0, width: 400, height: 300).contains(narrow))
     }
 
-    func testVisionFindsStandaloneNumbersAndWordsWithoutLanguageCorrection() throws {
-        let result = try ScreenshotTextDetector.analyze(fixture())
-        XCTAssertTrue(result.text.contains("401"), "Standalone numbers must be recognized")
-        XCTAssertTrue(result.text.contains("123456"))
-        XCTAssertTrue(result.text.lowercased().contains("invoice"))
-        XCTAssertTrue(result.boxes.contains { $0.contains(CGPoint(x: 0.775, y: 0.54)) }, "Bounding boxes use bottom-left coordinates")
-    }
-
-    func testBlankSelectionDoesNotInventTextRegions() throws {
-        let result = try ScreenshotTextDetector.analyze(fixture(text: false))
-        XCTAssertTrue(result.text.isEmpty); XCTAssertTrue(result.boxes.isEmpty)
-    }
-
     func testBlurDetectionFindsWordsAndStandaloneNumbers() throws {
         let boxes = try ScreenshotTextDetector.boxes(fixture())
         for point in [CGPoint(x: 0.2, y: 0.8), CGPoint(x: 0.775, y: 0.54), CGPoint(x: 0.17, y: 0.25)] {
@@ -124,7 +112,7 @@ final class ScreenshotTests: XCTestCase {
         let crop = CGRect(x: 30.25, y: 20.75, width: 310.5, height: 160.5)
         let annotations = [ScreenshotAnnotation(tool: .arrow, points: [CGPoint(x: 50, y: 50), CGPoint(x: 250, y: 110)]),
                            ScreenshotAnnotation(tool: .text, points: [CGPoint(x: 80, y: 130)], text: "Test 123"),
-                           ScreenshotAnnotation(tool: .spotlight, points: [CGPoint(x: 80, y: 70), CGPoint(x: 200, y: 140)])]
+                           ScreenshotAnnotation(tool: .ellipse, points: [CGPoint(x: 80, y: 70), CGPoint(x: 200, y: 140)])]
         let reference = try XCTUnwrap(CGContext(data: nil, width: source.width, height: source.height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         reference.scaleBy(x: 2, y: 2); reference.draw(source, in: CGRect(origin: .zero, size: size))
@@ -266,14 +254,6 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(calls, 1)
     }
 
-    func testOutputResizeKeepsAspectRatioAndRejectsUnboundedDimensions() throws {
-        let source = try fixture()
-        let smaller = try ScreenshotRenderer.resized(source, width: 200)
-        XCTAssertEqual(smaller.width, 200); XCTAssertEqual(smaller.height, 100)
-        XCTAssertThrowsError(try ScreenshotRenderer.resized(source, width: 0))
-        XCTAssertThrowsError(try ScreenshotRenderer.resized(source, width: 20_000))
-    }
-
     func testRealCanvasGesturesSelectCropAndRequestTextAndNumberBlur() throws {
         let canvas = ScreenshotCanvas(image: try fixture(), size: CGSize(width: 800, height: 400))
         let window = ScreenshotCapturePanel(contentRect: CGRect(x: -20_000, y: -20_000, width: 800, height: 400),
@@ -328,6 +308,15 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertEqual(canvas.tool, entry.tool)
             XCTAssertTrue(HelpWindowContent.hotkeyRows.contains { $0.title == "Screenshot — \(entry.title)" })
         }
+        canvas.selectTool(.arrow)
+        for key in ["v", "m"] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                                      windowNumber: 0, context: nil, characters: key,
+                                                      charactersIgnoringModifiers: key, isARepeat: false, keyCode: 0))
+            canvas.keyDown(with: event)
+            XCTAssertEqual(canvas.tool, .arrow, "Removed shortcuts must not select hidden tools")
+        }
+        XCTAssertFalse(HelpWindowContent.hotkeyRows.contains { ["Screenshot — Select & crop", "Screenshot — Highlighter"].contains($0.title) })
         var copyRequests = 0
         canvas.onCommand = { command in if case .copy = command { copyRequests += 1 } }
         let copy = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
@@ -359,10 +348,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(buttons.contains { $0.title == "Blur" && $0.state == .on && $0.image == nil })
         XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix("Download to Downloads") == true && $0.title.isEmpty && $0.image != nil })
         XCTAssertFalse(buttons.contains { $0.toolTip == "More tools" })
-        for tool in [ScreenshotTool.select, .arrow, .rectangle, .pen, .text, .blur, .marker, .counter, .spotlight] {
+        XCTAssertEqual(buttons.count, 12, "Six annotation tools and six finish/edit actions remain")
+        for removed in ["Select & crop", "Highlighter", "Spotlight", "Copy text", "Pin above windows", "Output size"] {
+            XCTAssertFalse(buttons.contains { $0.toolTip?.hasPrefix(removed) == true }, removed)
+        }
+        for tool in [ScreenshotTool.arrow, .rectangle, .pen, .text, .blur, .counter] {
             XCTAssertTrue(buttons.contains { $0.identifier?.rawValue == tool.rawValue })
         }
-        for label in ["Copy text", "Pin above windows", "Output size", "Share", "Undo", "Redo", "Cancel capture"] {
+        for label in ["Share", "Undo", "Redo", "Cancel capture"] {
             XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix(label) == true }, label)
         }
         XCTAssertFalse(descendants(toolbar).contains { $0 is NSColorWell || $0 is NSPopUpButton || $0 is NSTextField })
@@ -421,5 +414,39 @@ final class ScreenshotTests: XCTestCase {
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
+    }
+}
+
+// Accurate OCR is a blur-test oracle; the editor ships only fast region detection.
+private struct ScreenshotTextAnalysis {
+    let boxes: [CGRect]
+    let text: String
+}
+
+private extension ScreenshotTextDetector {
+    /// Vision stays on device. Correction is off so standalone numbers and codes survive.
+    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+    static func analyze(_ image: CGImage, detectAdditionalBoxes: Bool = true) throws -> ScreenshotTextAnalysis {
+        let recognition = VNRecognizeTextRequest()
+        recognition.recognitionLevel = .accurate
+        recognition.usesLanguageCorrection = false
+        recognition.automaticallyDetectsLanguage = true
+        recognition.minimumTextHeight = 0
+        let supported = try recognition.supportedRecognitionLanguages()
+        let languages = ["en-US", "ru-RU"].filter { supported.contains($0) }
+        if !languages.isEmpty { recognition.recognitionLanguages = languages }
+        let detection = VNDetectTextRectanglesRequest()
+        detection.reportCharacterBoxes = false
+        // Small OCR crops are faster on CPU and avoid long accelerator model setup.
+        // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+        try useCPU(recognition)
+        if detectAdditionalBoxes { try useCPU(detection) }
+        // Dark UI crops use the same geometry with light-background OCR input only.
+        // Export and blur always keep the original screenshot colors.
+        try VNImageRequestHandler(cgImage: recognitionImage(image), options: [:]).perform(detectAdditionalBoxes ? [recognition, detection] : [recognition])
+        let observations = recognition.results ?? []
+        var boxes = observations.map(\.boundingBox)
+        if detectAdditionalBoxes { boxes += (detection.results ?? []).map(\.boundingBox) }
+        return ScreenshotTextAnalysis(boxes: boxes, text: observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n"))
     }
 }

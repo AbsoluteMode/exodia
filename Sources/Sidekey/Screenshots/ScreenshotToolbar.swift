@@ -29,15 +29,12 @@ final class ScreenshotToolbar: NSView {
             rows.topAnchor.constraint(equalTo: topAnchor), rows.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         for (tool, symbol, title, help) in [
-            (ScreenshotTool.select, "crop", "", "Select & crop · V — move annotations or resize the crop"),
-            (.arrow, "arrow.up.right", "", "Arrow · A — point to a detail"),
+            (ScreenshotTool.arrow, "arrow.up.right", "", "Arrow · A — point to a detail"),
             (.rectangle, "rectangle", "", "Shape · R / O — draw a rectangle or oval"),
             (.pen, "pencil", "", "Pen · P — draw freehand"),
             (.text, "textformat", "", "Text · T — place a label"),
             (.blur, "", "Blur", "Blur · B — blur text and numbers or an entire area"),
-            (.marker, "highlighter", "", "Highlighter · M — add a transparent color highlight"),
-            (.counter, "number.circle", "", "Numbered steps · N — place consecutive step numbers"),
-            (.spotlight, "circle.inset.filled", "", "Spotlight — dim everything outside a chosen area")
+            (.counter, "number.circle", "", "Numbered steps · N — place consecutive step numbers")
         ] {
             let button = makeButton(symbol: symbol, title: title, help: help, action: #selector(chooseTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
@@ -45,10 +42,7 @@ final class ScreenshotToolbar: NSView {
         }
         controls.append(separator())
         for (command, symbol, help) in [
-            (ScreenshotCommand.copyText, "doc.text.viewfinder", "Copy text — recognize edited pixels as text and exit"),
-            (.pin, "pin", "Pin above windows — keep the edited screenshot as a floating reference"),
-            (.resize, "arrow.up.left.and.arrow.down.right", "Output size — set exported width in pixels"),
-            (.share, "square.and.arrow.up", "Share — send the edited screenshot using macOS")
+            (ScreenshotCommand.share, "square.and.arrow.up", "Share — send the edited screenshot using macOS")
         ] {
             let button = makeButton(symbol: symbol, help: help, action: #selector(command(_:)))
             button.identifier = NSUserInterfaceItemIdentifier("command.\(command)")

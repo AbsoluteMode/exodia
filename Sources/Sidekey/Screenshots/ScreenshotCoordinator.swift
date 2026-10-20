@@ -45,10 +45,8 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private var captureDeadlineTask: Task<Void, Never>?
     private var generation: UUID?
     private var previousApp: NSRunningApplication?
-    private var pins: [NSWindowController] = []
     private var sharePicker: NSSharingServicePicker?
     private var observers: [NSObjectProtocol] = []
-    private var outputWidth: Int?
     private var copyWaitReason: String?
     private var copyAfterProcessing = false
     private let activityChanged: (Bool) -> Void
@@ -96,7 +94,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             return
         }
         previousApp = NSWorkspace.shared.frontmostApplication
-        let token = UUID(); generation = token; activityChanged(true); outputWidth = nil
+        let token = UUID(); generation = token; activityChanged(true)
         setPreparing(true)
         displayLayout = Self.currentDisplayLayout()
         os_log("screenshot_capture begin", log: Self.log, type: .info)
@@ -276,12 +274,8 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         if restoreFocus, target?.processIdentifier != ProcessInfo.processInfo.processIdentifier { target?.activate(options: []) }
     }
 
-    private func rawOutput(_ canvas: ScreenshotCanvas) throws -> CGImage {
-        try ScreenshotRenderer.image(source: canvas.source, size: canvas.documentSize, annotations: canvas.annotations, crop: canvas.selection)
-    }
     private func output(_ canvas: ScreenshotCanvas) throws -> CGImage {
-        let image = try rawOutput(canvas)
-        return try outputWidth.map { try ScreenshotRenderer.resized(image, width: $0) } ?? image
+        try ScreenshotRenderer.image(source: canvas.source, size: canvas.documentSize, annotations: canvas.annotations, crop: canvas.selection)
     }
     private func report(_ text: String, canvas: ScreenshotCanvas) { canvas.message = text; canvas.needsDisplay = true }
 
@@ -333,16 +327,11 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             case .copy:
                 export(canvas, download: false)
             case .download: export(canvas, download: true)
-            case .copyText: try copyText(canvas)
-            case .pin:
-                let image = try output(canvas)
-                showPin(image); cancel()
             case .share:
                 guard let toolbar else { return }
                 let image = NSImage(cgImage: try output(canvas), size: .zero)
                 let picker = NSSharingServicePicker(items: [image]); picker.delegate = self; sharePicker = picker
                 picker.show(relativeTo: toolbar.bounds, of: toolbar, preferredEdge: .minY)
-            case .resize: try resize(canvas)
             case .cancel: break
             }
         } catch { report(error.localizedDescription, canvas: canvas) }
@@ -351,7 +340,6 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
     private func export(_ canvas: ScreenshotCanvas, download: Bool) {
         guard let token = generation else { return }
         let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations, crop = canvas.selection
-        let width = outputWidth
         canvas.busyMessage = download ? "Downloading to Downloads…" : "Preparing clipboard…"
         copyWaitReason = download ? "Download" : nil
         canvas.busy = true
@@ -359,8 +347,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             do {
                 let worker = Task.detached(priority: .userInitiated) { () throws -> (Data, URL?) in
                     try Task.checkCancellation()
-                    let raw = try ScreenshotRenderer.image(source: source, size: size, annotations: annotations, crop: crop)
-                    let image = try width.map { try ScreenshotRenderer.resized(raw, width: $0) } ?? raw
+                    let image = try ScreenshotRenderer.image(source: source, size: size, annotations: annotations, crop: crop)
                     let bytes = try ScreenshotDownload.png(image, scale: CGFloat(source.width) / size.width)
                     try Task.checkCancellation()
                     let url = try download ? ScreenshotDownload.write(bytes, directory: FileManager.default.url(for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)) : nil
@@ -386,58 +373,6 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                 self.report(download ? "Couldn’t download to Downloads. Check folder access and free space, then try again." : error.localizedDescription, canvas: canvas)
             }
         }
-    }
-
-    private func copyText(_ canvas: ScreenshotCanvas) throws {
-        let image = try rawOutput(canvas)
-        guard let token = generation else { return }
-        canvas.busyMessage = "Reading text on this Mac… · Esc to cancel"
-        canvas.busy = true
-        task = Task { [weak self, weak canvas] in
-            do {
-                let worker = Task.detached(priority: .userInitiated) { try ScreenshotTextDetector.analyze(image, detectAdditionalBoxes: false).text }
-                let text = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
-                guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
-                canvas.busy = false
-                guard !text.isEmpty else { self.report("No readable text or numbers found.", canvas: canvas); return }
-                NSPasteboard.general.clearContents()
-                guard NSPasteboard.general.setString(text, forType: .string) else { throw ScreenshotImageError.rendering }
-                self.cancel()
-            } catch {
-                guard let self, let canvas, self.generation == token else { return }
-                canvas.busy = false; self.report("Couldn’t read text and numbers. Try again or copy the image.", canvas: canvas)
-            }
-        }
-    }
-
-    private func resize(_ canvas: ScreenshotCanvas) throws {
-        let image = try rawOutput(canvas)
-        let alert = NSAlert(); alert.messageText = "Output width in pixels"
-        alert.informativeText = "Height follows the original proportions. Copy and Download use PNG."
-        let input = NSTextField(string: String(outputWidth ?? image.width)); input.frame.size = CGSize(width: 220, height: 24)
-        alert.accessoryView = input; alert.addButton(withTitle: "Apply"); alert.addButton(withTitle: "Cancel")
-        guard let window = canvas.window else { return }
-        canvas.busy = true
-        alert.beginSheetModal(for: window) { [weak self, weak canvas] result in
-            guard let self, let canvas else { return }; canvas.busy = false
-            guard self.isActive, result == .alertFirstButtonReturn else { return }
-            guard let value = Int(input.stringValue), value >= 1, value <= 16_384,
-                  Double(image.height) * Double(value) / Double(image.width) <= 16_384 else {
-                self.report("Choose a width from 1 to 16384 pixels, keeping height within 16384.", canvas: canvas); return
-            }
-            self.outputWidth = value; self.report("Output width: \(value) pixels", canvas: canvas)
-        }
-    }
-
-    private func showPin(_ image: CGImage) {
-        pins.removeAll { $0.window?.isVisible == false }
-        let ratio = min(1, 600 / CGFloat(image.width), 420 / CGFloat(image.height))
-        let size = CGSize(width: max(100, CGFloat(image.width) * ratio), height: max(60, CGFloat(image.height) * ratio))
-        let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.level = .floating; window.title = "Screenshot"
-        let view = NSImageView(image: NSImage(cgImage: image, size: .zero)); view.imageScaling = .scaleProportionallyUpOrDown
-        view.setAccessibilityLabel("Pinned screenshot"); window.contentView = view
-        window.center(); window.orderFrontRegardless(); pins.append(NSWindowController(window: window))
     }
 
     nonisolated func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, didChoose service: NSSharingService?) {

@@ -1,6 +1,6 @@
 import AppKit
 
-enum ScreenshotCommand: Hashable { case cancel, copy, download, copyText, pin, share, resize }
+enum ScreenshotCommand: Hashable { case cancel, copy, download, share }
 
 @MainActor
 final class ScreenshotCanvas: NSView {
@@ -177,7 +177,7 @@ final class ScreenshotCanvas: NSView {
             // An immovable Blur is selection-only. Only an explicit crop gesture may replace the crop.
             selection = ScreenshotGeometry.rect(from: start, to: point)
         }
-        if let drawing, let oldDrawing, ![.text, .counter, .spotlight].contains(drawing.tool) {
+        if let drawing, let oldDrawing, ![.text, .counter].contains(drawing.tool) {
             let padding = max(20, drawing.width * 5)
             setNeedsDisplay(oldDrawing.union(drawing.rect).insetBy(dx: -padding, dy: -padding))
         } else if oldSelection != selection {

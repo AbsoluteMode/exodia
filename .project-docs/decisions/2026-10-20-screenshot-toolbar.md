@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user removed Select/crop, Highlighter, Spotlight, Copy text, Pin above windows and Output size, retaining initial area selection, Arrow, Shape, Pen, Text, Blur, Numbered steps, Share and the existing finish/edit actions.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user requested preserving Whytap Hover in the frozen capture, area-only output without full-display Enter/double-click actions, and removal of the initial instruction strip.
     confirmed_at: 2026-10-21
   - type: user-confirmed
@@ -134,8 +137,8 @@ pressed behavior remain, with explicit enabled-only hover feedback.
 Capture now requests filter content points multiplied by its pixel scale and
 best capture resolution. Legacy display-width functions returned 1728×1117 on
 the affected 2× Retina display rather than its 3456×2234 source pixels. PNG is
-lossless, but could not recover that lost capture detail. Explicit Output size
-continues to resize proportionally; default export preserves the captured size.
+lossless, but could not recover that lost capture detail. Export preserves the
+captured size; the subsequent tool-reduction revision removes resizing.
 
 Repeated activation no longer toggles an in-flight or edited capture off.
 Display-parameter notifications cancel only after a real display layout/scale
@@ -167,10 +170,25 @@ instruction strip. Enter with no crop is inert. Keep transient processing,
 error and download confirmation states. This supersedes the earlier full-display
 and pre-capture island-exclusion behavior.
 
+# Tool-reduction revision — 2026-10-21
+
+After reviewing each action, the user chose Arrow, Shape, Pen, Text, Blur,
+Numbered steps and Share, plus Undo/Redo, Download, Copy & exit and Cancel.
+Remove the Select/crop button and V shortcut, Highlighter and M shortcut,
+Spotlight, Copy text, Pin above windows and Output size. Initial area selection
+still uses a drag, with the existing selection geometry and keyboard adjustment.
+No replacement menu or hidden invocation retains the removed actions.
+
+The reduced editor exports the original Retina pixels without resizing. Keep
+fast local text/number detection for Blur. Accurate OCR remains only in tests
+as an independent oracle for blur/orientation regressions; its copying action
+and runtime recognition path are removed. This supersedes the earlier expanded
+tool catalog and the copying/pinning/resizing behavior in this record.
+
 # Consequences
 
 Screen Recording is requested on invocation. Content stays in memory until
-explicit copy/download/pin/system share. System OCR adds no app-managed speech/LLM
+explicit copy/download/system share. System OCR adds no app-managed speech/LLM
 weights or provider traffic. The editor blocks update restarts. Screen/Space
 changes and sleep cancel stale captures. Real permission/capture/dialog flows
 remain installed-app acceptance checks.

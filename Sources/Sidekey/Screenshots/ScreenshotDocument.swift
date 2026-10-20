@@ -3,7 +3,7 @@ import CoreImage
 import Vision
 
 enum ScreenshotTool: String, CaseIterable {
-    case select, arrow, rectangle, ellipse, pen, text, blur, marker, counter, spotlight
+    case select, arrow, rectangle, ellipse, pen, text, blur, counter
 }
 
 enum ScreenshotBlurMode: String, CaseIterable {
@@ -13,9 +13,9 @@ enum ScreenshotBlurMode: String, CaseIterable {
 
 enum ScreenshotEditorKeys {
     static let tools: [(key: String, title: String, tool: ScreenshotTool)] = [
-        ("v", "Select & crop", .select), ("a", "Arrow", .arrow), ("r", "Rectangle", .rectangle),
+        ("a", "Arrow", .arrow), ("r", "Rectangle", .rectangle),
         ("o", "Oval", .ellipse), ("p", "Pen", .pen), ("t", "Text", .text),
-        ("b", "Blur text and numbers", .blur), ("m", "Highlighter", .marker), ("n", "Numbered steps", .counter)
+        ("b", "Blur text and numbers", .blur), ("n", "Numbered steps", .counter)
     ]
 }
 
@@ -131,11 +131,6 @@ enum ScreenshotRenderer {
             for point in points.dropFirst() { context.addLine(to: point) }
             if points.count == 1 { context.addLine(to: CGPoint(x: start.x + 0.1, y: start.y)) }
             context.strokePath()
-        case .marker:
-            context.setFillColor(annotation.color.withAlphaComponent(0.28).cgColor); context.fill(rect)
-        case .spotlight:
-            context.addRect(bounds); context.addRect(rect)
-            context.setFillColor(NSColor.black.withAlphaComponent(0.58).cgColor); context.fillPath(using: .evenOdd)
         case .blur:
             if let patch = annotation.patch { context.interpolationQuality = .high; context.draw(patch, in: rect) }
         case .text, .counter:
@@ -214,23 +209,6 @@ enum ScreenshotRenderer {
         guard let result = context.makeImage() else { throw ScreenshotImageError.rendering }
         return result
     }
-
-    static func resized(_ image: CGImage, width: Int) throws -> CGImage {
-        let height = max(1, Int((Double(image.height) * Double(width) / Double(image.width)).rounded()))
-        guard width > 0, width <= 16_384, height <= 16_384,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { throw ScreenshotImageError.rendering }
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let result = context.makeImage() else { throw ScreenshotImageError.rendering }
-        return result
-    }
-}
-
-struct ScreenshotTextAnalysis {
-    let boxes: [CGRect]
-    let text: String
 }
 
 enum ScreenshotTextDetector {
@@ -281,30 +259,5 @@ enum ScreenshotTextDetector {
         context.setBlendMode(.difference); context.setFillColor(CGColor(gray: 1, alpha: 1)); context.fill(bounds)
         guard let inverted = context.makeImage() else { throw ScreenshotImageError.rendering }
         return inverted
-    }
-    /// Vision stays on device. Correction is off so standalone numbers and codes survive.
-    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
-    static func analyze(_ image: CGImage, detectAdditionalBoxes: Bool = true) throws -> ScreenshotTextAnalysis {
-        let recognition = VNRecognizeTextRequest()
-        recognition.recognitionLevel = .accurate
-        recognition.usesLanguageCorrection = false
-        recognition.automaticallyDetectsLanguage = true
-        recognition.minimumTextHeight = 0
-        let supported = try recognition.supportedRecognitionLanguages()
-        let languages = ["en-US", "ru-RU"].filter { supported.contains($0) }
-        if !languages.isEmpty { recognition.recognitionLanguages = languages }
-        let detection = VNDetectTextRectanglesRequest()
-        detection.reportCharacterBoxes = false
-        // Small OCR crops are faster on CPU and avoid long accelerator model setup.
-        // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
-        try useCPU(recognition)
-        if detectAdditionalBoxes { try useCPU(detection) }
-        // Dark UI crops use the same geometry with light-background OCR input only.
-        // Export and blur always keep the original screenshot colors.
-        try VNImageRequestHandler(cgImage: recognitionImage(image), options: [:]).perform(detectAdditionalBoxes ? [recognition, detection] : [recognition])
-        let observations = recognition.results ?? []
-        var boxes = observations.map(\.boundingBox)
-        if detectAdditionalBoxes { boxes += (detection.results ?? []).map(\.boundingBox) }
-        return ScreenshotTextAnalysis(boxes: boxes, text: observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n"))
     }
 }

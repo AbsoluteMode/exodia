@@ -7,9 +7,12 @@ copy or download the result. First see the crop and every tool on the main bar.
 Then change the selected tool's settings in an adjacent accessory and finish
 with the visible **Copy & exit ↩** action or Enter.
 
-- Expose Select/crop, Arrow, Shape, Pen, Text, Blur, Highlighter, Numbered steps,
-  Spotlight, OCR, Pin, Output size, Share, Undo, Redo, Download, Copy & exit and
-  Cancel on the toolbar. Remove More. Why: the user asked to see all commands.
+- Expose Arrow, Shape, Pen, Text, Blur, Numbered steps, Share, Undo, Redo,
+  Download, Copy & exit and Cancel. Remove More and the Select/crop control;
+  keep the initial area drag. Highlighter, Spotlight, Copy text, Pin above
+  windows and Output size are removed, including their hidden commands and
+  shortcuts. Why: the user chose a smaller annotation-focused tool set after
+  reviewing every action; full pixel resolution remains automatic.
 - Blur uses text alone; Download uses its downward arrow alone with a tooltip.
   Why: the user explicitly removed Blur’s icon and Download’s label.
 - Keep color, width, shape, blur mode and label input in `ScreenshotToolSettings`,
@@ -55,7 +58,8 @@ with the visible **Copy & exit ↩** action or Enter.
   black/white text for the stronger contrast. Why: the floating toolbar is
   usually not the key window, but Copy & exit must remain the leading action.
 
-The earlier single-row/More/inline-settings decisions below are historical and
+The later 21 October tool reduction also supersedes the initially expanded
+21 October catalog. The earlier single-row/More/inline-settings decisions below are historical and
 superseded by this user request. No new animation is introduced; reduced motion
 uses the same immediate layout. Offscreen fixtures and generated pixels provide
 local verification; actual hotkey delivery and capture remain single-installed-app
