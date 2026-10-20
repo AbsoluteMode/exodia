@@ -199,6 +199,8 @@ Translation tools:
   Subtitles Speech/LLM selectors; typed text uses only translation. New routes
   start unset. Migration v2 copies the previous shared text route once only
   for configured subtitles; later edits, clears and launches stay independent.
+  Partial v1 documents expose this split in memory without rewriting raw bytes;
+  their first real edit retains a backup and persists the split before the edit.
   Never borrow other routes at runtime or migrate standalone credentials.
   Eight queued phrases, forty retained lines and a bounded audio relay stop
   visibly on backlog. Stop uses opt-in CoreAudio terminal EOF after capture
