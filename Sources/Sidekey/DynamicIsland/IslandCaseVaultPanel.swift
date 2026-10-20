@@ -748,4 +748,3 @@ private enum ProjectEditor: Equatable {
     case create
     case edit(UUID)
 }
-

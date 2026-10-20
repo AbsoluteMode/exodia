@@ -38,16 +38,6 @@ No Whytap account, backup server or GitHub Actions is used.
 - App-owned Monitor dashboards, notification configuration and working files,
   and the neutral agent workspace's persistent instructions.
 
-Clipboard file entries refer to external originals. Those original documents
-are not owned by Whytap and are not copied by this feature. The same applies
-to external scripts, SSH keys, model-provider accounts and credentials managed
-by other applications. Downloaded
-models, binaries, caches, logs, obsolete project indexes and OS permissions are
-not part of the portable workspace. Archives are bounded to 64 GiB in total,
-8 GiB per file and 200,000 entries; a snapshot exceeding a bound is refused.
-Imported directly executed notification workers may need their executable
-permission and machine-specific paths reviewed before re-enabling a source.
-
 Case items are merged with the target Mac's vault and encrypted using that
 Mac's own local vault key. Unrelated existing Case items are retained. When a
 project or key name from the backup is already used by a different item on
@@ -57,7 +47,20 @@ registrations (which AI apps may ask for keys, Approve or Bypass) and adds
 them without asking for Touch ID, including Bypass: an app registered with
 Bypass in the backup can receive keys without a prompt after the restore.
 Registrations this Mac already has keep their own settings. Review them in
-Case -> access after restoring a backup you did not make yourself.
+Case -> access after restoring a backup you did not make yourself. Imported
+notification sources and monitoring connections stay disabled until reviewed.
+Unprocessed recordings are recovered without automatically resuming another
+Mac's remote provider jobs.
+
+Clipboard file entries refer to external originals. Those original documents
+are not owned by Whytap and are not copied by this feature. The same applies
+to external scripts, SSH keys, model-provider accounts and credentials managed
+by other applications. Downloaded
+models, binaries, caches, logs, obsolete project indexes and OS permissions are
+not part of the portable workspace. Archives are bounded to 64 GiB in total,
+8 GiB per file and 200,000 entries; a snapshot exceeding a bound is refused.
+Imported directly executed notification workers may need their executable
+permission and machine-specific paths reviewed before re-enabling a source.
 
 A damaged or incomplete archive is refused before restore. Failed uploads
 keep the local copy for retry. Existing copies are retained; the simplified
