@@ -47,6 +47,10 @@ enum NotifyLogoStore {
 
     /// Loads a brand/custom image as a template image, or nil.
     static func image(named name: String) -> NSImage? {
+        // The built-in source uses the installed app's actual color icon.
+        if name == "whytap", let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {
+            return NSImage(contentsOf: url)
+        }
         // `name` may originate from an external payload (customLogo). Reject
         // anything that could escape the lookup directory before it touches a
         // path: no separators, no leading dot (no `..` traversal, no hidden).

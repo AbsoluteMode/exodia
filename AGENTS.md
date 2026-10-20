@@ -589,6 +589,17 @@ Other (default off). The former tour, resume state, preview target and
 voice demos were removed. WHY:
 .project-docs/decisions/2026-10-17-local-workspace.md
 
+Notify includes a built-in Meeting notes source, enabled by default for new and
+existing users unless explicitly switched off. MeetingReadyNotifications sends
+successful newMeetingAvailable events to the local queue/history with the
+packaged Whytap app icon in color and Small as the initial type. Settings ->
+Notifications has a persistent switch and Large / Small selector; Notify ->
+Sources also has the switch. An optional internal meetingID in the archived
+event opens that exact note through SettingsWindowController.selectNoteMeeting;
+scripts cannot supply this target. Failed processing does not announce success,
+and loading history does not replay old popups. WHY:
+.project-docs/decisions/2026-10-20-meeting-ready-notifications.md
+
 Notify: agent-configured local scripts emit JSON lines with title, body, event
 ID, optional link, color, logo and duration. NotifyScriptSupervisor reads private
 sources/<id>.json manifests, supervises child process groups only during the app

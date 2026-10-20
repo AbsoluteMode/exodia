@@ -3,9 +3,14 @@ import SwiftUI
 @MainActor
 struct SettingsNotificationsView: View {
     @ObservedObject private var supervisor: NotifyScriptSupervisor
+    @ObservedObject private var meetingNotifications: MeetingReadyNotifications
+    private let imageLoader: (String) -> NSImage?
 
-    init(supervisor: NotifyScriptSupervisor? = nil) {
+    init(supervisor: NotifyScriptSupervisor? = nil, meetingNotifications: MeetingReadyNotifications? = nil,
+         imageLoader: ((String) -> NSImage?)? = nil) {
         self.supervisor = supervisor ?? .shared
+        self.meetingNotifications = meetingNotifications ?? .shared
+        self.imageLoader = imageLoader ?? { NotifyLogoStore.image(named: $0) }
     }
 
     var body: some View {
@@ -15,13 +20,37 @@ struct SettingsNotificationsView: View {
                     Text("Notifications")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(MacSettingsTheme.text)
-                    Text("Sources connected by your agent appear here. Turn off a source to stop its notifications.")
+                    Text("Choose which notifications appear in the island. Turn off a source to stop its notifications.")
                         .font(.system(size: 12))
                         .foregroundStyle(MacSettingsTheme.text2)
                 }
 
                 if let error = supervisor.error {
                     MacBanner(tone: .warn, systemImage: "exclamationmark.triangle", text: error)
+                }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    MacGroupTitle(title: "Built-in")
+                    MacCard {
+                        MacRow(title: "Meeting notes", subtitle: "Notify me when my meeting notes are ready") {
+                            NotificationSourceIcon(glyph: .brandImage(name: "whytap"),
+                                                   tint: Color(hexCSS: "#785EFF"), size: 28, imageLoader: imageLoader)
+                                .accessibilityHidden(true)
+                        } trailing: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Notification type")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(MacSettingsTheme.text2)
+                                Picker("Notification type for meeting notes", selection: $meetingNotifications.presentation) {
+                                    Text("Large").tag(NotifyPresentation.card)
+                                    Text("Small").tag(NotifyPresentation.icon)
+                                }
+                                .labelsHidden().pickerStyle(.menu).frame(width: 95)
+                            }
+                            MacSwitch(isOn: $meetingNotifications.enabled)
+                                .accessibilityLabel("Enable meeting notes notifications")
+                        }
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -77,7 +106,7 @@ struct SettingsNotificationsView: View {
                     }
                 }
 
-                Text("Large notifications show a card to the left of the island. Small notifications show only an icon in its right wing. Sources run while Whytap is open; turning one off keeps its setup and history.")
+                Text("Large notifications show a card to the left of the island. Small notifications show only an icon in its right wing. Click a meeting notification to open its notes. Notifications appear while Whytap is open; turning a source off keeps its setup and history.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(MacSettingsTheme.text2)
             }
