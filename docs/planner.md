@@ -201,8 +201,11 @@ Mobile and desktop callback is `http://localhost/callback`; only delegated
 client flows remain disabled. No client secret or tenant-wide admin consent was
 created. The public native client ID is saved privately for packaging, preserving
 the Google configuration. The Whytap logo, Planner homepage and calendar privacy
-URL are saved. Publisher-domain association, verified publisher prerequisites
-and live consent remain pending. Organizational policies, including risk-based
+URL are saved. After explicit approval, the Microsoft association file was
+published on whytap.ai and Azure confirmed whytap.ai as the publisher domain.
+This does not establish a verified publisher: Partner Center organization
+verification and its domain/account prerequisites remain pending, as does live
+consent. Organizational policies, including risk-based
 consent restrictions for unverified publishers, can block users in other tenants;
 registration alone does not establish general public availability.
 The working app has not been updated by registration or website changes.
