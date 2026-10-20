@@ -76,6 +76,11 @@ actor GitHubBackupTransport {
 
     var destinationName: String { owner + "/" + Self.repository }
 
+    nonisolated static func backupURL(owner: String) -> URL? {
+        guard validOwner(owner) else { return nil }
+        return URL(string: "https://github.com/" + owner + "/" + repository + "/releases")
+    }
+
     func ensureRepository() async throws {
         let (data, response) = try await session.data(for: request(path: repoPath))
         if (response as? HTTPURLResponse)?.statusCode == 404 {
@@ -356,7 +361,7 @@ actor GitHubBackupTransport {
         default: throw Failure.invalidResponse
         }
     }
-    private static func validOwner(_ value: String) -> Bool {
+    nonisolated private static func validOwner(_ value: String) -> Bool {
         value.range(of: "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$", options: .regularExpression) != nil
     }
     private static func validToken(_ value: String) -> Bool {
