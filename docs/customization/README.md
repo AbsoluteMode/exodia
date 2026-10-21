@@ -116,3 +116,8 @@ create a custom dashboard directly from that contract without locating a source
 checkout. Changes to the native app still require editing and rebuilding source.
 
 Custom notifications: [Notify scripts and agent setup](notifications.md).
+
+For the running app's state, model routes and supported settings, use the
+[local application-control plugin](app-control.md). It changes settings through
+the app's stores; editing preferences files directly does not synchronize the
+live routing store.

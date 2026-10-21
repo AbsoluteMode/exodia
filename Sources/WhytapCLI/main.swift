@@ -22,5 +22,8 @@ if let bundleID = CaseHostBundle.bundleID(forExecutable: hostExecutable) {
         })
 }
 let resolvedPath = hostExecutable.resolvingSymlinksInPath().path
+if CommandLine.arguments.dropFirst().first == "app" {
+    exit(AppControlCommand(client: client).run(args: Array(CommandLine.arguments.dropFirst(2))))
+}
 exit(CaseCommand(client: client, executablePath: resolvedPath, unavailableMessage: message)
     .run(args: Array(CommandLine.arguments.dropFirst())))

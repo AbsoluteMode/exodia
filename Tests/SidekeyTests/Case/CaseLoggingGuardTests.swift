@@ -4,7 +4,7 @@ import XCTest
 /// all. The one allowed call is the Keychain migration status code in
 /// `CaseVaultKeyStore` (a number, never key material).
 final class CaseLoggingGuardTests: XCTestCase {
-    static let guardedDirectories = ["Sources/Sidekey/Case", "Sources/WhytapCaseKit", "Sources/WhytapCLI"]
+    static let guardedDirectories = ["Sources/Sidekey/Case", "Sources/Sidekey/AppControl", "Sources/WhytapCaseKit", "Sources/WhytapCLI"]
     static let allowed: [(file: String, marker: String)] = [
         ("Sources/Sidekey/Case/CaseVaultKeyStore.swift", "case_vault_key_accessibility_migration_failed"),
     ]

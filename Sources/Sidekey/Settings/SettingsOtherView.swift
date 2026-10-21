@@ -206,6 +206,9 @@ struct SettingsOtherView: View {
             meetingsEnabled = meetingsEnabledProvider()
             googleEnabled = googleEnabledProvider()
         }
+        .onReceive(NotificationCenter.default.publisher(for: IslandIdlePreferences.didChangeNotification)) { _ in
+            islandAutoHideEnabled = islandIdlePreferences.isEnabled
+        }
     }
 
     /// Binding: persists to `VolumeDuckConfig` on every flip. The volume-duck

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "whytap",
+  "version": "0.1.0",
+  "description": "Read Whytap state and manage models and supported settings on this Mac.",
+  "author": { "name": "Whytap" },
+  "repository": "https://github.com/AbsoluteMode/whytap",
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "interface": {
+        "displayName": "Whytap",
+        "shortDescription": "Models, settings and live application state",
+        "longDescription": "Control the running Whytap app through its bundled local helper. Reads build identity, activity flags, model routes and supported settings. Writes validate the expected current value and use the app's existing settings stores.",
+        "developerName": "Whytap",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "defaultPrompt": ["Show the models configured in Whytap.", "Set Drop Smart cleanup to the exact model I choose."]
+      }
+    }
+  }
+}

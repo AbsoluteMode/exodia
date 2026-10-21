@@ -866,6 +866,18 @@ are drafts. Guide: docs/customization/README.md. Update the capability map
 when moving its source entry points. Do not publish private monitoring
 configuration, project contents or credentials with the source.
 
+Application control: `plugins/whytap` is a local stdio MCP plugin using
+`Contents/Helpers/whytap app mcp`. It reads live build/activity/route metadata
+and changes allowlisted models, provider pins, Drop mode, languages and idle
+auto-hide through existing app stores. Every write requires the current value;
+async model checks recheck the route and cancellation before assignment. It
+shares Case's authenticated bundled-helper transport but never loads its vault
+or uses its registrations/grants. Any local process running that helper as the
+user can access these non-secret settings; no arbitrary defaults, keys,
+security controls, user content, recording, shell execution or quit are exposed.
+Guide: docs/customization/app-control.md. WHY:
+.project-docs/decisions/2026-10-21-app-control-plugin.md
+
 Clipboard history retains the newest 50 local entries across launch, quit and
 sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
 the oldest excess rows and their image sidecars; the current History feed shows
