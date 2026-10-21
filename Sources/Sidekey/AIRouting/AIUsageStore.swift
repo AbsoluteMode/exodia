@@ -68,7 +68,9 @@ enum AIUsageRecorder {
     static func speechPrices(_ events: [AIUsageEvent]) async -> Prices {
         guard lock.withLock({ enabled }) else { return Prices(events: events) }
         var result = Prices(events: await ElevenLabsCreditUsage.shared.estimates(for: events))
-        result.elevenLabsRateUnavailable = result.events.contains { $0.context.account == .elevenLabs && $0.amount == nil }
+        result.elevenLabsRateUnavailable = result.events.contains {
+            $0.context.account == .elevenLabs && $0.amount == nil && $0.audioSeconds > 0
+        }
         do {
             let reported = try await SonioxUsagePrices.shared.prices(for: result.events)
             let byID = Dictionary(uniqueKeysWithValues: reported.map { ($0.id, $0) })

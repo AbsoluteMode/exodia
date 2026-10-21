@@ -103,6 +103,18 @@ final class ElevenLabsCreditUsageTests: XCTestCase {
         XCTAssertNil(absent); XCTAssertTrue(StubURLProtocol.capturedBodies.isEmpty)
     }
 
+    func test_missing_duration_does_not_request_a_rate_that_cannot_price_the_attempt() async {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let client = ElevenLabsCreditUsage(cacheURL: directory.appendingPathComponent("rates.json"),
+                                          readKey: { XCTFail("no measured audio to price"); return nil })
+        let attempt = AIUsageEvent(context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2"),
+                                   currency: .elevenLabsCredits, amount: nil, basis: .unavailable)
+        let result = await client.estimates(for: [attempt])
+        XCTAssertEqual(result, [attempt])
+        XCTAssertNil(result.first?.amount)
+    }
+
     func test_cached_model_rate_survives_restart_and_api_outage_without_saving_workspace_usage() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory); StubURLProtocol.reset() }

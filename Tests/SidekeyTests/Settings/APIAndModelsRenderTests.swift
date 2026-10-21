@@ -163,6 +163,15 @@ final class APIAndModelsRenderTests: XCTestCase {
             try await render(AIUsageModelsPopover(row: .init(title: "Agent", events: manyModels)),
                 size: NSSize(width: 390, height: 390), dark: dark,
                 to: directory.appendingPathComponent("cost-models-many-\(dark ? "dark" : "light").png"))
+            let creditDetails = [
+                AIUsageEvent(context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2"),
+                             currency: .elevenLabsCredits, amount: nil, basis: .unavailable),
+                AIUsageEvent(context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"),
+                             currency: .elevenLabsCredits, amount: 360, basis: .estimated, audioSeconds: 1200)
+            ]
+            try await render(AIUsageModelsPopover(row: .init(title: "Drop Fast", events: creditDetails)),
+                size: NSSize(width: 390, height: 300), dark: dark,
+                to: directory.appendingPathComponent("cost-models-missing-duration-\(dark ? "dark" : "light").png"))
             try await render(AIUsageDateCalendar(title: "From", date: .constant(fixtureNow), latest: fixtureNow, close: {}),
                 size: NSSize(width: 310, height: 318), dark: dark,
                 to: directory.appendingPathComponent("cost-date-calendar-\(dark ? "dark" : "light").png"))

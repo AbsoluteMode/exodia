@@ -108,7 +108,7 @@ struct IslandCaseAddKeyRow: View {
                     .stroke(Color.white.opacity(0.16), style: StrokeStyle(lineWidth: 0.8, dash: [3, 2])))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle(cornerRadius: IslandCaseVaultStyle.rowCornerRadius))
         .accessibilityIdentifier("case.project.addKey")
     }
 }
@@ -124,8 +124,9 @@ struct IslandCaseIconButton: View {
                 .foregroundStyle(.white.opacity(0.74))
                 .frame(width: IslandCaseVaultStyle.iconButtonSize, height: IslandCaseVaultStyle.iconButtonSize)
                 .background(Circle().fill(Color.white.opacity(0.08)))
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle(cornerRadius: IslandCaseVaultStyle.iconButtonSize / 2))
         .help(action.accessibilityLabel)
         .accessibilityLabel(action.accessibilityLabel)
         .accessibilityIdentifier(action.accessibilityIdentifier)

@@ -185,8 +185,11 @@ Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   environment variables. OpenAI uses OpenCode's own model metadata when its
   /models list omits limits. Both direct APIs serve every LLM mode. WHY:
   .project-docs/decisions/2026-10-21-provider-key-tiles.md
-  Actions are allowed by default so the agent can edit and run tests; the user
-  can turn them off in Settings. This is an action policy, not a filesystem
+  Settings -> Agents -> Bypass mode (on by default) runs file edits and
+  commands without approval through OpenCode's --auto and allow rules.
+  Off blocks file edits and commands; it does not enable approval prompts.
+  Changes apply to the next request and preserve the existing
+  agent.opencode.allowActions preference. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
   AgentDaemonWorkingDirectory uses agent/ under Application Support/whytap
   with AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.

@@ -43,6 +43,7 @@ private struct GlassSwitchStyle: ToggleStyle {
     @GestureState private var translation: CGFloat? = nil
     @State private var startOn: Bool?
     @State private var cancelled = false
+    @State private var hovered = false
     @FocusState private var focused: Bool
 
     func makeBody(configuration: Configuration) -> some View {
@@ -55,6 +56,11 @@ private struct GlassSwitchStyle: ToggleStyle {
         }
         .buttonStyle(GlassSwitchButtonStyle(size: size, isOn: configuration.isOn, position: dragging && !cancelled ? position : nil,
                                           dragging: dragging && !cancelled, focused: focused))
+        .overlay {
+            Capsule().fill(MacSettingsTheme.text.opacity(isEnabled && hovered ? 0.10 : 0))
+                .allowsHitTesting(false)
+        }
+        .onHover { hovered = $0 }
         .focused($focused)
         .highPriorityGesture(
             DragGesture(minimumDistance: 3)

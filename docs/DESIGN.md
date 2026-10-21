@@ -249,6 +249,13 @@ and disables Refresh; failures show concise text near the period. Refresh,
 period/date and calendar actions retain full-area hover/press, focus outlines
 and inactive disabled states. Existing feature disclosures and layout stay intact.
 
+Update 2026-10-21: ElevenLabs model details distinguish missing recorded audio
+duration from a missing model rate, beside the affected historical model.
+A durationless attempt cannot be priced by fetching a rate; it does not trigger
+that lookup or a misleading rate warning. Unknown costs stay excluded with +
+on partial totals. Known estimates are unchanged; no cost is inferred from a
+failed connection or borrowed from another model.
+
 The revised date popover has 310 pt offscreen fixtures in English/Russian and
 both appearances. Calendar arithmetic covers leap days, DST, previous years
 and future bounds; native month highlight snapshots cover rest/pressed/disabled
@@ -462,10 +469,33 @@ in SwiftUI; the native app does not acquire a React runtime or npm dependencies.
 - External binding changes remain authoritative. Disabled controls cannot change
   state, including through accessibility. A native Toggle accessibility proxy
   exposes the setting name and state, with a visible keyboard focus ring.
+- Hover highlights the switch's full capsule without changing its geometry;
+  disabled switches do not highlight. Press and keyboard focus retain their
+  separate existing feedback.
 - Only thumb position/press scale animate: a short spring (0.22 s response,
   0.88 damping) and a 0.1 s press transition. Reduce Motion removes these
   movements; Reduce Transparency uses an opaque white thumb. Native glass is
   guarded for macOS 26, with a simple highlighted thumb on macOS 14/15.
+
+### Agent permissions wording
+
+- The existing action switch is named **Bypass mode**. The person comes to
+  let the agent work without interruptions; the label matches that intent
+  instead of suggesting only that tools exist. There is one control, bound
+  to the existing preference, with no migration or default change.
+- The visible explanation states both outcomes: On runs file edits and
+  commands without approval using the Mac user's permissions; Off blocks
+  those actions. It also states that changes apply to the next request.
+  Why: OpenCode controls local approvals; OpenRouter routes model requests.
+  Off must not imply an interactive approval mode that Whytap does not offer.
+- Keep the established row, wrapping subtitle, switch size, keyboard and
+  accessibility behavior. Live pointer and keyboard acceptance remains in
+  the single installed app; offscreen renders only establish text/layout.
+- Verification: eight offscreen images cover On/Off in light/dark at
+  739 × 560 and 1059 × 760 pt content sizes (960/1280 pt Settings windows).
+  Theme tests verify text contrast ≥4.5:1 and control borders ≥3:1.
+  VoiceOver remains a live check because AppKit omits even the native switch
+  from invisible-window accessibility trees.
 
 ### Embedded surfaces
 
@@ -500,7 +530,11 @@ installed app. Older-macOS fallback needs device acceptance.
 ## Text-only Settings sidebar — 2026-10-20
 
 The user requested removal of the sidebar icons and animation on hover.
-Keep section names, order, 220 pt sidebar width and 38 pt row hit targets.
+Keep section names, order and 220 pt sidebar width. As amended 2026-10-21,
+rows have 30 pt hit targets, 4 pt gaps and 10 pt vertical list insets. The ten
+sections and pinned footer fit at the minimum Settings size without scrolling;
+the ScrollView remains a fallback if the section list grows. Why: the user
+requested smaller buttons so every section is immediately visible.
 Removing the icon and gap gives labels 180 pt instead of 144 pt, without
 changing text size or moving any row during interaction.
 
@@ -512,7 +546,10 @@ changing text size or moving any row during interaction.
   Selection remains recognizable during hover.
   FAQ and Quit use the same feedback. Existing navigation highlights remain.
 - Reduce Motion makes the hover response immediate. Native Button actions,
-  keyboard access and focus are preserved. No function requires hovering.
+  keyboard access and focus are preserved. Press adds a stronger full-row
+  fill; keyboard focus has an inset outline, and the selected row exposes its
+  selection to accessibility. Disabled buttons dim and suppress hover/press/focus
+  highlights. No function requires hovering.
 
 Offscreen native Settings fixtures cover the minimum 960 × 560 pt and larger
 1280 × 760 pt window in both appearances. Physical hover, focus/VoiceOver and
@@ -929,3 +966,19 @@ keeps approval keys suspended. The shared keycap values also feed Help.
 Filter tests cover all other physical keycodes, modified digits, repeats and
 unarmed input; synthetic offscreen fixtures verify the new hints at 310/312 pt.
 Physical keyboard acceptance remains a check on the installed app.
+
+
+Case English copy and interaction feedback — builder review,2026-10-21:
+Use English for Case panels, creation/editing/recovery messages and approval
+copy while preserving IDs, rights, authentication, numeric1/2/3, timing and data.
+The translated project headers, add-key rows, icon actions, reset/retry,
+create/submit and delete-confirm controls use the existing Case access button
+feedback: full-area hover, press and keyboard focus; disabled controls dim and
+show no active hover. Text fields highlight on hover/focus and their full
+capsule focuses the existing editor; bindings, submission and cancellation stay
+with their callers. Edit fields keep their own native focus state.
+The armed reset copy accurately says a new Case is created and the old encrypted
+file is retained, matching CaseVaultStore.reset; it does not promise recovery
+without the original key. The two-step reset and its handlers are unchanged.
+Final English offscreen fixtures and the combined full suite are builder gates;
+physical pointer/keyboard/VoiceOver and the real Touch ID panel remain separate.

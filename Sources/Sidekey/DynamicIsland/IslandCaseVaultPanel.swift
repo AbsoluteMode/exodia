@@ -96,12 +96,12 @@ struct IslandCaseVaultPanel: View {
                 Button(action: resetCase) {
                     unlockPill(title: viewModel.isResetArmed ? "Confirm reset" : "Reset Case")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle(cornerRadius: 15))
                 .disabled(isUnlocking)
 
-                // Armed: spell out the stakes — the second press is irreversible.
+                // Armed: describe the new vault and the encrypted file retained by reset().
                 Text(viewModel.isResetArmed
-                    ? "Case will be deleted permanently. Click again to confirm."
+                    ? "Create a new Case? The old encrypted file is kept. Click again to confirm."
                     : message)
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.52))
@@ -126,7 +126,7 @@ struct IslandCaseVaultPanel: View {
                     Button(action: unlock) {
                         unlockPill(title: "Try again")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CaseAccessButtonStyle(cornerRadius: 15))
                     .disabled(isUnlocking)
                 }
 
@@ -225,7 +225,9 @@ struct IslandCaseVaultPanel: View {
             }
             .frame(height: IslandCaseVaultStyle.inputHeight)
             .background(Capsule().fill(Color.white.opacity(0.13)))
-            .overlay(Capsule().stroke(inputBorderColor, lineWidth: 0.8))
+            .modifier(CaseVaultFieldFeedback(focused: inputFocused == .search, border: inputBorderColor))
+            .contentShape(Capsule())
+            .onTapGesture { inputFocused = .search }
 
             Button(action: startCreatingProject) {
                 Text("+ Project")
@@ -238,7 +240,7 @@ struct IslandCaseVaultPanel: View {
                     .background(Capsule().fill(Color.white.opacity(0.10)))
                     .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle(cornerRadius: IslandCaseVaultStyle.inputHeight / 2))
             .accessibilityIdentifier("case.project.create")
         }
     }
@@ -261,13 +263,16 @@ struct IslandCaseVaultPanel: View {
             .padding(.horizontal, 10)
             .frame(height: IslandCaseVaultStyle.inputHeight)
             .background(Capsule().fill(.white.opacity(0.10)))
+            .modifier(CaseVaultFieldFeedback(focused: inputFocused == .newKey, border: inputBorderColor))
             .focused($inputFocused, equals: .newKey)
+            .contentShape(Capsule())
+            .onTapGesture { inputFocused = .newKey }
             .onSubmit(submitInput)
             Button(action: submitInput) {
                 Image(systemName: "arrow.right.circle")
                     .frame(width: 24, height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle(cornerRadius: 7))
             .foregroundStyle(.white.opacity(0.92))
             .accessibilityLabel(viewModel.inputMode == .name ? "Next: key value" : "Add key")
             IslandCaseIconButton(action: Self.cancelInputAction) {
@@ -452,12 +457,7 @@ struct IslandCaseVaultPanel: View {
     }
 
     private func editField<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .textFieldStyle(.plain)
-            .foregroundStyle(.white.opacity(0.90))
-            .padding(.horizontal, 7)
-            .frame(height: 22)
-            .background(Capsule().fill(Color.white.opacity(0.10)))
+        CaseVaultEditField(content: content())
     }
 
     private func editButtons(onSave: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
@@ -752,4 +752,42 @@ struct IslandCaseVaultPanel: View {
 private enum ProjectEditor: Equatable {
     case create
     case edit(UUID)
+}
+
+
+/// Shared field feedback changes drawing only; bindings and submission stay with callers.
+// WHY: docs/DESIGN.md — Case English copy and interaction feedback.
+private struct CaseVaultFieldFeedback: ViewModifier {
+    let focused: Bool
+    var border: Color = .white.opacity(0.18)
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(Capsule().strokeBorder(enabled && focused ? .white.opacity(0.8)
+                : enabled && hovered ? .white.opacity(0.5) : border, lineWidth: 1)
+                .allowsHitTesting(false))
+            .opacity(enabled ? 1 : 0.4)
+            .onHover { hovered = enabled && $0 }
+            .onChange(of: enabled) { _, active in if !active { hovered = false } }
+    }
+}
+
+private struct CaseVaultEditField<Content: View>: View {
+    let content: Content
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        content
+            .textFieldStyle(.plain)
+            .focused($focused)
+            .foregroundStyle(.white.opacity(0.90))
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
+            .modifier(CaseVaultFieldFeedback(focused: focused))
+            .contentShape(Capsule())
+            .onTapGesture { focused = true }
+    }
 }

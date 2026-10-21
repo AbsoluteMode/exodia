@@ -52,7 +52,7 @@ struct IslandCaseProjectRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle(cornerRadius: 5))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(section.name)
             .accessibilityValue("\(section.keyCount)")
@@ -96,13 +96,13 @@ struct IslandCaseProjectDeleteConfirmation: View {
                 Button(action: onCancel) {
                     pill("Cancel", fill: Color.white.opacity(0.10))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle(cornerRadius: 11))
                 .accessibilityIdentifier("case.project.delete.cancel")
 
                 Button(action: onConfirm) {
                     pill("Delete", fill: Color.red.opacity(0.55))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle(cornerRadius: 11))
                 .accessibilityIdentifier("case.project.delete.confirm")
             }
         }
@@ -120,5 +120,6 @@ struct IslandCaseProjectDeleteConfirmation: View {
             .padding(.horizontal, 10)
             .frame(height: 22)
             .background(Capsule().fill(fill))
+            .contentShape(Capsule())
     }
 }

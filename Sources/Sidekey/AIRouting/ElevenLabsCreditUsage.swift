@@ -90,7 +90,7 @@ actor ElevenLabsCreditUsage {
             cache = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(RateCache.self, from: $0) }
             cacheLoaded = true
         }
-        let models = Set(events.filter { $0.context.account == .elevenLabs }.map { $0.context.model })
+        let models = Set(events.filter { $0.context.account == .elevenLabs && $0.audioSeconds > 0 }.map { $0.context.model })
         guard !models.isEmpty else { return events }
         if refresh, cache == nil || now.timeIntervalSince(cache!.updatedAt) > 86400 || models.contains(where: { cache?.rates[$0] == nil }) {
             let interval = DateInterval(start: now.addingTimeInterval(-31 * 86400), end: now)
