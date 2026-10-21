@@ -122,6 +122,61 @@ final class CaseRankerTests: XCTestCase {
         XCTAssertEqual(sorted.first?.kind, .project)
     }
 
+    func test_later_query_parts_match_the_start_of_key_name_parts() {
+        let token = secret(name: "GITHUB_TOKEN", copyCount: 5, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+        let landing = secret(name: "GITHUB_LENDING_KEY", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+
+        for query in ["github_len", "github lending", "github key", "github_lan_key"] {
+            let sorted = CaseRanker.sortedEntries(secrets: [token, landing], projects: [], query: query, now: now)
+            XCTAssertEqual(sorted.map(\.displayName), ["GITHUB_LENDING_KEY", "GITHUB_TOKEN"], query)
+        }
+    }
+
+    func test_query_part_naming_a_project_narrows_to_its_keys() {
+        let whytap = project(name: "whytap")
+        let acme = project(name: "acme / dev")
+        let landing = secret(name: "GITHUB_LENDING_KEY", groupID: whytap.id, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let token = secret(name: "GITHUB_TOKEN", groupID: acme.id, copyCount: 9, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+        let other = secret(name: "OPENAI_API_KEY", groupID: whytap.id, copyCount: 9, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+
+        for query in ["whytap github", "github whytap", "WHY git"] {
+            let sorted = CaseRanker.sortedEntries(secrets: [token, other, landing], projects: [acme, whytap], query: query, now: now)
+            XCTAssertEqual(sorted.first?.displayName, "GITHUB_LENDING_KEY", query)
+            XCTAssertFalse(sorted.contains { $0.displayName == "OPENAI_API_KEY" }, query)
+        }
+
+        let devToken = CaseRanker.sortedEntries(secrets: [token, landing], projects: [acme, whytap], query: "dev github", now: now)
+        XCTAssertEqual(devToken.map(\.displayName), ["GITHUB_TOKEN"], "a part of a project name works like a whole one")
+    }
+
+    func test_project_order_follows_the_best_match_and_keeps_order_on_ties() {
+        let alpha = project(name: "alpha")
+        let beta = project(name: "beta")
+        let gamma = project(name: "gamma")
+        let alphaToken = secret(name: "GITHUB_TOKEN", groupID: alpha.id, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let betaToken = secret(name: "GITHUB_TOKEN", groupID: beta.id, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let gammaToken = secret(name: "GITHUB_TOKEN", groupID: gamma.id, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let defaultOrder = [alpha.id, beta.id, gamma.id]
+
+        func order(_ secrets: [CaseSecret], _ query: String) -> [UUID] {
+            let entries = CaseRanker.sortedEntries(secrets: secrets, projects: [gamma, beta, alpha], query: query, now: now)
+            return CaseRanker.projectOrder(entries, defaultOrder: defaultOrder)
+        }
+
+        XCTAssertEqual(order([gammaToken, betaToken, alphaToken], "github token"), defaultOrder, "equal matches keep the order")
+        var usedGamma = gammaToken
+        usedGamma.copyCount = 4
+        usedGamma.lastCopiedAt = now
+        XCTAssertEqual(order([usedGamma, betaToken, alphaToken], "github token"), [gamma.id, alpha.id, beta.id],
+                       "the project with the more used key goes first")
+        XCTAssertEqual(order([gammaToken, betaToken, alphaToken], "gamma"), [gamma.id], "a project name match on its own")
+        XCTAssertEqual(order([gammaToken, betaToken, alphaToken], "beta github"), [beta.id])
+    }
+
+    private func project(name: String) -> CaseProject {
+        CaseProject(id: UUID(), name: name, description: "", createdAt: now.addingTimeInterval(-30 * 86_400), updatedAt: now)
+    }
+
     private func secret(
         name: String,
         groupID: UUID? = nil,

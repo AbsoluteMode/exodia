@@ -13,6 +13,36 @@ struct CaseListEntry: Equatable, Identifiable {
     /// For a secret, its project; for a project, its own ID.
     let projectID: UUID
     let score: Double
+    /// How the entry matches the query; `.none` without a query.
+    var match: CaseMatch = .none
+}
+
+/// Match strength: a stronger bucket first, then more query parts found.
+/// Usage (`CaseListEntry.score`) only decides between equal matches.
+struct CaseMatch: Equatable {
+    enum Bucket: Int, Comparable {
+        case exact
+        case prefix
+        case contains
+        /// Only the query's first part starts the name; later parts that
+        /// start a word of the name add to `matchedParts`.
+        case firstTokenPrefix
+        case description
+        case none
+
+        static func < (lhs: Bucket, rhs: Bucket) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
+    let bucket: Bucket
+    let matchedParts: Int
+
+    static let none = CaseMatch(bucket: .none, matchedParts: 0)
+
+    var isPartial: Bool { bucket == .firstTokenPrefix }
+
+    func isStronger(than other: CaseMatch) -> Bool {
+        bucket != other.bucket ? bucket < other.bucket : matchedParts > other.matchedParts
+    }
 }
 
 enum CaseRanker {
@@ -29,6 +59,7 @@ enum CaseRanker {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedQuery = try? CaseNameNormalizer.normalizedName(trimmedQuery)
         let searchText = normalizedQuery ?? trimmedQuery.uppercased()
+        let queryParts = words(of: searchText)
 
         // Every key is an entry of its own; General joins project entries
         // while searching, so a query finds keys (any project) by name and
@@ -64,17 +95,33 @@ enum CaseRanker {
             )
         }
 
+        // Query parts that start a word of a project's name (`whytap github`)
+        // leave the rest of the query for that project's keys.
+        // WHY: docs/decisions/2026-10-21-case-search-project-ranking.md
+        let projectQualifiers = searchText.isEmpty ? [:] : Dictionary(
+            projects.compactMap { project in qualifier(projectName: project.name, queryParts: queryParts).map { (project.id, $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+
         let entries = groupEntries + individualEntries
-        let matched = entries.compactMap { entry -> (entry: CaseListEntry, bucket: MatchBucket)? in
-            let bucket = searchText.isEmpty ? MatchBucket.none : matchBucket(entry: entry, query: searchText, rawQuery: trimmedQuery)
-            return searchText.isEmpty || bucket != .none ? (entry, bucket) : nil
+        let matched = entries.compactMap { entry -> CaseListEntry? in
+            guard !searchText.isEmpty else { return entry }
+            var best = Self.match(entry: entry, query: searchText, queryParts: queryParts, rawQuery: trimmedQuery)
+            if entry.kind == .secret, let qualifier = projectQualifiers[entry.projectID] {
+                let rest = Self.match(name: entry.displayName, query: qualifier.remaining.joined(separator: "_"),
+                                      queryParts: qualifier.remaining)
+                let qualified = CaseMatch(bucket: rest.bucket, matchedParts: qualifier.covered + rest.matchedParts)
+                if rest.bucket != .none, qualified.isStronger(than: best) { best = qualified }
+            }
+            guard best.bucket != .none else { return nil }
+            var matchedEntry = entry
+            matchedEntry.match = best
+            return matchedEntry
         }
 
-        return matched.sorted { left, right in
-            let lhs = left.entry, rhs = right.entry
-            let lhsBucket = left.bucket, rhsBucket = right.bucket
-            if lhsBucket.sortOrder != rhsBucket.sortOrder {
-                return lhsBucket.sortOrder < rhsBucket.sortOrder
+        return matched.sorted { lhs, rhs in
+            if lhs.match != rhs.match {
+                return lhs.match.isStronger(than: rhs.match)
             }
             if lhs.score != rhs.score {
                 return lhs.score > rhs.score
@@ -84,7 +131,30 @@ enum CaseRanker {
                 return nameComparison == .orderedAscending
             }
             return lhs.displayName < rhs.displayName
-        }.map(\.entry)
+        }
+    }
+
+    /// Project IDs ordered by each project's best entry in `entries` (as
+    /// sorted by `sortedEntries`): its own name/description match or its best
+    /// key. Equal projects keep `defaultOrder`; projects without entries are
+    /// left out.
+    static func projectOrder(_ entries: [CaseListEntry], defaultOrder: [UUID]) -> [UUID] {
+        var best: [UUID: CaseListEntry] = [:]
+        for entry in entries where best[entry.projectID] == nil {
+            best[entry.projectID] = entry
+        }
+        let ranked = defaultOrder.enumerated().compactMap { index, id in
+            best[id].map { (index: index, id: id, entry: $0) }
+        }
+        return ranked.sorted { lhs, rhs in
+            if lhs.entry.match != rhs.entry.match {
+                return lhs.entry.match.isStronger(than: rhs.entry.match)
+            }
+            if lhs.entry.score != rhs.entry.score {
+                return lhs.entry.score > rhs.entry.score
+            }
+            return lhs.index < rhs.index
+        }.map(\.id)
     }
 
     static func score(copyCount: Int, lastCopiedAt: Date?, createdAt: Date, now: Date = Date()) -> Double {
@@ -101,51 +171,48 @@ enum CaseRanker {
         return usageScore * freshness + boost
     }
 
-    private enum MatchBucket {
-        case exact
-        case prefix
-        case contains
-        case firstTokenPrefix
-        case description
-        case none
-
-        var sortOrder: Int {
-            switch self {
-            case .exact: return 0
-            case .prefix: return 1
-            case .contains: return 2
-            case .firstTokenPrefix: return 3
-            case .description: return 4
-            case .none: return 5
-            }
-        }
-    }
-
-    private static func matchBucket(entry: CaseListEntry, query: String, rawQuery: String) -> MatchBucket {
-        let byName = matchBucket(name: entry.displayName, query: query)
-        if byName != .none { return byName }
+    private static func match(entry: CaseListEntry, query: String, queryParts: [String], rawQuery: String) -> CaseMatch {
+        let byName = match(name: entry.displayName, query: query, queryParts: queryParts)
+        if byName.bucket != .none { return byName }
         if !rawQuery.isEmpty,
            entry.description.range(of: rawQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
-            return .description
+            return CaseMatch(bucket: .description, matchedParts: queryParts.count)
         }
         return .none
     }
 
-    private static func matchBucket(name: String, query: String) -> MatchBucket {
+    private static func match(name: String, query: String, queryParts: [String]) -> CaseMatch {
         let haystack = name.uppercased()
         let needle = query.uppercased()
         if needle.isEmpty { return .none }
-        if haystack == needle { return .exact }
-        if haystack.hasPrefix(needle) { return .prefix }
-        if haystack.contains(needle) { return .contains }
+        let all = queryParts.count
+        if haystack == needle { return CaseMatch(bucket: .exact, matchedParts: all) }
+        if haystack.hasPrefix(needle) { return CaseMatch(bucket: .prefix, matchedParts: all) }
+        if haystack.contains(needle) { return CaseMatch(bucket: .contains, matchedParts: all) }
 
-        let queryParts = needle.split(separator: "_").map(String.init)
+        guard let firstPart = queryParts.first else { return .none }
         if queryParts.allSatisfy({ haystack.contains($0) }) {
-            return .contains
+            return CaseMatch(bucket: .contains, matchedParts: all)
         }
-        if let firstPart = queryParts.first, haystack.hasPrefix(firstPart) {
-            return .firstTokenPrefix
+        if haystack.hasPrefix(firstPart) {
+            // `github_lan_key` finds more of GITHUB_LENDING_KEY than of GITHUB_TOKEN.
+            let nameWords = words(of: haystack)
+            let laterParts = queryParts.dropFirst().filter { part in nameWords.contains { $0.hasPrefix(part) } }
+            return CaseMatch(bucket: .firstTokenPrefix, matchedParts: 1 + laterParts.count)
         }
         return .none
+    }
+
+    /// The query parts a project's name covers (each starts a word of the
+    /// name) and the rest, or nil unless both are non-empty.
+    private static func qualifier(projectName: String, queryParts: [String]) -> (covered: Int, remaining: [String])? {
+        let nameWords = words(of: projectName.uppercased())
+        let remaining = queryParts.filter { part in !nameWords.contains { $0.hasPrefix(part) } }
+        guard !remaining.isEmpty, remaining.count < queryParts.count else { return nil }
+        return (queryParts.count - remaining.count, remaining)
+    }
+
+    private static func words(of text: String) -> [String] {
+        text.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
     }
 }
