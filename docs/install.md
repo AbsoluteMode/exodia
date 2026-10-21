@@ -28,8 +28,8 @@ first upgrade from an older community-signed build may ask for those again.
 Approve Keychain access in the macOS window only (Always Allow if you trust
 this Whytap build); never enter the login password into an agent or chat.
 Later updates signed by the same team retain the same identity.
-You never install or trust a certificate yourself. Because every community
-current team build carries the same identity, macOS keeps privacy permissions such as
+You never install or trust a certificate yourself. Current builds carry the
+same team identity, so macOS keeps privacy permissions such as
 Microphone and System Audio Recording and access to Whytap's Keychain items
 across updates. Earlier builds were signed with Whytap's self-signed
 certificate or ad hoc, so the first team-signed update asks for these
