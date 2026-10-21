@@ -173,6 +173,40 @@ final class CaseRankerTests: XCTestCase {
         XCTAssertEqual(order([gammaToken, betaToken, alphaToken], "beta github"), [beta.id])
     }
 
+    /// Typing `github_to` must not let a project called `tokens` pull its
+    /// more used GITHUB_CLIENT_ID above the GITHUB_TOKEN the query spells out.
+    func test_key_matching_the_whole_query_stays_ahead_of_a_project_qualified_key() {
+        let tokens = project(name: "tokens")
+        let zeta = project(name: "zeta")
+        let client = secret(name: "GITHUB_CLIENT_ID", groupID: tokens.id, copyCount: 3, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+        let token = secret(name: "GITHUB_TOKEN", groupID: zeta.id, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+
+        for query in ["github_t", "github_to", "github_tok"] {
+            let entries = CaseRanker.sortedEntries(secrets: [client, token], projects: [tokens, zeta], query: query, now: now)
+            XCTAssertEqual(entries.first?.displayName, "GITHUB_TOKEN", query)
+            XCTAssertEqual(CaseRanker.projectOrder(entries, defaultOrder: [tokens.id, zeta.id]), [zeta.id, tokens.id], query)
+        }
+
+        let keys = project(name: "Keys")
+        let prod = project(name: "Prod")
+        let org = secret(name: "OPENAI_ORG", groupID: keys.id, copyCount: 3, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+        let apiKey = secret(name: "OPENAI_API_KEY", groupID: prod.id, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let sorted = CaseRanker.sortedEntries(secrets: [org, apiKey], projects: [keys, prod], query: "openai key", now: now)
+        XCTAssertEqual(sorted.filter { $0.kind == .secret }.map(\.displayName), ["OPENAI_API_KEY", "OPENAI_ORG"])
+    }
+
+    func test_a_single_letter_names_no_project() {
+        let xeno = project(name: "xeno")
+        let zeta = project(name: "zeta")
+        let client = secret(name: "GITHUB_CLIENT_ID", groupID: xeno.id, copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let token = secret(name: "GITHUB_TOKEN", groupID: zeta.id, copyCount: 3, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+
+        let sorted = CaseRanker.sortedEntries(secrets: [client, token], projects: [xeno, zeta], query: "github x", now: now)
+
+        XCTAssertEqual(sorted.map(\.displayName), ["GITHUB_TOKEN", "GITHUB_CLIENT_ID"], "both match only by `github`; usage decides")
+        XCTAssertEqual(sorted.map(\.match.bucket), [.firstTokenPrefix, .firstTokenPrefix])
+    }
+
     private func project(name: String) -> CaseProject {
         CaseProject(id: UUID(), name: name, description: "", createdAt: now.addingTimeInterval(-30 * 86_400), updatedAt: now)
     }

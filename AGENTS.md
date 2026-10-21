@@ -337,8 +337,8 @@ Case secrets manager:
   on hover/keyboard focus. Search matches project and key names/descriptions,
   including empty projects and General. A matching project shows all its keys;
   key-only matches show only those keys. Results put the project with the best
-  match first (equal ones keep project order); query words starting a project
-  name narrow to its keys (`whytap github`). + Key opens a separate creation field,
+  match first (equal ones keep project order); a query word starting a word of a
+  project name lets the rest match that project's keys (`whytap github`). + Key opens a separate creation field,
   including from a project search result; typing/Return in search never writes. Navigation is white and explanations are
   short. Case has no Doppler integration or import screen.
   All explicitly opened hover submenus survive pointer exit until Back, an

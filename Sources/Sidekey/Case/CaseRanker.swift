@@ -24,6 +24,10 @@ struct CaseMatch: Equatable {
         case exact
         case prefix
         case contains
+        /// The project's name covers part of the query and the key's name
+        /// the rest (`whytap github`). A key matching the whole query by
+        /// name stays ahead.
+        case projectQualified
         /// Only the query's first part starts the name; later parts that
         /// start a word of the name add to `matchedParts`.
         case firstTokenPrefix
@@ -49,6 +53,7 @@ enum CaseRanker {
     private static let freshnessHalfLifeDays = 30.0
     private static let newKeyBoostWindowSeconds = 86_400.0
     private static let newKeyBoost = 0.15
+    private static let minimumProjectPartLength = 2
 
     static func sortedEntries(
         secrets: [CaseSecret],
@@ -110,7 +115,8 @@ enum CaseRanker {
             if entry.kind == .secret, let qualifier = projectQualifiers[entry.projectID] {
                 let rest = Self.match(name: entry.displayName, query: qualifier.remaining.joined(separator: "_"),
                                       queryParts: qualifier.remaining)
-                let qualified = CaseMatch(bucket: rest.bucket, matchedParts: qualifier.covered + rest.matchedParts)
+                let qualified = CaseMatch(bucket: rest.isPartial ? .firstTokenPrefix : .projectQualified,
+                                          matchedParts: qualifier.covered + rest.matchedParts)
                 if rest.bucket != .none, qualified.isStronger(than: best) { best = qualified }
             }
             guard best.bucket != .none else { return nil }
@@ -203,11 +209,14 @@ enum CaseRanker {
         return .none
     }
 
-    /// The query parts a project's name covers (each starts a word of the
-    /// name) and the rest, or nil unless both are non-empty.
+    /// The query parts a project's name covers (each, at least two
+    /// characters, starts a word of the name) and the rest, or nil unless
+    /// both are non-empty. A single typed letter names no project.
     private static func qualifier(projectName: String, queryParts: [String]) -> (covered: Int, remaining: [String])? {
         let nameWords = words(of: projectName.uppercased())
-        let remaining = queryParts.filter { part in !nameWords.contains { $0.hasPrefix(part) } }
+        let remaining = queryParts.filter { part in
+            part.count < minimumProjectPartLength || !nameWords.contains { $0.hasPrefix(part) }
+        }
         guard !remaining.isEmpty, remaining.count < queryParts.count else { return nil }
         return (queryParts.count - remaining.count, remaining)
     }

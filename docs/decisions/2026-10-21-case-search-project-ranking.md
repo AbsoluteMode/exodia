@@ -37,12 +37,15 @@ part tied in the weakest name bucket, whatever the other parts said.
 - Search sections follow each project's best entry: its own name/description
   match or its best key, by match strength and then usage. Equal projects keep
   the previous order; an empty query keeps the previous order exactly.
-- Query parts that start a word of a project's name (`whytap`, `dev`, `why`)
-  leave the rest of the query for that project's keys. `whytap github` and
-  `github whytap` rank whytap's GITHUB keys like `github` alone would.
-- A project matched only by the query's first part shows just its better
-  matching keys when the rest of the query picks some; otherwise a matching
-  project keeps all its keys, matching ones first.
+- Query parts of two or more characters that start a word of a project's
+  name (`whytap`, `dev`, `why`) leave the rest of the query for that
+  project's keys. `whytap github` and `github whytap` find whytap's GITHUB
+  keys. Such a match ranks below any key whose own name contains the whole
+  query, and above keys that match only the query's first part. Other
+  projects' matches stay in the list.
+- A project matched only by the query's first part shows only its matching
+  keys (best first) when one of them matches better than the project itself;
+  otherwise a matching project keeps all its keys, matching ones first.
 - Among first-part-only matches, later parts that start a word of the key
   name count: `github_lan_key` puts GITHUB_LENDING_KEY above GITHUB_TOKEN.
 
@@ -52,6 +55,9 @@ The person looks for a key in a project they know. The section order is what
 they scan, so it must follow the match rather than the alphabet. Word starts
 rather than substrings keep `key` from naming `sidekey / dev`. Usage decides only
 between equal matches, so a frequently copied key cannot hide a better match.
+A project name only stands in for part of the query, so a key spelling out
+the whole query stays ahead; one typed letter is too common a word start to
+name a project.
 
 ## Tested
 
@@ -59,7 +65,11 @@ Synthetic ranker and view-model tests use the reported project and key names
 without values: `github_len`, `github lending`, `github_lan_key`,
 `whytap github`, `github whytap`, `whytap lending`, several projects with the
 same key, a project-name match above a key-only match, `whytap zzz` and a
-cleared query. The literal `github_lan` still ties: `LAN` starts no word of
+cleared query. An independent review found that a project-qualified key could
+tie with or beat a key matching the whole query (`github_to` with a project
+`tokens`, `openai key` with a project `Keys`); both are now tests, as is the
+single-letter rule. Punctuation-only queries such as `_` now match names
+containing it instead of every entry. The literal `github_lan` still ties: `LAN` starts no word of
 GITHUB_LENDING_KEY.
 
 ## Rejected
