@@ -138,6 +138,14 @@ Voice flow (Drop / dictation):
        replace only their fragment; nested requests stay requests. The prompt
        is calibrated on GPT-6 Sol and does not change selected routes. WHY:
        .project-docs/decisions/2026-10-21-smart-editor-prompt.md
+       SmartFormattingProfile selects destination syntax from app identity and
+       focused AX role/document metadata (within the same 1.5s context deadline).
+       Markdown editors/recognized web composers use a fixed syntax subset;
+       IDEs require a real Markdown file, and single-line/unknown fields stay plain.
+       Slack/Telegram use local RTF + semantic HTML + plain clipboard fallback;
+       code/URLs survive filler stripping and every flavor is restored after
+       paste. Fast and clean-Decision editor bypass stay unchanged. WHY:
+       .project-docs/decisions/2026-10-21-smart-destination-formatting.md
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting
@@ -899,9 +907,13 @@ are drafts. Guide: docs/customization/README.md. Update the capability map
 when moving its source entry points. Do not publish private monitoring
 configuration, project contents or credentials with the source.
 
-Application control: `plugins/whytap` is a local stdio MCP plugin using
-`Contents/Helpers/whytap app mcp`. It reads live build/activity/route metadata
-and changes allowlisted models, provider pins, Drop mode, languages and idle
+Application control: `plugins/whytap` bundles separate local stdio MCP servers:
+`Contents/Helpers/whytap app mcp` for app controls and `whytap case mcp` for
+authorized Case project/key names and descriptions, never values. Case retains
+its existing registrations, project scope and approvals; secret use stays in
+`whytap case run` through the agent's own terminal. The app-control server reads
+live build/activity/route metadata and changes allowlisted models, provider pins,
+Drop mode, languages and idle
 auto-hide through existing app stores. Every write requires the current value;
 async model checks recheck the route and cancellation before assignment. It
 shares Case's authenticated bundled-helper transport but never loads its vault
@@ -982,6 +994,12 @@ as inert files, excluding active provider jobs. Inactive configurations and
 coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application
 policies precede imports, including matching identities with different UUIDs.
 WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
+A resumed upload accepts an existing draft part when GitHub's reported
+`sha256:` digest matches the local part, without downloading it; a mismatch
+replaces it, and assets without a usable digest are compared by one download.
+New parts and the index are still read back before publishing. Settings shows
+"Uploading backup part N of M…". WHY:
+`.project-docs/decisions/2026-10-21-backup-resume-digest.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.

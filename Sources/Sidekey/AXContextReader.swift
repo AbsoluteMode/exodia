@@ -20,6 +20,11 @@ import Foundation
 /// real accessibility tree.
 struct AXContextReader {
     typealias FragmentCollector = (pid_t) -> [String]
+    struct FormattingSnapshot: Sendable {
+        let context: String?
+        let documentURL: URL?
+        let focusedRole: String?
+    }
 
     /// Default upper bound on the assembled context string. Shared by the
     /// instance default and the `snapshot(forPID:)` convenience.
@@ -72,16 +77,33 @@ struct AXContextReader {
         timeout: Duration = AXContextReader.defaultWalkTimeout,
         collect: @escaping FragmentCollector = AXContextReader.liveCollect
     ) async -> String? {
+        await boundedSnapshot(forPID: pid, timeout: timeout) { pid in
+            assemble(collect(pid), limit: defaultMaxCharacters)
+        } ?? nil
+    }
+
+    /// Collect formatting metadata within the SAME caller deadline as text.
+    /// URLs are used locally to select a fixed profile, never added to the prompt.
+    static func formattingSnapshot(
+        forPID pid: pid_t?,
+        timeout: Duration = AXContextReader.defaultWalkTimeout,
+        collect: @escaping (pid_t) -> FormattingSnapshot = liveFormattingSnapshot
+    ) async -> FormattingSnapshot? {
+        await boundedSnapshot(forPID: pid, timeout: timeout, collect: collect)
+    }
+
+    private static func boundedSnapshot<Value>(
+        forPID pid: pid_t?, timeout: Duration, collect: @escaping (pid_t) -> Value
+    ) async -> Value? {
         guard let pid else { return nil }
-        let limit = defaultMaxCharacters
         // An AsyncStream lets the deadline win without waiting for synchronous
         // AX IPC to acknowledge cancellation. A task group would wait for its
         // losing child before returning. Late results are discarded.
         // WHY: docs/decisions/2026-09-07-smart-latency.md
-        let results = AsyncStream<String?> { continuation in
+        let results = AsyncStream<Value?> { continuation in
             let work = Task.detached(priority: .userInitiated) {
                 guard !Task.isCancelled else { return }
-                let value = assemble(collect(pid), limit: limit)
+                let value = collect(pid)
                 guard !Task.isCancelled else { return }
                 continuation.yield(value)
                 continuation.finish()
@@ -124,6 +146,54 @@ struct AXContextReader {
     }
 
     // MARK: - Live AX traversal (production default)
+
+    static func liveFormattingSnapshot(_ pid: pid_t) -> FormattingSnapshot {
+        let metadata = focusedFormattingMetadata(pid)
+        return FormattingSnapshot(context: assemble(liveCollect(pid), limit: defaultMaxCharacters),
+                                  documentURL: metadata.url, focusedRole: metadata.role)
+    }
+
+    private static func focusedFormattingMetadata(_ pid: pid_t) -> (url: URL?, role: String?) {
+        guard AXIsProcessTrusted(), !Task.isCancelled else { return (nil, nil) }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.5)
+        func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+            guard !Task.isCancelled else { return nil }
+            var result: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, attribute as CFString, &result) == .success else { return nil }
+            return result
+        }
+        func element(_ object: CFTypeRef?) -> AXUIElement? {
+            guard let object, CFGetTypeID(object) == AXUIElementGetTypeID() else { return nil }
+            return (object as! AXUIElement)
+        }
+        func url(_ object: CFTypeRef?) -> URL? {
+            if let url = object as? URL { return url }
+            if let text = object as? String {
+                return text.hasPrefix("/") ? URL(fileURLWithPath: text) : URL(string: text)
+            }
+            return nil
+        }
+        guard let focused = element(value(app, kAXFocusedUIElementAttribute)) else { return (nil, nil) }
+        let role = value(focused, kAXRoleAttribute) as? String
+        var current: AXUIElement? = focused
+        for _ in 0..<16 {
+            guard let node = current, !Task.isCancelled else { break }
+            if value(node, kAXRoleAttribute) as? String == "AXWebArea" {
+                // Read the containing document, not links mentioned in content.
+                return (url(value(node, "AXURL")), role)
+            }
+            if let document = url(value(node, kAXDocumentAttribute)), document.isFileURL {
+                return (document, role)
+            }
+            current = element(value(node, kAXParentAttribute))
+        }
+        // Some browsers expose their page only as the window's AXDocument.
+        if let window = element(value(app, kAXFocusedWindowAttribute)) {
+            return (url(value(window, kAXDocumentAttribute)), role)
+        }
+        return (nil, role)
+    }
 
     /// Walks the focused window of `pid` collecting value/title/description
     /// strings. Synchronous and potentially slow on deep trees, so callers
