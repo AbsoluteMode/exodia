@@ -412,29 +412,17 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
         copyWaitReason = nil; copyAfterProcessing = false
         canvas.busy = true
         task = Task { [weak self, weak canvas] in
-            do {
-                let worker = Task.detached(priority: .userInitiated) {
-                    try Task.checkCancellation()
-                    // Recognize only the flattened crop, including Blur, never hidden source pixels.
-                    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
-                    let image = try ScreenshotRenderer.image(source: source, size: size, annotations: annotations, crop: crop)
-                    return try ScreenshotTextDetector.text(image)
-                }
-                let text = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
-                guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
-                canvas.busy = false
-                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    self.report("No readable text or numbers found. Adjust the selection or copy the image.", canvas: canvas)
-                    return
-                }
-                let board = NSPasteboard.general
-                board.clearContents()
-                guard board.setString(text, forType: .string) else { throw ScreenshotImageError.rendering }
-                self.cancel()
-            } catch {
-                guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
-                canvas.busy = false
+            let result = await ScreenshotTextCopy.perform(source: source, size: size, annotations: annotations, crop: crop,
+                                                          isCurrent: { [weak self] in self?.generation == token })
+            guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
+            canvas.busy = false
+            switch result {
+            case .copied: self.cancel()
+            case .empty:
+                self.report("No readable text or numbers found. Adjust the selection or copy the image.", canvas: canvas)
+            case .failed:
                 self.report("Couldn’t copy text. Try again or copy the image.", canvas: canvas)
+            case .discarded: break
             }
         }
     }

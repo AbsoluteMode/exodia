@@ -215,6 +215,12 @@ Rendering and OCR run off the UI thread. Show local progress and allow Escape;
 cancelled/old generations cannot write a late result to the clipboard. Success
 copies plain text and exits. Empty/error results retain the editor for retry
 or image export, leaving the clipboard untouched until readable text exists.
+The bounded ScreenshotTextCopy helper owns the asynchronous commit boundary.
+Before clearing the clipboard it snapshots all items/types; incomplete snapshots
+abort without mutation. A failed write restores the snapshot only while the
+pasteboard is still owned by this operation, preserving a newer owner's data.
+Named-pasteboard tests inject late recognition and write failures to exercise
+cancelled/stale generations, empty/error results and rich multi-item recovery.
 Keep Blur's fast region path unchanged; no warmup, network or app-managed model
 download is introduced. Accurate recognition can have a slow first call.
 

@@ -68,7 +68,9 @@ supports English and Russian and keeps language correction off for numbers and
 codes. The first request can take longer while macOS initializes recognition.
 Progress stays visible; Escape cancels without copying a late result. If no
 readable text is found or recognition fails, the editor stays open for retry or
-image copy. No provider key, model download or network request is needed.
+image copy. A clipboard write failure restores the previous readable contents
+while the operation still owns the clipboard; it never restores over a newer
+copy from another app. No provider key, model download or network request is needed.
 
 Copy writes flattened PNG pixels to the clipboard and finishes. **Return /
 numeric Enter** does the same after selection; during Blur it waits for the
