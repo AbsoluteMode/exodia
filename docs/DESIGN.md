@@ -1,5 +1,33 @@
 # Interface decisions
 
+## Screenshot arrow assignments — 2026-10-21
+
+The person comes to assign four quick screenshot actions. First see the current
+↑/←/↓/→ mapping; then drag an action onto a slot or choose its menu and Save.
+Keep this in Settings Hotkeys so the frozen screenshot retains its compact bar.
+
+- Use an inverted-T arrow cluster with dashed rounded contours, the shared
+  HotkeyHintView keycaps, and an always-visible action name. Why: the user
+  asked for dashed draggable slots and replacement on drop.
+- Defaults are ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. The palette contains every
+  retained tool/command plus Delete annotation and Move crop. A slot is also
+  a drag source; dropping copies and replaces only the destination. Why: these
+  defaults cover drawing, obscuring, correcting and finishing.
+- Each whole slot highlights on hover/press/drop; the native Menu retains
+  keyboard activation and VoiceOver with an explicit focus treatment. Palette
+  items highlight across their entire drag area. Why: pointer users need clear
+  feedback, and dragging cannot be the sole way to assign an action.
+- Reuse semantic settings text/surfaces, 12 pt action text and 8 pt spacing.
+  Three equal columns remain at 360 pt, with wrapping action names; the palette
+  adapts its column count. No animation is added, so reduced motion is unchanged.
+- Screenshot suspends Agent’s Carbon registrations before handling arrows.
+  Native text editing remains first within the editor; modified arrows adjust
+  the crop. Why: screenshot commands must not paste/open an Agent action behind
+  the frozen editor.
+
+Offscreen native render fixtures cover 360 and 520 pt. They do not establish
+physical drag, keyboard or VoiceOver acceptance in the installed application.
+
 ## Screenshot toolbar and capture reliability — 2026-10-21
 
 The user comes to annotate a screenshot, discover the available tools, then
@@ -832,7 +860,7 @@ rights. No alternative composition or decorative screen is needed.
 | --- | --- |
 | Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
-| Client picker | Discovers installed OpenCode and Cursor only after Connect. Shows bundled brand marks, loading, no installed clients or already-connected states. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. The arbitrary program picker is removed. |
+| Client picker | Discovers installed OpenCode, Claude Code and Cursor only after Connect (no Codex). Shows bundled brand marks, loading, no installed clients or already-connected states. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. The arbitrary program picker is removed. |
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects includes future projects (explained in native help); Selected shows searchable checkboxes and denies unchecked projects at the broker. Filtering preserves the full draft selection. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
@@ -938,13 +966,13 @@ only Connect commits the draft after authentication. The user chose this flow.
   explanation belongs to the commit action; normal mode/scope navigation does
   not request authentication. Errors and retry remain visible above the editor.
 - Loading and both empty states are contained surfaces. With no installation,
-  explain to install OpenCode or Cursor and reopen Connect; with saved supported
+  explain to install OpenCode, Claude Code or Cursor and reopen Connect; with saved supported
   registrations, point to their icons for editing rights. No client config,
   secret, route or vault migration changes are part of this polish.
 
 Validation uses synthetic native offscreen fixtures at 310/390 pt and the
-320 pt viewport, fake authentication, isolated connector files and the four
-installed/absent client combinations. Calculated contrast on the synthetic
+320 pt viewport, fake authentication, isolated connector files and every
+installed/absent combination of the offered clients. Calculated contrast on the synthetic
 0.08-gray backdrop: group headings 10.56:1, selected/unselected mode text
 10.15:1/9.58:1, picker labels 13.19:1, selected-mode border 4.35:1 and primary
 button text 4.52:1. These do not establish contrast on every live backdrop.

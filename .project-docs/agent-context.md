@@ -325,9 +325,11 @@ Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
   appear as app icons; clicking one opens that client's policy. An always-visible
-  Connect button offers only installed OpenCode and Cursor with bundled logos,
-  then grouped project scope and Accept/Bypass before registration. There is no
-  arbitrary program picker; existing legacy registrations stay editable. Mode
+  Connect button offers only installed OpenCode, Claude Code and Cursor with
+  bundled logos, then grouped project scope and Accept/Bypass before registration.
+  Codex is not offered. There is no arbitrary program picker; existing legacy
+  registrations stay editable. WHY:
+  .project-docs/decisions/2026-10-21-case-connect-claude-code.md. Mode
   and project headings have thin horizontal dividers above their controls.
   Selected projects has a metadata search that preserves the full draft selection;
   All projects includes future projects, with its explanation in native help.
@@ -1038,7 +1040,15 @@ remains a drag. Clicking the active tool again stops drawing and permits
 selection/annotation adjustment without an extra selector. Highlighter,
 Spotlight, Copy text, Pin above windows and
 Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
-from either panel; focused text fields retain native text undo. Blur defaults to Text and numbers, including
+from every screenshot panel through both key-equivalent and direct window dispatch,
+using physical Z so Russian input works; focused text fields retain native text undo.
+Settings -> Hotkeys has four draggable, dashed arrow slots: Up Pen, Down Blur,
+Left Undo, Right Copy & exit. Drop replaces only the destination; native menus
+provide keyboard selection. Save/Revert/reset, Help and settings backups share
+HotkeyPreferences.screenshotArrowBindings. Bare arrows use those actions,
+Shift-arrows move the crop and Option-arrows resize it. Agent Useful Links
+releases its Carbon registrations while Screenshot is active, restores the
+latest visible actions afterwards, and invalidates stale callbacks. Blur defaults to Text and numbers, including
 standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
 without language correction. Dark crops are
 normalized only for detection; output keeps original colors. Each text region

@@ -240,6 +240,8 @@ struct HotkeysSettingsView: View {
                         onRecord: { startRecording(.agentClose) }
                     )
 
+                    ScreenshotArrowSettingsView(bindings: $draft.screenshotArrowBindings)
+
                     toolShortcutSection
 
                     conflictBlock

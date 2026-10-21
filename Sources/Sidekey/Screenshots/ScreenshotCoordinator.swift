@@ -22,12 +22,24 @@ final class ScreenshotCapturePanel: NSPanel {
     var onAdvanceFocus: ((Bool) -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, handleEditorKey(with: event) { return }
+        super.sendEvent(event)
+    }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handleEditorKey(with: event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+    private func handleEditorKey(with event: NSEvent) -> Bool {
         if event.keyCode == 48 && event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
             onAdvanceFocus?(event.modifierFlags.contains(.shift)); return true
         }
-        if !(firstResponder is NSTextView), keyboardCanvas?.performKeyEquivalent(with: event) == true { return true }
-        return super.performKeyEquivalent(with: event)
+        guard !(firstResponder is NSTextView), let keyboardCanvas else { return false }
+        if keyboardCanvas.performKeyEquivalent(with: event) { return true }
+        if ScreenshotArrow(keyCode: event.keyCode) != nil, event.modifierFlags.intersection([.command, .control]).isEmpty {
+            keyboardCanvas.keyDown(with: event); return true
+        }
+        return false
     }
     override func keyDown(with event: NSEvent) { keyboardCanvas?.keyDown(with: event) }
     override func cancelOperation(_ sender: Any?) { keyboardCanvas?.cancelOperation(sender) }
