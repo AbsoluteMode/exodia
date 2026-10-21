@@ -14,9 +14,12 @@ import tempfile
 
 BUILD_INPUTS = ("Sources", "Resources", "Package.swift", "Package.resolved", "VERSION", "scripts")
 BUNDLE_IDS = {"prod": "com.rootwise.sidekey", "beta": "com.rootwise.sidekey.beta"}
-# adhoc, developer-id, the Apple team of a non-notarized Developer ID build,
+# adhoc, developer-id, the Apple team of a Developer ID build,
 # or the SHA-1 of the self-signed community certificate.
 CODE_SIGNING = re.compile(r"adhoc|developer-id|team:[A-Z0-9]{10}|certificate:[0-9a-f]{40}")
+# Apple notarizes only Developer ID code; the legacy developer-id mode always did.
+# WHY: docs/decisions/2026-10-21-notarized-releases.md
+NOTARIZATION = ("none", "notarized")
 
 
 class InvalidProvenance(ValueError):
@@ -65,14 +68,19 @@ def metadata(args: argparse.Namespace) -> dict:
         raise InvalidProvenance("release build must be a positive integer")
     if not CODE_SIGNING.fullmatch(args.code_signing):
         raise InvalidProvenance("code signing must be adhoc, developer-id, team:<team id> or certificate:<sha1>")
+    developer_id = args.code_signing == "developer-id" or args.code_signing.startswith("team:")
+    if args.notarization == "notarized" and not developer_id:
+        raise InvalidProvenance("only Developer ID builds (team:<team id> or developer-id) can be notarized")
+    if args.code_signing == "developer-id" and args.notarization != "notarized":
+        raise InvalidProvenance("developer-id releases are always notarized")
     bundle = "Whytap" if args.flavor == "prod" else "Whytap-Beta"
     expected_name = f"{bundle}-{args.version}-build{args.build}.dmg"
     if args.archive.name != expected_name:
         raise InvalidProvenance("archive name does not match release version, build and flavor")
-    return {"schema_version": 2, "archive": expected_name, "version": args.version,
+    return {"schema_version": 3, "archive": expected_name, "version": args.version,
             "build": args.build, "flavor": args.flavor, "bundle_id": BUNDLE_IDS[args.flavor],
             "distribution": args.distribution, "code_signing": args.code_signing,
-            "architectures": ["arm64", "x86_64"]}
+            "notarization": args.notarization, "architectures": ["arm64", "x86_64"]}
 
 
 def manifest_path(args: argparse.Namespace) -> Path:
@@ -114,6 +122,11 @@ def verify(args: argparse.Namespace) -> str:
     expected = metadata(args)
     if value.get("code_signing") != expected["code_signing"]:
         raise InvalidProvenance("archive code signing does not match the release signing identity; rebuild the release")
+    if value.get("notarization") != expected["notarization"]:
+        recorded = value.get("notarization") if value.get("notarization") in NOTARIZATION else "not recorded"
+        raise InvalidProvenance("archive notarization ({}) does not match the requested release ({}); "
+                                "rebuild with EXODIA_NOTARIZE=1, or set EXODIA_NOTARIZE=0 to publish "
+                                "an archive without notarization".format(recorded, expected["notarization"]))
     if any(type(value.get(key)) is not type(item) or value.get(key) != item for key, item in expected.items()):
         raise InvalidProvenance("archive manifest metadata does not match the requested release")
     revision = clean_revision(args.project_root)
@@ -141,6 +154,10 @@ def main(argv: list[str] | None = None) -> int:
             child.add_argument("--flavor", choices=BUNDLE_IDS, required=True)
             child.add_argument("--distribution", choices=("community", "developer-id"), required=True)
             child.add_argument("--code-signing", required=True)
+            # Existing local verifiers use the unnotarized build-only path.
+            # Publication passes its explicit, independently enforced expectation.
+            # WHY: docs/decisions/2026-10-21-notarized-releases.md
+            child.add_argument("--notarization", choices=NOTARIZATION, default="none")
         if command == "seal":
             child.add_argument("--source-sha", required=True)
     args = parser.parse_args(argv)
