@@ -134,10 +134,20 @@ default cannot turn an unnotarized archive into a notarized release.
 - On this Mac with the real Case: `FLAVOR=beta EXODIA_NOTARIZE=1 build-dmg.sh`
   stopped before compiling and named `ASC_API_KEY_ID ASC_API_KEY_ISSUER_ID
   ASC_API_KEY_P8`.
-- Not yet tested: a real Apple submission, the `case run` command line with the
-  real Case, stapling and the Gatekeeper result (the build fixture stops at the
-  compiler). They wait for the App Store Connect key in Case and a beta build
-  through the builder.
+- Getting the key: App Store Connect hid Integrations and answered 403 for API
+  keys until the Account Holder accepted the updated Program License Agreement;
+  afterwards it still answered 403 for the other Admin users (only the Account
+  Holder has Certificates access), so the Account Holder created the team key
+  "Whytap notarization" and downloaded it from a computer (the iPhone download
+  failed). It was created with Admin access; Developer is enough and is the
+  role to use when the key is rotated.
+- With the key in Case, `whytap case run -p whytap --only ...` gave a script
+  the three values; without printing them it checked that the `.p8` value is a
+  P-256 PKCS#8 key equal to the downloaded file, the key ID matches the file
+  name and the issuer is a UUID.
+- Not yet tested at the time of writing: a real Apple submission, stapling and
+  the Gatekeeper result (the build fixture stops at the compiler). The beta
+  build through the builder (queue ticket 125) is the release gate.
 
 ## Rejected
 
@@ -154,7 +164,8 @@ default cannot turn an unnotarized archive into a notarized release.
 - Extend the legacy mode: it takes its identity from `TEAM_ID` and skips the
   team requirement checks.
 
-Pending: README, `docs/install.md` and `.project-docs/project.md` keep the
-Open Anyway advice until a notarized release is public.
+README, `docs/install.md` and `.project-docs/project.md` describe notarized
+releases; that change merges only together with the first public notarized
+release, and Open Anyway stays documented for older downloads.
 
 2026-10-21, branch `claude/notarize-releases-e634b7`.

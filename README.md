@@ -25,8 +25,8 @@ the same application. Use the app name shown in that disk image. Existing
 Exodia release links continue to redirect to this repository.
 
 Community builds are signed with the Developer ID certificate of Whytap's Apple
-team and are not notarized by Apple. macOS may warn on the first download; see
-[installation and permissions](docs/install.md). The stable team identity lets
+team and notarized by Apple, so macOS only asks once to confirm opening an app
+downloaded from the internet; see [installation and permissions](docs/install.md). The stable team identity lets
 macOS keep permissions such as Microphone and Keychain access across updates.
 Updates use the existing island **Update** button and verify the archive with
 Whytap's Sparkle Ed25519 key, which is independent of Apple signing. An update
