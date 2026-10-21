@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SQLite3
 @testable import Sidekey
 
 /// In-memory credential store. Keeps the whole backup/restore path away from
@@ -71,7 +72,6 @@ struct ArtifactBackupTestProfile {
     }
 
     func environment(meetings: ArtifactMeetingsExporting? = nil,
-                     history: ArtifactHistoryExporting? = nil,
                      faults: ArtifactBackupFaults = ArtifactBackupFaults()) -> ArtifactBackupEnvironment {
         var environment = ArtifactBackupEnvironment()
         environment.locations = locations
@@ -83,7 +83,6 @@ struct ArtifactBackupTestProfile {
         environment.pendingKeyStore = pendingKeyStore
         environment.recoveryKeyStore = recoveryKeyStore
         environment.meetings = meetings
-        environment.history = history
         environment.faults = faults
         return environment
     }
@@ -114,6 +113,37 @@ struct ArtifactBackupTestProfile {
     func tearDown() {
         UserDefaults().removePersistentDomain(forName: defaultsSuite)
         try? FileManager.default.removeItem(at: root)
+    }
+}
+
+/// Archives written before 2026-10-21 carried the history database and
+/// retained meeting audio. New backups leave both out; those archives still
+/// restore.
+enum ArtifactBackupLegacyContent {
+    /// A history database with clipboard text rows, snapshotted with
+    /// `VACUUM INTO` as older archives' `history/db/history.sqlite` entry was.
+    static func historyDatabase(texts: [String], scratch: URL) throws -> Data {
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let live = scratch.appendingPathComponent(UUID().uuidString + ".sqlite")
+        let snapshot = scratch.appendingPathComponent(UUID().uuidString + ".sqlite")
+        defer {
+            for url in [live, snapshot] {
+                for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
+            }
+        }
+        do {
+            let store = try SQLiteHistoryStore(path: live.path)
+            for text in texts {
+                _ = try store.insertClipboardTextEntry(createdAt: Date(timeIntervalSince1970: 1_700_000_000), text: text)
+            }
+        }
+        var handle: OpaquePointer?
+        guard sqlite3_open(live.path, &handle) == SQLITE_OK else { throw ArtifactBackupError.readFailed }
+        defer { sqlite3_close(handle) }
+        guard sqlite3_exec(handle, "VACUUM INTO '\(snapshot.path)'", nil, nil, nil) == SQLITE_OK else {
+            throw ArtifactBackupError.readFailed
+        }
+        return try Data(contentsOf: snapshot)
     }
 }
 

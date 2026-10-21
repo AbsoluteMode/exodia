@@ -15,12 +15,21 @@ That is the same application; use the name shown in that disk image.
 3. Open Whytap from Applications, then eject the disk image.
 
 Community builds are signed with the Developer ID certificate of Whytap's Apple
-team and are not notarized by Apple. macOS may warn that it cannot verify the
-developer. For the specific download you trust, follow **System Settings →
-Privacy & Security → Open Anyway** if offered;
+team and notarized by Apple; the app and the disk image carry a stapled
+notarization ticket, so the check also works offline. On the first launch macOS
+asks once whether to open an app downloaded from the internet; choose **Open**.
+Releases up to 2.2.15 were not notarized: if macOS says it cannot verify the
+developer of such a download, follow **System Settings → Privacy & Security →
+Open Anyway** for that download;
 [Apple explains this per-app approval](https://support.apple.com/102445).
-You never install or trust a certificate yourself. Because every community
-build carries the same team identity, macOS keeps privacy permissions such as
+
+Notarization does not grant Microphone, Accessibility or Keychain access. The
+first upgrade from an older community-signed build may ask for those again.
+Approve Keychain access in the macOS window only (Always Allow if you trust
+this Whytap build); never enter the login password into an agent or chat.
+Later updates signed by the same team retain the same identity.
+You never install or trust a certificate yourself. Current builds carry the
+same team identity, so macOS keeps privacy permissions such as
 Microphone and System Audio Recording and access to Whytap's Keychain items
 across updates. Earlier builds were signed with Whytap's self-signed
 certificate or ad hoc, so the first team-signed update asks for these

@@ -30,7 +30,8 @@ enum ArtifactArchiveVerifier {
         case .credentials: return ["credentials/providers.json"]
         case .caseVault: return ["case/vault.enc", "case/vault.key"]
         case .meetings: return [meetingsDatabasePath]
-        case .history: return [historyDatabasePath]
+        // Only older archives carry the history database; newer ones hold Costs.
+        case .history: return []
         case .workspace: return []
         case .planner: return ["planner/planner-v1.json"]
         }

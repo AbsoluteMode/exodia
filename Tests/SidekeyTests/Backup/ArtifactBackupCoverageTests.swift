@@ -121,13 +121,16 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         try source.write("changed script", to: root.appendingPathComponent("main.py"))
         XCTAssertNotEqual(BackupChangeProbe.stamp(locations: source.locations), before)
 
-        let recording = source.locations.meetingsStaging.appendingPathComponent(UUID().uuidString)
-        try source.write(cacheTag, to: recording.appendingPathComponent("CACHEDIR.TAG"))
-        try source.write("audio", to: recording.appendingPathComponent("chunk-000.wav"))
-        let withRecording = BackupChangeProbe.stamp(locations: source.locations)
-        try source.write("more audio", to: recording.appendingPathComponent("chunk-000.wav"))
-        XCTAssertNotEqual(BackupChangeProbe.stamp(locations: source.locations), withRecording,
-                          "A cache marker must never hide retained recording changes")
+        // Meeting audio and the history database are not backed up, so their
+        // churn is not a change either.
+        let changed = BackupChangeProbe.stamp(locations: source.locations)
+        try source.write("audio", to: source.locations.meetingsStaging
+            .appendingPathComponent(UUID().uuidString).appendingPathComponent("chunk-000.wav"))
+        try source.write("clipboard", to: source.locations.historyDatabase)
+        try source.write("wal", to: source.locations.historyDatabase.deletingLastPathComponent()
+            .appendingPathComponent("history.sqlite-wal"))
+        try source.write("image", to: source.locations.historyAssets.appendingPathComponent("a.png"))
+        XCTAssertEqual(BackupChangeProbe.stamp(locations: source.locations), changed)
     }
 
     func testNestedWorkerScriptsCursorsAndLargeLogosAreAllIncluded() async throws {
@@ -161,60 +164,37 @@ final class ArtifactBackupCoverageTests: XCTestCase {
             .appendingPathComponent("logos/big.png")).count, 2 * 1024 * 1024)
     }
 
-    func testBackupAfterRestoreRetainsInertRecordsAndExcludesMultipartUploadBodies() async throws {
-        let source = try profile(), target = try profile(), third = try profile()
+    /// Retained meeting audio is debugging material: whatever state it is in
+    /// (parked records, nested originals, provider job files, links, stray
+    /// files), none of it travels and none of it can fail a backup.
+    /// WHY: .project-docs/decisions/2026-10-21-backup-essentials-only.md
+    func testRetainedRecordingsNeverTravelAndCannotFailABackup() async throws {
+        let source = try profile()
         let meetings = try MeetingsStore(rootDirectory: source.locations.meetingsCatalog)
         openMeetingStores.append(meetings)
-        let id = UUID().uuidString
-        let recording = source.locations.meetingsStaging.appendingPathComponent(id)
-        let parked = "manifest.json.restored-inactive"
-        try source.write("retained record", to: recording.appendingPathComponent(parked))
+        let recording = source.locations.meetingsStaging.appendingPathComponent(UUID().uuidString)
+        try source.write("retained record", to: recording.appendingPathComponent("manifest.json.restored-inactive"))
         try source.write("retained audio", to: recording.appendingPathComponent("chunk-000.wav"))
-        let held = "manifest.json.held-20000101-000000"
-        let repaired = "soniox-transcription.json.pre-realign-20000101-000000"
-        try source.write("held original", to: recording.appendingPathComponent(held))
-        try source.write("earlier checkpoint", to: recording.appendingPathComponent(repaired))
+        try source.write("chunk being written", to: recording.appendingPathComponent("chunk-001.wav.tmp"))
         try source.write("original mixed audio", to: recording.appendingPathComponent("orig-mixed-20000101/chunk-000.wav"))
-        try source.write("nested original record", to: recording.appendingPathComponent("orig-mixed-20000101/manifest.json"))
-        try source.write("Finder metadata", to: source.locations.meetingsStaging.appendingPathComponent(".DS_Store"))
         try source.write("active remote job", to: recording.appendingPathComponent("soniox-transcription.json"))
-        let upload = recording.appendingPathComponent("soniox-upload-\(UUID().uuidString).tmp")
-        try source.write("disposable multipart", to: upload)
-        try FileManager.default.setAttributes([.modificationDate: Date.distantPast], ofItemAtPath: upload.path)
+        try source.write("who knows", to: source.locations.meetingsStaging.appendingPathComponent("stray.bin"))
+        let outside = source.root.appendingPathComponent("outside.wav")
+        try source.write("outside", to: outside)
+        try FileManager.default.createSymbolicLink(atPath: recording.appendingPathComponent("link.wav").path,
+                                                   withDestinationPath: outside.path)
         try source.write("preserved source", to: source.locations.notifyRoot
             .appendingPathComponent("sources/example.json.restored-invalid"))
-        try source.write("guide", to: source.locations.notifyRoot.appendingPathComponent("sources/README.md"))
-        let key = ArtifactBackupTestKeys.make(), first = archive(in: source)
-        let sourceEngine = ArtifactBackupEngine(environment: source.environment(meetings: meetings))
-        _ = try await sourceEngine.createArchive(at: first, key: key, sections: [.workspace, .meetings])
-        let entries = try manifest(of: first, key: key).entries
-        XCTAssertFalse(entries.contains { $0.path.contains("soniox-upload-") })
-        for entry in entries { XCTAssertNoThrow(try ArtifactRestoreDestination.resolve(entry.path, in: target.locations)) }
-        let targetEnvironment = target.environment()
-        try await ArtifactBackupEngine(environment: targetEnvironment)
-            .stageRestore(from: first, key: key, sections: [.workspace, .meetings])
-        _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
-
-        let targetMeetings = try MeetingsStore(rootDirectory: target.locations.meetingsCatalog)
-        openMeetingStores.append(targetMeetings)
-        let second = archive(in: target)
-        let targetEngine = ArtifactBackupEngine(environment: target.environment(meetings: targetMeetings))
-        _ = try await targetEngine.createArchive(at: second, key: key, sections: [.workspace, .meetings])
-        _ = try await targetEngine.inspectArchive(at: second, key: key)
-        let thirdEnvironment = third.environment()
-        try await ArtifactBackupEngine(environment: thirdEnvironment)
-            .stageRestore(from: second, key: key, sections: [.workspace, .meetings])
-        _ = try ArtifactBackupEngine.applyPendingRestore(environment: thirdEnvironment)
-        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/\(parked)")), "retained record")
-        XCTAssertFalse(third.exists(third.locations.meetingsStaging.appendingPathComponent("\(id)/manifest.json")))
-        XCTAssertFalse(third.exists(third.locations.meetingsStaging.appendingPathComponent("\(id)/soniox-transcription.json")))
-        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/\(held)")), "held original")
-        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/\(repaired)")), "earlier checkpoint")
-        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/orig-mixed-20000101/chunk-000.wav")), "original mixed audio")
-        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/orig-mixed-20000101/manifest.json")), "nested original record")
-        XCTAssertThrowsError(try ArtifactRestoreDestination.resolve("meetings/staged/\(id)/SONIOX-TRANSCRIPTION.JSON", in: third.locations))
-        XCTAssertEqual(third.contents(of: third.locations.notifyRoot
-            .appendingPathComponent("sources/example.json.restored-invalid")), "preserved source")
+        let key = ArtifactBackupTestKeys.make(), file = archive(in: source)
+        let engine = ArtifactBackupEngine(environment: source.environment(meetings: meetings))
+        _ = try await engine.createArchive(at: file, key: key, sections: [.workspace, .meetings])
+        let paths = Set(try manifest(of: file, key: key).entries.map(\.path))
+        XCTAssertTrue(paths.contains("meetings/db/meetings.sqlite"))
+        XCTAssertTrue(paths.contains("workspace/notify/sources/example.json.restored-invalid"))
+        XCTAssertFalse(paths.contains { $0.hasPrefix("meetings/staged/") })
+        let warnings = try await engine.inspectArchive(at: file, key: key).warnings
+        XCTAssertFalse(warnings.contains { $0.lowercased().contains("recording") }, warnings.joined(separator: " | "))
+        XCTAssertEqual(source.contents(of: outside), "outside")
     }
 
     func testActiveAndEarlierInactiveConfigurationsBothSurviveRecovery() async throws {
@@ -246,10 +226,6 @@ final class ArtifactBackupCoverageTests: XCTestCase {
 
     func testUnchangedRetainedGenerationsHaveAStableContentFingerprint() async throws {
         let source = try profile()
-        let recording = source.locations.meetingsStaging.appendingPathComponent(UUID().uuidString)
-        try source.write("active record", to: recording.appendingPathComponent("manifest.json"))
-        try source.write("earlier record", to: recording.appendingPathComponent("manifest.json.restored-inactive"))
-        try source.write("already retained", to: recording.appendingPathComponent("manifest-retained-0.json.restored-inactive"))
         try source.write("current", to: source.locations.monitorRoot.appendingPathComponent("servers.json"))
         try source.write("previous", to: source.locations.monitorRoot.appendingPathComponent("servers.json.restored-inactive"))
         try source.write("retained", to: source.locations.monitorRoot.appendingPathComponent("restored-files-retained-0/note.txt"))
@@ -269,26 +245,6 @@ final class ArtifactBackupCoverageTests: XCTestCase {
                                                               previousFingerprint: second.contentFingerprint)
         XCTAssertNotNil(changed)
         XCTAssertNotEqual(changed?.contentFingerprint, second.contentFingerprint)
-    }
-
-    func testNestedRetainedRecordingLinksAreRejectedWithoutFollowingThem() async throws {
-        let source = try profile(), id = UUID().uuidString
-        let outside = source.root.appendingPathComponent("outside.wav")
-        try source.write("outside", to: outside)
-        let folder = source.locations.meetingsStaging.appendingPathComponent("\(id)/originals")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent("audio.wav").path,
-                                                   withDestinationPath: outside.path)
-        let file = archive(in: source)
-        do {
-            _ = try await ArtifactBackupEngine(environment: source.environment())
-                .createArchive(at: file, key: ArtifactBackupTestKeys.make(), sections: [.meetings])
-            XCTFail("Never follow links in retained originals")
-        } catch {
-            XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Recordings/\(id)/originals/audio.wav"))
-        }
-        XCTAssertFalse(source.exists(file))
-        XCTAssertEqual(source.contents(of: outside), "outside")
     }
 
     func testLegacyArchiveWithActiveAndInactiveConfigurationPreservesBoth() async throws {
@@ -337,29 +293,6 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Notifications/.env"))
         }
-    }
-
-    func testMoreThan4096RetainedRecordingFilesRoundTrip() async throws {
-        let source = try profile(), target = try profile()
-        let meetings = try MeetingsStore(rootDirectory: source.locations.meetingsCatalog)
-        openMeetingStores.append(meetings)
-        let id = UUID().uuidString
-        let count = 5220
-        for index in 0..<count {
-            try source.write("retained-\(index)", to: source.locations.meetingsStaging
-                .appendingPathComponent("\(id)/chunk-\(index).wav"))
-        }
-        let url = archive(in: source), key = ArtifactBackupTestKeys.make()
-        let engine = ArtifactBackupEngine(environment: source.environment(meetings: meetings))
-        let summary = try await engine.createArchive(at: url, key: key, sections: [.meetings])
-        XCTAssertGreaterThanOrEqual(summary.fileCount, count)
-        _ = try await engine.inspectArchive(at: url, key: key)
-        let environment = target.environment()
-        try await ArtifactBackupEngine(environment: environment).stageRestore(from: url, key: key, sections: [.meetings])
-        _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
-        let restored = target.locations.meetingsStaging.appendingPathComponent(id)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: restored.path).count, count)
-        XCTAssertEqual(target.contents(of: restored.appendingPathComponent("chunk-5219.wav")), "retained-5219")
     }
 
     func testOversizedOwnedFileFailsInsteadOfBeingSkipped() async throws {
@@ -433,74 +366,6 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         XCTAssertTrue(warnings.contains { $0.contains("read-only") }, joined)
     }
 
-    // MARK: - Retained audio
-
-    func testRawOrphanAudioWithoutAFinalizeRecordStillTravels() async throws {
-        let source = try profile()
-        let meetings = try MeetingsStore(rootDirectory: source.locations.meetingsCatalog)
-        openMeetingStores.append(meetings)
-        let orphan = UUID()
-        let directory = source.locations.meetingsStaging
-            .appendingPathComponent(orphan.uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try source.write(Data(repeating: 7, count: 2048),
-                         to: directory.appendingPathComponent("chunk-000.wav"))
-        try source.write(Data(repeating: 8, count: 64),
-                         to: directory.appendingPathComponent("chunk-000.sha256"))
-        // A chunk still being written is not persisted audio yet.
-        try source.write(Data(repeating: 9, count: 32),
-                         to: directory.appendingPathComponent("chunk-001.wav.tmp"))
-        // One a crash abandoned long ago exists nowhere else, so it travels.
-        let abandoned = directory.appendingPathComponent("chunk-002.wav.tmp")
-        try source.write(Data(repeating: 10, count: 16), to: abandoned)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: abandoned.path)
-        let url = archive(in: source)
-        let key = ArtifactBackupTestKeys.make()
-        let summary = try await ArtifactBackupEngine(environment: source.environment(meetings: meetings))
-            .createArchive(at: url, key: key, sections: [.meetings])
-        XCTAssertTrue(summary.sections.contains(.meetings))
-        let paths = Set(try manifest(of: url, key: key).entries.map(\.path))
-        XCTAssertTrue(paths.contains("meetings/staged/\(orphan.uuidString)/chunk-000.wav"))
-        XCTAssertTrue(paths.contains("meetings/staged/\(orphan.uuidString)/chunk-000.sha256"))
-        XCTAssertFalse(paths.contains("meetings/staged/\(orphan.uuidString)/chunk-001.wav.tmp"),
-                       "a chunk still being written cannot be captured coherently")
-        XCTAssertTrue(paths.contains("meetings/staged/\(orphan.uuidString)/chunk-002.wav.tmp"),
-                      "an abandoned chunk is the only copy of those bytes")
-
-        let preview = try await ArtifactBackupEngine(environment: source.environment(meetings: meetings))
-            .inspectArchive(at: url, key: key)
-        XCTAssertTrue(preview.warnings.contains { $0.contains("still being written") },
-                      preview.warnings.joined(separator: " | "))
-
-        let target = try profile()
-        let environment = target.environment()
-        try await ArtifactBackupEngine(environment: environment)
-            .stageRestore(from: url, key: key, sections: [.meetings])
-        _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
-        XCTAssertEqual(try Data(contentsOf: target.locations.meetingsStaging
-            .appendingPathComponent(orphan.uuidString, isDirectory: true)
-            .appendingPathComponent("chunk-000.wav")).count, 2048)
-    }
-
-    func testStrayFileInTheRecordingRootFailsRatherThanDisappearing() async throws {
-        let source = try profile()
-        let meetings = try MeetingsStore(rootDirectory: source.locations.meetingsCatalog)
-        openMeetingStores.append(meetings)
-        try source.write("who knows", to: source.locations.meetingsStaging
-            .appendingPathComponent("stray.bin"))
-        do {
-            _ = try await ArtifactBackupEngine(environment: source.environment(meetings: meetings))
-                .createArchive(at: archive(in: source), key: ArtifactBackupTestKeys.make(),
-                               sections: [.meetings])
-            XCTFail("expected an explicit failure")
-        } catch {
-            guard case .invalidContent = (error as? ArtifactBackupError) else {
-                return XCTFail("unexpected error \(error)")
-            }
-        }
-    }
-
     // MARK: - Case key rotation
 
     func testStagedCaseCiphertextIsVerifiedAgainstTheExportedKey() async throws {
@@ -515,7 +380,7 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         let request = ArtifactBackupStageRequest(
             sections: [.caseVault], locations: source.locations,
             inline: [ArtifactInlinePayload(path: "case/vault.key", section: .caseVault, data: rotated)],
-            includeCaseVaultFile: true, caseVaultKey: rotated, meetings: nil, history: nil)
+            includeCaseVaultFile: true, caseVaultKey: rotated, meetings: nil)
         do {
             _ = try await ArtifactBackupStager().stage(request)
             XCTFail("expected caseUnreadable")

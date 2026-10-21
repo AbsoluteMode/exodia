@@ -90,8 +90,8 @@ final class BackupViewModel: ObservableObject {
     private var automaticOperationRunning = false
     private let availableCapacity: @Sendable (URL) -> Int64?
     /// One automatic full capture per hour at most, changed or not. Sources
-    /// such as a Notify script's status file or clipboard history change every
-    /// few seconds, and every capture is a complete multi-gigabyte snapshot.
+    /// such as a Notify script's status file change every few seconds, and
+    /// every capture is a complete snapshot.
     /// This is also the required hourly content check. Back up is immediate.
     /// WHY: .project-docs/decisions/2026-10-21-backup-capture-pacing.md
     static let automaticCaptureInterval: TimeInterval = 3600
@@ -1479,10 +1479,10 @@ extension Notification.Name {
 /// coherent store export and full authenticated archive validation.
 enum BackupChangeProbe {
     static func stamp(locations paths: ArtifactBackupLocations = .production) -> String {
-        let roots = [paths.caseVault, paths.historyDatabase, paths.usageDatabase,
-                     paths.historyDatabase.deletingLastPathComponent().appendingPathComponent("history.sqlite-wal"),
-                     paths.historyAssets, paths.monitorRoot, paths.notifyRoot, paths.meetingsCatalog,
-                     paths.meetingsStaging, paths.agentMemory, paths.plannerArchive]
+        // Meeting audio and the history database are not backed up, so their
+        // churn (every clipboard copy, every recording chunk) is not a change.
+        let roots = [paths.caseVault, paths.usageDatabase, paths.monitorRoot, paths.notifyRoot,
+                     paths.meetingsCatalog, paths.agentMemory, paths.plannerArchive]
         var values: [String] = []
         func add(_ file: URL) {
             var information = stat()

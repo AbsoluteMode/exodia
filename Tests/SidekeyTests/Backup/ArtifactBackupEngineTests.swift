@@ -3,9 +3,9 @@ import XCTest
 @testable import Sidekey
 
 /// End-to-end proof on synthetic profiles: a complete backup of settings,
-/// provider keys, Case, meetings (including staged recordings), history with
-/// its image bytes and the Monitor/Notify/agent workspace, restored into a
-/// clean profile with no real Keychain and no user data.
+/// provider keys, Case, meeting notes, Costs and the Monitor/Notify/agent
+/// workspace, restored into a clean profile with no real Keychain and no user
+/// data. Retained meeting audio and the history database stay on the Mac.
 @MainActor
 final class ArtifactBackupEngineTests: XCTestCase {
     private var profiles: [ArtifactBackupTestProfile] = []
@@ -27,7 +27,6 @@ final class ArtifactBackupEngineTests: XCTestCase {
         var meetingID: UUID
         var imageUUID: UUID
         var stagedRecordingID: UUID
-        var imageBytes: Data
         var meetings: MeetingsStore
         var history: SQLiteHistoryStore
     }
@@ -70,8 +69,8 @@ final class ArtifactBackupEngineTests: XCTestCase {
             markdown: "# Synthetic standup\n\nSynthetic note body.",
             transcript: [TranscriptSegment(speaker: "A", start: 0, end: 2, text: "synthetic transcript")])
 
-        // A finalised recording whose processing failed: staged audio is the
-        // only copy, so it has to travel with the backup.
+        // Retained audio of a meeting whose processing failed. It is debugging
+        // material and never travels.
         let stagedID = UUID()
         let stagedDirectory = profile.locations.meetingsStaging
             .appendingPathComponent(stagedID.uuidString, isDirectory: true)
@@ -83,17 +82,8 @@ final class ArtifactBackupEngineTests: XCTestCase {
                                     durationSeconds: 60, language: "ru",
                                     chunkFileNames: ["chunk-000.wav"], isFinal: true),
             to: stagedDirectory)
-        // Remote provider job state: must stay on this Mac.
-        try Data("{\"fileID\":\"synthetic-remote-job\"}".utf8)
-            .write(to: stagedDirectory.appendingPathComponent("soniox-transcription.json"))
 
-        // A recording still being written has no manifest and is skipped.
-        let liveDirectory = profile.locations.meetingsStaging
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: liveDirectory, withIntermediateDirectories: true)
-        try Data(repeating: 2, count: 128).write(to: liveDirectory.appendingPathComponent("chunk-000.wav.tmp"))
-
-        // History: text, an external file link and a managed image.
+        // History: clipboard text, a file link, an image. None of it travels.
         try FileManager.default.createDirectory(
             at: profile.locations.historyDatabase.deletingLastPathComponent(),
             withIntermediateDirectories: true)
@@ -102,9 +92,8 @@ final class ArtifactBackupEngineTests: XCTestCase {
         _ = try history.insertClipboardFileURLsEntry(
             createdAt: now, urls: [URL(fileURLWithPath: "/Users/synthetic/Documents/original.pdf")])
         let imageUUID = UUID()
-        let imageBytes = Data(repeating: 0x7A, count: 2048)
         _ = try history.insertClipboardImageEntry(
-            createdAt: now, uuid: imageUUID, imageData: imageBytes, imageExtension: "png",
+            createdAt: now, uuid: imageUUID, imageData: Data(repeating: 0x7A, count: 2048), imageExtension: "png",
             thumbnailData: Data(repeating: 0x7B, count: 64),
             assetsDirectory: profile.locations.historyAssets)
 
@@ -129,9 +118,9 @@ final class ArtifactBackupEngineTests: XCTestCase {
         try profile.write("# Agent memory\nsynthetic instruction", to: profile.locations.agentMemory)
         XCTAssertTrue(PlannerStore(url: profile.locations.plannerArchive).saveTask(PlannerTask(title: "Synthetic task")))
 
-        return Source(profile: profile, environment: profile.environment(meetings: meetings, history: history),
+        return Source(profile: profile, environment: profile.environment(meetings: meetings),
                       caseKey: caseKey, meetingID: meetingID, imageUUID: imageUUID,
-                      stagedRecordingID: stagedID, imageBytes: imageBytes,
+                      stagedRecordingID: stagedID,
                       meetings: meetings, history: history)
     }
 
@@ -154,10 +143,14 @@ final class ArtifactBackupEngineTests: XCTestCase {
         let source = try await makeSource()
         let engine = ArtifactBackupEngine(environment: source.environment), key = ArtifactBackupTestKeys.make()
         let first = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
+        // Clipboard copies and new recording chunks are not backed up.
+        _ = try source.history.insertClipboardTextEntry(createdAt: Date(), text: "new synthetic entry")
+        try source.profile.write("more audio", to: source.profile.locations.meetingsStaging
+            .appendingPathComponent("\(source.stagedRecordingID.uuidString)/chunk-001.wav"))
         let second = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
         XCTAssertEqual(first.contentFingerprint, second.contentFingerprint,
-                       "VACUUM INTO must be deterministic for unchanged populated Meetings/History stores and sidecars")
-        _ = try source.history.insertClipboardTextEntry(createdAt: Date(), text: "new synthetic entry")
+                       "VACUUM INTO must be deterministic for an unchanged populated Meetings store and its sidecars")
+        try source.profile.write("# Agent memory\nchanged", to: source.profile.locations.agentMemory)
         let changed = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
         XCTAssertNotEqual(changed.contentFingerprint, first.contentFingerprint)
     }
@@ -188,16 +181,20 @@ final class ArtifactBackupEngineTests: XCTestCase {
         XCTAssertEqual(restored.sorted { $0.id < $1.id }, [sourceEvent, targetEvent])
     }
 
-    func testArchiveWithoutCostsLeavesExistingCostsUntouched() async throws {
-        let source = try await makeSource(), target = try makeTarget()
+    func testOlderArchiveWithoutCostsLeavesExistingCostsUntouched() async throws {
+        let target = try makeTarget()
         let event = AIUsageEvent(context: .init(feature: .agent, account: .openRouter, model: "synthetic/model"),
                                  currency: .usd, amount: 0.03, basis: .reported)
         var targetUsage: AIUsageStore? = AIUsageStore(url: target.locations.usageDatabase)
         try await targetUsage!.insert(event)
         targetUsage = nil
         let original = try ArtifactBackupDigest.ofFile(target.locations.usageDatabase)
-        let file = archiveURL(in: source.profile), key = ArtifactBackupTestKeys.make()
-        _ = try await ArtifactBackupEngine(environment: source.environment).createArchive(at: file, key: key, sections: [.history])
+        let file = archiveURL(in: target), key = ArtifactBackupTestKeys.make()
+        let database = try ArtifactBackupLegacyContent.historyDatabase(
+            texts: ["older clipboard row"], scratch: target.root.appendingPathComponent("scratch"))
+        _ = try ArtifactBackupTestArchive.make(at: file, key: key, entries: [
+            (path: "history/db/history.sqlite", section: .history, data: database)
+        ])
         let targetEnvironment = target.environment()
         try await ArtifactBackupEngine(environment: targetEnvironment).stageRestore(from: file, key: key, sections: [.history])
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
@@ -252,9 +249,10 @@ final class ArtifactBackupEngineTests: XCTestCase {
         let engine = ArtifactBackupEngine(environment: source.environment)
         let summary = try await engine.createArchive(at: archive, key: key)
 
-        XCTAssertEqual(summary.sections, Set(ArtifactBackupSection.allCases))
+        // No Costs were recorded, and the history database never travels.
+        let carried = Set(ArtifactBackupSection.allCases).subtracting([.history])
+        XCTAssertEqual(summary.sections, carried)
         XCTAssertGreaterThan(summary.fileCount, 8)
-        XCTAssertGreaterThan(summary.totalBytes, 4096)
 
         // Nothing readable leaks into the file, and the staging directory is gone.
         let bytes = try Data(contentsOf: archive)
@@ -266,24 +264,20 @@ final class ArtifactBackupEngineTests: XCTestCase {
             atPath: source.profile.locations.stagingWorkRoot.path), [])
 
         let preview = try await engine.inspectArchive(at: archive, key: key)
-        XCTAssertEqual(preview.summary.sections, Set(ArtifactBackupSection.allCases))
-        XCTAssertTrue(preview.warnings.contains { $0.contains("only link to your own files") },
-                      preview.warnings.joined(separator: " | "))
-        XCTAssertTrue(preview.warnings.contains { $0.contains("still being written") },
-                      preview.warnings.joined(separator: " | "))
+        XCTAssertEqual(preview.summary.sections, carried)
+        XCTAssertFalse(preview.warnings.contains { $0.contains("recording") || $0.contains("clipboard") },
+                       preview.warnings.joined(separator: " | "))
 
         let manifest = try ArtifactRestoreTransaction.validateArchive(at: archive, key: key)
         let paths = Set(manifest.entries.map(\.path))
-        XCTAssertTrue(paths.contains("meetings/staged/\(source.stagedRecordingID.uuidString)/chunk-000.wav"))
-        XCTAssertFalse(paths.contains { $0.contains("soniox-transcription") })
-        XCTAssertFalse(paths.contains { $0.contains("original.pdf") })
+        XCTAssertFalse(paths.contains { $0.hasPrefix("meetings/staged/") }, "meeting audio never travels")
+        XCTAssertFalse(paths.contains { $0.hasPrefix("history/") }, "clipboard history never travels")
 
         // Restore into an empty profile.
         let target = try makeTarget()
         let targetEnvironment = target.environment()
         let restoreEngine = ArtifactBackupEngine(environment: targetEnvironment)
-        try await restoreEngine.stageRestore(from: archive, key: key,
-                                             sections: Set(ArtifactBackupSection.allCases))
+        try await restoreEngine.stageRestore(from: archive, key: key, sections: carried)
         XCTAssertTrue(restoreEngine.hasPendingRestore)
         // Nothing is applied while the runtime is open.
         XCTAssertFalse(target.exists(target.locations.meetingsCatalog
@@ -309,7 +303,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
         XCTAssertEqual(restoredCase.values.first?.value, "synthetic-case-secret")
         XCTAssertEqual(restoredCase.projects.first { $0.id != CaseProject.generalID }?.name, "Servers")
 
-        // Meetings: row, note, transcript and the staged recording.
+        // Meetings: row, note and transcript; no audio.
         let restoredMeetings = try MeetingsStore(rootDirectory: target.locations.meetingsCatalog)
         openMeetingStores.append(restoredMeetings)
         let rows = try await restoredMeetings.list()
@@ -318,21 +312,9 @@ final class ArtifactBackupEngineTests: XCTestCase {
         XCTAssertEqual(restoredMarkdown, "# Synthetic standup\n\nSynthetic note body.")
         let restoredTranscript = try await restoredMeetings.transcript(id: source.meetingID)
         XCTAssertEqual(restoredTranscript?.first?.text, "synthetic transcript")
-        let stagedDirectory = target.locations.meetingsStaging
-            .appendingPathComponent(source.stagedRecordingID.uuidString, isDirectory: true)
-        XCTAssertTrue(target.exists(stagedDirectory.appendingPathComponent("chunk-000.wav")))
-        // The finalize record is parked: nothing re-dispatches another Mac's
-        // recording on its own, and the audio is still recoverable.
-        XCTAssertFalse(target.exists(stagedDirectory.appendingPathComponent("manifest.json")))
-        XCTAssertTrue(target.exists(stagedDirectory
-            .appendingPathComponent("manifest.json.restored-inactive")))
-        XCTAssertFalse(target.exists(stagedDirectory.appendingPathComponent("soniox-transcription.json")))
-
-        // History rows plus the managed image bytes.
-        let restoredHistory = try SQLiteHistoryStore(path: target.locations.historyDatabase.path)
-        XCTAssertEqual(try restoredHistory.latestClipboardEntries(limit: 20).count, 3)
-        XCTAssertEqual(try Data(contentsOf: target.locations.historyAssets
-            .appendingPathComponent("\(source.imageUUID.uuidString).png")), source.imageBytes)
+        XCTAssertFalse(target.exists(target.locations.meetingsStaging))
+        XCTAssertFalse(target.exists(target.locations.historyDatabase))
+        XCTAssertFalse(target.exists(target.locations.historyAssets))
 
         // Workspace: dashboards restored, executable configuration inert.
         XCTAssertTrue(target.exists(target.locations.monitorRoot
@@ -495,23 +477,17 @@ final class ArtifactBackupEngineTests: XCTestCase {
 
     // MARK: - Fail closed
 
-    func testMissingHistoryImageFailsTheWholeBackup() async throws {
+    /// Damage in data that is not backed up cannot block a backup.
+    func testMissingClipboardImageAndRecordingChunkDoNotBlockABackup() async throws {
         let source = try await makeSource()
-        let asset = source.profile.locations.historyAssets
-            .appendingPathComponent("\(source.imageUUID.uuidString).png")
-        try FileManager.default.removeItem(at: asset)
-        let archive = archiveURL(in: source.profile)
-        do {
-            _ = try await ArtifactBackupEngine(environment: source.environment)
-                .createArchive(at: archive, key: ArtifactBackupTestKeys.make())
-            XCTFail("expected a required-file failure")
-        } catch let error as ArtifactBackupError {
-            guard case .requiredFileMissing(let name) = error else {
-                return XCTFail("unexpected error \(error)")
-            }
-            XCTAssertTrue(name.hasPrefix(source.imageUUID.uuidString))
-        }
-        XCTAssertFalse(source.profile.exists(archive))
+        try FileManager.default.removeItem(at: source.profile.locations.historyAssets
+            .appendingPathComponent("\(source.imageUUID.uuidString).png"))
+        try FileManager.default.removeItem(at: source.profile.locations.meetingsStaging
+            .appendingPathComponent(source.stagedRecordingID.uuidString, isDirectory: true)
+            .appendingPathComponent("chunk-000.wav"))
+        let summary = try await ArtifactBackupEngine(environment: source.environment)
+            .createArchive(at: archiveURL(in: source.profile), key: ArtifactBackupTestKeys.make())
+        XCTAssertTrue(summary.sections.contains(.meetings))
     }
 
     func testExistingCaseVaultWithoutItsKeyIsNeverSilentlyOmitted() async throws {
@@ -535,54 +511,42 @@ final class ArtifactBackupEngineTests: XCTestCase {
         }
     }
 
-    func testLargeStagedRecordingStreamsThroughManyFramesAndRestoresByteForByte() async throws {
+    /// Archives from before 2026-10-21 carried retained meeting audio. They
+    /// still restore it byte for byte, streamed through many frames (1 MiB
+    /// each), with the finalize record parked so nothing re-dispatches another
+    /// Mac's recording on its own.
+    func testOlderArchiveWithALargeRetainedRecordingStillRestoresItParked() async throws {
         let source = try await makeSource()
-        // Bigger than one archive frame (1 MiB), so the whole path — hash,
-        // encrypt, decrypt, write — runs in chunks rather than in memory.
+        let exported = try await source.meetings.exportArtifactGeneration(
+            into: source.profile.root.appendingPathComponent("export", isDirectory: true))
+        var entries = try exported.map {
+            (path: "meetings/" + $0.relativePath, section: ArtifactBackupSection.meetings,
+             data: try Data(contentsOf: $0.url))
+        }
         let bigID = UUID()
-        let directory = source.profile.locations.meetingsStaging
-            .appendingPathComponent(bigID.uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var audio = Data(count: 3 * 1024 * 1024 + 17)
         for index in stride(from: 0, to: audio.count, by: 1024) { audio[index] = UInt8(index % 253) }
-        try audio.write(to: directory.appendingPathComponent("chunk-000.wav"))
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        try MeetingFinalizeManifestStore().write(
+        let record = try JSONEncoder().encode(
             MeetingFinalizeManifest(recorderMeetingId: bigID, startedAt: now, endedAt: now,
                                     durationSeconds: 900, language: nil,
-                                    chunkFileNames: ["chunk-000.wav"], isFinal: true),
-            to: directory)
-
+                                    chunkFileNames: ["chunk-000.wav"], isFinal: true))
+        entries.append((path: "meetings/staged/\(bigID.uuidString)/chunk-000.wav", section: .meetings, data: audio))
+        entries.append((path: "meetings/staged/\(bigID.uuidString)/manifest.json", section: .meetings, data: record))
         let key = ArtifactBackupTestKeys.make()
         let archive = archiveURL(in: source.profile)
-        let summary = try await ArtifactBackupEngine(environment: source.environment)
-            .createArchive(at: archive, key: key, sections: [.meetings])
-        XCTAssertGreaterThan(summary.totalBytes, 3 * 1024 * 1024)
+        _ = try ArtifactBackupTestArchive.make(at: archive, key: key, entries: entries)
 
         let target = try makeTarget()
         let environment = target.environment()
         try await ArtifactBackupEngine(environment: environment)
             .stageRestore(from: archive, key: key, sections: [.meetings])
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: environment)
-        let restored = try Data(contentsOf: target.locations.meetingsStaging
+        let directory = target.locations.meetingsStaging
             .appendingPathComponent(bigID.uuidString, isDirectory: true)
-            .appendingPathComponent("chunk-000.wav"))
-        XCTAssertEqual(restored, audio)
-    }
-
-    func testMissingStagedChunkFailsTheBackup() async throws {
-        let source = try await makeSource()
-        try FileManager.default.removeItem(at: source.profile.locations.meetingsStaging
-            .appendingPathComponent(source.stagedRecordingID.uuidString, isDirectory: true)
-            .appendingPathComponent("chunk-000.wav"))
-        do {
-            _ = try await ArtifactBackupEngine(environment: source.environment)
-                .createArchive(at: archiveURL(in: source.profile), key: ArtifactBackupTestKeys.make(),
-                               sections: [.meetings])
-            XCTFail("expected a required-file failure")
-        } catch let error as ArtifactBackupError {
-            XCTAssertEqual(error, .requiredFileMissing("chunk-000.wav"))
-        }
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("chunk-000.wav")), audio)
+        XCTAssertFalse(target.exists(directory.appendingPathComponent("manifest.json")))
+        XCTAssertTrue(target.exists(directory.appendingPathComponent("manifest.json.restored-inactive")))
     }
 
     func testFutureArchiveSchemaArmsNothing() async throws {
