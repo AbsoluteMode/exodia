@@ -150,6 +150,81 @@ final class ArtifactBackupEngineTests: XCTestCase {
 
     // MARK: - Legacy paths
 
+    func testPopulatedLiveDatabaseExportsHaveStableContentHashesUntilAWrite() async throws {
+        let source = try await makeSource()
+        let engine = ArtifactBackupEngine(environment: source.environment), key = ArtifactBackupTestKeys.make()
+        let first = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
+        let second = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
+        XCTAssertEqual(first.contentFingerprint, second.contentFingerprint,
+                       "VACUUM INTO must be deterministic for unchanged populated Meetings/History stores and sidecars")
+        _ = try source.history.insertClipboardTextEntry(createdAt: Date(), text: "new synthetic entry")
+        let changed = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
+        XCTAssertNotEqual(changed.contentFingerprint, first.contentFingerprint)
+    }
+
+    func testCostsHistoryRoundTripsAndKeepsTheTargetMacsUniqueSpending() async throws {
+        let source = try await makeSource(), target = try makeTarget()
+        let context = AIUsageContext(feature: .agent, account: .openRouter, model: "synthetic/model")
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let sourceEvent = AIUsageEvent(id: "source-request", createdAt: date, context: context,
+            currency: .usd, amount: 0.05, basis: .reported)
+        let targetEvent = AIUsageEvent(id: "target-request", createdAt: date, context: context,
+            currency: .usd, amount: 0.02, basis: .estimated)
+        let usage = AIUsageStore(url: source.profile.locations.usageDatabase)
+        try await usage.insert(sourceEvent)
+        var targetUsage: AIUsageStore? = AIUsageStore(url: target.locations.usageDatabase)
+        try await targetUsage!.insert(targetEvent)
+        targetUsage = nil // Restore runs before stores open, as at app startup.
+        var environment = source.environment
+        environment.usage = usage
+        let file = archiveURL(in: source.profile), key = ArtifactBackupTestKeys.make()
+        let engine = ArtifactBackupEngine(environment: environment)
+        _ = try await engine.createArchive(at: file, key: key)
+        _ = try await engine.inspectArchive(at: file, key: key)
+        let targetEnvironment = target.environment()
+        try await ArtifactBackupEngine(environment: targetEnvironment).stageRestore(from: file, key: key, sections: [.history])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
+        let restored = try await AIUsageStore(url: target.locations.usageDatabase).events(from: .distantPast, to: .distantFuture)
+        XCTAssertEqual(restored.sorted { $0.id < $1.id }, [sourceEvent, targetEvent])
+    }
+
+    func testArchiveWithoutCostsLeavesExistingCostsUntouched() async throws {
+        let source = try await makeSource(), target = try makeTarget()
+        let event = AIUsageEvent(context: .init(feature: .agent, account: .openRouter, model: "synthetic/model"),
+                                 currency: .usd, amount: 0.03, basis: .reported)
+        var targetUsage: AIUsageStore? = AIUsageStore(url: target.locations.usageDatabase)
+        try await targetUsage!.insert(event)
+        targetUsage = nil
+        let original = try ArtifactBackupDigest.ofFile(target.locations.usageDatabase)
+        let file = archiveURL(in: source.profile), key = ArtifactBackupTestKeys.make()
+        _ = try await ArtifactBackupEngine(environment: source.environment).createArchive(at: file, key: key, sections: [.history])
+        let targetEnvironment = target.environment()
+        try await ArtifactBackupEngine(environment: targetEnvironment).stageRestore(from: file, key: key, sections: [.history])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
+        XCTAssertEqual(try ArtifactBackupDigest.ofFile(target.locations.usageDatabase).digest, original.digest)
+    }
+
+    func testFailedRestoreRollsBackTheCostsJournalAlongWithOtherHistory() async throws {
+        let source = try await makeSource(), target = try makeTarget()
+        let context = AIUsageContext(feature: .agent, account: .openRouter, model: "synthetic/model")
+        let usage = AIUsageStore(url: source.profile.locations.usageDatabase)
+        try await usage.insert(AIUsageEvent(id: "source", context: context, currency: .usd, amount: 0.01, basis: .reported))
+        var targetUsage: AIUsageStore? = AIUsageStore(url: target.locations.usageDatabase)
+        try await targetUsage!.insert(AIUsageEvent(id: "target", context: context, currency: .usd, amount: 0.02, basis: .reported))
+        targetUsage = nil
+        let before = try ArtifactBackupDigest.ofFile(target.locations.usageDatabase).digest
+        var environment = source.environment
+        environment.usage = usage
+        let file = archiveURL(in: source.profile), key = ArtifactBackupTestKeys.make()
+        _ = try await ArtifactBackupEngine(environment: environment).createArchive(at: file, key: key, sections: [.history])
+        var faults = ArtifactBackupFaults()
+        faults.beforeCommit = { throw ArtifactBackupError.restoreFailed }
+        let targetEnvironment = target.environment(faults: faults)
+        try await ArtifactBackupEngine(environment: targetEnvironment).stageRestore(from: file, key: key, sections: [.history])
+        XCTAssertThrowsError(try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment))
+        XCTAssertEqual(try ArtifactBackupDigest.ofFile(target.locations.usageDatabase).digest, before)
+    }
+
     /// The backup must read and write exactly where the stores do. These are
     /// the legacy locations the rename preserved; deriving any of them from
     /// the current bundle id would point a beta build at files the app never

@@ -24,6 +24,7 @@ struct ArtifactBackupEnvironment {
     /// registers the instances it owns (AppDelegate does this at startup).
     var meetings: ArtifactMeetingsExporting?
     var history: ArtifactHistoryExporting?
+    var usage: ArtifactUsageExporting?
     var faults = ArtifactBackupFaults()
     var now: () -> Date = Date.init
 
@@ -58,9 +59,10 @@ final class ArtifactBackupEngine {
 
     /// The app hands over the stores it already has open, so an export is a
     /// barrier against their own writers rather than a second connection.
-    func register(meetings: ArtifactMeetingsExporting?, history: ArtifactHistoryExporting?) {
+    func register(meetings: ArtifactMeetingsExporting?, history: ArtifactHistoryExporting?, usage: ArtifactUsageExporting? = nil) {
         if let meetings { environment.meetings = meetings }
         if let history { environment.history = history }
+        if let usage { environment.usage = usage }
     }
 
     // MARK: - Create
@@ -71,6 +73,20 @@ final class ArtifactBackupEngine {
 
     func createArchive(at url: URL, key: Data,
                        sections: Set<ArtifactBackupSection>) async throws -> ArtifactBackupSummary {
+        guard let summary = try await createGeneration(at: url, key: key, sections: sections, previousFingerprint: nil) else {
+            throw ArtifactBackupError.writeFailed
+        }
+        return summary
+    }
+
+    func createArchiveIfChanged(at url: URL, key: Data,
+                                previousFingerprint: String?) async throws -> ArtifactBackupSummary? {
+        try await createGeneration(at: url, key: key, sections: Set(ArtifactBackupSection.allCases),
+                                   previousFingerprint: previousFingerprint)
+    }
+
+    private func createGeneration(at url: URL, key: Data, sections: Set<ArtifactBackupSection>,
+                                  previousFingerprint: String?) async throws -> ArtifactBackupSummary? {
         guard key.count == 32 else { throw ArtifactBackupError.keyUnavailable }
         guard !sections.isEmpty else { throw ArtifactBackupError.nothingSelected }
         guard !isWorking else { throw ArtifactBackupError.busy }
@@ -83,7 +99,8 @@ final class ArtifactBackupEngine {
             sections: sections, locations: environment.locations, inline: secrets.payloads,
             includeCaseVaultFile: secrets.caseVaultKey != nil, caseVaultKey: secrets.caseVaultKey,
             meetings: sections.contains(.meetings) ? try meetingsExporter() : nil,
-            history: sections.contains(.history) ? try historyExporter() : nil)
+            history: sections.contains(.history) ? try historyExporter() : nil,
+            usage: sections.contains(.history) ? environment.usage ?? AIUsageStore(url: environment.locations.usageDatabase) : nil)
 
         let generation = try await stager.stage(request)
         do {
@@ -102,12 +119,18 @@ final class ArtifactBackupEngine {
                 },
                 contentBytes: generation.contentBytes,
                 warnings: Array((warnings + generation.warnings).prefix(64)))
+            let fingerprint = try Self.contentFingerprint(of: manifest,
+                credentials: secrets.payloads.first { $0.path == "credentials/providers.json" }?.data)
+            if fingerprint == previousFingerprint {
+                await stager.discard(generation.directory)
+                return nil
+            }
             let archiveBytes = try await stager.writeArchive(to: url, archiveKey: key, manifest: manifest,
                                                              entries: generation.entries)
             await stager.discard(generation.directory)
             return ArtifactBackupSummary(id: manifest.id, createdAt: manifest.createdAt,
                                          totalBytes: archiveBytes, fileCount: manifest.entries.count,
-                                         sections: present)
+                                         sections: present, contentFingerprint: fingerprint)
         } catch {
             await stager.discard(generation.directory)
             throw error
@@ -137,7 +160,9 @@ final class ArtifactBackupEngine {
                                             createdAt: verification.manifest.createdAt,
                                             totalBytes: size,
                                             fileCount: verification.manifest.entries.count,
-                                            sections: Set(verification.manifest.sections))
+                                            sections: Set(verification.manifest.sections),
+                                            contentFingerprint: try Self.contentFingerprint(of: verification.manifest,
+                                                credentials: verification.inline[.credentials]))
         return ArtifactBackupPreview(summary: summary, warnings: Array(warnings.prefix(64)))
     }
 
@@ -310,6 +335,27 @@ final class ArtifactBackupEngine {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
         } catch { throw ArtifactBackupError.writeFailed }
+    }
+
+    private static func contentFingerprint(of manifest: ArtifactBackupManifest, credentials: Data?) throws -> String {
+        guard let credentials else { return manifest.contentFingerprint }
+        var payload = try JSONDecoder.artifactBackup.decode(ArtifactCredentialsPayload.self, from: credentials)
+        payload.accounts = try ConfigBackupRegistry.credentialsForChangeDetection(payload.accounts)
+        let normalized = try JSONEncoder.artifactBackup.encode(payload)
+        var comparable = manifest
+        if let index = comparable.entries.firstIndex(where: { $0.path == "credentials/providers.json" }) {
+            comparable.contentBytes += Int64(normalized.count) - comparable.entries[index].bytes
+            comparable.entries[index].bytes = Int64(normalized.count)
+            comparable.entries[index].sha256 = ArtifactBackupDigest.of(normalized)
+        }
+        return comparable.contentFingerprint
+    }
+
+    /// Called once before runtime backup work starts; only app-owned scratch
+    /// generations are disposable. Pending restore / recovery roots are separate.
+    func cleanupAbandonedWork() async throws {
+        guard !isWorking else { throw ArtifactBackupError.busy }
+        try await stager.cleanupAbandonedWork(at: environment.locations.stagingWorkRoot)
     }
 
     private func meetingsExporter() throws -> ArtifactMeetingsExporting {

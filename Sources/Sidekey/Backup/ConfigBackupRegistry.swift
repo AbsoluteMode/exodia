@@ -98,16 +98,22 @@ enum ConfigBackupRegistry {
     /// rollback points. The next real snapshot/archive captures the latest token.
     /// WHY: .project-docs/decisions/2026-10-19-planner.md
     static func settingsCredentialsMatch(_ first: [String: String], _ second: [String: String]) -> Bool {
-        guard Set(first.keys) == Set(second.keys) else { return false }
-        do { try validate([:], credentials: first); try validate([:], credentials: second) }
+        do { return try credentialsForChangeDetection(first) == credentialsForChangeDetection(second) }
         catch { return false }
-        return first.allSatisfy { account, value in
-            guard let other = second[account] else { return false }
-            if !account.hasPrefix("calendar.") { return value == other }
-            guard let left = try? JSONDecoder().decode(CalendarCredential.self, from: Data(value.utf8)),
-                  let right = try? JSONDecoder().decode(CalendarCredential.self, from: Data(other.utf8)) else { return false }
-            return left.hasSameClient(as: right)
+    }
+
+    /// Full archives and settings history share the same semantic comparison:
+    /// rotating calendar authorization alone is not a new rollback point.
+    /// The actual archive continues to carry the latest durable authorization.
+    static func credentialsForChangeDetection(_ values: [String: String]) throws -> [String: String] {
+        try validate([:], credentials: values)
+        var result = values
+        for (account, value) in values where account.hasPrefix("calendar.") {
+            var credential = try JSONDecoder().decode(CalendarCredential.self, from: Data(value.utf8))
+            credential.refreshToken = "rotating-authorization"
+            result[account] = String(decoding: try JSONEncoder.artifactBackup.encode(credential), as: UTF8.self)
         }
+        return result
     }
 
     private struct RoutingDocument: Decodable {

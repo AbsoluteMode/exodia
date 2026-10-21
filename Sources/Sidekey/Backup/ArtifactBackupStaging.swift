@@ -119,6 +119,7 @@ struct ArtifactBackupStageRequest: Sendable {
     var caseVaultKey: Data?
     var meetings: ArtifactMeetingsExporting?
     var history: ArtifactHistoryExporting?
+    var usage: ArtifactUsageExporting? = nil
 }
 
 struct ArtifactBackupGeneration: Sendable {
@@ -189,7 +190,11 @@ actor ArtifactBackupStager {
 
     /// Provider job state never travels: a restored copy must not resume a
     /// transcription job that belongs to the original Mac.
-    private static let excludedRecordingNames: Set<String> = ["soniox-transcription.json"]
+    static func isRecordingRuntimeFile(_ relative: String) -> Bool {
+        guard !relative.contains("/") else { return false }
+        let name = relative.lowercased()
+        return name == "soniox-transcription.json" || (name.hasPrefix("soniox-upload-") && name.hasSuffix(".tmp"))
+    }
 
     /// Finder and the OS drop these into any directory the user browses. They
     /// are not application data, so they are skipped rather than failing a
@@ -228,7 +233,7 @@ actor ArtifactBackupStager {
                 entries.append(contentsOf: try await stageMeetings(request, into: directory, warnings: &warnings))
             }
             if request.sections.contains(.history) {
-                entries.append(contentsOf: try stageHistory(request, into: directory, warnings: &warnings))
+                entries.append(contentsOf: try await stageHistory(request, into: directory, warnings: &warnings))
             }
             if request.sections.contains(.planner), fileManager.fileExists(atPath: request.locations.plannerArchive.path) {
                 let copy = directory.appendingPathComponent("planner-v1.json")
@@ -251,6 +256,18 @@ actor ArtifactBackupStager {
     func discard(_ directory: URL) {
         guard directory.lastPathComponent.count == 36 else { return }
         try? fileManager.removeItem(at: directory)
+    }
+
+    func cleanupAbandonedWork(at root: URL) throws {
+        guard fileManager.fileExists(atPath: root.path) else { return }
+        try validateOwnedRoot(root)
+        for item in try listDirectory(root) where UUID(uuidString: item.lastPathComponent) != nil {
+            let values = try resourceValues(item)
+            guard values.isDirectory == true, values.isSymbolicLink != true else { continue }
+            try Task.checkCancellation()
+            try fileManager.removeItem(at: item)
+        }
+        try ConfigBackupFiles.synchronizeDirectory(root)
     }
 
     /// Inline entries first, then files; both deterministic. The restore path
@@ -381,12 +398,13 @@ actor ArtifactBackupStager {
         let root = request.locations.meetingsStaging
         guard fileManager.fileExists(atPath: root.path) else { return [] }
         try validateOwnedRoot(root)
-        let children = try listDirectory(root)
+        let children = try listDirectory(root).filter { !Self.systemMetadataNames.contains($0.lastPathComponent) }
         guard children.count <= Limit.recordingDirectories else { throw ArtifactBackupError.tooLarge }
         var entries: [ArtifactStagedEntry] = []
         var unfinished = 0
         var retained = 0
         for child in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            if Self.systemMetadataNames.contains(child.lastPathComponent) { continue }
             let values = try resourceValues(child)
             guard values.isSymbolicLink != true else { throw ArtifactBackupError.unsafeContent }
             guard values.isDirectory == true else {
@@ -402,17 +420,23 @@ actor ArtifactBackupStager {
                 .appendingPathComponent(name, isDirectory: true)
             var produced: [ArtifactStagedEntry] = []
             var copied = Set<String>()
-            try walk(child, relative: "", depth: 1, maxDepth: 1, pathLabel: "Recordings/" + name) { file, relative in
-                if Self.excludedRecordingNames.contains(relative) { return }
+            try walk(child, relative: "", depth: 1, maxDepth: Limit.workspaceDepth, pathLabel: "Recordings/" + name) { file, relative in
+                if Self.isRecordingRuntimeFile(relative) { return }
                 // Multipart upload bodies duplicate retained WAVs. They are
                 // disposable transport state even after a crash or long upload.
-                if relative.hasPrefix("soniox-upload-"), relative.hasSuffix(".tmp") { return }
-                if relative.hasSuffix(".tmp"), try self.isBeingWritten(file) { unfinished += 1; return }
+                if !relative.contains("/"), relative.hasSuffix(".tmp"), try self.isBeingWritten(file) { unfinished += 1; return }
                 guard retained < Limit.recordingFiles else { throw ArtifactBackupError.tooLarge }
                 retained += 1
-                let archivedName = relative == MeetingFinalizeManifest.fileName + ArtifactRestoreDestination.parkedSuffix
+                var archivedName = relative
+                if relative == MeetingFinalizeManifest.fileName + ArtifactRestoreDestination.parkedSuffix
                     && self.fileManager.fileExists(atPath: child.appendingPathComponent(MeetingFinalizeManifest.fileName).path)
-                    ? "manifest-\(UUID().uuidString).json" + ArtifactRestoreDestination.parkedSuffix : relative
+                {
+                    var index = 0
+                    repeat {
+                        archivedName = "manifest-retained-\(index).json" + ArtifactRestoreDestination.parkedSuffix
+                        index += 1
+                    } while self.fileManager.fileExists(atPath: child.appendingPathComponent(archivedName).path)
+                }
                 let copy = target.appendingPathComponent(archivedName, isDirectory: false)
                 try self.createPrivateDirectory(copy.deletingLastPathComponent())
                 _ = try self.copyStable(file, to: copy, limit: Limit.recordingFile, required: true)
@@ -448,7 +472,7 @@ actor ArtifactBackupStager {
     }
 
     private func stageHistory(_ request: ArtifactBackupStageRequest, into directory: URL,
-                              warnings: inout [String]) throws -> [ArtifactStagedEntry] {
+                              warnings: inout [String]) async throws -> [ArtifactStagedEntry] {
         guard let exporter = request.history else { throw ArtifactBackupError.missingSection }
         let staged = directory.appendingPathComponent("history", isDirectory: true)
         try createPrivateDirectory(staged)
@@ -456,9 +480,13 @@ actor ArtifactBackupStager {
         if export.externalLinkCount > 0 {
             warnings.append("\(export.externalLinkCount) clipboard entries only link to your own files. Those original files are not inside this backup.")
         }
-        return try export.files.map {
+        var entries = try export.files.map {
             try entry(for: $0.url, path: "history/" + $0.relativePath, section: .history)
         }
+        if let file = try await request.usage?.exportArtifactGeneration(into: staged.appendingPathComponent("db")) {
+            entries.append(try entry(for: file, path: ArtifactUsageBackup.archivePath, section: .history))
+        }
+        return entries
     }
 
     /// Monitor and Notify own whole private directories: dashboards, server
@@ -532,7 +560,11 @@ actor ArtifactBackupStager {
         var total: Int64 = 0
         var excludedCaches = 0
         var retainedConfigurations = 0
-        let retentionFolder = "restored-files-" + UUID().uuidString
+        var retentionIndex = 0
+        while fileManager.fileExists(atPath: root.appendingPathComponent("restored-files-retained-\(retentionIndex)").path) {
+            retentionIndex += 1
+        }
+        let retentionFolder = "restored-files-retained-\(retentionIndex)"
         try walk(root, relative: "", depth: 1, maxDepth: Limit.workspaceDepth,
                  pathLabel: prefix == "notify" ? "Notifications" : "Monitor", skipDirectory: { directory in
             guard try ArtifactBackupCache.isTaggedDirectory(directory) else { return false }
