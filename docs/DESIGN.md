@@ -732,8 +732,8 @@ a connected meeting. Calendar retains its native sidebar and detail pane.
 The user subsequently selected a compact inline To-do list; that supersedes
 the original window entry for the To-do catalog action (details below).
 
-- Calendar opens a 980×680 window, minimum 820×560, with extended task management
-  still available in its sidebar. To-do opens in hover. Why: the month grid needs
+- The earlier Calendar window design below is superseded by the 2026-10-21
+  inline Calendar decision. To-do opens in Hover. Historical rationale: the month grid needed
   desktop space; quick task capture needs a small surface. Saved slots stay intact.
 - Use the system font, native controls and semantic surfaces. Titles are 28pt
   bold, object names 13pt, metadata 11–13pt. MacSettingsTheme.text2 keeps metadata
@@ -1051,3 +1051,44 @@ file is retained, matching CaseVaultStore.reset; it does not promise recovery
 without the original key. The two-step reset and its handlers are unchanged.
 Final English offscreen fixtures and the combined full suite are builder gates;
 physical pointer/keyboard/VoiceOver and the real Touch ID panel remain separate.
+
+
+## Calendar inside Hover — 2026-10-21
+
+The user comes here to see today’s schedule without opening a separate app window.
+The first items are the current day, events, and a persistent Connect action.
+The user can inspect an event or connect another provider without losing Hover.
+
+- One 350pt surface, 12pt insets, 8pt spacing. Agenda, event details, feed selection,
+  provider choice and connection use the existing dark glass drawer. Why: the
+  user explicitly asked to stay within Hover, including setup entry points.
+- Calendar opens on today through the tile, search, hotkey and deep link. Day
+  arrows and Today navigate in place; each reopening starts on today again.
+- Event rows use a 45pt time column, a 12pt medium title (up to two lines), 10pt
+  source and a disclosure chevron. Full title/notes/location are in inline
+  scrollable details. Why: longer content must be readable without a window.
+- Connect stays in the header. Google, Outlook, Apple and Zoom lead to the same
+  CalendarConnectView authorization used by Integrations. Advanced registration
+  fields are collapsed in Hover and hidden from normal Integrations sheets.
+- Pending Google/Zoom approval stays visible and prevents real authorization.
+  Empty, loading, disconnected, stale/error and busy states retain a path back.
+- All rows and header actions use a full-target rounded highlight (6% normal,
+  15% hover, 23% pressed white), 1.5pt focus outline and 42% disabled opacity.
+  Disabled controls suppress active hover/press. Foreground is 96% white, secondary
+  text at least 76%. Reduce Motion removes the short hover color animation and
+  disables panel transactions; geometry never changes during hover/press.
+- A provider browser/macOS prompt is an explicit setup handoff; the Calendar
+  panel remains open during the serialized connection. Cancel/Back cancels it.
+  Source events and local archive data keep their current formats.
+
+Verification: synthetic NSHostingView fixtures at 310/360/500pt cover the agenda,
+long event list, details, providers, pending Google, Outlook/Apple connections,
+feed selection and a busy connection. A separate fixture disables animations.
+These fixtures use temporary stores, fake credentials and no network. Physical
+hover/keyboard/VoiceOver, system Reduce Motion and live provider consent remain
+separate native acceptance; no second app or worker package is launched.
+
+Assumptions: daily browsing is sufficient for the compact entry; event editing
+and a month grid are not added to Hover. The explicit current-day requirement
+supersedes the former window presentation. See
+`.project-docs/decisions/2026-10-21-calendar-hover.md`.

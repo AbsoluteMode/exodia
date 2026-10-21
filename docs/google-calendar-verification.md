@@ -14,7 +14,7 @@ registration details and provider status belong to [Planner](planner.md#public-v
 Application purpose:
 
 > Whytap is a native macOS productivity app. Its Calendar feature combines the
-> user's selected calendars in one month view and daily agenda. Google events
+> user's selected calendars in one daily agenda inside Hover. Google events
 > are read-only; users choose which subscribed calendars to display.
 
 Scope justifications:
@@ -22,7 +22,7 @@ Scope justifications:
 | Requested scope | Why the feature needs it |
 | --- | --- |
 | `https://www.googleapis.com/auth/calendar.calendarlist.readonly` | Lists subscribed calendars by name in the Calendars selector so the user can show or hide each feed. Reading only owned calendars would exclude shared calendars the user has subscribed to. |
-| `https://www.googleapis.com/auth/calendar.events.readonly` | Reads event titles, start/end times, descriptions, locations and meeting/original links for the displayed six-week range. The month and selected-day agenda need these details; free/busy alone cannot supply them. |
+| `https://www.googleapis.com/auth/calendar.events.readonly` | Reads event titles, start/end times, descriptions, locations and meeting/original links for the selected day. The daily agenda and inline event details need this information; free/busy alone cannot supply them. |
 
 Data handling, verified against the native implementation:
 
@@ -43,7 +43,7 @@ hidden. Example calendars: **Whytap demo** and **Team demo**; example event:
 **Design review**, 10:00–10:30, **Studio**, with a harmless demonstration meeting
 URL. Do not copy private meetings into the recording.
 
-1. Show the actual native Whytap Calendar window and its connection entry.
+1. Show the actual native Whytap Calendar inside Hover, today’s agenda and its Connect entry.
 2. Record the actual Google OAuth flow in English, including the full consent
    screen, application identity, browser address containing the matching client
    ID, and both requested permissions. A development warning, if present during
@@ -52,11 +52,11 @@ URL. Do not copy private meetings into the recording.
    review test; do not enable the public packaging approval flag for it. If the
    public gate is already installed, the designated builder must prepare an
    owner-only review package without bundled Google client configuration. The
-   owner can supply the existing project client in Advanced app setup for this
+   owner can supply the existing project client in Hover → Calendar → Connect → Advanced app setup for this
    recording; do not change its ID or distribute that package publicly. Keep
    the normal one-app, signature, data and safe-restart checks.
 4. Show the subscribed calendar names in **Calendars**, hide/show a feed, then
-   show **Design review** in the month and daily agenda. Open its details to
+   show **Design review** in the daily agenda. Open its inline details to
    demonstrate times, location and meeting/original link. These actions show
    the actual use of both scopes.
 5. Disconnect the demonstration account. Confirm its external events disappear

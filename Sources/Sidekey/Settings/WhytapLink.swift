@@ -108,7 +108,7 @@ enum WhytapLink {
         case .quit: return .settings(.quitRow)
         case .settings: return .settings(.tab(.apiAndModels))
         case .tasks: return .hoverPanel(.tasks)
-        case .calendar: return .planner(.calendar)
+        case .calendar: return .hoverPanel(.calendar)
         case .translate: return .translation(.text)
         // The window opens idle; subtitles start from its own button.
         case .subtitles: return .translation(.subtitles)

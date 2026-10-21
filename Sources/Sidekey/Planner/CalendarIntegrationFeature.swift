@@ -52,7 +52,7 @@ enum CalendarConnectionReadiness: Equatable {
     var message: String? {
         switch self {
         case .available: return nil
-        case .setupRequired: return "This build has no registered calendar client. Source users can configure their own in Calendar → Connect account → Advanced app setup."
+        case .setupRequired: return "This build has no registered calendar client. Use a configured build or supply your own registration in Calendar → Connect → Advanced app setup."
         case .awaitingGoogleVerification: return "Google verification is not complete. New connections will be available after approval."
         case .awaitingZoomPublication: return "Zoom publication is not complete. New connections will be available after approval."
         }

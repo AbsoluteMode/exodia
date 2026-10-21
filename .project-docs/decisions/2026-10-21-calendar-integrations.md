@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Planner/CalendarIntegrationFeature.swift
     confirmed_at: 2026-10-21
-related: [2026-10-19-planner.md]
+related: [2026-10-19-planner.md, 2026-10-21-calendar-hover.md]
 ---
 
 ## Decision
@@ -25,8 +25,9 @@ related: [2026-10-19-planner.md]
 Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calendar
 and Zoom Calendar separately. Each entry describes the actual calendar access,
 shows its connection or approval state, and opens a provider-specific sheet.
-Ordinary users do not enter OAuth client configuration. The Calendar window
-retains its source/feed controls and advanced source-user client setup.
+Ordinary users do not enter OAuth client configuration. The later
+[Calendar in Hover decision](2026-10-21-calendar-hover.md) moves Calendar's feed
+controls and advanced source-user client setup into Hover.
 
 Registration and production publishing status are not evidence of provider
 approval. Shared Google and Zoom clients require an explicit packaging approval

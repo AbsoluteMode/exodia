@@ -94,6 +94,9 @@ struct CalendarConnectView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var provider: CalendarProvider
     let allowsProviderSelection: Bool
+    private let allowsAdvancedSetup: Bool
+    private let compact: Bool
+    private let onClose: (() -> Void)?
     private let configurationInfo: [String: Any]?
     @State private var label = ""
     @State private var clientID = ""
@@ -108,15 +111,95 @@ struct CalendarConnectView: View {
     private var accountStorageAvailable: Bool { provider == .apple || connections.accountConnectionIssue == nil }
 
     init(connections: CalendarConnections, provider: CalendarProvider = .google,
-         allowsProviderSelection: Bool = true, configurationInfo: [String: Any]? = Bundle.main.infoDictionary) {
+         allowsProviderSelection: Bool = true, configurationInfo: [String: Any]? = Bundle.main.infoDictionary,
+         compact: Bool = false, allowsAdvancedSetup: Bool? = nil, onClose: (() -> Void)? = nil) {
         self.connections = connections
         self._provider = State(initialValue: provider)
         self.allowsProviderSelection = allowsProviderSelection
+        self.compact = compact
+        self.allowsAdvancedSetup = allowsAdvancedSetup ?? allowsProviderSelection
+        self.onClose = onClose
         self.configurationInfo = configurationInfo
         self._browser = State(initialValue: CalendarBrowserSignIn(configurationInfo: configurationInfo))
     }
 
     var body: some View {
+        Group {
+            if compact { compactBody } else { standardBody }
+        }
+        .onAppear { loadRegisteredClient() }
+        .onChange(of: provider) { _, _ in loadRegisteredClient(); error = nil; showSetup = false }
+        .onChange(of: clientID) { oldID, newID in
+            clientSecret = CalendarClientConfiguration.secretAfterClientIDChange(from: oldID, to: newID,
+                currentSecret: clientSecret, registered: registeredClient)
+        }
+        .onDisappear { signInTask?.cancel(); browser.cancel() }
+    }
+
+    private var canConnect: Bool {
+        readiness == .available && accountStorageAvailable && connections.connectionBlockReason == nil &&
+        !working && !connections.isConnecting && (provider == .apple || !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var compactBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(provider.integrationTitle).font(.system(size: 13, weight: .semibold))
+                Text(provider.permissionSummary).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                if provider != .apple {
+                    TextField("Account name (optional)", text: $label).textFieldStyle(.roundedBorder)
+                        .modifier(CalendarHoverFieldFeedback()).disabled(working)
+                    Text("Connects your calendar only. No Whytap account or app sign-in.")
+                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
+                    if allowsAdvancedSetup {
+                        CalendarHoverButton { showSetup.toggle() } label: {
+                            Label("Advanced app setup", systemImage: showSetup ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 11)).padding(7).frame(maxWidth: .infinity, alignment: .leading)
+                        }.disabled(working).accessibilityValue(showSetup ? "Expanded" : "Collapsed")
+                        if showSetup {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("For source builds using your own provider registration.").font(.system(size: 11))
+                                TextField("OAuth client ID", text: $clientID).textFieldStyle(.roundedBorder)
+                                    .modifier(CalendarHoverFieldFeedback()).disabled(working)
+                                if provider == .google {
+                                    SecureField("Desktop client secret", text: $clientSecret).textFieldStyle(.roundedBorder)
+                                        .modifier(CalendarHoverFieldFeedback()).disabled(working)
+                                }
+                                Text(setupText).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                            }.padding(.top, 6)
+                        }
+                    }
+                }
+                if let message = readiness.message ?? (provider == .apple ? nil : connections.accountConnectionIssue) {
+                    Text(message).font(.system(size: 11)).foregroundStyle(MacSettingsTheme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let message = connections.connectionBlockReason {
+                    Text(message).font(.system(size: 11)).foregroundStyle(MacSettingsTheme.orange)
+                }
+                if working {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(provider == .apple ? "Allow access in the system prompt…" : "Finish connecting in your browser…")
+                            .font(.system(size: 11))
+                    }
+                } else if connections.isConnecting {
+                    Text("Finish the calendar connection already open.").font(.system(size: 11))
+                }
+                if let error { Text(error).font(.system(size: 11)).foregroundStyle(MacSettingsTheme.orange) }
+                HStack(spacing: 8) {
+                    IntegrationAction(title: "Cancel") { cancel() }
+                    Spacer(minLength: 0)
+                    IntegrationAction(title: provider == .apple ? "Allow access" : "Connect",
+                        primary: true, enabled: canConnect) { connect() }
+                }
+                IntegrationLink(title: "Calendar privacy", destination: URL(string: "https://whytap.ai/calendar-privacy/")!)
+                    .font(.system(size: 11))
+            }.padding(3).frame(maxWidth: .infinity, alignment: .leading)
+        }.scrollIndicators(.visible)
+    }
+
+    private var standardBody: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(allowsProviderSelection ? "Connect a calendar" : "Connect " + provider.integrationTitle).font(.title2.bold())
             Text("Bring your schedule together in Whytap.").foregroundStyle(MacSettingsTheme.text2)
@@ -146,7 +229,7 @@ struct CalendarConnectView: View {
                         }.padding(.top, 8)
                     }
                 }
-                Text("Sign-in opens your browser. Whytap receives calendar access; your account password stays with the provider. Tokens are saved in Keychain.")
+                Text("Connect opens your browser to allow calendar access. No Whytap account or app sign-in is needed. Your password stays with the provider; access tokens are saved in Keychain.")
                     .font(.caption).foregroundStyle(MacSettingsTheme.text2).fixedSize(horizontal: false, vertical: true)
             }
             if let message = readiness.message {
@@ -171,24 +254,17 @@ struct CalendarConnectView: View {
                 IntegrationLink(title: "Calendar privacy", destination: URL(string: "https://whytap.ai/calendar-privacy/")!)
                     .font(.caption)
                 Spacer()
-                IntegrationAction(title: "Cancel") {
-                    signInTask?.cancel(); browser.cancel(); dismiss()
-                }.keyboardShortcut(.cancelAction)
-                IntegrationAction(title: provider == .apple ? "Allow calendar access" : "Sign in",
-                    primary: true, enabled: readiness == .available && accountStorageAvailable && connections.connectionBlockReason == nil && !working && !connections.isConnecting &&
-                        (provider == .apple || !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)) { connect() }
+                IntegrationAction(title: "Cancel") { cancel() }.keyboardShortcut(.cancelAction)
+                IntegrationAction(title: provider == .apple ? "Allow calendar access" : "Connect",
+                    primary: true, enabled: canConnect) { connect() }
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(26).frame(width: 480).background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { loadRegisteredClient() }
-        .onChange(of: provider) { _, _ in loadRegisteredClient(); error = nil; showSetup = false }
-        .onChange(of: clientID) { oldID, newID in
-            clientSecret = CalendarClientConfiguration.secretAfterClientIDChange(from: oldID, to: newID,
-                currentSecret: clientSecret, registered: registeredClient)
-        }
-        .onDisappear { signInTask?.cancel(); browser.cancel() }
     }
+
+    private func close() { if let onClose { onClose() } else { dismiss() } }
+    private func cancel() { signInTask?.cancel(); browser.cancel(); close() }
 
     private func loadRegisteredClient() {
         clientID = registeredClient?.clientID ?? ""
@@ -236,7 +312,8 @@ struct CalendarConnectView: View {
                     } catch { try? await connections.oauth.disconnect(id); throw error }
                 }
                 try Task.checkCancellation()
-                dismiss()
+                if compact { NSApp.activate(ignoringOtherApps: true) }
+                close()
             } catch is CancellationError { }
             catch { self.error = (error as? CalendarConnectionError)?.localizedDescription ?? "Couldn’t connect the calendar. Try again." }
         }

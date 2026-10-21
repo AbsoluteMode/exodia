@@ -1,7 +1,8 @@
 # Whytap Planner
 
 Open **Search all tools → To-do** for a compact list inside hover.
-**Calendar** opens the native Planner window. The tools can also be added from Settings → Toolbox; adding this
+**Calendar** opens today’s agenda inside Hover, with a visible **Connect** button.
+The tools can also be added from Settings → Toolbox; adding this
 feature does not change existing saved tool layouts or positional shortcuts.
 
 ## Tasks and Whytap events
@@ -15,14 +16,10 @@ The draft survives closing the panel. Whitespace-only input does not block resto
 or update restart. Escape or a click outside dismisses it;
 Back returns to tools. Like other inline tools, To-do follows Hover visibility and
 meeting/agent priority: temporarily unavailable Hover does not open a second window,
-and interrupted input is retained for the next opening. Tasks remain local and also stay available in the Planner
-window for search, editing and confirmed deletion. Whytap events support
-titles, start/end times, all-day spans, locations, notes, https meeting links and
-confirmed deletion. All-day end dates in the editor are inclusive; storage uses
-an exclusive boundary. Civil all-day dates survive a time-zone change. Incoming
-all-day ranges accept both midnight-exclusive ends and a final-day time. Moving
-an event's start preserves its duration; toggling All day restores its previous
-times of day while retaining the selected dates. Validation stays in its editor.
+and interrupted input is retained for the next opening. Existing local tasks and
+Whytap events retain their archive format. This change does not delete local
+content or existing calendar connections. The former Planner editor remains an
+internal compatibility surface; normal Calendar entry points no longer open it.
 
 The local planner is stored privately in Application Support/Sidekey/Planner.
 Changes persist atomically before appearing in the interface. Unreadable or
@@ -41,24 +38,29 @@ Planner support preserve connections already configured on the target Mac.
 
 ## Unified calendar
 
-The month grid and selected-day agenda combine the local Whytap calendar with
-selected external calendars. Use **Calendars** to hide/show individual feeds,
-inspect the last successful refresh and connection errors, or disconnect an
-account. The displayed time zone is the Mac's current time zone. Recurring
-external events are expanded by each provider for the visible six-week range.
-Matching external iCalendar UIDs with identical occurrence bounds collapse into
-one agenda item, retaining meeting/original links and an additional-source count;
-unrelated events are never merged by title alone.
+Calendar opens on **today** inside Hover. The header’s **Connect** opens provider
+selection and the same connection flow used by Settings → Integrations. It does
+not create a Whytap account. Previous/next day and Today stay in the panel;
+opening Calendar again always returns to today. Click an event for full details
+inside Hover. A meeting/original link opens only when explicitly clicked.
 
-External connections are **read-only** in this first implementation. Edit them in
-the original app; Whytap refreshes on opening the calendar, changing month,
-connecting/disconnecting, explicit Refresh and every minute while it is visible.
-Native calendar-change notifications trigger another refresh. Previously fetched
-events remain visible after a network failure and are marked potentially stale.
-There is no background sync when the calendar view is closed and no persistent
-external-event cache. A source without a successful first sync is not labelled
-as synced. Disconnect deletes its Keychain credential and displayed events;
-provider-side consent can additionally be revoked in the provider's account UI.
+**Calendars** chooses which local/connected feeds are shown. Account removal is
+in Settings → Integrations. Event times use the Mac’s current time zone. Matching
+external iCalendar UIDs with identical occurrence bounds collapse into one agenda
+item; unrelated events are never merged by title. Events spanning midnight and
+all-day events appear on each applicable day with an exclusive end boundary.
+
+Events are read-only in Hover. Whytap fetches the selected day on opening, day
+changes, account changes, Refresh, and every minute while visible. Native
+calendar-change notifications update EventKit feeds. Errors retain the last
+loaded data and offer connection details through Calendars. Closing Hover stops
+polling; there is no background sync or persistent external-event cache.
+
+The explicitly opened panel survives pointer exit; Escape/outside click closes
+it. During provider authorization the panel stays open so clicking the browser
+or macOS prompt does not cancel the connection. Explicit Cancel/Back cancels it.
+A visible Calendar defers restore and update restart; ordinary backups still run.
+Disconnect removes local credentials/events, keeping the original provider data.
 
 **Apple Calendar:** Connect account → Apple Calendar requests the macOS calendar
 permission. It shows the calendars available through EventKit, including iCloud.
@@ -92,8 +94,8 @@ Settings → **Integrations** lists **Google Calendar**, **Outlook Calendar**,
 **Apple Calendar** and **Zoom Calendar** with separate permission descriptions,
 account controls and provider-specific connection sheets. Google and Zoom show
 their pending review/publication state and do not start new shared-client sign-in
-before public approval. Existing accounts can still be disconnected. The Calendar
-window retains feed selection and advanced setup for source users' own clients.
+before public approval. Existing accounts can still be disconnected. Calendar keeps feed selection and collapsed Advanced app setup inside Hover
+for source users’ own clients.
 
 Use **Whytap** as the application name and public consent-screen brand.
 
@@ -108,7 +110,7 @@ Provider registration and public verification remain separate external steps.
 For shared Google and Zoom clients, `publicAccessApproved` must be the string
 `"true"` in the private native-client packaging configuration after actual
 approval. An absent, false or malformed value keeps new sign-in blocked in both
-Integrations and Planner. Microsoft does not use this Google/Zoom review gate;
+Integrations and Hover. Microsoft does not use this Google/Zoom review gate;
 its organizational restrictions still apply. Source users can supply an
 independent native client in Advanced app setup.
 
@@ -279,7 +281,7 @@ For Google's verification form, justify each requested scope from the actual UI:
 | Scope | Required behavior |
 | --- | --- |
 | `calendar.calendarlist.readonly` | List subscribed calendars by name so the user can choose the feeds to display. |
-| `calendar.events.readonly` | Read events for the displayed six-week range, show the selected day's agenda and open its meeting/original link. |
+| `calendar.events.readonly` | Read events for the selected day, show the agenda and inline details, and open its meeting/original link. |
 
 The review video must show the real app and browser flow in English: open the
 calendar, choose Google, show the consent screen and requested permissions,

@@ -1169,8 +1169,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             },
             openCalendar: { [weak self] in
-                self?.registerIslandHotkeyActivity()
-                PlannerWindowController.shared.show(.calendar)
+                guard let self else { return }
+                self.registerIslandHotkeyActivity()
+                AppState.shared.programmaticHoverExpansion = true
+                self.hoverPanelRequestToken += 1
+                AppState.shared.programmaticHoverPanelRequest = HoverPanelRequest(
+                    panel: .calendar, token: self.hoverPanelRequestToken
+                )
             },
             openTranslate: { [weak self] in self?.openTranslation(.text) },
             openSubtitles: { [weak self] in self?.openTranslation(.subtitles) },

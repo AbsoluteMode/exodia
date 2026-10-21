@@ -487,7 +487,10 @@ final class UpdateController: NSObject, ObservableObject {
         if appState.calendarConnectionActive {
             return "Ready. Finish calendar sign-in, then choose Restart."
         }
-        if appState.plannerActive || appState.todoActive {
+        if appState.calendarHoverActive {
+            return "Ready. Close Calendar, then choose Restart."
+        }
+        if appState.plannerActive || appState.todoActive || appState.calendarHoverActive {
             return "Ready. Finish or clear your To-do draft and close To-do and Planner, then choose Restart."
         }
         if appState.agentPhase != .idle {
