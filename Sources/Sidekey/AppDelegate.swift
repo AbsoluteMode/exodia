@@ -203,6 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nowPlayingCoordinator: NowPlayingCoordinator?
     /// Case broker socket for the bundled `whytap` helper; running app only.
     private var caseBrokerServer: CaseBrokerServer?
+    private var appControlController: AppControlController?
     /// Case Approve prompts in the island (Y / N / A keys) and their panel.
     private var caseApprovalController: CaseApprovalController?
     private var caseApprovalPanel: CaseApprovalPanel?
@@ -3773,6 +3774,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let bundleID = Bundle.main.bundleIdentifier
         else { return }
         let inspector = CaseSystemProcessInspector()
+        let controls = AppControlController()
+        appControlController = controls
         let approvals = CaseApprovalController()
         caseApprovalController = approvals
         caseApprovalPanel = CaseApprovalPanel(controller: approvals)
@@ -3786,7 +3789,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 inspector: inspector,
                 builtInOpenCodePIDs: { CaseBuiltInAgentProcesses.shared.pids }),
             approvals: approvals,
-            authenticator: LocalCaseAuthenticator())
+            authenticator: LocalCaseAuthenticator(),
+            appControl: { [controls] request in await controls.handle(request) })
         let server = CaseBrokerServer(
             socketURL: CaseBrokerPaths.socketURL(bundleID: bundleID),
             broker: broker,

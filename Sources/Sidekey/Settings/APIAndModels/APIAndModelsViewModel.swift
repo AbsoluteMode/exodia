@@ -297,11 +297,18 @@ final class APIAndModelsViewModel: ObservableObject {
         resolver.missingProviderHint(for: feature)
     }
 
+    /// Local preflight for application-control requests; never exposes the key.
+    func accountIsAvailableForSelection(_ account: ProviderAccount) -> Bool {
+        access(account) != nil
+    }
+
     /// A verified model is assigned at once; a new one only after its probe
     /// passes. Otherwise the previous route stays and the row says why. A model
     /// whose earlier probe failed is probed again: picking it is the user
     /// asking to check it again, so a stored failure never bans it for good.
-    func select(model: String, account: ProviderAccount, for feature: AIFeature) async {
+    @discardableResult
+    func select(model: String, account: ProviderAccount, for feature: AIFeature) async -> Bool {
+        guard !checking.contains(feature) else { return false }
         // Re-picking the current model keeps its provider; a new model starts on Auto.
         let current = routing.route(for: feature)
         let route = FeatureRoute(
@@ -311,12 +318,18 @@ final class APIAndModelsViewModel: ObservableObject {
         let failedBefore = resolver.hasStoredProbeFailure(model: model, account: account, for: feature)
         switch resolver.verdict(model: model, account: account, for: feature, ignoringStoredFailure: true) {
         case .verified where !failedBefore:
+            guard !Task.isCancelled else { return false }
             assign(route, to: [feature])
+            return true
         case .notSupported(let reason):
             messages[feature] = reason
             recompute()
+            return false
         case .verified, .new:
-            if await probePassed(route, for: [feature]) { assign(route, to: [feature]) }
+            guard await probePassed(route, for: [feature]), !Task.isCancelled,
+                  routing.route(for: feature) == current else { return false }
+            assign(route, to: [feature])
+            return true
         }
     }
 

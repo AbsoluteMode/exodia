@@ -1,0 +1,177 @@
+import Foundation
+
+/// Local stdio MCP facade. It cannot ask the broker for Case keys or run commands.
+public final class AppControlMCPServer {
+    private let call: (AppControlRequest, AppControlCancellation?) -> AppControlResponse
+    public init(call: @escaping (AppControlRequest) -> AppControlResponse) { self.call = { request, _ in call(request) } }
+    public init(cancellableCall: @escaping (AppControlRequest, AppControlCancellation?) -> AppControlResponse) { self.call = cancellableCall }
+
+    /// Keep stdin readable while a probe is running, so MCP cancellation or
+    /// EOF shuts down that request's socket and cancels the app's pending task.
+    public func run(readLine: () -> String?, write: @escaping (String) -> Void) {
+        let pending = AppControlPendingCalls()
+        let output = NSLock()
+        let group = DispatchGroup()
+        func emit(_ line: String?) {
+            guard let line else { return }
+            output.withLock { write(line) }
+        }
+        while let line = readLine() {
+            let bytes = line.utf8.count <= 32_768 ? line.data(using: .utf8) : nil
+            let request = bytes.flatMap { try? JSONDecoder().decode(AppControlValue.self, from: $0) }?.object
+            if request?["jsonrpc"] == .string("2.0"), request?["method"] == .string("notifications/cancelled"),
+               let id = request?["params"]?.object?["requestId"], let key = Self.requestKey(id) {
+                pending.cancel(key)
+            } else if request?["method"] == .string("tools/call"), let id = request?["id"], let key = Self.requestKey(id) {
+                guard let cancellation = pending.begin(key) else {
+                    emit(error(id, -32000, "Duplicate request id or too many pending calls"))
+                    continue
+                }
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async { [self] in
+                    let reply = handle(line: line, cancellation: cancellation)
+                    pending.end(key)
+                    if !cancellation.isCancelled { emit(reply) }
+                    group.leave()
+                }
+            } else { emit(handle(line: line)) }
+        }
+        pending.cancelAll()
+        group.wait()
+    }
+
+    private static func requestKey(_ id: AppControlValue) -> String? {
+        switch id {
+        case .string(let value): return "s:" + value
+        case .int(let value): return "i:\(value)"
+        case .null: return "null"
+        default: return nil
+        }
+    }
+
+    public func handle(line: String) -> String? {
+        handle(line: line, cancellation: nil)
+    }
+
+    private func handle(line: String, cancellation: AppControlCancellation?) -> String? {
+        guard line.utf8.count <= 32_768, let bytes = line.data(using: .utf8),
+              let value = try? JSONDecoder().decode(AppControlValue.self, from: bytes) else {
+            return error(.null, -32700, "Parse error or request too large")
+        }
+        guard let request = value.object, request["jsonrpc"] == .string("2.0"),
+              let method = request["method"]?.string else { return error(.null, -32600, "Invalid Request") }
+        guard let id = request["id"] else { return nil } // No notification can mutate state.
+        switch id { case .string, .int, .null: break; default: return error(.null, -32600, "Invalid id") }
+        guard request["params"] == nil || request["params"]?.object != nil else { return error(id, -32602, "Invalid params") }
+        let params = request["params"]?.object ?? [:]
+        let result: AppControlValue
+        switch method {
+        case "initialize":
+            let supported = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
+            let requested = params["protocolVersion"]?.string ?? ""
+            result = .object([
+                "protocolVersion": .string(supported.contains(requested) ? requested : supported.last!),
+                "capabilities": .object(["tools": .object([:])]),
+                "serverInfo": .object(["name": .string("whytap"), "version": .string("0.1.0")]),
+                "instructions": .string("Control the running Whytap app with explicit tools. Read state/settings first; every write requires the exact expected current value. Use the exact account and model ID requested by the user. After an unavailable response read state before retrying a write. Settings affect subsequent operations. Only non-secret settings are exposed; no keys, transcripts, clipboard, recording, shell commands or app installation. Model selection uses the same validation as Settings and may send a tiny synthetic paid probe. Never write preferences files directly.")
+            ])
+        case "ping": result = .object([:])
+        case "tools/list": result = .object(["tools": .array(Self.tools)])
+        case "tools/call":
+            guard let name = params["name"]?.string,
+                  let operation = Self.operations[name],
+                  params["arguments"] == nil || params["arguments"]?.object != nil else {
+                return error(id, -32602, "Unknown tool or invalid arguments")
+            }
+            guard cancellation?.isCancelled != true else { return nil }
+            let response = call(AppControlRequest(operation, arguments: params["arguments"]?.object ?? [:]), cancellation)
+            let payload = Self.jsonValue(response)
+            let text = Self.encode(payload) ?? "{}"
+            result = .object([
+                "content": .array([.object(["type": .string("text"), "text": .string(text)])]),
+                "structuredContent": payload, "isError": .bool(!response.ok)
+            ])
+        default: return error(id, -32601, "Method not found")
+        }
+        return Self.encode(.object(["jsonrpc": .string("2.0"), "id": id, "result": result]))
+    }
+
+    private func error(_ id: AppControlValue, _ code: Int, _ message: String) -> String? {
+        Self.encode(.object(["jsonrpc": .string("2.0"), "id": id,
+                             "error": .object(["code": .int(code), "message": .string(message)])]))
+    }
+
+    private static func jsonValue<T: Encodable>(_ value: T) -> AppControlValue {
+        guard let bytes = try? JSONEncoder().encode(value),
+              let result = try? JSONDecoder().decode(AppControlValue.self, from: bytes) else { return .null }
+        return result
+    }
+
+    private static func encode(_ value: AppControlValue) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return (try? encoder.encode(value)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    private static let operations = Dictionary(uniqueKeysWithValues:
+        ["get_state", "get_settings", "list_models", "set_model", "list_providers", "set_provider", "set_setting"].map {
+            ("whytap_" + $0, $0)
+        })
+
+    static let tools: [AppControlValue] = {
+        let string: AppControlValue = .object(["type": .string("string")])
+        let route: AppControlValue = .object(["anyOf": .array([
+            .object(["type": .string("null")]),
+            schema(["account": string, "model": string,
+                    "provider": .object(["type": .array([.string("string"), .string("null")])])], required: ["account", "model", "provider"])
+        ])])
+        return [
+            tool("get_state", "Read live build identity, activity flags and every feature's exact model route. No user content or keys.", [:], []),
+            tool("get_settings", "Read supported settings and accepted values. No raw UserDefaults access.", [:], []),
+            tool("list_models", "Search the app's cached compatible models and configured accounts for one feature; no inference request.",
+                 ["feature": string, "query": string, "account": string,
+                  "limit": .object(["type": .string("integer"), "minimum": .int(1), "maximum": .int(100)])], ["feature"]),
+            tool("set_model", "Set the exact model for one feature through Settings validation; a new model starts on Auto. May run a tiny synthetic paid probe. Requires the route from get_state as expected (null if unset). Conflicts leave the current route unchanged.",
+                 ["feature": string, "account": string, "model": string, "expected": route],
+                 ["feature", "account", "model", "expected"], writes: true),
+            tool("list_providers", "List OpenRouter endpoints for the feature's current model; free metadata request, no inference.",
+                 ["feature": string], ["feature"]),
+            tool("set_provider", "Pin one OpenRouter endpoint or choose Auto (null); validates the endpoint against the model. Requires the exact current route from get_state.",
+                 ["feature": string, "provider": .object(["type": .array([.string("string"), .string("null")])]), "expected": route],
+                 ["feature", "provider", "expected"], writes: true),
+            tool("set_setting", "Change one supported setting using its existing app store. Read get_settings first and pass the exact expected current value.",
+                 ["key": .object(["type": .string("string"), "enum": .array(["dropMode", "inputLanguage", "outputLanguage", "autoHideIsland"].map(AppControlValue.string))]),
+                  "value": .object(["type": .array([.string("string"), .string("boolean"), .string("null")])]),
+                  "expected": .object(["type": .array([.string("string"), .string("boolean"), .string("null")])])],
+                 ["key", "value", "expected"], writes: true)
+        ]
+    }()
+
+    private static func schema(_ properties: [String: AppControlValue], required: [String]) -> AppControlValue {
+        .object(["type": .string("object"), "properties": .object(properties),
+                 "required": .array(required.map(AppControlValue.string)), "additionalProperties": .bool(false)])
+    }
+
+    private static func tool(_ name: String, _ description: String, _ properties: [String: AppControlValue], _ required: [String], writes: Bool = false) -> AppControlValue {
+        .object(["name": .string("whytap_" + name), "description": .string(description),
+                 "inputSchema": schema(properties, required: required),
+                 "annotations": .object(["readOnlyHint": .bool(!writes), "destructiveHint": .bool(false),
+                                          "idempotentHint": .bool(!writes), "openWorldHint": .bool(name == "set_model" || name.contains("provider"))])])
+    }
+}
+
+private final class AppControlPendingCalls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String: AppControlCancellation] = [:]
+    func begin(_ key: String) -> AppControlCancellation? {
+        lock.withLock {
+            guard calls[key] == nil, calls.count < 16 else { return nil }
+            let cancellation = AppControlCancellation()
+            calls[key] = cancellation
+            return cancellation
+        }
+    }
+    func end(_ key: String) { lock.withLock { _ = calls.removeValue(forKey: key) } }
+    func cancel(_ key: String) { lock.withLock { calls[key]?.cancel() } }
+    func cancelAll() { lock.withLock { for call in calls.values { call.cancel() } } }
+}
