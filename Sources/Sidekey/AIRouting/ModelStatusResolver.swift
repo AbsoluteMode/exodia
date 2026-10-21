@@ -163,7 +163,9 @@ struct ModelStatusResolver {
             for id in ids {
                 let state = verdict(model: id, account: account, for: feature)
                 if case .notSupported = state, !isSelected(id) { continue }
-                let date = snapshot?.models.first { $0.id == id }?.catalogDate
+                let entry = snapshot?.models.first { $0.id == id }
+                let date = account == .deepgram ? entry?.updatedAt
+                    : (entry?.catalogDate ?? ModelRegistry.documentedReleaseDate(for: id, kind: account.kind))
                 let dateLabel = Self.catalogDateLabel(date, account: account)
                 options.append(PickerOption(
                     model: id, state: state, isSelected: isSelected(id),
@@ -191,7 +193,8 @@ struct ModelStatusResolver {
         guard let date, date.timeIntervalSince1970 > 0, date < .distantFuture else { return nil }
         let title: String
         switch account {
-        case .anthropic: title = "Released"
+        case .anthropic, .soniox, .elevenLabs: title = "Released"
+        case .deepgram: title = "Updated"
         case .openAI: title = "Created"
         case .openRouter: title = "Added to OpenRouter"
         default: return nil

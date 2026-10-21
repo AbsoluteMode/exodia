@@ -189,6 +189,19 @@ The closed control retains the shared 30 pt popup label and existing widths.
   Sources: [Anthropic](https://platform.claude.com/docs/en/api/models/list),
   [OpenAI](https://developers.openai.com/api/reference/resources/models),
   [OpenRouter](https://openrouter.ai/docs/guides/overview/models#model-object-schema).
+- Speech selectors use the same line and date tie-breaker. Deepgram shows
+  `Updated` from the newest dated API version already cached by the app,
+  including the plain `nova-3` alias. Soniox and ElevenLabs omit release dates
+  in their model API schemas, so shipped stable IDs use an exact-ID release
+  registry with checked official launch sources: Soniox `stt-rt-v5` 2026-06-16,
+  `stt-async-v5` 2026-06-11; ElevenLabs `scribe_v2_realtime` 2025-11-11,
+  `scribe_v2` 2026-01-09. They show `Released`, including offline and catalog-less
+  states. Unknown models/aliases inherit no date. Why: speech models need the
+  same recency context without fabricating API fields or release dates.
+  Sources: [Deepgram model metadata](https://developers.deepgram.com/guides/fundamentals/model-metadata),
+  [Soniox model changelog](https://soniox.com/docs/stt/models),
+  [Scribe v2 Realtime launch](https://elevenlabs.io/blog/introducing-scribe-v2-realtime),
+  [Scribe v2 launch](https://elevenlabs.io/blog/introducing-scribe-v2).
 - The native search field owns normal editing and IME composition. Up/Down
   moves through enabled results and scrolls them into view; Return selects.
   Escape clears the query, then closes; outside click dismisses. Focus returns
