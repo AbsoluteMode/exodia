@@ -28,6 +28,12 @@ is a verifiable claim rather than a slogan.
 - Cached model catalogs (a file in the app's Caches folder) and the results of
   key and model checks (provider, model, status, time; never a key, audio or
   text) stay on the Mac.
+- Smart selects a formatting profile locally from the target application and
+  focused Accessibility field/document metadata. Document URLs used for that
+  selection are not separately attached to model requests or logged. The
+  existing bounded screen-context envelope can still contain visible URLs.
+  Rich clipboard conversion for recognized chat apps runs on the Mac, using
+  the same clipboard suppression and restore as ordinary dictation.
 - Logs go to the unified system log (`os_log`, subsystem
   `com.rootwise.sidekey`). They never contain transcripts, prompts, replies
   or keys; `Tests/SidekeyTests/LLM/LocalPathLoggingInvariantTests.swift`

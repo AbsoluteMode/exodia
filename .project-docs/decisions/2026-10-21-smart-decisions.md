@@ -23,7 +23,7 @@ sources:
   - type: url
     reference: https://developers.openai.com/api/docs/guides/decisions
     confirmed_at: 2026-10-21
-related: [2026-10-19-strict-drop-modes.md]
+related: [2026-10-19-strict-drop-modes.md, 2026-10-21-smart-destination-formatting.md]
 ---
 
 # Smart Decision routing

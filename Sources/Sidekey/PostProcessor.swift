@@ -44,7 +44,7 @@ struct PostProcessor {
     /// Throws when no LLM is chosen or the chosen route is not usable (missing
     /// key / base URL, endpoint unreachable). Smart retains the transcript for
     /// Retry on failure; Fast bypasses this processor entirely.
-    func process(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil) async throws -> String {
+    func process(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil, formatting: SmartFormattingProfile = .plain) async throws -> String {
         _ = screenshot
         guard let route = try await llmRoute.routeIfEnabled() else {
             throw OpenRouterLLMError.notConfigured
@@ -71,7 +71,8 @@ struct PostProcessor {
             context: Self.composeContext(targetApp: targetApp, appContext: appContext),
             language: language,
             outputLanguage: outputLanguage,
-            transcriptionMode: transcriptionMode
+            transcriptionMode: transcriptionMode,
+            formatting: formatting
         )
         do {
             let cleaned = try await openRouterClient.complete(route: route, messages: messages)
@@ -95,7 +96,8 @@ struct PostProcessor {
         context: String?,
         language: String?,
         outputLanguage: String?,
-        transcriptionMode: String?
+        transcriptionMode: String?,
+        formatting: SmartFormattingProfile = .plain
     ) -> [OpenRouterChatMessage] {
         var parts: [String] = []
         if let context, !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -111,8 +113,9 @@ struct PostProcessor {
             parts.append("Transcription mode: \(transcriptionMode)")
         }
         parts.append(transcript)
+        let system = formatting.instructions.map { Self.systemPrompt + "\n\n" + $0 } ?? Self.systemPrompt
         return [
-            OpenRouterChatMessage(role: "system", content: Self.systemPrompt),
+            OpenRouterChatMessage(role: "system", content: system),
             OpenRouterChatMessage(role: "user", content: parts.joined(separator: "\n\n")),
         ]
     }

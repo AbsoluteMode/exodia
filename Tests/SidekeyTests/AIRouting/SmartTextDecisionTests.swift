@@ -183,6 +183,17 @@ final class SmartTextDecisionTests: XCTestCase {
         XCTAssertNotNil(ModelRegistry.knownUnsupportedReason("gpt-4o", kind: .openAI, use: .decision))
     }
 
+    func testRecognizedDestinationDoesNotForceExtraEditorCallForCleanText() async throws {
+        let env = environment(), judge = Judge(), editor = Editor()
+        try env.keys.save("cleanup-key", account: OpenRouterLLMKeyStore.account)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "cleanup-model"), for: .dropSmartCleanup)
+        let processor = PostProcessor(llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: env.routing, keys: env.keys), openRouterClient: editor, decision: judge)
+        let result = try await processor.process("Спасибо!", targetApp: "Telegram", formatting: .telegram)
+        XCTAssertEqual(result, "Спасибо!")
+        XCTAssertEqual(editor.calls, 0)
+        XCTAssertEqual(judge.calls, 1)
+    }
+
     func test_cancelling_decision_stops_both_raw_delivery_and_editor() async throws {
         let env = environment(), judge = Judge(), editor = Editor()
         judge.cancels = true
