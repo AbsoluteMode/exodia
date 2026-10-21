@@ -32,7 +32,7 @@ sources:
   - type: url
     reference: https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api
     confirmed_at: 2026-10-21
-related: [2026-10-19-config-backup.md, 2026-10-21-backup-tagged-caches.md]
+related: [2026-10-19-config-backup.md, 2026-10-21-backup-tagged-caches.md, 2026-10-21-backup-resume-digest.md]
 ---
 
 # Preserve recoverability across offline edits and repeated restores

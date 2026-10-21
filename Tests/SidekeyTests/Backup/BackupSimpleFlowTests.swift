@@ -118,6 +118,19 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertEqual(try target.credentialStores["byok.soniox.api_key"]!.read(), "synthetic-provider-key")
     }
 
+    func testUploadStatusCountsPartsAndEndsWithTheCheckedResult() async throws {
+        let backup = model(try profile())
+        await backup.connectGitHub(token: "synthetic-token")
+        var shown: [String] = []
+        let observation = backup.$statusText.sink { shown.append($0) }
+        defer { observation.cancel() }
+        await backup.backupEverything()
+        XCTAssertNil(backup.errorMessage)
+        XCTAssertEqual(remote.publishCount, 1)
+        XCTAssertTrue(shown.contains("Uploading backup part 1 of 1…"), "\(shown)")
+        XCTAssertFalse(backup.statusText.hasPrefix("Uploading backup part"), "Progress never outlives the upload")
+    }
+
     func testCreatedBackupSyncsSettingsAndRetriesOfflineChangesWithoutRevealingCode() async throws {
         let source = try profile()
         var time = Date()

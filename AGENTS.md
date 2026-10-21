@@ -991,6 +991,12 @@ as inert files, excluding active provider jobs. Inactive configurations and
 coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application
 policies precede imports, including matching identities with different UUIDs.
 WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
+A resumed upload accepts an existing draft part when GitHub's reported
+`sha256:` digest matches the local part, without downloading it; a mismatch
+replaces it, and assets without a usable digest are compared by one download.
+New parts and the index are still read back before publishing. Settings shows
+"Uploading backup part N of M…". WHY:
+`.project-docs/decisions/2026-10-21-backup-resume-digest.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.

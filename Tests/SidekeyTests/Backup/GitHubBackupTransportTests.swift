@@ -322,10 +322,97 @@ final class GitHubBackupTransportTests: XCTestCase {
         XCTAssertThrowsError(try GitHubBackupTransport.partSize(for: .max))
     }
 
+    func testResumeConfirmsUploadedPartsByGitHubDigestWithoutDownloadingThemAndReportsProgress() async throws {
+        let fixture = RemoteFixture(json: json); fixture.reportsDigests = true
+        fixture.failReadbackOf = "part-00001.bin"
+        StubURLProtocol.handler = { request in try fixture.handle(request) }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        var input = Data(repeating: 1, count: GitHubBackupTransport.partBytes * 2 + 5)
+        input[GitHubBackupTransport.partBytes] = 2; input[GitHubBackupTransport.partBytes * 2] = 3
+        try input.write(to: file)
+        let summary = ArtifactBackupSummary(id: UUID(), createdAt: Date(), totalBytes: Int64(input.count), fileCount: 1, sections: [.settings])
+        let key = ConfigBackupArchive.makeKey()
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        // A restart interrupts the upload after two parts reached GitHub.
+        do { _ = try await transport.upload(file: file, summary: summary, key: key); XCTFail() } catch { }
+        XCTAssertTrue(fixture.draft)
+        XCTAssertEqual(fixture.uploadNames, ["part-00000.bin", "part-00001.bin"])
+        let resumedFrom = StubURLProtocol.capturedRequests.count
+        let progress = ProgressRecorder()
+        _ = try await transport.upload(file: file, summary: summary, key: key,
+                                       onProgress: { part, total in await progress.append(part, total) })
+        let resumed = StubURLProtocol.capturedRequests[resumedFrom...]
+        let downloaded = resumed.filter { $0.httpMethod == "GET" && $0.url!.path.contains("/releases/assets/") }
+            .map { Int($0.url!.lastPathComponent)! }
+        XCTAssertFalse(downloaded.contains(assetID("part-00000.bin", in: fixture)), "An already uploaded part is not downloaded again")
+        XCTAssertFalse(downloaded.contains(assetID("part-00001.bin", in: fixture)))
+        XCTAssertEqual(downloaded, [assetID("part-00002.bin", in: fixture), assetID("complete.exodia-index", in: fixture)],
+                       "Only the new part and the index are read back")
+        XCTAssertEqual(fixture.uploadNames, ["part-00000.bin", "part-00001.bin", "part-00002.bin", "complete.exodia-index"])
+        XCTAssertEqual(fixture.publishCount, 1)
+        let reported = await progress.steps
+        XCTAssertEqual(reported.map { $0.part }, [1, 2, 3])
+        XCTAssertEqual(Set(reported.map { $0.total }), [3])
+    }
+
+    func testMismatchedGitHubDigestReplacesTheDraftPartWithoutDownloadingTheOldBytes() async throws {
+        let fixture = RemoteFixture(json: json); fixture.reportsDigests = true; fixture.failOneReadback = true
+        StubURLProtocol.handler = { request in try fixture.handle(request) }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data(repeating: 9, count: 1000).write(to: file)
+        let summary = ArtifactBackupSummary(id: UUID(), createdAt: Date(), totalBytes: 1000, fileCount: 1, sections: [.settings])
+        let key = ConfigBackupArchive.makeKey()
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        do { _ = try await transport.upload(file: file, summary: summary, key: key); XCTFail() } catch { }
+        let stale = assetID("part-00000.bin", in: fixture)
+        fixture.assets[0]["digest"] = "sha256:" + String(repeating: "0", count: 64)
+        let resumedFrom = StubURLProtocol.capturedRequests.count
+        _ = try await transport.upload(file: file, summary: summary, key: key)
+        let resumed = StubURLProtocol.capturedRequests[resumedFrom...]
+        XCTAssertTrue(resumed.contains { $0.httpMethod == "DELETE" && $0.url!.lastPathComponent == String(stale) })
+        XCTAssertFalse(resumed.contains { $0.httpMethod == "GET" && $0.url!.lastPathComponent == String(stale) })
+        XCTAssertEqual(fixture.uploadNames, ["part-00000.bin", "part-00000.bin", "complete.exodia-index"])
+        XCTAssertEqual(fixture.publishCount, 1)
+    }
+
+    func testPartsWithoutAUsableDigestAreComparedByOneDownload() async throws {
+        for digest in [nil, "sha512:" + String(repeating: "a", count: 128), "sha256:short"] {
+            StubURLProtocol.reset()
+            let fixture = RemoteFixture(json: json); fixture.failOneReadback = true
+            StubURLProtocol.handler = { request in try fixture.handle(request) }
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: file) }
+            try Data(repeating: 4, count: 1000).write(to: file)
+            let summary = ArtifactBackupSummary(id: UUID(), createdAt: Date(), totalBytes: 1000, fileCount: 1, sections: [.settings])
+            let key = ConfigBackupArchive.makeKey()
+            let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+            do { _ = try await transport.upload(file: file, summary: summary, key: key); XCTFail() } catch { }
+            if let digest { fixture.assets[0]["digest"] = digest }
+            let part = assetID("part-00000.bin", in: fixture)
+            let resumedFrom = StubURLProtocol.capturedRequests.count
+            _ = try await transport.upload(file: file, summary: summary, key: key)
+            let reads = StubURLProtocol.capturedRequests[resumedFrom...].filter { $0.httpMethod == "GET" && $0.url!.lastPathComponent == String(part) }
+            XCTAssertEqual(reads.count, 1, "digest \(digest ?? "none"): the matching part is downloaded once, not compared and read back again")
+            XCTAssertEqual(fixture.uploadNames, ["part-00000.bin", "complete.exodia-index"])
+            XCTAssertEqual(fixture.publishCount, 1)
+        }
+    }
+
+    private func assetID(_ name: String, in fixture: RemoteFixture) -> Int {
+        fixture.assets.first { $0["name"] as? String == name }?["id"] as? Int ?? -1
+    }
+
     private typealias RemoteFixture = BackupGitHubFixture
 }
 
 private actor DraftIDRecorder {
     private(set) var ids: [Int] = []
     func append(_ id: Int) { ids.append(id) }
+}
+
+private actor ProgressRecorder {
+    private(set) var steps: [(part: Int, total: Int)] = []
+    func append(_ part: Int, _ total: Int) { steps.append((part, total)) }
 }

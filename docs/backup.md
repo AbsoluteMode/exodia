@@ -39,7 +39,9 @@ background; opening Settings is not required. Account or repository
 permission failures require reconnecting. An unchanged unsupported file or size
 limit is retried at most hourly; a source change or **Back up** retries sooner.
 A deleted unfinished GitHub draft is recreated automatically after repository
-access is checked, without a reconnect loop. Backup shows **Backup
+access is checked, without a reconnect loop. An interrupted upload continues
+from the parts already on GitHub, confirmed by GitHub's checksum without
+downloading them again, and Backup shows "Uploading backup part N of M…". Backup shows **Backup
 synced** only after verification with no detected changes or copies waiting
 and after the recovery code has been presented,
 and links directly to the repository's GitHub Releases. Pending, syncing, paused
