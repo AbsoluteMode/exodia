@@ -490,7 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installWorkspacePowerObservers()
 
         startReady()
-        ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore, usage: AIUsageStore.shared)
+        ArtifactBackupEngine.shared.register(meetings: meetingsStore, usage: AIUsageStore.shared)
         BackupViewModel.shared.start()
     }
 
