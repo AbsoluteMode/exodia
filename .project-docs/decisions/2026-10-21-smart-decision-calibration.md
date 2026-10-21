@@ -2,7 +2,7 @@
 id: smart-decision-calibration-2026-10-21
 type: decision
 title: Calibrate Jev routing against actual dictation benefit
-summary: Keep the measured Jev prompt and use a model-specific 0.50 routing cutoff; optional rewriting is not evidence that editing was useful.
+summary: Measure explicit structural-edit instructions with a model-specific 0.40 routing cutoff; optional rewriting is not evidence that editing was useful.
 status: observed
 tags: [smart, decision, jev, calibration, dictation, context, telegram]
 canonical_for: [smart-decision-calibration]
@@ -71,9 +71,48 @@ across both sets show that the classifier still does not fully capture the
 editorial rubric. A cutoff does not retrain model weights or establish that
 its numeric outputs are calibrated real-world frequencies.
 
+## Compatibility check and revised calibration
+
+Before integration, four synthetic controls checked the previous candidate
+against the accepted Sol editor contract. The original prompt at 0.50 returned
+0.38 for a grammatically clean, long, multi-topic block and 0.28 for a literal/
+constraints case: both bypassed the editor, losing useful structure. The parallel
+requirements case returned 0.81 (editor), and short-clean returned 0.05 (raw).
+Thus the historical corpus did not establish compatibility with the new editor.
+Its manual labels did not use Sol as a judge; exact historical editor prompts
+were not retained. Keep those observations separate from the following check.
+
+Add the accepted explicit requirement to edit long messages mixing distinct
+unstructured topics, even when their grammar is correct. The measured Jev
+question SHA-256 is now
+`2cc0b99d305d93850f3922f8e35155b7d936dcde665f64ece549eb171497255f`.
+Select 0.40 on the same development examples plus structural controls: retain
+28/28 useful edits and skip 23/49 unnecessary edits. Freeze before the remaining
+regression set. That set retains 17/17 useful edits and skips 5/13 unnecessary
+edits. It was previously observed during the initial experiment and therefore
+is a regression check, not a fresh independent hold-out for this revision.
+
+Repeat the four controls with the revised exact runtime question/schema:
+
+| Control | Probability | Branch | Structure and meaning |
+| --- | ---: | --- | --- |
+| Grammar-clean long multi-topic | 0.94 | editor | Separate topic paragraphs and release checklist; timing, test-card restriction, approvals and no-setting-change constraint preserved |
+| Three parallel requirements | 0.93 | editor | Three bullets, Fast behavior, no model substitution, analysis-only scope preserved |
+| Literal/constraints | 0.57 | editor | Two bullets, exact path, URL, key case, numbers and no-execution constraint preserved |
+| Short-clean | 0.06 | raw | Exact text, one paragraph |
+
+The first control uses one new exact `openai/gpt-6-sol` call with the integrated
+editor prompt SHA-256
+`edd3d8a739b9c21e1268624aebc04a31e2a110b9a1269d0b11ff6500980743e3`,
+pinned to `openai/fast`, reasoning off. The parallel and literal controls reuse
+the saved outputs for those exact inputs/model/prompt from the editor evaluation;
+no new generation is claimed for those two. All four Decision calls are new.
+Outputs were manually checked against explicit format and meaning criteria.
+This is a small compatibility check, not physical dictation/paste acceptance.
+
 ## Decision
 
-Apply the 0.50 cutoff only to OpenRouter's exact `typesafe/jev-1.14` route.
+Apply the 0.40 cutoff only to OpenRouter's exact `typesafe/jev-1.14` route.
 Keep its measured prompt as a separate immutable candidate from other Decision
 adapters' instructions. Another Jev version or OpenAI keeps the previous 0.05
 policy until independently evaluated. Do not automatically substitute models.
@@ -95,8 +134,8 @@ an API's formatting syntax. This calibration does not implement such profiles.
 
 ## Consequences and verification
 
-Across the final 107 clear-cut replays the selected rule skips 33 editing
-passes, including 31 of 62 unnecessary edits, and retains 43 of 45 useful edits.
+Across the revised 107 clear-cut replays the selected rule skips 28 of 62
+unnecessary editing passes and retains 45 of 45 useful edits in this sample.
 This small, single-user, predominantly AI-chat corpus is not a general quality
 guarantee. Observe further real dictations before widening the cutoff or
 changing the measured prompt. Synthetic tests verify routing boundaries,

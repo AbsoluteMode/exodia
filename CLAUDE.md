@@ -115,7 +115,7 @@ Voice flow (Drop / dictation):
             Fast bypasses AI text processing. Smart first uses dropSmartDecision
             (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
             default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
-            A valid needs-cleanup probability <= 0.50 for exact OpenRouter
+            A valid needs-cleanup probability <= 0.40 for exact OpenRouter
             typesafe/jev-1.14 (<= 0.05 for other routes) skips editing and uses
             Fast's verbatim output/filter path without changing the take's mode
             or speech route. Translation always edits. Missing decision setup,

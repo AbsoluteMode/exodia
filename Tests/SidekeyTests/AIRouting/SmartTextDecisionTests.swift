@@ -56,7 +56,7 @@ final class SmartTextDecisionTests: XCTestCase {
         env.routing.setRoute(FeatureRoute(account: .openRouter, model: "typesafe/jev-1.14"), for: .dropSmartDecision)
         let client = Client(nil)
         let decision = SmartTextDecision(resolver: FeatureRouteResolver(routing: env.routing, keys: env.keys), client: client)
-        for (p, expected) in [(0.05, true), (0.40, true), (0.50, true), (0.501, false), (1.0, false), (-0.1, false), (Double.nan, false)] {
+        for (p, expected) in [(0.05, true), (0.40, true), (0.401, false), (0.50, false), (1.0, false), (-0.1, false), (Double.nan, false)] {
             client.probability = p
             let result = try await decision.canUseFastPath("Synthetic message.", targetApp: "Telegram", appContext: "Reference only", language: "ru")
             XCTAssertEqual(result, expected)
@@ -77,7 +77,7 @@ final class SmartTextDecisionTests: XCTestCase {
     func test_measured_jev_prompt_is_pinned_until_recalibrated() {
         let hash = SHA256.hash(data: Data(JevDecisionCalibration.instructions.utf8))
             .map { String(format: "%02x", $0) }.joined()
-        XCTAssertEqual(hash, "e4771633bf4eff7b0a481b81485d57614768cbccf0062d18a5f7db182de8644e",
+        XCTAssertEqual(hash, "2cc0b99d305d93850f3922f8e35155b7d936dcde665f64ece549eb171497255f",
                        "Changing the measured question requires rerunning calibration, not just updating this hash.")
     }
 
