@@ -55,8 +55,8 @@ Use the existing Smart editor call with an explicit full-message contract:
 
 The prompt is calibrated for GPT-6 Sol, shared by configured Smart editor
 routes. It does not select or substitute a model, change provider pins,
-add a second call or change Fast/Retry behavior. This decision concerns the
-editor stage; Smart decision instructions also identify rambling or
+or add an extra editor call. Fast still bypasses the LLM; Smart retains Retry
+on errors. This decision concerns the editor stage; Smart decision instructions also identify rambling or
 unstructured text as needing editing, even with correct grammar.
 
 ## Sources
