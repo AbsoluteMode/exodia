@@ -61,7 +61,7 @@ protocol CaseClientConfiguring: AnyObject {
 }
 
 final class CaseClientSetup: CaseClientConfiguring {
-    static let helperMissingMessage = "Помощник whytap не найден в приложении: клиенты не настроены"
+    static let helperMissingMessage = "The whytap helper is missing from the app, so agents weren’t set up"
 
     private let helperURL: URL?
     private let binDir: URL
@@ -119,9 +119,9 @@ final class CaseClientSetup: CaseClientConfiguring {
             do {
                 try CaseCLIInstaller.install(flavorName: flavorName, helperURL: helperURL, binDir: binDir)
             } catch let error as CaseCLIInstallerError {
-                problems.append("Команда whytap: \(error.userMessage)")
+                problems.append("whytap command: \(error.userMessage)")
             } catch {
-                problems.append("Команда whytap: не установлена")
+                problems.append("whytap command: not installed")
             }
             if let connector {
                 do {
@@ -149,7 +149,7 @@ final class CaseClientSetup: CaseClientConfiguring {
     }
 
     private static func message(_ error: Error) -> String {
-        (error as? CaseClientConnectorError)?.userMessage ?? "настройка не удалась"
+        (error as? CaseClientConnectorError)?.userMessage ?? "setup failed"
     }
 }
 

@@ -317,7 +317,7 @@ answers are fixed, not rebindable, and matched by **physical key**
 any layout (Russian «н», «т», «ф» are the same keys):
 
 - **Y** — allow once; **N** or **Escape** — deny; **A** — allow this app
-  this project for N minutes (the button reads «На N мин», N default 15).
+  this project for N minutes (the Temporary Bypass button, N default 15).
 - `CaseApprovalKeyTap`, an active head-insert session tap for key down/up
   (needs Accessibility), exists only while a prompt is queued. Only those
   four keys are swallowed (with their repeats and key-up); every other key,

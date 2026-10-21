@@ -27,13 +27,13 @@ enum CaseClientConnectorError: Error, Equatable {
 
     var userMessage: String {
         switch self {
-        case .clientNotFound: return "программа не найдена"
-        case .commandFailed(let status): return "команда завершилась с ошибкой (\(status))"
-        case .timedOut: return "команда не ответила вовремя"
-        case .unreadableConfig(let path): return "не удалось прочитать ~/\(path)"
-        case .writeFailed(let path): return "не удалось записать ~/\(path)"
+        case .clientNotFound: return "app not found"
+        case .commandFailed(let status): return "command failed (\(status))"
+        case .timedOut: return "command timed out"
+        case .unreadableConfig(let path): return "couldn’t read ~/\(path)"
+        case .writeFailed(let path): return "couldn’t write ~/\(path)"
         case .foreignEntry:
-            return "уже есть другой MCP-сервер с именем «case»; переименуйте или удалите его и подключите снова"
+            return "another MCP server named “case” already exists; rename or remove it, then connect again"
         }
     }
 }

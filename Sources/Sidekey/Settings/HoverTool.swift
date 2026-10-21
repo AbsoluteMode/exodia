@@ -69,7 +69,7 @@ enum HoverToolRegistry {
                                  description: "Manage vocabulary and custom terms")
         case .caseVault:
             return HoverToolInfo(title: "Case", sfSymbol: "key.horizontal", kind: .inlinePanel,
-                                 description: "Store and reuse text snippets")
+                                 description: "Keep API keys your agents can use")
         case .filler:
             return HoverToolInfo(title: "Filler", sfSymbol: "scissors", kind: .inlinePanel,
                                  description: "Fill in common phrases")
