@@ -115,13 +115,15 @@ Voice flow (Drop / dictation):
             Fast bypasses AI text processing. Smart first uses dropSmartDecision
             (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
             default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
-            A valid needs-cleanup probability <= 0.05 skips editing and uses
+            A valid needs-cleanup probability <= 0.40 for exact OpenRouter
+            typesafe/jev-1.14 (<= 0.05 for other routes) skips editing and uses
             Fast's verbatim output/filter path without changing the take's mode
             or speech route. Translation always edits. Missing decision setup,
             uncertainty, refusal or the 2s deadline keeps the selected cleanup
             route. Cleanup errors/empty results never silently paste raw speech.
             Decision models are excluded from LLM/agent pickers. WHY:
-            .project-docs/decisions/2026-10-21-smart-decisions.md
+            .project-docs/decisions/2026-10-21-smart-decisions.md,
+            .project-docs/decisions/2026-10-21-smart-decision-calibration.md
             Smart failures retain the transcript in memory and show Retry with
             the original mode and target; configuration errors open API & Models on
             the Drop Smart cleanup row.
@@ -331,9 +333,11 @@ Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
   appear as app icons; clicking one opens that client's policy. An always-visible
-  Connect button offers only installed OpenCode and Cursor with bundled logos,
-  then grouped project scope and Accept/Bypass before registration. There is no
-  arbitrary program picker; existing legacy registrations stay editable. Mode
+  Connect button offers only installed OpenCode, Claude Code and Cursor with
+  bundled logos, then grouped project scope and Accept/Bypass before registration.
+  Codex is not offered. There is no arbitrary program picker; existing legacy
+  registrations stay editable. WHY:
+  .project-docs/decisions/2026-10-21-case-connect-claude-code.md. Mode
   and project headings have thin horizontal dividers above their controls.
   Selected projects has a metadata search that preserves the full draft selection;
   All projects includes future projects, with its explanation in native help.
@@ -900,9 +904,13 @@ are drafts. Guide: docs/customization/README.md. Update the capability map
 when moving its source entry points. Do not publish private monitoring
 configuration, project contents or credentials with the source.
 
-Application control: `plugins/whytap` is a local stdio MCP plugin using
-`Contents/Helpers/whytap app mcp`. It reads live build/activity/route metadata
-and changes allowlisted models, provider pins, Drop mode, languages and idle
+Application control: `plugins/whytap` bundles separate local stdio MCP servers:
+`Contents/Helpers/whytap app mcp` for app controls and `whytap case mcp` for
+authorized Case project/key names and descriptions, never values. Case retains
+its existing registrations, project scope and approvals; secret use stays in
+`whytap case run` through the agent's own terminal. The app-control server reads
+live build/activity/route metadata and changes allowlisted models, provider pins,
+Drop mode, languages and idle
 auto-hide through existing app stores. Every write requires the current value;
 async model checks recheck the route and cancellation before assignment. It
 shares Case's authenticated bundled-helper transport but never loads its vault
