@@ -91,9 +91,10 @@ Case — зашифрованное хранилище ключей по про�
 Зарегистрированные ИИ-приложения (Claude Code, Codex, Cursor, встроенный агент)
 видят только имена проектов и ключей и описания; `whytap case run` запускает
 команду, передавая значения только в её окружении, а вывод маскируется. Режимы
-Accept (запрос под островом: 1 — отклонить, 2 — разрешить, 3 — временный Bypass)
-и Bypass на приложение и проект. Буквы, Escape, навигация и сочетания клавиш
-проходят в активное приложение; цифры ответа временно отключены при вводе минут.
+Accept (запрос под островом: Y — разрешить, N/Escape — отклонить, A — временный Bypass)
+и Bypass на приложение и проект. Только поле минут принимает одни цифры: буквы
+и смешанная вставка отклоняются до появления в поле. При вводе минут клавиши
+ответа отключены; при появлении запроса число не выделяется автоматически.
 Доступ можно ограничить выбранными проектами или разрешить все текущие и новые.
 В запросе Accept временный Bypass — отдельная кнопка рядом с полем числа минут
 (1–240, по умолчанию 15), без стрелок. Внизу только «Deny» и «Allow».
@@ -398,7 +399,10 @@ the only result message is a brief Key accepted / Key not accepted notice. Faile
 previous key and keep the form open. OpenAI and Anthropic are available to all
 LLM routes with their own provider keys.
 Model results show the provider's date when known: Anthropic `Released`, OpenAI
-`Created`, OpenRouter `Added to OpenRouter`. Unknown or invalid dates have no
+`Created`, OpenRouter `Added to OpenRouter`, Deepgram `Updated` (newest model
+version). Soniox and ElevenLabs show `Released` for exact stable IDs with
+verified official launch dates in the built-in registry; unknown IDs/aliases
+inherit no date. Unknown or invalid dates have no
 placeholder. Nonempty search orders equal-relevance matches by newest date,
 unknown dates last, preserving provider groups and stable ties. Empty search
 keeps catalog order.

@@ -116,7 +116,7 @@ final class CaseApprovalControllerTests: XCTestCase {
         XCTAssertFalse(controller.isArmed)
         XCTAssertFalse(tap.isArmed, "the tap must let every key through while unarmed")
 
-        // A person typing digits in their editor as the prompt appears.
+        // A person typing in their editor as the prompt appears.
         tap.press(.yes)
         clock.advance(by: 0.1)
         tap.press(.timed)
@@ -261,7 +261,7 @@ final class CaseApprovalControllerTests: XCTestCase {
 
     func test_answer_keys_allow_deny_and_grant_timed_access() async {
         let cases: [(CaseApprovalKey, CaseApprovalOutcome)] = [
-            (.yes, .allow), (.no, .deny), (.timed, .allowTimed(minutes: 15)),
+            (.yes, .allow), (.no, .deny), (.timed, .allowTimed(minutes: 15)), (.escape, .deny),
         ]
         for (key, expected) in cases {
             let task = await ask(request())
@@ -387,7 +387,7 @@ final class CaseApprovalControllerTests: XCTestCase {
         clock.advance(by: 0.3)
         XCTAssertTrue(controller.isArmed, "click answers remain available")
         XCTAssertFalse(tap.isArmed, "typing in the field must not answer the prompt")
-        for key in [CaseApprovalKey.yes, .no, .timed] { tap.press(key) }
+        for key in [CaseApprovalKey.yes, .no, .timed, .escape] { tap.press(key) }
         XCTAssertNotNil(controller.current)
         controller.setTimedMinutes(37)
         controller.setEditingMinutes(false)
@@ -434,6 +434,23 @@ final class CaseApprovalControllerTests: XCTestCase {
         _ = await task.value
     }
 
+    func test_presenting_prompt_does_not_focus_minutes_or_suspend_answer_keys() async throws {
+        let panel = CaseApprovalPanel(controller: controller, present: { _ in })
+        defer { panel.close() }
+        let pending = await ask(request())
+        try await Task.sleep(for: .milliseconds(60))
+        panel.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertFalse(controller.isEditingMinutes, "Showing a request must not begin editing its duration")
+        XCTAssertFalse(panel.firstResponder is NSTextView, "The duration must not be selected automatically")
+        XCTAssertTrue(panel.initialFirstResponder === panel.contentView, "Default focus belongs to the neutral card, not minutes")
+        clock.advance(by: 0.3)
+        XCTAssertTrue(tap.isArmed, "Answer shortcuts must work without clicking out of the minutes field")
+        tap.press(.yes)
+        let outcome = await pending.value
+        XCTAssertEqual(outcome, .allow, "The answer key must work without a field click")
+        XCTAssertFalse(panel.isVisible || panel.isKeyWindow)
+    }
+
     func test_queued_prompt_releases_previous_native_field_editor_without_presenting_a_panel() async throws {
         let panel = CaseApprovalPanel(controller: controller, present: { _ in })
         defer { panel.close() }
@@ -456,6 +473,38 @@ final class CaseApprovalControllerTests: XCTestCase {
         XCTAssertFalse(panel.isVisible || panel.isKeyWindow)
         controller.resolve(.deny)
         _ = await second.value
+    }
+
+    func test_actual_minutes_editor_rejects_letters_then_return_rearms_answer_keys() async throws {
+        let panel = CaseApprovalPanel(controller: controller, present: { _ in })
+        defer { panel.close() }
+        let pending = await ask(request())
+        try await Task.sleep(for: .milliseconds(60))
+        panel.contentView?.layoutSubtreeIfNeeded()
+        clock.advance(by: 0.3)
+        func fields(_ view: NSView) -> [CaseApprovalMinutesTextField] {
+            (view as? CaseApprovalMinutesTextField).map { [$0] } ?? view.subviews.flatMap(fields)
+        }
+        let field = try XCTUnwrap(panel.contentView.flatMap { fields($0).first })
+        XCTAssertTrue(panel.makeFirstResponder(field))
+        XCTAssertTrue(controller.isEditingMinutes)
+        XCTAssertFalse(tap.isArmed)
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count))
+        editor.insertText("37", replacementRange: editor.selectedRange())
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        editor.insertText("A", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "37")
+        XCTAssertEqual(controller.selectedTimedMinutes, 37)
+        tap.press(.timed)
+        XCTAssertNotNil(controller.current, "Rejected letters while editing must not approve the command")
+        editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        XCTAssertFalse(controller.isEditingMinutes)
+        XCTAssertTrue(tap.isArmed, "Return must restore the answer keys")
+        tap.press(.yes)
+        let outcome = await pending.value
+        XCTAssertEqual(outcome, .allow)
+        XCTAssertFalse(panel.isVisible || panel.isKeyWindow)
     }
 
     func test_click_answers_after_arming() async {
@@ -520,16 +569,16 @@ final class CaseApprovalControllerTests: XCTestCase {
     }
 
     func test_filter_maps_physical_keys_on_any_layout() {
-        for (code, answer) in [(kVK_ANSI_1, CaseApprovalKey.no), (kVK_ANSI_2, .yes), (kVK_ANSI_3, .timed),
-                               (kVK_ANSI_Keypad1, .no), (kVK_ANSI_Keypad2, .yes), (kVK_ANSI_Keypad3, .timed)] {
+        for (code, answer) in [(kVK_ANSI_N, CaseApprovalKey.no), (kVK_ANSI_Y, .yes),
+                               (kVK_ANSI_A, .timed), (kVK_Escape, .escape)] {
             XCTAssertEqual(CaseApprovalKeyFilter.key(forKeyCode: Int64(code)), answer)
         }
     }
 
-    func test_filter_passes_all_other_keys_including_letters_escape_and_navigation() {
-        let digits = Set([kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3])
+    func test_filter_passes_all_other_keys_including_digits_and_navigation() {
+        let answers = Set([kVK_ANSI_N, kVK_ANSI_Y, kVK_ANSI_A, kVK_Escape])
         var filter = CaseApprovalKeyFilter()
-        for code in 0...127 where !digits.contains(code) {
+        for code in 0...127 where !answers.contains(code) {
             XCTAssertNil(CaseApprovalKeyFilter.key(forKeyCode: Int64(code)))
             XCTAssertEqual(down(code, &filter), .init(swallow: false, key: nil), "key \(code)")
             XCTAssertEqual(down(code, isRepeat: true, &filter), .init(swallow: false, key: nil))
@@ -537,10 +586,10 @@ final class CaseApprovalControllerTests: XCTestCase {
         }
     }
 
-    func test_filter_swallows_only_digit_presses_and_their_releases_when_armed() {
+    func test_filter_swallows_only_answer_presses_and_their_releases_when_armed() {
         var filter = CaseApprovalKeyFilter()
-        for (code, answer) in [(kVK_ANSI_1, CaseApprovalKey.no), (kVK_ANSI_2, .yes), (kVK_ANSI_3, .timed),
-                               (kVK_ANSI_Keypad1, .no), (kVK_ANSI_Keypad2, .yes), (kVK_ANSI_Keypad3, .timed)] {
+        for (code, answer) in [(kVK_ANSI_N, CaseApprovalKey.no), (kVK_ANSI_Y, .yes),
+                               (kVK_ANSI_A, .timed), (kVK_Escape, .escape)] {
             XCTAssertEqual(down(code, &filter), .init(swallow: true, key: answer))
             XCTAssertEqual(up(code, &filter), .init(swallow: true, key: nil), "its key-up goes with it")
         }
@@ -552,27 +601,28 @@ final class CaseApprovalControllerTests: XCTestCase {
             XCTAssertEqual(down(code, armed: false, &filter), .init(swallow: false, key: nil))
         }
         // The key-up of a press that went through is not swallowed after arming either.
-        XCTAssertEqual(up(kVK_ANSI_2, armed: true, &filter), .init(swallow: false, key: nil))
+        XCTAssertEqual(up(kVK_ANSI_Y, armed: true, &filter), .init(swallow: false, key: nil))
     }
 
-    func test_filter_leaves_modified_digits_with_the_active_app() {
+    func test_filter_leaves_shortcuts_with_the_active_app_but_shift_still_answers() {
         var filter = CaseApprovalKeyFilter()
-        for code in [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3] {
-            for flags in [CGEventFlags.maskCommand, .maskControl, .maskAlternate, .maskShift] {
+        for code in [kVK_ANSI_N, kVK_ANSI_Y, kVK_ANSI_A, kVK_Escape] {
+            for flags in [CGEventFlags.maskCommand, .maskControl, .maskAlternate] {
                 XCTAssertEqual(down(code, flags: flags, &filter), .init(swallow: false, key: nil))
                 XCTAssertEqual(up(code, &filter), .init(swallow: false, key: nil))
             }
         }
+        XCTAssertEqual(down(kVK_ANSI_Y, flags: .maskShift, &filter), .init(swallow: true, key: .yes))
     }
 
     func test_filter_autorepeat_of_a_key_held_before_the_prompt_passes() {
         var filter = CaseApprovalKeyFilter()
-        XCTAssertEqual(down(kVK_ANSI_2, isRepeat: true, &filter), .init(swallow: false, key: nil))
+        XCTAssertEqual(down(kVK_ANSI_Y, isRepeat: true, &filter), .init(swallow: false, key: nil))
         // A repeat of a press we took is swallowed without answering again.
-        XCTAssertEqual(down(kVK_ANSI_1, &filter), .init(swallow: true, key: .no))
-        XCTAssertEqual(down(kVK_ANSI_1, isRepeat: true, &filter), .init(swallow: true, key: nil))
-        XCTAssertEqual(up(kVK_ANSI_1, &filter), .init(swallow: true, key: nil))
-        XCTAssertEqual(up(kVK_ANSI_1, &filter), .init(swallow: false, key: nil))
+        XCTAssertEqual(down(kVK_ANSI_N, &filter), .init(swallow: true, key: .no))
+        XCTAssertEqual(down(kVK_ANSI_N, isRepeat: true, &filter), .init(swallow: true, key: nil))
+        XCTAssertEqual(up(kVK_ANSI_N, &filter), .init(swallow: true, key: nil))
+        XCTAssertEqual(up(kVK_ANSI_N, &filter), .init(swallow: false, key: nil))
     }
 
     // MARK: - Island integration
@@ -597,9 +647,9 @@ final class CaseApprovalControllerTests: XCTestCase {
     func test_help_lists_the_approval_keys() {
         let rows = HelpWindowContent.hotkeyRows(for: .defaults)
         func caps(_ title: String) -> [KeycapContent]? { rows.first { $0.title == title }?.contents }
-        XCTAssertEqual(caps("Case — allow"), [.text("2")])
-        XCTAssertEqual(caps("Case — deny"), [.text("1")])
-        XCTAssertEqual(caps("Case — allow for minutes"), [.text("3")])
+        XCTAssertEqual(caps("Case — allow"), [.text("Y")])
+        XCTAssertEqual(caps("Case — deny"), [.text("N")])
+        XCTAssertEqual(caps("Case — allow for minutes"), [.text("A")])
     }
 
     func test_view_copy() {
@@ -614,6 +664,40 @@ final class CaseApprovalControllerTests: XCTestCase {
 
 @MainActor
 final class CaseApprovalMinutesFieldTests: XCTestCase {
+    func test_native_formatter_blocks_letters_and_paste_but_allows_digit_drafts() throws {
+        let field = CaseApprovalMinutesTextField()
+        let formatter = try XCTUnwrap(field.formatter as? CaseApprovalMinutesFormatter)
+        for text in ["", "0", "15", "240", "999"] {
+            XCTAssertTrue(formatter.isPartialStringValid(text, newEditingString: nil, errorDescription: nil), text)
+        }
+        for text in ["Y", "N", "A", "abc", "15a", "3foo7", "-1", "1.5", " 15", "１５", "١٥"] {
+            XCTAssertFalse(formatter.isPartialStringValid(text, newEditingString: nil, errorDescription: nil), text)
+        }
+    }
+
+    func test_native_editor_rejects_non_digits_without_changing_the_duration() throws {
+        _ = NSApplication.shared
+        let field = CaseApprovalMinutesTextField(frame: NSRect(x: 0, y: 0, width: 60, height: 24))
+        field.stringValue = "15"
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 100, height: 60),
+                              styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = field
+        defer { window.contentView = nil; window.close() }
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count))
+        editor.insertText("37", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "37")
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        editor.insertText("A", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "37", "Letters must never appear in the minutes field")
+        editor.setSelectedRange(NSRange(location: 0, length: editor.string.utf16.count))
+        editor.insertText("12abc", replacementRange: editor.selectedRange())
+        XCTAssertEqual(editor.string, "37", "A mixed paste must be rejected as a whole")
+        XCTAssertFalse(window.isVisible || window.isKeyWindow)
+    }
+
     func test_duration_validation_and_native_edit_commands() {
         for text in ["", "0", "241", "-1", "1.5", "1e2", " 15", "999999999999999999999999"] {
             XCTAssertNil(CaseApprovalMinutesField.minutes(from: text), text)

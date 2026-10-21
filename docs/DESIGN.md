@@ -189,6 +189,19 @@ The closed control retains the shared 30 pt popup label and existing widths.
   Sources: [Anthropic](https://platform.claude.com/docs/en/api/models/list),
   [OpenAI](https://developers.openai.com/api/reference/resources/models),
   [OpenRouter](https://openrouter.ai/docs/guides/overview/models#model-object-schema).
+- Speech selectors use the same line and date tie-breaker. Deepgram shows
+  `Updated` from the newest dated API version already cached by the app,
+  including the plain `nova-3` alias. Soniox and ElevenLabs omit release dates
+  in their model API schemas, so shipped stable IDs use an exact-ID release
+  registry with checked official launch sources: Soniox `stt-rt-v5` 2026-06-16,
+  `stt-async-v5` 2026-06-11; ElevenLabs `scribe_v2_realtime` 2025-11-11,
+  `scribe_v2` 2026-01-09. They show `Released`, including offline and catalog-less
+  states. Unknown models/aliases inherit no date. Why: speech models need the
+  same recency context without fabricating API fields or release dates.
+  Sources: [Deepgram model metadata](https://developers.deepgram.com/guides/fundamentals/model-metadata),
+  [Soniox model changelog](https://soniox.com/docs/stt/models),
+  [Scribe v2 Realtime launch](https://elevenlabs.io/blog/introducing-scribe-v2-realtime),
+  [Scribe v2 launch](https://elevenlabs.io/blog/introducing-scribe-v2).
 - The native search field owns normal editing and IME composition. Up/Down
   moves through enabled results and scrolls them into view; Return selects.
   Escape clears the query, then closes; outside click dismisses. Focus returns
@@ -823,7 +836,7 @@ rights. No alternative composition or decorative screen is needed.
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects includes future projects (explained in native help); Selected shows searchable checkboxes and denies unchecked projects at the broker. Filtering preserves the full draft selection. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
-| Approval | The request shows the command, app, project and key names. A native editable field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical 3 use that value. The bottom row contains Deny (1)/Allow (2) only. Letters and Escape pass through. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
+| Approval | The request shows the command, app, project and key names. A native digits-only field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical A use that value. The bottom row contains Deny (N)/Allow (Y) only; Escape also denies outside editing. Default 15 is restored for the next request without selecting the field. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
 
 Display metadata and project sections are rebuilt when the vault changes and
 reused for renders. Search only filters/ranks metadata; values never enter its
@@ -987,7 +1000,7 @@ with only Deny and Allow in the final row. Keep the native black island card.
   and buttons, 11 pt monospaced command). The command stays one line; native
   hover help and accessibility expose the full original string including line
   breaks. Why: the compact summary must remain inspectable before approval.
-- Temporary Bypass is an actual capsule button with the physical 3
+- Temporary Bypass is an actual capsule button with the physical A
   hint. The duration is a 34×24 pt native text field followed by min, without
   arrows. Default 15 and supported 1–240 stay unchanged. Why: direct typing
   replaces repeated stepper clicks and removes the third competing bottom action.
@@ -1024,22 +1037,15 @@ shared-app acceptance after promotion. A real authorized key-presence check on t
 previous installed build returned only a static presence confirmation; it does
 not validate this new UI. No secret value was printed or sent over the network.
 
-Numeric approval follow-up — 2026-10-21: after a real key-presence request, the
-user reported that letter interception interfered with their active app and
-requested digits only. Use 1 for Deny, 2 for Allow and 3 for temporary Bypass,
-in both the top row and numeric keypad. These hints replace the letters in the
-existing capsules without changing layout, colors, hover, focus or timing.
-Letters, Escape, navigation and digits with Command/Control/Option/Shift pass
-through; Shift punctuation must not authorize a command. The duration editor
-keeps approval keys suspended. The shared keycap values also feed Help.
-Filter tests cover all other physical keycodes, modified digits, repeats and
-unarmed input; synthetic offscreen fixtures verify the new hints at 310/312 pt.
-Physical keyboard acceptance remains a check on the installed app.
+Numeric approval follow-up — 2026-10-21, superseded: the earlier change to
+1/2/3 misunderstood the request. The user meant numeric-only duration input,
+while keeping Y/N/A answer keys. The correction below owns current behavior.
 
 
 Case English copy and interaction feedback — builder review,2026-10-21:
 Use English for Case panels, creation/editing/recovery messages and approval
-copy while preserving IDs, rights, authentication, numeric1/2/3, timing and data.
+copy while preserving IDs, rights, authentication, timing and data. Answer keys
+follow the later corrected Y/N/A contract below.
 The translated project headers, add-key rows, icon actions, reset/retry,
 create/submit and delete-confirm controls use the existing Case access button
 feedback: full-area hover, press and keyboard focus; disabled controls dim and
@@ -1051,6 +1057,21 @@ file is retained, matching CaseVaultStore.reset; it does not promise recovery
 without the original key. The two-step reset and its handlers are unchanged.
 Final English offscreen fixtures and the combined full suite are builder gates;
 physical pointer/keyboard/VoiceOver and the real Touch ID panel remain separate.
+
+Approval minutes correction — 2026-10-21: restore Y for Allow, N for Deny and A
+for temporary Bypass; Escape denies outside duration editing. Only the minutes
+editor rejects letters and mixed pastes, using native partial-string validation.
+Empty/out-of-range digit drafts retain existing recovery; Return confirms and
+Escape restores the previous duration, without answering the request.
+The card is the panel's neutral initial first responder. Showing a new request
+clears duration editing and releases key status; the field gains its bright
+outline/selection only after explicit focus. Why: selecting 15 on appearance
+would make the request look like an active editor and suspend the answer tap.
+The real selected-field/shortcut report was not reproduced by the initial
+offscreen test; the explicit focus target prevents default field traversal.
+Focused tests cover native insertion/paste, neutral initial focus, shortcut
+arming, duration editing, queue replacement and offscreen English card hints.
+Installed physical keyboard acceptance remains pending until a new request.
 
 
 ## Calendar inside Hover — 2026-10-21
