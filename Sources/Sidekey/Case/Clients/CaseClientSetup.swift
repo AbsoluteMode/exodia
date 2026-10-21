@@ -10,7 +10,8 @@ enum CaseKnownClient: String, CaseIterable, Equatable {
     case builtInOpenCode
 
     /// The current Connect catalog. Preserve legacy identities and registrations.
-    static let connectableClients: [CaseKnownClient] = [.builtInOpenCode, .cursor]
+    // WHY: .project-docs/decisions/2026-10-21-case-connect-claude-code.md
+    static let connectableClients: [CaseKnownClient] = [.builtInOpenCode, .claudeCode, .cursor]
 
     var displayName: String {
         switch self {
