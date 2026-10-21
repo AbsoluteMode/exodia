@@ -132,6 +132,45 @@ final class CaseRankerTests: XCTestCase {
         }
     }
 
+    /// The reported search: `lan` is one letter away from the start of LENDING.
+    func test_one_typo_in_a_later_query_part_still_counts() {
+        let token = secret(name: "GITHUB_TOKEN", copyCount: 5, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+        let lending = secret(name: "GITHUB_LENDING_KEY", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+
+        for query in ["github_lan", "github_lnd", "github_lenxd", "github_elnd", "github_lendnig"] {
+            let sorted = CaseRanker.sortedEntries(secrets: [token, lending], projects: [], query: query, now: now)
+            XCTAssertEqual(sorted.map(\.displayName), ["GITHUB_LENDING_KEY", "GITHUB_TOKEN"], query)
+        }
+
+        var usedLending = lending
+        usedLending.copyCount = 9
+        usedLending.lastCopiedAt = now
+        var unusedToken = token
+        unusedToken.copyCount = 0
+        unusedToken.lastCopiedAt = nil
+        let tken = CaseRanker.sortedEntries(secrets: [usedLending, unusedToken], projects: [], query: "github_tken", now: now)
+        XCTAssertEqual(tken.map(\.displayName), ["GITHUB_TOKEN", "GITHUB_LENDING_KEY"], "the typo points at TOKEN, not at the more used key")
+
+        let landing = secret(name: "GITHUB_LANDING_URL", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+        let exactFirst = CaseRanker.sortedEntries(secrets: [usedLending, landing], projects: [], query: "github_land_zz", now: now)
+        XCTAssertEqual(exactFirst.map(\.displayName), ["GITHUB_LANDING_URL", "GITHUB_LENDING_KEY"],
+                       "an exact word start beats a typo, whatever the usage")
+    }
+
+    func test_typo_tolerance_needs_three_letters_and_an_exact_first_part() {
+        let token = secret(name: "GITHUB_TOKEN", copyCount: 5, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+        let lending = secret(name: "GITHUB_LENDING_KEY", copyCount: 0, lastCopiedDaysAgo: nil, createdDaysAgo: 30)
+
+        let shortPart = CaseRanker.sortedEntries(secrets: [token, lending], projects: [], query: "github_la", now: now)
+        XCTAssertEqual(shortPart.map(\.displayName), ["GITHUB_TOKEN", "GITHUB_LENDING_KEY"], "`la` is too short for a typo; usage decides")
+        let android = secret(name: "GITHUB_ANDROID_KEY", copyCount: 9, lastCopiedDaysAgo: 1, createdDaysAgo: 30)
+        let shortStart = CaseRanker.sortedEntries(secrets: [android, lending], projects: [], query: "github_lan", now: now)
+        XCTAssertEqual(shortStart.map(\.displayName), ["GITHUB_LENDING_KEY", "GITHUB_ANDROID_KEY"],
+                       "dropping a letter of `lan` leaves `an`, too short to name ANDROID")
+        XCTAssertTrue(CaseRanker.sortedEntries(secrets: [token, lending], projects: [], query: "githab_lending", now: now).isEmpty,
+                      "the first part stays exact, so typos never add results")
+    }
+
     func test_query_part_naming_a_project_narrows_to_its_keys() {
         let whytap = project(name: "whytap")
         let acme = project(name: "acme / dev")

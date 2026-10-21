@@ -894,7 +894,7 @@ Sections follow each project's best match instead of the alphabet, so the
 project holding the wanted key is scanned first. `whytap github` finds
 whytap's GITHUB keys, below any key spelling out the whole query; a project
 matched only by its first word then shows just its matching keys.
-Later query parts that start a key-name word add to a partial match. WHY:
+Later query parts that start a key-name word add to a partial match; parts of three or more letters may be one typo off (`github_lan` finds GITHUB_LENDING_KEY). WHY:
 `docs/decisions/2026-10-21-case-search-project-ranking.md`.
 
 

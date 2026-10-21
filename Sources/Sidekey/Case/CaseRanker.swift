@@ -17,8 +17,9 @@ struct CaseListEntry: Equatable, Identifiable {
     var match: CaseMatch = .none
 }
 
-/// Match strength: a stronger bucket first, then more query parts found.
-/// Usage (`CaseListEntry.score`) only decides between equal matches.
+/// Match strength: a stronger bucket first, then more query parts found,
+/// then fewer of them found only through a typo. Usage
+/// (`CaseListEntry.score`) only decides between equal matches.
 struct CaseMatch: Equatable {
     enum Bucket: Int, Comparable {
         case exact
@@ -29,7 +30,9 @@ struct CaseMatch: Equatable {
         /// name stays ahead.
         case projectQualified
         /// Only the query's first part starts the name; later parts that
-        /// start a word of the name add to `matchedParts`.
+        /// start a word of the name add to `matchedParts`, and so does a
+        /// later part of three or more characters one typo away from a word
+        /// start (counted in `typos`).
         case firstTokenPrefix
         case description
         case none
@@ -39,13 +42,16 @@ struct CaseMatch: Equatable {
 
     let bucket: Bucket
     let matchedParts: Int
+    var typos = 0
 
     static let none = CaseMatch(bucket: .none, matchedParts: 0)
 
     var isPartial: Bool { bucket == .firstTokenPrefix }
 
     func isStronger(than other: CaseMatch) -> Bool {
-        bucket != other.bucket ? bucket < other.bucket : matchedParts > other.matchedParts
+        if bucket != other.bucket { return bucket < other.bucket }
+        if matchedParts != other.matchedParts { return matchedParts > other.matchedParts }
+        return typos < other.typos
     }
 }
 
@@ -54,6 +60,7 @@ enum CaseRanker {
     private static let newKeyBoostWindowSeconds = 86_400.0
     private static let newKeyBoost = 0.15
     private static let minimumProjectPartLength = 2
+    private static let minimumTypoPartLength = 3
 
     static func sortedEntries(
         secrets: [CaseSecret],
@@ -116,7 +123,7 @@ enum CaseRanker {
                 let rest = Self.match(name: entry.displayName, query: qualifier.remaining.joined(separator: "_"),
                                       queryParts: qualifier.remaining)
                 let qualified = CaseMatch(bucket: rest.isPartial ? .firstTokenPrefix : .projectQualified,
-                                          matchedParts: qualifier.covered + rest.matchedParts)
+                                          matchedParts: qualifier.covered + rest.matchedParts, typos: rest.typos)
                 if rest.bucket != .none, qualified.isStronger(than: best) { best = qualified }
             }
             guard best.bucket != .none else { return nil }
@@ -201,12 +208,50 @@ enum CaseRanker {
             return CaseMatch(bucket: .contains, matchedParts: all)
         }
         if haystack.hasPrefix(firstPart) {
-            // `github_lan_key` finds more of GITHUB_LENDING_KEY than of GITHUB_TOKEN.
+            // `github_lan_key` finds more of GITHUB_LENDING_KEY than of GITHUB_TOKEN:
+            // `key` starts a word, and `lan` is one typo from `len`.
             let nameWords = words(of: haystack)
-            let laterParts = queryParts.dropFirst().filter { part in nameWords.contains { $0.hasPrefix(part) } }
-            return CaseMatch(bucket: .firstTokenPrefix, matchedParts: 1 + laterParts.count)
+            var found = 1
+            var typos = 0
+            for part in queryParts.dropFirst() {
+                if nameWords.contains(where: { $0.hasPrefix(part) }) {
+                    found += 1
+                } else if part.count >= minimumTypoPartLength,
+                          nameWords.contains(where: { startsWithinOneTypo($0, part: part) }) {
+                    found += 1
+                    typos += 1
+                }
+            }
+            return CaseMatch(bucket: .firstTokenPrefix, matchedParts: found, typos: typos)
         }
         return .none
+    }
+
+    /// Whether `part` is one substitution, insertion, deletion or swap of
+    /// neighbours away from the start of `word`. The start compared has at
+    /// least three letters, so `lan` never matches a word starting with AN.
+    private static func startsWithinOneTypo(_ word: String, part: String) -> Bool {
+        let part = Array(part)
+        let word = Array(word)
+        return [part.count, part.count - 1, part.count + 1].contains { length in
+            length >= minimumTypoPartLength && length <= word.count && isWithinOneEdit(part, Array(word[..<length]))
+        }
+    }
+
+    private static func isWithinOneEdit(_ lhs: [Character], _ rhs: [Character]) -> Bool {
+        if lhs.count == rhs.count {
+            let differences = lhs.indices.filter { lhs[$0] != rhs[$0] }
+            if differences.count <= 1 { return true }
+            guard differences.count == 2, let first = differences.first, differences[1] == first + 1 else { return false }
+            return lhs[first] == rhs[first + 1] && lhs[first + 1] == rhs[first]
+        }
+        let (longer, shorter) = lhs.count > rhs.count ? (lhs, rhs) : (rhs, lhs)
+        guard longer.count == shorter.count + 1 else { return false }
+        var index = 0
+        while index < shorter.count, longer[index] == shorter[index] {
+            index += 1
+        }
+        return longer[(index + 1)...].elementsEqual(shorter[index...])
     }
 
     /// The query parts a project's name covers (each, at least two

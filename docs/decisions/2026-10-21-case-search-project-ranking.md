@@ -2,7 +2,7 @@
 id: case-search-project-ranking
 type: decision
 title: Case search ranks projects by their best match
-summary: Order search sections by each project's best match, let query words name a project, and credit later query parts that start key-name words.
+summary: Order search sections by each project's best match, let query words name a project, and credit later query parts that start key-name words, allowing one typo.
 status: confirmed
 tags: [case, search, ranking]
 canonical_for: [case-search-ranking]
@@ -10,6 +10,9 @@ verified_at: 2026-10-21
 sources:
   - type: user-confirmed
     reference: On 2026-10-21 the user searched `github_lan` for the whytap project's GITHUB_LENDING_KEY, saw other projects' GITHUB keys first and asked search to prioritize projects.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 the user approved tolerating one typo in the second and later query parts of three or more letters, with a test for `github_lan`.
     confirmed_at: 2026-10-21
   - type: repository
     reference: Sources/Sidekey/Case/CaseRanker.swift
@@ -48,6 +51,13 @@ part tied in the weakest name bucket, whatever the other parts said.
   otherwise a matching project keeps all its keys, matching ones first.
 - Among first-part-only matches, later parts that start a word of the key
   name count: `github_lan_key` puts GITHUB_LENDING_KEY above GITHUB_TOKEN.
+- A later part of three or more letters also counts when it is one
+  substitution, insertion, deletion or swap of neighbours away from the first
+  three or more letters of a key-name word, so `github_lan` finds
+  GITHUB_LENDING_KEY first while `lan` does not reach ANDROID through `an`. At
+  equal parts an exact word start beats a typo. The first part stays exact, so
+  typos never add keys to the results; like an exact word start, a typo match
+  can still narrow a first-word project match to its matching keys.
 
 ## Why
 
@@ -69,13 +79,21 @@ cleared query. An independent review found that a project-qualified key could
 tie with or beat a key matching the whole query (`github_to` with a project
 `tokens`, `openai key` with a project `Keys`); both are now tests, as is the
 single-letter rule. Punctuation-only queries such as `_` now match names
-containing it instead of every entry. The literal `github_lan` still ties: `LAN` starts no word of
-GITHUB_LENDING_KEY.
+containing it instead of every entry.
+
+Typo tests cover `github_lan` (ranker and island sections), a missing, an
+extra and a swapped letter, a typo pointing at another key (`github_tken`), an
+exact word start beating a more used typo match, the three-letter minimum for
+the part and for the word start (`lan` vs ANDROID) and an inexact first part
+adding nothing. Before building it, a simulation over the user's real key
+names (names only) showed `github_lan` lifting only GITHUB_LENDING_KEY among
+the GITHUB keys. A second review fuzzed the edit check against brute force
+(0 mismatches) and prompted the word-start minimum and the extra-letter test.
 
 ## Rejected
 
-- Tolerating one typo per query part: proposed to the user separately, not
-  enabled silently; it is what the literal `github_lan` needs.
+- Typo tolerance for the first part, which would add results while typing, or
+  for one- and two-letter parts, where almost every word start is one edit away.
 - Substring matching for project names: short parts such as `key` or `dev`
   would qualify unrelated projects.
 - Ranking sections by their first row including key-name order: the

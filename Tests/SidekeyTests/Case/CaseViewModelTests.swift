@@ -750,14 +750,14 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertTrue(vm.projectSections[0].secrets.isEmpty)
     }
 
-    /// The island list for a search like `github_len`: the project holding the
+    /// The island list for the reported `github_lan`: the project holding the
     /// best key comes first instead of waiting for its turn by project name.
     func test_search_puts_the_project_with_the_best_match_first() async throws {
         let fixture = githubVault()
         let vm = fixture.env.makeViewModel()
         try await vm.unlock()
 
-        for query in ["github_len", "github lending", "github_lan_key"] {
+        for query in ["github_lan", "github_len", "github lending", "github_lan_key"] {
             vm.query = query
             XCTAssertEqual(vm.projectSections.first?.name, "whytap", query)
             XCTAssertEqual(vm.projectSections.first?.secrets.map(\.displayName), ["GITHUB_LENDING_KEY"], query)
