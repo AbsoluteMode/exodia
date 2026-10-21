@@ -238,7 +238,7 @@ a click. This is an original native implementation guided by the user's visual
 reference; no third-party source was copied or dependency added. The
 [pinned MIT upstream example](https://github.com/i-am-logger/macos-liquid-glass/blob/ccf01c88648400562c55a1366151f6f0c8b6f663/examples/common/mod.rs#L654-L671)
 selects Clear rather than Regular and describes its own observed opacity
-contrast. It is a reference, not proof of Exodia's visual result.
+contrast. It is a reference, not proof of Whytap's visual result.
 
 Restore explicit magnetic movement and hover/pressed scale feedback on both the
 native and legacy paths. Reduce Motion suppresses translation, scaling and their
@@ -488,5 +488,5 @@ presented as a rerun after it.
 
 The dated user requests and feedback, current native source files, Apple's
 public API documentation and the pinned MIT example establish the decision.
-The upstream reference explains the material choice; Exodia's own implementation
+The upstream reference explains the material choice; Whytap's own implementation
 and live inspection determine its behavior.

@@ -128,18 +128,26 @@ The chosen direction is the user's tile-to-inline-form request.
   purpose and key status even before a key exists. No decorative statistics.
 - Clicking a tile expands a full-width form immediately below that tile's row.
   One form is open at a time; a thin accent outline marks it. Native keyboard
-  focus has an outline too. Cancel, Escape or repeating the tile closes it;
+  focus has an outline too. Escape or repeating the tile closes it;
   closing returns focus to that tile. Input receives focus on expansion.
 - Keep the shared system typography and adaptive Settings colors: 13 pt title,
   11.5 pt explanation and 11 pt tile status. Hover never changes geometry.
   Expansion is immediate, including Reduce Motion. At narrow widths the grid
   reduces columns and the form retains the full row width.
-- Check & save validates before persisting. Checking disables competing actions
-  and shows progress; a failed/unreachable check keeps the form and old key.
-  A successful check clears the typed value and shows the recorded provider
-  result. Existing keys are never read back into the field. Removal keeps the
-  existing confirmation and lists affected features. Custom endpoints retain
-  their name, URL and optional-key fields.
+- As amended by the user on 2026-10-21, the inline form contains only the key
+  field and Save/Remove actions. Remove is unavailable before a key exists;
+  removal is direct, with no extra confirmation row. Custom endpoints retain
+  required name/URL fields. There is no helper, permanent form status, Check now,
+  Cancel or detailed error copy. Why: the user rejected technical explanation
+  and explicitly requested two simple actions with a brief result notice.
+- Save validates before persisting and disables competing actions with a small
+  spinner. A rejected/unreachable check preserves the draft and old key. A
+  successful save clears the draft. No model-assignment sheet opens from inline
+  Save. The panel shows only Key accepted / Key not accepted for 2.5 seconds,
+  anchored to the visible panel instead of scrolled content, and announces it
+  to accessibility. Repeating Save resets the notice lifetime; the notice never
+  captures clicks or shifts fields/buttons. Existing keys are never read back.
+  Add-key entry points in Models/API hints open this same API keys surface.
 - OpenAI and Anthropic are ordinary LLM providers for all text modes. Adding a
   key never assigns routes silently; model selection retains its own synthetic
   check. Why: the user rejected limiting API setup by individual features.
@@ -206,9 +214,18 @@ feature expenses without a permanent model-level grid or scattered period contro
   MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
   so meaning does not rely on color.
 - From/To controls share the period menu's 30 pt geometry, neutral fill and
-  typography. They open a native calendar, closing on a changed date or Done/
-  Return/Escape. Why: the user rejected mismatched black date fields and their
-  persistent blue text selection. The control retains a keyboard focus outline.
+  typography. They open a 310 pt calendar with separate month menu and editable year combo.
+  Selecting a day or Today applies and closes; month/year browsing never changes
+  the filter, and Done/Return/Escape close without applying the browsed month.
+  Year offers the recent 100 years and accepts any earlier positive year; future
+  days and next-month navigation after today are disabled. Why: the user found
+  the native whole-calendar focus ring distracting and year navigation unclear
+  (2026-10-21). Focus stays visible on individual controls/day buttons, with
+  full-area hover and pressed feedback; disabled days never respond to hover.
+  The neutral closed controls retain their keyboard focus outline. The month
+  selector uses a local native popup with an enabled-gated highlight drawing;
+  shared plain menus are unchanged. Why: its pressed state must be verifiable
+  from the real native control, rather than assumed from SwiftUI Menu styling.
 - Hover opens model details; click pins, keyboard focus opens, Escape closes.
   Row fill follows actual pointer hover, so an open popover does not leave a
   selected-looking row after the pointer moves away.
@@ -220,6 +237,26 @@ feature expenses without a permanent model-level grid or scattered period contro
   costs. The permanent bottom explanation is removed at the user's request;
   help and model details explain these marks. ElevenLabs credits are never
   combined with dollars or inferred from a plan.
+
+Update 2026-10-21: one feature table remains the cost surface. Soniox exact
+request prices replace estimates when available; API delay/failure retains ≈
+values. ElevenLabs uses recorded minutes and cached model credit/minute rates;
+the separate workspace usage block is removed to follow the user's chosen
+calculation policy. Rates are learned from credit/minute statistics, retained
+across outages and never converted from USD. A new model without a rate stays
+unavailable. Price checking leaves history visible, shows a small header spinner
+and disables Refresh; failures show concise text near the period. Refresh,
+period/date and calendar actions retain full-area hover/press, focus outlines
+and inactive disabled states. Existing feature disclosures and layout stay intact.
+
+The revised date popover has 310 pt offscreen fixtures in English/Russian and
+both appearances. Calendar arithmetic covers leap days, DST, previous years
+and future bounds; native month highlight snapshots cover rest/pressed/disabled
+(with disabled/highlighted drawings identical), and native month actions reject
+disabled future choices. Native year-editor Return is tested without selecting a day
+or closing the popover. Physical day-grid keyboard navigation and VoiceOver
+remain acceptance on the shared installed application. White selected-day text
+on the shared #0064D2 fill has 5.59:1 contrast.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
 long model histories, custom dates, empty/error states and synthetic temporary-store
@@ -529,8 +566,39 @@ Touch ID remain acceptance on the one signed installed app after promotion.
 
 # Backup: automatic synchronization — 2026-10-20
 
+As requested on 2026-10-21, a short explanation above the status card states
+the recovery purpose (keys, passwords and settings), local encryption, private
+GitHub storage, automatic synchronization after the first backup and keeping the
+recovery code. GitHub
+receives ciphertext, not the recovery credential. Why: the status alone does
+not explain what is protected or who can read the stored copy. Keep the existing
+13 pt secondary text role and multiline wrapping; no new disclosure or setup
+step. The native offscreen fixtures cover the longer content at 560 and 760 pt.
+The shared MacButton style and the Backup GitHub link highlight the full hit
+area on hover, use a stronger pressed overlay and show a separate focus ring;
+disabled controls suppress those active states. Why: the user explicitly asked
+for visible interaction feedback on 2026-10-21. These state changes add no motion
+and preserve control geometry and existing native keyboard activation.
+Colored-text buttons use a hover outline, strengthened on press, instead of
+brightening their background. Why: the recovery-code action's dark-theme blue
+text would drop from 4.92:1 to 3.59:1 on hover and 2.76:1 on press with the neutral
+overlay. The outline keeps its text contrast unchanged and marks the whole hit
+area. The state matrix includes this ghost action in both appearances.
+The backup regression tests cover key-only automatic
+sync and clean-profile recovery. Native offscreen renders cover 560/760 pt in
+both already-supported Settings appearances and normal/hover/pressed/focus/
+disabled control surfaces. The explanation has 8.35:1 dark and 5.94:1 light
+contrast; white primary-button text stays at least 5.59:1 through active states.
+Physical pointer, Tab navigation and VoiceOver remain shared-app acceptance.
+The first code is shown once after upload. Leaving before completion retains
+a visible Save your recovery code status, with a Save recovery code action;
+subsequent Show recovery code uses the same ghost action. Both require Mac
+authentication. Repeating Back up does not reveal the code. A paused status
+explains that Back up resumes synchronization. These states keep recovery
+possible without claiming that merely showing the code proves it was saved.
+
 The user opens Backup to confirm their data is protected, then open its GitHub
-copy or restore it. The existing native Settings card, two actions, system font
+copy or restore it. The existing native Settings card, primary actions, system font
 and dark theme remain. Direction is supplied by the user: a compact status with
 a backup link, without the connection caption or date. Use a 13 pt medium status
 and a 12 pt GitHub link on one row, existing green only for verified sync, existing

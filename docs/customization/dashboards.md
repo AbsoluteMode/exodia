@@ -111,3 +111,15 @@ configuration with existing SSH aliases or credential-store references. See
 `Sources/Sidekey/Monitor/MonitorServer.swift` for that contract. Custom collectors
 run separately and write passive snapshots; they are not commands embedded in
 dashboard JSON. Use `discover --json` for the current source entry points.
+
+## Portable backup
+
+Owned Monitor files use the same portable path contract as
+[notification workers](notifications.md#portable-backup): regular files,
+printable ASCII names up to 120 bytes without spaces, colons, separators or
+a leading dot, and up to five nested directory levels. An unsupported file
+fails backup with its relative path instead of being silently omitted.
+Use a valid regular `CACHEDIR.TAG` only for rebuildable dependencies and caches;
+the whole tagged directory is excluded. Keep collector scripts, dependency
+descriptors and persistent data outside it. Recreate dependencies and review
+machine-specific connections before re-enabling restored collectors.

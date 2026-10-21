@@ -35,6 +35,22 @@ final class SonioxBYOKAdapterTests: XCTestCase {
         await session.close()
     }
 
+    func test_meter_keeps_the_sent_client_reference_for_billing() async throws {
+        let stub = StubWebSocketTransport()
+        var recorded: [AIUsageEvent] = []
+        let adapter = AIUsageMeteredAdapter(
+            adapter: SonioxBYOKAdapter(apiKey: "fixture", model: "stt-rt-v5") { stub },
+            context: .init(feature: .agentVoice, account: .soniox, model: "stt-rt-v5"), record: { recorded.append($0) })
+        let session = try await adapter.open(language: nil, terms: [])
+        let reference = try XCTUnwrap(configFromFirstFrame(stub)["client_reference_id"] as? String)
+        XCTAssertNotNil(UUID(uuidString: reference))
+        await session.sendAudio(Data(count: 32000)); await session.close(); await session.close()
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.id, "soniox:" + reference)
+        XCTAssertEqual(recorded.first?.context.feature, .agentVoice)
+        XCTAssertEqual(recorded.first?.audioSeconds, 1)
+    }
+
     func testSendAudioIsRawBinaryAndEndInputIsEmptyString() async throws {
         let stub = StubWebSocketTransport()
         let adapter = SonioxBYOKAdapter(apiKey: "k", model: "stt-rt-v5") { stub }

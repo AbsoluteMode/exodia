@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Button with the mockup's `.mac-btn` style variants.
 struct MacButton: View {
-    enum Style {
+    enum Style: Equatable {
         case primary
         case tinted
         case danger
@@ -14,6 +14,8 @@ struct MacButton: View {
     var style: Style = .default
     var isEnabled: Bool = true
     let action: () -> Void
+    @Environment(\.isEnabled) private var parentEnabled
+    @FocusState private var focused: Bool
 
     var body: some View {
         Button(action: action) {
@@ -22,11 +24,14 @@ struct MacButton: View {
                 .padding(.horizontal, 13)
                 .padding(.vertical, 5)
                 .foregroundStyle(fg)
-                .background(bg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MacButtonInteractionStyle(background: bg,
+                                               highlight: style == .primary ? .black : MacSettingsTheme.text,
+                                               outline: style == .ghost || style == .tinted || style == .danger ? fg : nil,
+                                               focused: focused))
+        .focused($focused)
         .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.42)
+        .opacity(isEnabled && parentEnabled ? 1 : 0.42)
     }
 
     private var fg: Color {
@@ -45,5 +50,74 @@ struct MacButton: View {
         case .ghost, .danger: return .clear
         case .default: return MacSettingsTheme.controlBg
         }
+    }
+}
+
+/// Keep the existing control geometry and colors while making every live
+/// hit area respond to the pointer, press and keyboard focus.
+// WHY: docs/DESIGN.md — Backup: automatic synchronization.
+struct MacButtonInteractionStyle: ButtonStyle {
+    var background: Color = .clear
+    var highlight: Color = MacSettingsTheme.text
+    var outline: Color? = nil
+    var focused = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        Content(configuration: configuration, background: background, highlight: highlight,
+                outline: outline, focused: focused)
+    }
+
+    private struct Content: View {
+        let configuration: ButtonStyleConfiguration
+        let background: Color
+        let highlight: Color
+        let outline: Color?
+        let focused: Bool
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background {
+                    MacButtonInteractionSurface(background: background, highlight: highlight,
+                                                outline: outline,
+                                                hovered: isHovered, pressed: configuration.isPressed,
+                                                focused: focused, enabled: isEnabled)
+                        .allowsHitTesting(false)
+                }
+                .onHover { isHovered = $0 }
+        }
+    }
+}
+
+struct MacButtonInteractionSurface: View {
+    var background: Color
+    var highlight: Color
+    var outline: Color? = nil
+    var hovered: Bool
+    var pressed: Bool
+    var focused: Bool
+    var enabled: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(background)
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(highlight.opacity(!enabled || outline != nil ? 0 : pressed ? 0.18 : hovered ? 0.10 : 0))
+            }
+            .overlay {
+                // Colored labels retain their existing contrast. Brightening
+                // their dark background would make blue/red text harder to read.
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke((outline ?? .clear).opacity(!enabled ? 0 : pressed ? 0.85 : hovered ? 0.5 : 0),
+                            lineWidth: pressed ? 2 : 1)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(enabled && focused ? MacSettingsTheme.accent : .clear, lineWidth: 2)
+                    .padding(-3)
+            }
     }
 }

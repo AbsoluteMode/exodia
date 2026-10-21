@@ -5,13 +5,21 @@ user's provider keys or their own OpenAI-compatible endpoints, no on-device
 models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
 OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
-no telemetry. The user-facing name is Whytap (briefly named Exodia); the module and most internal
+no telemetry. The project and product name is **Whytap**, reaffirmed by the user
+on 2026-10-21; use it in replies, current documentation and new features.
+The module and most internal
 identifiers are still `Sidekey`. The public source repository is
 `https://github.com/AbsoluteMode/whytap`. Preserve legacy bundle IDs, Keychain
 services and Application Support paths so existing settings and permissions
 survive the rename. Keep the existing community certificate, EXODIA_* release
 variables, build metadata keys and backup formats/destinations as compatibility
 contracts. WHY: .project-docs/decisions/2026-10-19-whytap-name.md
+
+The canonical primary checkout folder is named `whytap`; an older `exodia`
+path can remain a compatibility symlink for existing chats and worktrees.
+It is not the project name. Older checkouts can contain unmerged source and WIP.
+Consult current `origin/main` guidance and the primary build receipt before
+treating an older checkout's naming or feature descriptions as the current app.
 
 ## Parallel development and the shared application
 
@@ -152,13 +160,16 @@ Voice flow (Drop / dictation):
 Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop, route of agentVoice
-       -> OpenCodeProvider -> opencode run --format json --model
-          <openrouter|openai|anthropic>/<selected-model> --dir <local workspace>,
+       -> OpenCodeProvider -> opencode run --standalone --format json --model
+          <openrouter|openai|anthropic>/<selected-model>, Process cwd = local workspace,
           prompt on stdin; provider and model come from the agent feature's
           route in AIRoutingStore
        -> complete text/tool events rendered progressively in the island
-  Settings -> Agents installs an app-managed OpenCode binary from its official
-  GitHub release after SHA-256 digest verification, or locates an existing CLI.
+  Settings -> Agents installs the current stable OpenCode 2 native binary from
+  the official @opencode npm channel after SHA-512 integrity and staged version
+  verification, or locates an existing CLI. V2 uses a private standalone server;
+  supported V1 remains usable during promotion. No global tools or install scripts
+  are modified/run. WHY: .project-docs/decisions/2026-10-21-opencode-v2.md
   The agent's key and model are chosen in Settings -> API & Models (the
   Agent row: OpenRouter, OpenAI or Anthropic from their live catalogs); the Agents tab shows "Model: <provider> · <id>"
   with Change in API & Models, and Save & connect only checks the local
@@ -585,12 +596,18 @@ whytap:// links:
   are exhaustive, so a new tile or tab needs a destination to compile. The enums
   are the public registry of linkable places: never rename raw values. A link
   only shows a place: inline tools open their HoverPanelRequest, navigate tools
-  and tabs open Settings with setHighlight, Planner/Translate/Subtitles windows
-  open idle, Drop Mode/Record/Screenshot select their Toolbox pane
-  (SettingsWindowSelection.focus) and Quit highlights the Quit row. Unknown ids
+  and tabs open Settings with setHighlight, Calendar/Translate/Subtitles
+  windows open idle, Drop Mode/Record/Screenshot select their Toolbox pane
+  (SettingsWindowSelection.focus), Case opens Toolbox without selecting its
+  Touch ID pane and Quit highlights the Quit row (Invariant 7). Unknown ids
   or kinds only wake the island; other schemes, credentials, ports, empty or
-  extra segments and non-alphanumeric ids are rejected and not logged. WHY:
-  .project-docs/decisions/2026-10-20-whytap-links.md
+  extra segments and non-alphanumeric ids are rejected and not logged.
+  whytap://hotkey/<HoverTool>?keys=option+shift+s proposes a tool hotkey: the
+  key needs ⌃ or ⌥ (A-Z, 0-9, US punctuation, F1-F20), Quit is excluded and an
+  unsafe or malformed request only opens Settings -> Hotkeys. Whytap's own
+  dialog asks first; taken keys show a conflict and change nothing. WHY:
+  .project-docs/decisions/2026-10-20-whytap-links.md,
+  .project-docs/decisions/2026-10-21-whytap-link-hotkeys.md
 
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference
@@ -681,10 +698,18 @@ rewrite past usage. Only used feature groups appear for the selected local-date
 period; hover/click/keyboard focus reveals their models. One Price column
 retains explicit USD and ElevenLabs credit units, both when mixed. Each visit
 starts at This month; matching neutral From/To controls open a dismissing native
-calendar. No permanent bottom explanation or sticky text-segment highlight. OpenRouter response costs and exact matched ElevenLabs
-analytics debits are reported; Soniox public hourly equivalents and OpenCode's
-computed step prices are estimates. Missing prices stay unavailable, never zero;
-partial totals show +. No account-wide balance deltas or USD-to-credit conversion.
+calendar. No permanent bottom explanation or sticky text-segment highlight.
+OpenRouter response costs are reported. Soniox reads exact request cost_usd from
+usage logs by random client reference and historical model; missing/delayed API
+prices retain public hourly estimates marked ≈. New meeting checkpoints retain
+the same reference across retries. Exact prices upgrade estimated journal rows
+once, never duplicate or downgrade reported costs. ElevenLabs feature estimates
+use recorded audio minutes times a cached STT model credit/minute rate, marked ≈.
+Only model rates/update time are cached; rate refresh failures retain usable
+rates. First-use models without a rate stay unavailable. Recording never makes
+a billing read. No workspace Reported usage block, balance deltas, account-total
+allocation or USD-to-credit conversion. Missing prices are never zero; partial
+totals show +. OpenCode's computed step prices remain estimates.
 Tracking starts with this update; synthetic model checks are excluded. WHY:
 .project-docs/decisions/2026-10-20-feature-costs.md
 
@@ -701,7 +726,8 @@ Up/Down and Return choose enabled results; Escape clears then closes. Opening
 the picker refreshes stale/failed catalogs automatically; the footer has no
 Refresh models or Other model ID actions. Custom servers without /models offer
 a contextual model-name field. API keys uses square provider tiles opening an
-inline Check & save form; failed checks keep the previous key. WHY:
+inline Save/Remove form with no extra helper/status copy; a short Key accepted
+or Key not accepted notice reports the result. Failed checks keep the previous key. WHY:
 .project-docs/decisions/2026-10-21-provider-key-tiles.md;
 .project-docs/decisions/2026-10-20-model-search.md
 
@@ -862,7 +888,10 @@ token. Settings → Backup shows its synchronization status, a GitHub Releases l
 Restore backup. Back up always includes all supported user data and stored keys,
 uploads and verifies ciphertext, then displays the recovery code without a
 paste-back step. Restore takes only that code and stages every included section
-from the newest completed GitHub version without a selection/confirmation wizard.
+from the newest completed matching-key GitHub snapshot by authenticated capture
+date, without a selection/confirmation wizard. A new Mac restores existing
+copies before uploading under another recovery key. Repeat code display requires Mac
+authentication; a never-presented first code keeps a save-code status visible.
 A normal quit and relaunch applies it; the running stores are never replaced.
 There are no normal-page backup settings, management/history disclosures or
 folder picker. Existing automatic schedules, folder destinations, local encrypted
@@ -874,12 +903,27 @@ and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
 pauses and maintenance never show Backup synced. Background sync keeps the same
 recovery credential without revealing it. WHY:
 `.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
+Pending transfers are retried before creating another full archive. Network
+failures back off, including a connection check after an offline launch, while
+actual authentication/permission/public-repository failures require reconnecting.
+GitHub rate-limit deadlines are respected. Unchanged unsupported inputs suspend
+automatic export retries.
+Schema 3 preserves inactive configurations across repeated restores, including
+coexisting older copies; schemas 1 and 2 remain readable. Local Case application
+policies precede imports, including matching identities with different UUIDs.
+WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
 Short recording chunks use the archive entry ceiling rather than a separate
 4096-file limit. WHY:
 `.project-docs/decisions/2026-10-20-simple-github-backup.md`.
+Workspace traversal and change detection honor valid regular `CACHEDIR.TAG`
+markers on nested Monitor/Notify directories. Tagged runtime dependencies are
+excluded with an archive warning; nearby scripts, configuration and working
+data remain included. Names alone never exclude a directory, links are not
+followed and retained recordings never honor cache tags. WHY:
+`.project-docs/decisions/2026-10-21-backup-tagged-caches.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore
@@ -1081,7 +1125,7 @@ input layout, including live recording and previously saved non-English titles.
    a key for, OpenRouter's provider list (latency, throughput) for a model
    selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
-   Check now, its official GitHub release download, `google.com` opened in the
+   Check now, its official OpenCode native package downloads from the npm registry, `google.com` opened in the
    browser, the Sparkle feed on GitHub Releases, and optional encrypted backups
    to the user's own GitHub repository or selected sync folder.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
@@ -1135,3 +1179,16 @@ input layout, including live recording and previously saved non-English titles.
    deliberate extraction by an approved command. Revalidate current caller
    authority after approval/authentication before granting or releasing
    values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+7. **whytap:// links show, or propose an allowlisted change.** Any web page
+   can open a link, so a link never records, captures, toggles, copies,
+   pastes, authenticates (no Touch ID: Case links stop at Toolbox) or quits,
+   and reports nothing back. Every `WhytapLinkDestination` is classified
+   show-only in `WhytapLinkTests`; the handler is source-checked for action
+   calls. A change is a `WhytapLinkChange` case, applied only after the
+   user's Assign in `WhytapLinkConfirmation` (Cancel default, Assign armed
+   after 1 s) through the same validated path as Settings. Today only tool
+   hotkeys with ⌃ or ⌥ (not Quit). Never allow a change that reads or
+   exports data (keys, Case, meetings, clipboard, backups) or changes where
+   data goes (provider routes/endpoints, notification scripts, Monitor,
+   backup destination). WHY: .project-docs/decisions/2026-10-20-whytap-links.md,
+   .project-docs/decisions/2026-10-21-whytap-link-hotkeys.md

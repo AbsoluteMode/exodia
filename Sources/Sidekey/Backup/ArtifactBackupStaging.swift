@@ -128,6 +128,31 @@ struct ArtifactBackupGeneration: Sendable {
     var contentBytes: Int64
 }
 
+/// An explicit cache tag, rather than a directory-name guess, identifies
+/// disposable worker dependencies such as uv-created Python environments.
+/// Only workspace trees honor it; retained recordings never do.
+/// WHY: .project-docs/decisions/2026-10-21-backup-tagged-caches.md
+enum ArtifactBackupCache {
+    private static let signature = Data("Signature: 8a477f597d28d172789f06886806bc55".utf8)
+
+    static func isTaggedDirectory(_ directory: URL) throws -> Bool {
+        let tag = directory.appendingPathComponent("CACHEDIR.TAG", isDirectory: false)
+        let descriptor = open(tag.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor >= 0 else {
+            if errno == ENOENT { return false }
+            if errno == ELOOP { throw ArtifactBackupError.unsafeContent }
+            throw ArtifactBackupError.readFailed
+        }
+        defer { close(descriptor) }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0 else { throw ArtifactBackupError.readFailed }
+        guard metadata.st_mode & S_IFMT == S_IFREG else { return false }
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+        do { return try file.read(upToCount: signature.count) == signature }
+        catch { throw ArtifactBackupError.readFailed }
+    }
+}
+
 /// Off-main worker. Staging, hashing and the encrypted write all happen on
 /// this actor's executor, so a large meeting recording never blocks the UI.
 ///
@@ -194,15 +219,16 @@ actor ArtifactBackupStager {
             if request.sections.contains(.caseVault), request.includeCaseVaultFile {
                 entries.append(try stageCaseVault(request, into: directory))
             }
+            // Check worker paths before copying large meeting generations.
+            if request.sections.contains(.workspace) {
+                entries.append(contentsOf: try stageWorkspace(request, into: directory,
+                                                              warnings: &warnings))
+            }
             if request.sections.contains(.meetings) {
                 entries.append(contentsOf: try await stageMeetings(request, into: directory, warnings: &warnings))
             }
             if request.sections.contains(.history) {
                 entries.append(contentsOf: try stageHistory(request, into: directory, warnings: &warnings))
-            }
-            if request.sections.contains(.workspace) {
-                entries.append(contentsOf: try stageWorkspace(request, into: directory,
-                                                              warnings: &warnings))
             }
             if request.sections.contains(.planner), fileManager.fileExists(atPath: request.locations.plannerArchive.path) {
                 let copy = directory.appendingPathComponent("planner-v1.json")
@@ -236,6 +262,9 @@ actor ArtifactBackupStager {
     static func ordered(_ entries: [ArtifactStagedEntry]) throws -> [ArtifactStagedEntry] {
         var seen = Set<String>()
         for entry in entries {
+            // Never write an archive that our own restore cannot consume.
+            do { _ = try ArtifactRestoreDestination.resolve(entry.path, in: .production) }
+            catch ArtifactBackupError.unsafeContent { throw ArtifactBackupError.unsupportedFile(entry.path) }
             guard seen.insert(entry.path.lowercased()).inserted else {
                 throw ArtifactBackupError.unsafeContent
             }
@@ -373,16 +402,22 @@ actor ArtifactBackupStager {
                 .appendingPathComponent(name, isDirectory: true)
             var produced: [ArtifactStagedEntry] = []
             var copied = Set<String>()
-            try walk(child, relative: "", depth: 1, maxDepth: 1) { file, relative in
+            try walk(child, relative: "", depth: 1, maxDepth: 1, pathLabel: "Recordings/" + name) { file, relative in
                 if Self.excludedRecordingNames.contains(relative) { return }
+                // Multipart upload bodies duplicate retained WAVs. They are
+                // disposable transport state even after a crash or long upload.
+                if relative.hasPrefix("soniox-upload-"), relative.hasSuffix(".tmp") { return }
                 if relative.hasSuffix(".tmp"), try self.isBeingWritten(file) { unfinished += 1; return }
                 guard retained < Limit.recordingFiles else { throw ArtifactBackupError.tooLarge }
                 retained += 1
-                let copy = target.appendingPathComponent(relative, isDirectory: false)
+                let archivedName = relative == MeetingFinalizeManifest.fileName + ArtifactRestoreDestination.parkedSuffix
+                    && self.fileManager.fileExists(atPath: child.appendingPathComponent(MeetingFinalizeManifest.fileName).path)
+                    ? "manifest-\(UUID().uuidString).json" + ArtifactRestoreDestination.parkedSuffix : relative
+                let copy = target.appendingPathComponent(archivedName, isDirectory: false)
                 try self.createPrivateDirectory(copy.deletingLastPathComponent())
                 _ = try self.copyStable(file, to: copy, limit: Limit.recordingFile, required: true)
                 copied.insert(relative)
-                produced.append(try self.entry(for: copy, path: "meetings/staged/\(name)/\(relative)",
+                produced.append(try self.entry(for: copy, path: "meetings/staged/\(name)/\(archivedName)",
                                                section: .meetings))
             }
             guard !produced.isEmpty else { continue }
@@ -436,9 +471,9 @@ actor ArtifactBackupStager {
         try createPrivateDirectory(staged)
         var entries: [ArtifactStagedEntry] = []
         entries.append(contentsOf: try stageOwnedTree(request.locations.monitorRoot, into: staged,
-                                                      prefix: "monitor"))
+                                                      prefix: "monitor", warnings: &warnings))
         entries.append(contentsOf: try stageOwnedTree(request.locations.notifyRoot, into: staged,
-                                                      prefix: "notify"))
+                                                      prefix: "notify", warnings: &warnings))
         // Only the real AGENTS.md. `CLAUDE.md` is a symlink alias and the
         // `.opencode-runtime` directory, caches and session state are runtime,
         // not user content.
@@ -488,20 +523,50 @@ actor ArtifactBackupStager {
         executable.contains("/notifications/")
     }
 
-    private func stageOwnedTree(_ root: URL, into staged: URL, prefix: String) throws -> [ArtifactStagedEntry] {
+    private func stageOwnedTree(_ root: URL, into staged: URL, prefix: String,
+                                warnings: inout [String]) throws -> [ArtifactStagedEntry] {
         guard fileManager.fileExists(atPath: root.path) else { return [] }
-        try validateOwnedRoot(root)
+        do { try validateOwnedRoot(root) }
+        catch ArtifactBackupError.unsafeContent { throw ArtifactBackupError.unsupportedFile(prefix == "notify" ? "Notifications" : "Monitor") }
         var entries: [ArtifactStagedEntry] = []
         var total: Int64 = 0
-        try walk(root, relative: "", depth: 1, maxDepth: Limit.workspaceDepth) { file, relative in
+        var excludedCaches = 0
+        var retainedConfigurations = 0
+        let retentionFolder = "restored-files-" + UUID().uuidString
+        try walk(root, relative: "", depth: 1, maxDepth: Limit.workspaceDepth,
+                 pathLabel: prefix == "notify" ? "Notifications" : "Monitor", skipDirectory: { directory in
+            guard try ArtifactBackupCache.isTaggedDirectory(directory) else { return false }
+            excludedCaches += 1
+            return true
+        }) { file, relative in
             guard entries.count < Limit.workspaceFiles else { throw ArtifactBackupError.tooLarge }
-            let copy = staged.appendingPathComponent(prefix + "/" + relative, isDirectory: false)
+            let pairedOriginal: String?
+            if prefix == "monitor", relative == "servers.json" + ArtifactRestoreDestination.parkedSuffix {
+                pairedOriginal = "servers.json"
+            } else if prefix == "notify", relative.hasPrefix("sources/"), relative.split(separator: "/").count == 2,
+                      relative.hasSuffix(ArtifactRestoreDestination.invalidSuffix) {
+                pairedOriginal = String(relative.dropLast(ArtifactRestoreDestination.invalidSuffix.count))
+            } else { pairedOriginal = nil }
+            let archivedRelative: String
+            if let original = pairedOriginal, self.fileManager.fileExists(atPath: root.appendingPathComponent(original).path) {
+                // Preserve both generations without making them resolve to the
+                // same inactive destination. Runtime loaders ignore this folder.
+                archivedRelative = retentionFolder + "/" + file.lastPathComponent
+                retainedConfigurations += 1
+            } else { archivedRelative = relative }
+            let copy = staged.appendingPathComponent(prefix + "/" + archivedRelative, isDirectory: false)
             try self.createPrivateDirectory(copy.deletingLastPathComponent())
             let bytes = try self.copyStable(file, to: copy, limit: Limit.workspaceFile, required: true)
             total += bytes
             guard total <= Limit.workspaceTotal else { throw ArtifactBackupError.tooLarge }
-            entries.append(try self.entry(for: copy, path: "workspace/" + prefix + "/" + relative,
+            entries.append(try self.entry(for: copy, path: "workspace/" + prefix + "/" + archivedRelative,
                                           section: .workspace))
+        }
+        if excludedCaches > 0 {
+            warnings.append("\(excludedCaches) explicitly tagged cache folder(s) are not included. Recreate cached dependencies before enabling restored notification or monitoring scripts.")
+        }
+        if retainedConfigurations > 0 {
+            warnings.append("Earlier inactive configurations are kept separately in restored-files folders. They remain inactive after recovery.")
         }
         return entries
     }
@@ -509,25 +574,32 @@ actor ArtifactBackupStager {
     // MARK: File helpers
 
     /// Depth-limited walk of an application-owned directory. Nothing is
-    /// skipped quietly: a link, an unexpected file type, an unusable name, a
-    /// directory deeper than the format supports or an unreadable directory
-    /// all fail the backup.
+    /// skipped quietly: callers may explicitly exclude tagged caches. A link,
+    /// an unexpected file type, an unusable name, a directory deeper than the
+    /// format supports or an unreadable directory all fail the backup.
     private func walk(_ directory: URL, relative: String, depth: Int, maxDepth: Int,
+                      pathLabel: String,
+                      skipDirectory: (URL) throws -> Bool = { _ in false },
                       visit: (URL, String) throws -> Void) throws {
         for item in try listDirectory(directory).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let name = item.lastPathComponent
             if Self.systemMetadataNames.contains(name) { continue }
             let values = try resourceValues(item)
-            guard values.isSymbolicLink != true else { throw ArtifactBackupError.unsafeContent }
             let child = relative.isEmpty ? name : relative + "/" + name
+            let displayedPath = pathLabel + "/" + child
+            guard values.isSymbolicLink != true else { throw ArtifactBackupError.unsupportedFile(displayedPath) }
             if values.isDirectory == true {
+                do { if try skipDirectory(item) { continue } }
+                catch ArtifactBackupError.unsafeContent { throw ArtifactBackupError.unsupportedFile(displayedPath + "/CACHEDIR.TAG") }
                 guard depth < maxDepth else { throw ArtifactBackupError.invalidContent(child) }
-                guard Self.isUsableName(name) else { throw ArtifactBackupError.unsafeContent }
-                try walk(item, relative: child, depth: depth + 1, maxDepth: maxDepth, visit: visit)
+                guard Self.isUsableName(name) else { throw ArtifactBackupError.unsupportedFile(displayedPath) }
+                try walk(item, relative: child, depth: depth + 1, maxDepth: maxDepth,
+                         pathLabel: pathLabel, skipDirectory: skipDirectory, visit: visit)
                 continue
             }
-            guard values.isRegularFile == true else { throw ArtifactBackupError.unsafeContent }
-            guard Self.isUsableName(name) else { throw ArtifactBackupError.unsafeContent }
+            guard values.isRegularFile == true, Self.isUsableName(name) else {
+                throw ArtifactBackupError.unsupportedFile(displayedPath)
+            }
             try visit(item, child)
         }
     }

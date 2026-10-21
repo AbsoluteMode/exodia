@@ -2,12 +2,27 @@
 id: feature-costs-2026-10-20
 type: decision
 title: Feature costs preserve historical models and separate ElevenLabs credits
-summary: Costs has one Price column with explicit USD or credit units, defaults to This month and reveals historical models; calendar controls share the period menu appearance.
+summary: Soniox uses exact request prices when available and duration estimates otherwise; ElevenLabs uses local model credit rates and recorded time.
 status: confirmed
 tags: [settings, costs, models, credits, providers]
 canonical_for: [feature-costs]
-verified_at: 2026-10-20
+verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 Maxim chose exact Soniox API prices with local estimates when unavailable, and calculated ElevenLabs credits.
+    confirmed_at: 2026-10-21
+  - type: url
+    reference: https://soniox.com/docs/openapi.yaml
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 Maxim requested a more convenient Costs calendar, objected to its large blue focus ring and asked how to choose a year.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 Maxim requested verification on existing sessions, approved separate reported usage by API key and directed feature estimates from recorded time with each model.
+    confirmed_at: 2026-10-21
+  - type: url
+    reference: https://elevenlabs.io/docs/api-reference/analytics/workspace/usage
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-20 Maxim requested one Price column, removal of the bottom explanation, This month by default, consistent control fills, no persistent date selection and repair of ElevenLabs credits.
     confirmed_at: 2026-10-20
@@ -49,9 +64,18 @@ becomes the fourth tab, retaining its offer content and existing add-key form.
 
 Costs shows Today, Last 7 days, This month or Custom dates at the heading. Each
 visit starts at This month; custom dates remain selectable within that visit.
-From/To use the same neutral control fill as the period menu and open a native
-calendar that closes after a changed date, Done/Return or Escape. No selected
-text segment remains on the closed control. Feature-row fill follows actual
+From/To use the same neutral control fill as the period menu. As amended on
+2026-10-21, their calendar has a month menu and an editable year combo with the
+recent 100 years (earlier positive years can be typed). Browsing changes only
+the visible month; choosing a day or Today commits and closes. Done/Return and
+Escape close without applying a browsed month. Future days and navigation past
+the current month are unavailable. Individual controls and days retain visible
+keyboard focus, hover and pressed feedback, replacing the native calendar’s
+large focus ring. The local native month popup draws from its actual enabled/
+highlighted state; its pressed proof does not rely on the shared plain SwiftUI
+menu. Disabled controls suppress highlight and disabled future month actions
+are rejected. Disabled days never react to hover. No selected text segment
+remains on the closed control. Feature-row fill follows actual
 pointer hover rather than the lifetime of its detail popover. Dates
 use the local calendar and include the selected end day. Only feature groups
 with activity in that period appear. Hover, click or keyboard focus reveals all
@@ -77,21 +101,48 @@ unknown price is Unavailable. Failed/interrupted work is not silently free.
 OpenCode child-agent costs that are absent from its top-level event stream leave
 an incomplete marker rather than a fabricated complete total.
 
-ElevenLabs' official SDK exposes a request analytics endpoint with explicit
-column units. The app reads it with the existing key, joins only an exact
-request/session ID captured from its own response, verifies the model when
-present, and accepts one unambiguous credit column. The documented analytics
-response includes numeric strings, which the credit parser accepts without
-relaxing inference API parsing. A search result without an ID column cannot
-establish attribution; a bounded second query uses an explicit request_id
-equality filter and accepts only one matching row. Unsupported filters or
-ambiguous responses remain unavailable. The same journal entry is
-reconciled once. Free and purchased credits remain credits. USD columns,
-account-wide balance deltas, ambiguous rows and guessed plan conversions are
-never used. Delayed analytics, missing identifiers or insufficient key scope
-leave the expense unavailable; reopening Costs retries at a bounded rate.
+Live verification on 2026-10-21 established that the request log returns request
+metadata without credit amounts. Its documented example is not the live billing
+schema. The saved session references did not resolve through the usage table's
+request/trace filters. The previous exact-request reconciliation is therefore
+replaced by the user's approved time calculation.
 
-Offscreen fixtures and stubbed network tests establish layout, attribution and
-failure handling. Live analytics availability and identifier correspondence are
-not established by those fixtures and remain normal-use acceptance after the
-shared-app builder promotes the feature. No paid test request is required.
+## Current speech accounting — 2026-10-21
+
+Soniox initially records its supported v5 model's public equivalent hourly
+estimate. Costs reads `GET /v1/usage-logs` and accepts a reported `cost_usd` only
+for the exact request reference and historical model, scoped to API requests.
+Realtime and batch calls send a fresh random `client_reference_id`; new meeting
+jobs persist that reference in their checkpoint so retries retain one charge.
+Legacy `soniox-job:` rows can match the provider UUID; uncorrelated history is
+never matched by time, duration, model alone or a share of account totals.
+
+Usage-log windows filter by request end time, so a query extends beyond an
+activity day's end for audio and asynchronous completion. Each window is at
+most 31 days, pagination is bounded, and repeated cursors terminate safely.
+Missing, delayed, malformed, ambiguous or inaccessible prices retain estimates
+marked ≈. An explicit reported zero remains zero. Late exact prices replace
+estimates in the existing journal row, preserving its feature, model, currency,
+start date and duration. Repeated responses cannot duplicate or downgrade a
+reported charge. No provider request is sent merely to generate a test charge.
+
+ElevenLabs feature credits are calculated from recorded audio minutes and a
+cached model-specific credit/minute rate. The rate is learned from the STT
+credit/minute usage table over the latest 31 days, weighted by reported minutes;
+it is never derived from USD, credit balance differences or subscription price.
+Only model rates and their update time are cached locally. Key names, hashes,
+workspace totals and full responses are not persisted. Rate refresh is attempted
+when needed or after a day; an unavailable API retains the previous usable rate.
+Recording itself uses the cache without a billing request. A first-use model
+without a usable rate remains unavailable rather than borrowing another model's
+rate. Known per-request amounts remain unchanged, and calculated amounts stay ≈.
+Calculated estimates are saved with their own historical event, so later rate
+updates do not reprice saved usage.
+
+The earlier separate ElevenLabs workspace Reported usage section is superseded
+by this choice. Costs has one feature table and Total, with USD and credits
+kept separate. Refresh retries price lookups; API failure shows a concise
+explanation while known estimates remain visible. Loading prices does not hide
+local history. Tests and fixtures use temporary stores, synthetic keys and stub
+network responses. Installed UI and live billing acceptance remain separate from
+source/parser checks.

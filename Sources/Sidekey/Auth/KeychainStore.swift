@@ -167,7 +167,8 @@ struct KeychainStore: TokenStore {
     /// existing value.
     func save(_ token: String) throws {
         defer {
-            if ConfigBackupRegistry.credentialAccounts.contains(account) {
+            if ConfigBackupRegistry.credentialAccounts.contains(account)
+                || (account.hasPrefix("byok.server.") && ConfigBackupRegistry.isCredentialAccount(account)) {
                 NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil)
             }
         }
@@ -237,7 +238,8 @@ struct KeychainStore: TokenStore {
     /// item exists.
     func delete() throws {
         defer {
-            if ConfigBackupRegistry.credentialAccounts.contains(account) {
+            if ConfigBackupRegistry.credentialAccounts.contains(account)
+                || (account.hasPrefix("byok.server.") && ConfigBackupRegistry.isCredentialAccount(account)) {
                 NotificationCenter.default.post(name: .exodiaBackupArtifactsChanged, object: nil)
             }
         }

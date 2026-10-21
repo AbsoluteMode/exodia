@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum APIAndModelsSection: String, CaseIterable {
@@ -12,6 +13,11 @@ struct APIAndModelsView: View {
     @ObservedObject var viewModel: APIAndModelsViewModel
     @Binding var focusedFeature: AIFeature?
 
+    private struct KeyNotice: Identifiable {
+        let id = UUID()
+        let accepted: Bool
+    }
+    @State private var keyNotice: KeyNotice?
     @State private var activeSheet: ActiveSheet?
     @State private var highlighted: Set<AIFeature> = []
     @State private var expandedGroup: String?
@@ -25,29 +31,28 @@ struct APIAndModelsView: View {
 
     init(viewModel: APIAndModelsViewModel, focusedFeature: Binding<AIFeature?>,
          initiallyExpandedGroup: String? = nil, initialSection: APIAndModelsSection = .models,
-         usageStore: AIUsageStore? = nil, usageModel: AIUsageCostsViewModel? = nil) {
+         usageStore: AIUsageStore? = nil, usageModel: AIUsageCostsViewModel? = nil,
+         initialKeyResult: Bool? = nil) {
         self.viewModel = viewModel
+        self._keyNotice = State(initialValue: initialKeyResult.map { KeyNotice(accepted: $0) })
         self._focusedFeature = focusedFeature
         self._expandedGroup = State(initialValue: initiallyExpandedGroup)
         self._section = State(initialValue: initialSection)
         self._usage = StateObject(wrappedValue: usageModel ?? AIUsageCostsViewModel(store: usageStore ?? .shared))
     }
 
-    /// What the one sheet of the tab shows. The proposal wins: after Save the
-    /// add-key window gives way to it without a second presentation.
+    /// Explicit model selection can still use a sheet. Key setup always opens
+    /// the same minimal provider form in API keys.
     private enum ActiveSheet: Equatable {
-        case addKey
         case otherModel(AIFeature)
     }
 
     private enum PresentedSheet: Identifiable {
-        case addKey
         case otherModel(AIFeature)
         case assign(AssignProposal)
 
         var id: String {
             switch self {
-            case .addKey: return "addKey"
             case .otherModel(let feature): return "otherModel.\(feature.rawValue)"
             case .assign: return "assign"
             }
@@ -72,7 +77,7 @@ struct APIAndModelsView: View {
                     case .costs:
                         AIUsageCostsView(model: usage)
                     case .hints:
-                        APIHintsView(onAddKey: { section = .keys; activeSheet = .addKey },
+                        APIHintsView(onAddKey: showKeySetup,
                                      onClose: { section = .models }, embedded: true)
                     }
                 }
@@ -92,11 +97,23 @@ struct APIAndModelsView: View {
         .background(MacSettingsTheme.bgCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5) }
+        .overlay(alignment: .bottom) {
+            if let keyNotice {
+                ProviderKeySaveNotice(accepted: keyNotice.accepted).padding(.bottom, 16)
+            }
+        }
+        .task(id: keyNotice?.id) {
+            guard let keyNotice else { return }
+            NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                                 userInfo: [.announcement: keyNotice.accepted ? "Key accepted" : "Key not accepted",
+                                            .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            self.keyNotice = nil
+        }
         .padding(.horizontal, 24).padding(.vertical, 22)
         .sheet(item: presentedSheet) { sheet in
             switch sheet {
-            case .addKey:
-                AddKeySheet(viewModel: viewModel) { activeSheet = nil }
             case .otherModel(let feature):
                 OtherModelSheet(
                     feature: feature,
@@ -154,7 +171,6 @@ struct APIAndModelsView: View {
             get: {
                 if let proposal = viewModel.proposal { return .assign(proposal) }
                 switch activeSheet {
-                case .addKey: return .addKey
                 case .otherModel(let feature): return .otherModel(feature)
                 case nil: return nil
                 }
@@ -172,7 +188,7 @@ struct APIAndModelsView: View {
     private var keysBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             MacGroupTitle(title: "API keys")
-            ProviderKeyTiles(viewModel: viewModel)
+            ProviderKeyTiles(viewModel: viewModel) { keyNotice = KeyNotice(accepted: $0) }
         }
     }
 
@@ -327,7 +343,7 @@ struct APIAndModelsView: View {
                     viewModel: viewModel,
                     feature: row.feature,
                     label: row.selectionLabel,
-                    onAddKey: { activeSheet = .addKey },
+                    onAddKey: showKeySetup,
                     width: modelWidth
                 )
                 Group {
@@ -426,7 +442,13 @@ struct APIAndModelsView: View {
     /// The menu cannot be opened from code: the window below takes a model ID
     /// from a provider with a key; with none, it asks for a key first.
     private func chooseModel(for feature: AIFeature) {
-        activeSheet = viewModel.sections(for: feature).isEmpty ? .addKey : .otherModel(feature)
+        if viewModel.sections(for: feature).isEmpty { showKeySetup() }
+        else { activeSheet = .otherModel(feature) }
+    }
+
+    private func showKeySetup() {
+        activeSheet = nil
+        section = .keys
     }
 
     // MARK: - Focus

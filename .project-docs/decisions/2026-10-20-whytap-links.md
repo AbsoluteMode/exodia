@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Resources/Info.plist.template
     confirmed_at: 2026-10-20
-related: [2026-10-17-hover-tool-search.md, 2026-10-20-toolbox-mini-apps.md]
+related: [2026-10-17-hover-tool-search.md, 2026-10-20-toolbox-mini-apps.md, 2026-10-21-whytap-link-hotkeys.md]
 ---
 
 ## Context
@@ -39,8 +39,19 @@ fixed on the site.
 - A link only shows a place. Inline tools open the same `HoverPanelRequest`
   as their tile and feature hotkey. Navigate tools and every tab open Settings
   with `setHighlight`. To-do opens its compact inline panel, matching the
-  tile and hotkey. Calendar/Translate/Subtitles open their windows idle. Drop Mode, Record and Screenshot select their Toolbox pane, where the
-  action remains an explicit button. Quit highlights the Quit row.
+  tile and hotkey. Calendar/Translate/Subtitles open their windows idle. Drop
+  Mode, Record and Screenshot select their Toolbox pane, where the action
+  remains an explicit button. Quit highlights the Quit row. Case opens
+  Settings -> Toolbox without selecting its pane: both Case surfaces request
+  Touch ID when they appear, and a link must never prompt for authentication.
+- Invariant 7: links only show. `WhytapLinkTests` classifies every
+  destination kind and inline panel with exhaustive switches and source-checks
+  the handler for action calls. A link that changes something (for example
+  assigning a hotkey) needs its own decision with in-app confirmation and an
+  allowlist that excludes reading data (keys, Case, meetings, clipboard,
+  backups) and network destinations (provider endpoints, notification scripts).
+  Tool hotkeys became the first such change:
+  [2026-10-21-whytap-link-hotkeys.md](2026-10-21-whytap-link-hotkeys.md).
 - A well-formed link with an unknown id or kind (a newer site, an older app)
   only wakes the island. Other schemes, credentials, ports, empty or extra path
   segments and ids outside the ASCII alphanumeric raw-value alphabet (`..`,
@@ -69,6 +80,8 @@ installs the build.
 ## Rejected
 
 - A separate list of linkable ids: drifts from the enums the site reads.
+- Opening the Case panel from a link: a web page could trigger a Touch ID
+  prompt that the user approves by reflex.
 - Running the tile's effect (`HoverSlotRouter.effect`) for links: starts
   recording, capture or quit from any web page.
 - Showing an error for unknown ids: older apps would complain about links to
