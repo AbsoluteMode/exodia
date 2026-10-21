@@ -343,7 +343,10 @@ Case secrets manager:
   grant after authentication/approval, the broker revalidates the current
   caller, registration and project. Revoking or rebinding a registration
   invalidates its pending requests, including queued approvals.
-  Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
+  Approve uses a non-activating island panel with bare physical digit keys
+  1 (deny), 2 (allow once), 3 (temporary Bypass), including the numeric keypad.
+  Letters, Escape, navigation and modified digits pass to the active app. WHY:
+  docs/decisions/2026-10-21-case-numeric-approval.md. It keeps
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
   grants. Temporary Bypass is a separate button beside a native editable
   1–240 minute field (default 15), without stepper arrows; the bottom row has

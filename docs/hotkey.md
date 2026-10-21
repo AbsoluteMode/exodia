@@ -312,16 +312,16 @@ Whytap take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
 
 A Case Approve prompt (an AI app asks to run a command with keys of a
 project) is a card attached under the island at the island's width. Its
-answers are fixed, not rebindable, and matched by **physical key**
-(`kVK_ANSI_Y` / `kVK_ANSI_N` / `kVK_ANSI_A` / `kVK_Escape`), so they work on
-any layout (Russian «н», «т», «ф» are the same keys):
+answers are fixed, not rebindable, and matched by **physical digit key**
+(`kVK_ANSI_1` / `kVK_ANSI_2` / `kVK_ANSI_3`, or numeric keypad 1/2/3):
 
-- **Y** — allow once; **N** or **Escape** — deny; **A** — allow this app
-  this project for N minutes (the button reads «На N мин», N default 15).
+- **1** — deny; **2** — allow once; **3** — temporary Bypass for this app
+  and project for the displayed minutes (default 15).
 - `CaseApprovalKeyTap`, an active head-insert session tap for key down/up
-  (needs Accessibility), exists only while a prompt is queued. Only those
-  four keys are swallowed (with their repeats and key-up); every other key,
-  and the four with ⌘, ⌃ or ⌥, go to the app underneath.
+  (needs Accessibility), exists only while a prompt is queued. Only those bare
+  digits are swallowed (with their repeats and key-up); letters, Escape,
+  navigation, other digits and digits with ⌘, ⌃, ⌥ or ⇧ go to the app underneath.
+  This preserves normal typing and app shortcuts while a request is visible.
 - Nothing is swallowed or answered (keys and clicks) until the keyboard has
   been quiet for 300 ms: every key press while the prompt is unarmed starts
   the wait again, so ongoing typing in another app cannot answer it.
@@ -332,6 +332,8 @@ any layout (Russian «н», «т», «ф» are the same keys):
   by clicking. Key contents are never logged or stored (invariant #2).
 - The buttons show the keys with `HotkeyHintView` (`.keycaps`), and the Help
   window has one row per answer (Case — allow / deny / allow for minutes).
+  The card and Help read the same `CaseApprovalKey.keycap` values as the filter's
+  actions. WHY: [numeric approval keys](decisions/2026-10-21-case-numeric-approval.md).
 
 ## Canonical reference
 
