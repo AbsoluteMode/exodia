@@ -388,7 +388,10 @@ the only result message is a brief Key accepted / Key not accepted notice. Faile
 previous key and keep the form open. OpenAI and Anthropic are available to all
 LLM routes with their own provider keys.
 Model results show the provider's date when known: Anthropic `Released`, OpenAI
-`Created`, OpenRouter `Added to OpenRouter`. Unknown or invalid dates have no
+`Created`, OpenRouter `Added to OpenRouter`, Deepgram `Updated` (newest model
+version). Soniox and ElevenLabs show `Released` for exact stable IDs with
+verified official launch dates in the built-in registry; unknown IDs/aliases
+inherit no date. Unknown or invalid dates have no
 placeholder. Nonempty search orders equal-relevance matches by newest date,
 unknown dates last, preserving provider groups and stable ties. Empty search
 keeps catalog order.
