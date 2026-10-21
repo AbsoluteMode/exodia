@@ -95,9 +95,10 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
         try withBrandAssets {
             for width in [CGFloat(310), CGFloat(390)] {
                 for (name, clients, loading, connected) in [
-                    ("both", CaseKnownClient.connectableClients, false, false),
+                    ("all", CaseKnownClient.connectableClients, false, false),
                     ("cursor", [.cursor], false, false),
                     ("opencode", [.builtInOpenCode], false, false),
+                    ("claude-code", [.claudeCode], false, false),
                     ("empty", [], false, false),
                     ("connected", [], false, true),
                     ("loading", [], true, false),
@@ -229,7 +230,10 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
             ProviderBrandIconAsset.setResourceDirectoryForTesting(nil)
             ProviderBrandIconAsset.clearCacheForTesting()
         }
-        for asset in ["opencode", "cursor"] {
+        // Every Connect row draws a bundled brand mark, never the generic fallback.
+        let assets = CaseKnownClient.connectableClients.compactMap { IslandCaseConnectedApps.brandAsset(for: $0.identity) }
+        XCTAssertEqual(assets, ["opencode", "claude-code", "cursor"])
+        for asset in assets {
             let image = try XCTUnwrap(ProviderBrandIconAsset.image(named: asset, pointSize: 22))
             XCTAssertEqual(image.size, NSSize(width: 22, height: 22))
             let cgImage = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
