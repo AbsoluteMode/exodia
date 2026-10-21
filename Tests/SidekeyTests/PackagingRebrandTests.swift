@@ -838,6 +838,28 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertEqual(manifest["schema_version"] as? Int, 3)
         XCTAssertEqual(manifest["code_signing"] as? String, "team:TEAMID1234")
         XCTAssertEqual(manifest["notarization"] as? String, "notarized")
+
+        // Existing local builder verifiers omit the new flag. They accept a
+        // schema-3 local archive, but cannot reinterpret a notarized manifest.
+        let helper = temporary.appendingPathComponent("scripts/release-provenance.py")
+        let environment = ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
+        let arguments = [helper.path, "verify", "--project-root", temporary.path,
+            "--archive", temporary.appendingPathComponent("build/" + archive).path,
+            "--version", "9.9.9", "--build", "42", "--flavor", "prod",
+            "--distribution", "community", "--code-signing", "team:TEAMID1234"]
+        let implicitNotarized = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+            arguments: arguments, environment: environment)
+        XCTAssertNotEqual(implicitNotarized.status, 0)
+        XCTAssertTrue(implicitNotarized.output.contains("archive notarization (notarized) does not match"),
+                      implicitNotarized.output)
+        try sealFixture(temporary, archiveName: archive, codeSigning: "team:TEAMID1234")
+        let local = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+            arguments: arguments, environment: environment)
+        XCTAssertEqual(local.status, 0, local.output)
+        let publication = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
+            arguments: arguments + ["--notarization", "notarized"], environment: environment)
+        XCTAssertNotEqual(publication.status, 0)
+        XCTAssertTrue(publication.output.contains("archive notarization (none) does not match"), publication.output)
     }
 
     private static let keyID = "ABCDE12345"

@@ -154,7 +154,10 @@ def main(argv: list[str] | None = None) -> int:
             child.add_argument("--flavor", choices=BUNDLE_IDS, required=True)
             child.add_argument("--distribution", choices=("community", "developer-id"), required=True)
             child.add_argument("--code-signing", required=True)
-            child.add_argument("--notarization", choices=NOTARIZATION, required=True)
+            # Existing local verifiers use the unnotarized build-only path.
+            # Publication passes its explicit, independently enforced expectation.
+            # WHY: docs/decisions/2026-10-21-notarized-releases.md
+            child.add_argument("--notarization", choices=NOTARIZATION, default="none")
         if command == "seal":
             child.add_argument("--source-sha", required=True)
     args = parser.parse_args(argv)

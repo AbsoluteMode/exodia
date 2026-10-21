@@ -116,6 +116,8 @@ and architectures (manifest schema 3). Its subcommands are `capture`, `seal` and
 expected code-signing identity from the committed team or certificate (see
 below), so a local ad-hoc or test-certificate build cannot be published, and
 expects `notarization: notarized` for a team release unless `EXODIA_NOTARIZE=0`.
+The provenance CLI defaults `--notarization` to `none` for existing local
+build-only verifiers; publishing always passes its explicit expectation.
 Keep the adjacent `<DMG>.manifest.json` with the archive;
 `--upload-only` requires both files from the same build.
 

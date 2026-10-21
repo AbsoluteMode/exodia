@@ -50,6 +50,11 @@ Store Connect key in the environment (Doppler).
 
 ## Decision
 
+Existing local build-only verifiers may omit `--notarization`; their expected
+value remains `none`. Publishing passes its explicit expectation and still
+checks the actual stapled ticket and Gatekeeper result, so this compatibility
+default cannot turn an unnotarized archive into a notarized release.
+
 - `EXODIA_NOTARIZE=1` notarizes a team-signed build. `build-dmg.sh` zips and
   submits the signed app, staples it, requires Gatekeeper's
   `source=Notarized Developer ID` and `syspolicy_check distribution`, packages
