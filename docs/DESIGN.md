@@ -9,10 +9,13 @@ then drag a toolbar function onto one or click it to change its assignment.
 - Place the four controls in a compact 96 × 60 pt cardinal cross inside the
   existing wrapping toolbar: Up above Left/Right, Down below. Each outline is
   an actual directional arrow with a dashed contour and the assigned function's
-  symbol inside. Why: the user clarified the controls belong on the screenshot
+  symbol inside. Account for NSButton's flipped coordinates so the top outline
+  points up and the bottom outline points down. Why: the user clarified the controls belong on the screenshot
   toolbar itself and must look like a cross; the earlier Settings-only/inverted-T
   placement was an incorrect interpretation and is superseded.
-- Keep defaults ↑ Pen, ↓ Blur, ← Undo, → Copy & exit and preserve saved mappings.
+- Use defaults ↑ Blur, ← Shape, → Pen, ↓ Text. The earlier stock map
+  migrates once; custom mappings remain. Why: the user chose four drawing tools
+  and rejected duplicating the existing Copy action.
   The physical keys execute those actions. Clicking a contour opens a native
   assignment menu, including every retained tool/command and Reset this arrow.
   Why: changing a Copy/Cancel binding must never finish the capture accidentally.

@@ -128,7 +128,10 @@ final class ScreenshotToolbarButton: NSButton, NSDraggingSource {
         case .right: point = CGPoint(x: y, y: 1 - x)
         default: point = CGPoint(x: x, y: y)
         }
-        return CGPoint(x: bounds.minX + point.x * bounds.width, y: bounds.minY + point.y * bounds.height)
+        // NSButton uses flipped coordinates. Keep Up visually up rather than
+        // mirroring the directional outline around the horizontal axis.
+        return CGPoint(x: bounds.minX + point.x * bounds.width,
+                       y: bounds.minY + (isFlipped ? 1 - point.y : point.y) * bounds.height)
     }
     private func arrowPath() -> NSBezierPath {
         let path = NSBezierPath()

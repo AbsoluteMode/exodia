@@ -1055,11 +1055,12 @@ Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z
 from every screenshot panel through both key-equivalent and direct window dispatch,
 using physical Z so Russian input works; focused text fields retain native text undo.
 ScreenshotToolbar contains a compact four-way cross with dashed arrow-shaped
-assignment controls: Up Pen, Down Blur, Left Undo, Right Copy & exit by default.
+assignment controls: Up Blur, Left Shape, Right Pen, Down Text by default.
 Drag a toolbar tool/action or an existing assignment onto an arrow to replace
 only that destination, or click it for a native assignment menu and per-arrow
 reset. Changes save immediately through HotkeyPreferences.screenshotArrowBindings;
-Help and settings backups share it. Saved mappings survive this placement change.
+Help and settings backups share it. Custom mappings survive this placement change; the previous unmodified stock map
+migrates once to the new four drawing defaults.
 The earlier Settings-only assignment surface is removed. Bare arrows use those actions,
 Shift-arrows move the crop and Option-arrows resize it. Agent Useful Links
 releases its Carbon registrations while Screenshot is active, restores the

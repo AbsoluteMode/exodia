@@ -6,11 +6,11 @@ import XCTest
 final class ScreenshotArrowTests: XCTestCase {
     func testDropReplacesOnlyDestinationAndRejectsUnknownOrMultiplePayloads() {
         var bindings = ScreenshotArrowBindings.defaults
-        XCTAssertEqual(bindings[.up], .pen); XCTAssertEqual(bindings[.down], .blur)
-        XCTAssertEqual(bindings[.left], .undo); XCTAssertEqual(bindings[.right], .copy)
+        XCTAssertEqual(bindings[.up], .blur); XCTAssertEqual(bindings[.down], .text)
+        XCTAssertEqual(bindings[.left], .rectangle); XCTAssertEqual(bindings[.right], .pen)
         XCTAssertTrue(bindings.replace(.right, with: [bindings[.up].dragPayload]))
-        XCTAssertEqual(bindings[.right], .pen); XCTAssertEqual(bindings[.up], .pen)
-        XCTAssertEqual(bindings[.down], .blur); XCTAssertEqual(bindings[.left], .undo)
+        XCTAssertEqual(bindings[.right], .blur); XCTAssertEqual(bindings[.up], .blur)
+        XCTAssertEqual(bindings[.down], .text); XCTAssertEqual(bindings[.left], .rectangle)
         let before = bindings
         for payloads in [[], ["external text"], ["whytap.screenshot.action:unknown"],
                          [ScreenshotEditorAction.undo.dragPayload, ScreenshotEditorAction.redo.dragPayload]] {
@@ -28,7 +28,7 @@ final class ScreenshotArrowTests: XCTestCase {
         let prefs = HotkeyPreferences(defaults: defaults)
         var draft = prefs.configuration
         draft.screenshotArrowBindings[.up] = .share
-        XCTAssertEqual(prefs.configuration.screenshotArrowBindings[.up], .pen, "Drafts do not change the running editor before Save")
+        XCTAssertEqual(prefs.configuration.screenshotArrowBindings[.up], .blur, "Drafts do not change the running editor before Save")
         try prefs.apply(draft)
         let restored = HotkeyPreferences(defaults: defaults)
         XCTAssertEqual(restored.configuration.screenshotArrowBindings[.up], .share)
@@ -68,6 +68,7 @@ final class ScreenshotArrowTests: XCTestCase {
         var commands: [ScreenshotCommand] = []
         canvas.onCommand = { commands.append($0) }
         for panel in panels {
+            bindings[.up] = .pen; bindings[.down] = .blur; bindings[.left] = .undo; bindings[.right] = .copy
             try send(.up, to: panel); XCTAssertEqual(canvas.tool, .pen)
             try send(.down, to: panel); XCTAssertEqual(canvas.tool, .blur)
             for action in ScreenshotEditorAction.allCases where action.tool != nil {

@@ -83,7 +83,7 @@ There is no provider setup, account, app-managed model download or API request.
 Editor shortcuts, also listed in Help: A Arrow, R Rectangle,
 O Oval, P Pen, T Text, B Blur, N Numbered steps, ⌘C Copy,
 ⌘S Download, ⌘Z Undo, ⇧⌘Z Redo. Undo/redo also work with Russian input.
-Bare arrows default to ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. Four dashed,
+Bare arrows default to ↑ Blur, ← Shape, → Pen, ↓ Text. Four dashed,
 arrow-shaped assignment controls form a cross directly on the screenshot toolbar.
 Drag a toolbar tool/action onto one to replace its function, or drag one arrow's
 assignment onto another; the source remains. Click a dashed arrow for the native

@@ -40,13 +40,43 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
             XCTAssertEqual(button.dragAction, ScreenshotArrowBindings.defaults[direction])
             XCTAssertEqual(button.menu?.items.filter { !$0.isSeparatorItem && $0.state == .on }.count, 1)
             XCTAssertTrue(button.toolTip?.contains("Changes save immediately") == true)
+            // Hit-test a wide shoulder on the pointed side and the same point
+            // on the narrow shaft side. This catches flipped Up/Down drawings.
+            let shoulder: CGPoint, shaft: CGPoint
+            switch direction {
+            case .up: shoulder = CGPoint(x: 0.16, y: 0.67); shaft = CGPoint(x: 0.16, y: 0.30)
+            case .down: shoulder = CGPoint(x: 0.16, y: 0.33); shaft = CGPoint(x: 0.16, y: 0.70)
+            case .left: shoulder = CGPoint(x: 0.33, y: 0.16); shaft = CGPoint(x: 0.70, y: 0.16)
+            case .right: shoulder = CGPoint(x: 0.67, y: 0.16); shaft = CGPoint(x: 0.30, y: 0.16)
+            }
+            func parentPoint(_ p: CGPoint) -> CGPoint {
+                button.convert(CGPoint(x: p.x * button.bounds.width, y: (button.isFlipped ? 1 - p.y : p.y) * button.bounds.height), to: button.superview)
+            }
+            XCTAssertTrue(button.hitTest(parentPoint(shoulder)) === button, "Wrong outline direction: \(direction)")
+            XCTAssertNil(button.hitTest(parentPoint(shaft)), "The shaft must remain narrower than the arrowhead")
         }
+    }
+
+    func testOnlyOldStockDefaultsMigrateAndCustomOrLaterAssignmentsSurvive() throws {
+        let (_, _, _, defaults) = try fixture()
+        let oldStock = ["up": "pen", "down": "blur", "left": "undo", "right": "copy"]
+        defaults.removeObject(forKey: "hotkeys.screenshotArrowDefaultsVersion")
+        defaults.set(oldStock, forKey: HotkeyPreferences.screenshotArrowsDefaultsKey)
+        XCTAssertEqual(HotkeyPreferences(defaults: defaults).screenshotArrowBindings, .defaults)
+        defaults.set(oldStock, forKey: HotkeyPreferences.screenshotArrowsDefaultsKey)
+        XCTAssertEqual(HotkeyPreferences(defaults: defaults).screenshotArrowBindings.saved, oldStock,
+                       "The one-time migration must not undo a later deliberate assignment")
+        defaults.removeObject(forKey: "hotkeys.screenshotArrowDefaultsVersion")
+        var custom = oldStock; custom["up"] = "text"
+        defaults.set(custom, forKey: HotkeyPreferences.screenshotArrowsDefaultsKey)
+        XCTAssertEqual(HotkeyPreferences(defaults: defaults).screenshotArrowBindings.saved, custom)
     }
 
     func testToolbarDragCopiesActionIntoOnlyTargetAndImmediatelyChangesKeyboardBehavior() throws {
         let (canvas, toolbar, prefs, defaults) = try fixture()
         let pasteboard = NSPasteboard(name: .init("ScreenshotArrowToolbar.\(UUID().uuidString)"))
         defer { pasteboard.releaseGlobally() }
+        prefs.screenshotArrowBindings[.right] = .copy
         let up = try XCTUnwrap(toolbar.arrowCluster.buttons[.up])
         let right = try XCTUnwrap(toolbar.arrowCluster.buttons[.right])
         let sourceAction = try XCTUnwrap(right.dragAction)
@@ -54,7 +84,7 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
         XCTAssertTrue(up.acceptAssignment(from: pasteboard))
         XCTAssertEqual(prefs.screenshotArrowBindings[.up], .copy)
         XCTAssertEqual(prefs.screenshotArrowBindings[.right], .copy, "Replacing the destination never clears or swaps the source")
-        XCTAssertEqual(prefs.screenshotArrowBindings[.left], .undo)
+        XCTAssertEqual(prefs.screenshotArrowBindings[.left], .rectangle)
         XCTAssertEqual(up.dragAction, .copy, "The source icon and payload update synchronously")
         XCTAssertEqual(HotkeyPreferences(defaults: defaults).screenshotArrowBindings[.up], .copy)
         var copies = 0
@@ -80,7 +110,7 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
         }
         let reset = try XCTUnwrap(button.menu?.items.last)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(reset.action), to: reset.target, from: reset))
-        XCTAssertEqual(prefs.screenshotArrowBindings[.up], .pen)
+        XCTAssertEqual(prefs.screenshotArrowBindings[.up], .blur)
         XCTAssertEqual(commands, 0, "Choosing a binding must never invoke Copy, Download or Cancel")
         XCTAssertTrue(canvas.annotations.isEmpty)
     }
@@ -97,7 +127,7 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
         XCTAssertFalse(toolbar.focusableControls.contains(button))
         XCTAssertFalse(button.acceptAssignment(from: pasteboard))
         _ = NSApp.sendAction(try XCTUnwrap(menuItem.action), to: menuItem.target, from: menuItem)
-        XCTAssertEqual(prefs.screenshotArrowBindings[.up], .pen)
+        XCTAssertEqual(prefs.screenshotArrowBindings[.up], .blur)
         canvas.busy = false; toolbar.refresh()
         XCTAssertTrue(button.isEnabled)
         XCTAssertTrue(button.acceptAssignment(from: pasteboard))

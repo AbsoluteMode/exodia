@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user replaced the four stock assignments with Blur, Shape, Pen and Text, rejecting duplicate Copy, and reported the top/bottom arrow outlines pointed the wrong way.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user clarified the four arrows must appear as a cross directly on the screenshot toolbar, with reassignment in that same panel rather than Settings.
     confirmed_at: 2026-10-21
   - type: repository
@@ -268,6 +271,11 @@ function and existing assignment can be dragged onto a destination, replacing
 only that slot and saving immediately. Dragging never also activates its source.
 Menus expose every retained editor action plus per-arrow reset and keyboard/
 VoiceOver access. Busy processing disables assignments, menu items and drops.
+The four stock assignments are now Up Blur, Left Shape, Right Pen, Down Text.
+Only the exact previous stock map migrates once; custom mappings and later
+intentional assignments are preserved. Directional paths account for NSButton's
+flipped coordinates, keeping top Up and bottom Down. Shape dragging follows
+its current Rectangle/Oval choice.
 The former Settings-only component is removed; persistence, Help, backup,
 Command-Z, native text handling and Agent priority stay intact.
 

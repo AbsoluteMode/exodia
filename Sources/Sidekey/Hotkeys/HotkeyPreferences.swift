@@ -1647,12 +1647,26 @@ final class HotkeyPreferences: ObservableObject {
             self.usefulLinksPreviousShortcut = HotkeyConfiguration.defaults.usefulLinksPreviousShortcut
         }
 
-        self.screenshotArrowBindings = ScreenshotArrowBindings(saved: defaults.dictionary(forKey: Self.screenshotArrowsDefaultsKey) as? [String: String])
+        self.screenshotArrowBindings = Self.loadScreenshotArrows(defaults)
         self.toolShortcuts = Self.loadToolShortcuts(defaults)
         self.meetingRecordShortcut = Self.loadShortcut(
             defaults, Self.meetingRecordShortcutDefaultsKey,
             default: HotkeyConfiguration.defaults.meetingRecordShortcut
         )
+    }
+
+    private static func loadScreenshotArrows(_ defaults: UserDefaults) -> ScreenshotArrowBindings {
+        let versionKey = "hotkeys.screenshotArrowDefaultsVersion"
+        var saved = defaults.dictionary(forKey: screenshotArrowsDefaultsKey) as? [String: String]
+        if defaults.integer(forKey: versionKey) < 2 {
+            let previousDefaults = ["up": "pen", "down": "blur", "left": "undo", "right": "copy"]
+            if saved == previousDefaults {
+                saved = ScreenshotArrowBindings.defaults.saved
+                defaults.set(saved, forKey: screenshotArrowsDefaultsKey)
+            }
+            defaults.set(2, forKey: versionKey)
+        }
+        return ScreenshotArrowBindings(saved: saved)
     }
 
     /// An empty saved dictionary is intentional: cleared bindings must never

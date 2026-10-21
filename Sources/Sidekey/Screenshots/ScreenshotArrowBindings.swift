@@ -64,7 +64,7 @@ enum ScreenshotEditorAction: String, CaseIterable, Identifiable {
 
 struct ScreenshotArrowBindings: Equatable {
     private var actions: [ScreenshotArrow: ScreenshotEditorAction]
-    static let defaults = Self(actions: [.up: .pen, .down: .blur, .left: .undo, .right: .copy])
+    static let defaults = Self(actions: [.up: .blur, .left: .rectangle, .right: .pen, .down: .text])
     private init(actions: [ScreenshotArrow: ScreenshotEditorAction]) { self.actions = actions }
     init(saved: [String: String]?) {
         actions = Self.defaults.actions

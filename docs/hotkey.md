@@ -386,7 +386,7 @@ Hotkeys → Tools; no new default global key is reserved. Local editor keys
 come from `ScreenshotEditorKeys.tools` and are included in Help.
 A/R/O/P/T/B/N choose Arrow/Rectangle/Oval/Pen/Text/Blur/Numbered steps.
 The removed Select/crop and Highlighter tools have no local shortcuts. ⌘C copies, ⌘S downloads PNG directly into Downloads, ⌘Z undoes and ⇧⌘Z redoes using the physical Z key in either English or Russian input. The screenshot toolbar contains a four-way cross of dashed arrow-shaped controls:
-↑ Pen, ↓ Blur, ← Undo, → Copy & exit by default. Drag any toolbar tool/action or
+↑ Blur, ← Shape, → Pen, ↓ Text by default. Drag any toolbar tool/action or
 an existing arrow assignment onto another arrow to replace only the destination;
 the source stays available. Click an arrow to choose any tool/command from its
 native menu or reset that direction. Changes save immediately and preserve the
