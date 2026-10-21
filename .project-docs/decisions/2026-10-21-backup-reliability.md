@@ -67,6 +67,9 @@ repeating Back up exposed the same code without the existing authentication gate
   recognized abandoned scratch generations and unindexed transfer files before
   runtime work starts. Unreadable catalogs and explicit catalog-abandonment
   markers preserve unknown archives; restore roots are never scratch cleanup.
+  Resolve maintenance and restore protection before housekeeping; cleanup errors
+  never skip the pause for an unreadable key-revocation journal or the remaining
+  connection/recovery initialization.
   An offline destination cannot block a fresh artifact snapshot. Back off network failures
   from two to fifteen minutes (or a later GitHub rate-limit deadline). Recheck a
   transient connection failure after an offline launch without requiring open

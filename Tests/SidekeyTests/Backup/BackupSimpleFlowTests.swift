@@ -416,6 +416,27 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertTrue(source.exists(orphan), "Explicit abandonment preserved these unknown archives")
     }
 
+    func testUnreadableMaintenanceKeepsAutomaticBackupsPausedAndFinishesConnectionStartup() async throws {
+        let source = try profile(), key = MemoryTokenStore(), token = MemoryTokenStore()
+        var time = Date(), captures = 0
+        let first = model(source, keyStore: key, githubTokenStore: token, now: { time })
+        await first.connectGitHub(token: "synthetic-token"); await first.backupEverything()
+        await first.stopAndWait()
+        let published = remote.publishCount
+        try source.write("unreadable revocation journal", to: source.root.appendingPathComponent("archives/maintenance.json"))
+        let restarted = model(source, keyStore: key, githubTokenStore: token, now: { time }, beforeCreate: { captures += 1 })
+        await restarted.start()?.value
+        XCTAssertTrue(restarted.hasPendingMaintenance)
+        XCTAssertFalse(restarted.isEnabled)
+        XCTAssertFalse(source.defaults.bool(forKey: "backup.enabled.v1"))
+        XCTAssertEqual(restarted.githubConnectionState, .connected, "Housekeeping cannot skip the rest of initialization")
+        source.defaults.set(true, forKey: "sidekey.preferences.hideHelpers")
+        time.addTimeInterval(4000); await restarted.poll()
+        XCTAssertEqual(captures, 0, "Never create an archive under a code pending revocation")
+        XCTAssertEqual(remote.publishCount, published)
+        await restarted.stopAndWait()
+    }
+
     func testNewMacCannotAccidentallyReplaceTheRecoveryCodeBeforeRestore() async throws {
         let source = try profile(), target = try profile()
         source.defaults.set("saved", forKey: "sidekey.preferences.transcriptionMode")

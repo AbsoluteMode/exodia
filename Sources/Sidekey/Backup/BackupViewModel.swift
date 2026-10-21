@@ -165,13 +165,6 @@ final class BackupViewModel: ObservableObject {
     private func initialize() async {
         guard !stopped, !Task.isCancelled else { isBusy = false; return }
         do {
-            try await cleanupWork()
-            try await local.cleanupOrphans()
-        } catch {
-            isBusy = false; fail(error)
-            return
-        }
-        do {
             hasPendingMaintenance = try await local.maintenance() != nil
         } catch {
             hasPendingMaintenance = true
@@ -189,6 +182,15 @@ final class BackupViewModel: ObservableObject {
         sourceStamp = defaults.string(forKey: "backup.source-stamp.v1")
         lastContentCheck = defaults.object(forKey: "backup.last-content-check.v1") as? Date ?? .distantPast
         needsFullBackup = lastBackupAt == nil || sourceStamp == nil
+        // Resolve maintenance / restore protection before optional housekeeping.
+        // A cleanup failure must never bypass a paused key-revocation request
+        // or skip the rest of startup (including connection and recovery UI).
+        do {
+            try await cleanupWork()
+            if !hasPendingMaintenance { try await local.cleanupOrphans() }
+        } catch {
+            if !hasPendingMaintenance { fail(error) }
+        }
         await captureSettings()
         if defaults.string(forKey: "backup.destination-kind.v1") == "github" {
             do {
