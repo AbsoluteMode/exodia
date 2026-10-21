@@ -20,7 +20,7 @@ final class BrightnessHoverToolTests: XCTestCase {
     }
 
     func testSearchFindsBrightnessByItsOwnWordsInBothLanguages() {
-        for query in ["brightness", "display", "яркость", "vivid", "xdr", "battery", "батарея"] {
+        for query in ["brightness", "display", "яркость", "vivid", "xdr"] {
             XCTAssertEqual(IslandHoverToolSearch.results(for: query).first, .brightness, query)
         }
     }
@@ -127,15 +127,6 @@ final class BrightnessHoverToolTests: XCTestCase {
             XCTAssertLessThanOrEqual(Self.width(notice, size: 10) + iconAndSpacing, lineWidth, notice)
         }
         XCTAssertLessThanOrEqual(Self.width(IslandBrightnessStrip.unavailableText, size: 11), lineWidth)
-        let longest: [BatteryRuntimeStatus] = [
-            .remaining(percent: 100, minutes: 1_435), .estimating(percent: 100),
-            .unplugged(percent: 100, minutes: 1_435, isCharging: false), .onPower(percent: 100, isCharging: true),
-        ]
-        for status in longest {
-            let text = BatteryRuntimeFormatter.text(for: status) ?? ""
-            XCTAssertFalse(text.isEmpty)
-            XCTAssertLessThanOrEqual(Self.width(text, size: 11) + iconAndSpacing, lineWidth, text)
-        }
     }
 
     /// The real strip with fake hardware, laid out in an unordered offscreen window.
@@ -146,7 +137,7 @@ final class BrightnessHoverToolTests: XCTestCase {
                 defer { fixture.close() }
                 fixture.settle()
                 // Without a status line only the control row and its padding remain.
-                let expected: CGFloat = state == .noBattery ? 44 : IslandBrightnessStrip.contentHeight
+                let expected: CGFloat = [.notice, .unavailable].contains(state) ? IslandBrightnessStrip.contentHeight : 44
                 XCTAssertEqual(fixture.idealHeight, expected, accuracy: 0.5, "\(state) at \(width) pt")
                 try saveProofImage(of: fixture.host, named: "brightness-\(state)-\(Int(width))")
             }
@@ -176,28 +167,14 @@ final class BrightnessHoverToolTests: XCTestCase {
         }
     }
 
-    func testOnlyAShownStripPollsTheDisplayAndBattery() {
+    func testOnlyAShownStripPollsTheDisplay() {
         let fixture = StripFixture(state: .extraOff, width: 310)
         defer { fixture.close() }
         fixture.settle()
         XCTAssertTrue(fixture.controller.isPolling)
-        XCTAssertTrue(fixture.battery.isSampling)
 
         fixture.removeStrip()
         XCTAssertFalse(fixture.controller.isPolling)
-        XCTAssertFalse(fixture.battery.isSampling)
-    }
-
-    /// The time left follows the slider at once, without waiting for the next battery reading.
-    func testTheTimeLeftFollowsTheSlider() {
-        let fixture = StripFixture(state: .extraOff, width: 310, followsDisplay: true)
-        defer { fixture.close() }
-        fixture.settle()
-        XCTAssertEqual(fixture.battery.status, .remaining(percent: 84, minutes: 260))
-
-        fixture.controller.setLevel(0.2)
-        fixture.settle()
-        XCTAssertEqual(fixture.battery.status, .remaining(percent: 84, minutes: 320))
     }
 
     // MARK: Settings
@@ -262,7 +239,7 @@ final class BrightnessHoverToolTests: XCTestCase {
 }
 
 private enum StripState: String, CaseIterable {
-    case extraOff, extraOn, noExtra, unavailable, notice, onPower, noBattery
+    case extraOff, extraOn, noExtra, unavailable, notice
 
     @MainActor
     func makeController() -> ScreenBrightnessController {
@@ -296,32 +273,16 @@ private func saveProofImage(of host: NSView, named name: String) throws {
     try data.write(to: directory.appendingPathComponent(name + ".png"))
 }
 
-/// No real backlight, overlay, battery or input events.
+/// No real backlight, overlay or input events.
 @MainActor
 private final class StripFixture {
     let controller: ScreenBrightnessController
-    let battery: BatteryRuntimeMonitor
     let window: NSWindow
     let host: NSHostingView<AnyView>
 
-    /// With `followsDisplay`, the battery estimate sees the fake display's level and Extra.
-    init(state: StripState, width: CGFloat, followsDisplay: Bool = false) {
+    init(state: StripState, width: CGFloat) {
         let controller = state.makeController()
         self.controller = controller
-        let snapshot: BatterySnapshot? = switch state {
-        case .noBattery: nil
-        case .onPower: BatterySnapshot(percent: 100, isOnAC: true, isCharging: false)
-        default: BatterySnapshot(percent: 84, isOnAC: false, isCharging: false, systemMinutesToEmpty: 260,
-                                 remainingWattHours: followsDisplay ? 40 : nil,
-                                 instantLoadWatts: followsDisplay ? 20 : nil)
-        }
-        battery = BatteryRuntimeMonitor(read: { snapshot }, displayLoad: {
-            followsDisplay
-                ? ScreenBrightnessScale.displayLoad(
-                    level: controller.level,
-                    gammaFactor: controller.isExtraOn ? ScreenBrightnessScale.maximumExtraGamma : 1)
-                : nil
-        })
         state.prepare(controller)
 
         window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width,
@@ -330,7 +291,7 @@ private final class StripFixture {
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .darkAqua)
         host = NSHostingView(rootView: AnyView(
-            IslandBrightnessStrip(controller: controller, battery: battery, onBack: {})
+            IslandBrightnessStrip(controller: controller, onBack: {})
                 .frame(width: width)
                 .background(Color(white: 0.11))
                 .environment(\.colorScheme, .dark)))
@@ -492,7 +453,6 @@ private final class StaticBrightnessDevice: ScreenBrightnessDevice {
 
 @MainActor
 private final class NoBoost: BrightnessBoost {
-    var gammaFactor: Double { 1 }
     func refresh() {}
     func close() {}
 }
