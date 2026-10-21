@@ -58,18 +58,26 @@ The chosen direction is the user's tile-to-inline-form request.
   purpose and key status even before a key exists. No decorative statistics.
 - Clicking a tile expands a full-width form immediately below that tile's row.
   One form is open at a time; a thin accent outline marks it. Native keyboard
-  focus has an outline too. Cancel, Escape or repeating the tile closes it;
+  focus has an outline too. Escape or repeating the tile closes it;
   closing returns focus to that tile. Input receives focus on expansion.
 - Keep the shared system typography and adaptive Settings colors: 13 pt title,
   11.5 pt explanation and 11 pt tile status. Hover never changes geometry.
   Expansion is immediate, including Reduce Motion. At narrow widths the grid
   reduces columns and the form retains the full row width.
-- Check & save validates before persisting. Checking disables competing actions
-  and shows progress; a failed/unreachable check keeps the form and old key.
-  A successful check clears the typed value and shows the recorded provider
-  result. Existing keys are never read back into the field. Removal keeps the
-  existing confirmation and lists affected features. Custom endpoints retain
-  their name, URL and optional-key fields.
+- As amended by the user on 2026-10-21, the inline form contains only the key
+  field and Save/Remove actions. Remove is unavailable before a key exists;
+  removal is direct, with no extra confirmation row. Custom endpoints retain
+  required name/URL fields. There is no helper, permanent form status, Check now,
+  Cancel or detailed error copy. Why: the user rejected technical explanation
+  and explicitly requested two simple actions with a brief result notice.
+- Save validates before persisting and disables competing actions with a small
+  spinner. A rejected/unreachable check preserves the draft and old key. A
+  successful save clears the draft. No model-assignment sheet opens from inline
+  Save. The panel shows only Key accepted / Key not accepted for 2.5 seconds,
+  anchored to the visible panel instead of scrolled content, and announces it
+  to accessibility. Repeating Save resets the notice lifetime; the notice never
+  captures clicks or shifts fields/buttons. Existing keys are never read back.
+  Add-key entry points in Models/API hints open this same API keys surface.
 - OpenAI and Anthropic are ordinary LLM providers for all text modes. Adding a
   key never assigns routes silently; model selection retains its own synthetic
   check. Why: the user rejected limiting API setup by individual features.

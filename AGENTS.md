@@ -721,7 +721,8 @@ Up/Down and Return choose enabled results; Escape clears then closes. Opening
 the picker refreshes stale/failed catalogs automatically; the footer has no
 Refresh models or Other model ID actions. Custom servers without /models offer
 a contextual model-name field. API keys uses square provider tiles opening an
-inline Check & save form; failed checks keep the previous key. WHY:
+inline Save/Remove form with no extra helper/status copy; a short Key accepted
+or Key not accepted notice reports the result. Failed checks keep the previous key. WHY:
 .project-docs/decisions/2026-10-21-provider-key-tiles.md;
 .project-docs/decisions/2026-10-20-model-search.md
 
