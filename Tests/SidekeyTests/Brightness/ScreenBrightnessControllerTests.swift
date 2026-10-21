@@ -503,90 +503,7 @@ final class ScreenBrightnessControllerTests: XCTestCase {
         XCTAssertEqual(device.boosts.last?.isClosed, false)
     }
 
-    // MARK: The battery estimate's display load
-
-    func testTheBuiltInDisplayLoadIsItsLevelSquaredWithoutWrites() {
-        let f = Fixture(), device = f.device
-        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
-
-        XCTAssertEqual(f.controller.builtInDisplayLoad() ?? -1, 0.16, accuracy: 0.0001)
-        XCTAssertEqual(device.events, [])
-    }
-
-    func testExtraOnTheBuiltInDisplayRaisesItsLoad() {
-        let f = Fixture(), device = f.device
-        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
-        let controller = f.controllerWithExtra()
-
-        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.16 * ScreenBrightnessScale.extraLight,
-                       accuracy: 0.0001)
-    }
-
-    func testExtraWithoutHeadroomCountsTheDisplaysOwnLight() {
-        // Without headroom the display has its own table back while Extra stays on.
-        let f = Fixture(), device = f.device
-        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
-        let controller = f.controllerWithExtra()
-
-        device.boosts.last?.gammaFactor = 1
-        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.16, accuracy: 0.0001)
-        device.boosts.last?.gammaFactor = 1.228
-        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1,
-                       0.16 * ScreenBrightnessScale.light(gammaFactor: 1.228), accuracy: 0.0001)
-    }
-
-    func testExtraOnAnExternalDisplayLeavesTheBuiltInLoad() {
-        let f = Fixture(), device = f.device
-        device.connected.append(ScreenBrightnessDisplay(id: 2, potentialHeadroom: 16, isBuiltIn: true))
-        device.hardware[2] = 0.5
-        let controller = f.controllerWithExtra()
-
-        XCTAssertEqual(controller.display?.id, 1)
-        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.25, accuracy: 0.0001)
-    }
-
-    func testWithoutABuiltInDisplayItsLoadIsZero() {
-        // A closed lid leaves only external displays.
-        XCTAssertEqual(Fixture().controller.builtInDisplayLoad(), 0)
-    }
-
-    func testAnUnreadableBuiltInDisplayHasNoLoad() {
-        let f = Fixture(), device = f.device
-        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
-        device.hardware = [:]
-
-        XCTAssertNil(f.controller.builtInDisplayLoad())
-    }
-
-    func testTheLoadFollowsTheSliderWhileTheReadingSettles() {
-        let f = Fixture(), device = f.device
-        device.connected = [ScreenBrightnessDisplay(id: 1, potentialHeadroom: 16, isBuiltIn: true)]
-        device.applyWrites = false
-        let controller = f.controller
-        controller.beginInteraction()
-        defer { controller.endInteraction() }
-
-        controller.setLevel(0.8)
-        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.64, accuracy: 0.0001)
-
-        f.clock.advance(ScreenBrightnessController.writeSettleInterval)
-        XCTAssertEqual(controller.builtInDisplayLoad() ?? -1, 0.16, accuracy: 0.0001,
-                       "Then the hardware reading wins.")
-    }
-
     // MARK: Scale
-
-    func testDisplayLoadIsTheLevelsLight() {
-        XCTAssertEqual(ScreenBrightnessScale.displayLoad(level: 0.5, gammaFactor: 1), 0.25)
-        XCTAssertEqual(ScreenBrightnessScale.displayLoad(level: 2, gammaFactor: 1), 1)
-        // Extra's 1.45 table factor raises white by sRGB's curve.
-        XCTAssertEqual(ScreenBrightnessScale.extraLight, 2.3457, accuracy: 0.0001)
-        XCTAssertEqual(ScreenBrightnessScale.displayLoad(level: 1, gammaFactor: ScreenBrightnessScale.maximumExtraGamma),
-                       ScreenBrightnessScale.extraLight)
-        XCTAssertEqual(ScreenBrightnessScale.light(gammaFactor: 1.228), 1.6, accuracy: 0.01)
-        XCTAssertEqual(ScreenBrightnessScale.light(gammaFactor: 0.5), 1)
-        XCTAssertEqual(ScreenBrightnessScale.light(gammaFactor: .nan), 1)
-    }
 
     func testScaleClampsLevels() {
         XCTAssertEqual(ScreenBrightnessScale.clampedLevel(0.3), 0.3)
@@ -670,7 +587,6 @@ private final class FakeBrightnessDevice: ScreenBrightnessDevice {
 private final class FakeBrightnessBoost: BrightnessBoost {
     private(set) var refreshes = 0
     private(set) var isClosed = false
-    var gammaFactor = ScreenBrightnessScale.maximumExtraGamma
 
     func refresh() { refreshes += 1 }
     func close() { isClosed = true }

@@ -9,6 +9,15 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user reported Cmd-Z still failed after a curved stroke and requested four assignable arrow actions, Screenshot before Agent priority, chosen defaults, replacement on drop and dashed draggable slots.
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Tests/SidekeyTests/Screenshots/ScreenshotUndoTests.swift
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Tests/SidekeyTests/Screenshots/ScreenshotArrowTests.swift
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user requested highlighting Enter within Copy and exit, suggesting a square keycap or vertical separator, and centering it.
     confirmed_at: 2026-10-21
   - type: user-confirmed
@@ -208,6 +217,32 @@ view, separated from the label by an 8-point gap. Center the label/keycap group
 horizontally and both elements vertically; disabled state dims the hint with
 the button. This distinguishes the finish shortcut without adding a second
 action or changing Return behavior.
+
+# Undo dispatch and configurable arrows — 2026-10-21
+
+Generated-event regressions reproduce the Russian-layout failure: the physical
+Z key produces U+044F, while the previous handler matched only the character z.
+Nonactivating panels now handle editing commands in both the key-equivalent
+path and direct window event dispatch. One key press performs one undo/redo;
+focused native text editors retain their own commands.
+
+Settings Hotkeys exposes four dashed arrow slots with defaults Up Pen, Down
+Blur, Left Undo, Right Copy & exit. Drag any retained editor tool or command
+onto a slot, or choose its native menu with keyboard/VoiceOver. A drop copies
+the action and replaces only the destination, including when dragging another
+slot; it never swaps or removes the source. Drafts follow Save/Revert/reset and
+round-trip in settings backups. Help reads the same configuration. Modified
+arrows retain crop move/resize; Move crop is also assignable to bare arrows.
+
+The Agent Useful Links controller observes screenshot activity synchronously
+and unregisters its Carbon hotkeys before the editor appears. Suppressing only
+a callback is insufficient: Carbon has already swallowed the arrow. Closing
+Screenshot restores the latest supported actions only if the answer still
+needs them. Registration generations invalidate callbacks queued before
+suspension. Native text fields keep cursor navigation; held export keys do
+not repeat destructive or finish actions. Synthetic tests use unshown windows
+and private subjects/defaults; physical delivery and dragging remain installed
+app acceptance.
 
 # Consequences
 

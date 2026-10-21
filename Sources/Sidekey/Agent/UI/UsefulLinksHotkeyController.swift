@@ -1,5 +1,6 @@
 import Carbon.HIToolbox
 import Foundation
+import Combine
 import os.log
 
 /// Protocol seam for one of the four configurable Useful Links hotkeys the
@@ -98,6 +99,11 @@ final class UsefulLinksHotkeyController {
     private let configurationProvider: ConfigurationProvider
     private let monitorFactory: MonitorFactory
     private var monitors: [UsefulLinksHotkeyControlling] = []
+    private var screenshotActivity: AnyCancellable?
+    private var screenshotActive = false
+    private var requestedItemCount = 0
+    private var requestedOpenAvailable = false
+    private var registrationGeneration = UUID()
 
     private static let log = OSLog(
         subsystem: "com.rootwise.sidekey",
@@ -106,10 +112,19 @@ final class UsefulLinksHotkeyController {
 
     init(
         configurationProvider: ConfigurationProvider? = nil,
-        monitorFactory: MonitorFactory? = nil
+        monitorFactory: MonitorFactory? = nil,
+        screenshotActivity: AnyPublisher<Bool, Never>? = nil
     ) {
         self.configurationProvider = configurationProvider ?? { HotkeyPreferences.shared.configuration }
         self.monitorFactory = monitorFactory ?? Self.defaultFactory
+        // Release Carbon registrations, not just callbacks: a registered bare
+        // arrow is swallowed before the screenshot/text responder can see it.
+        // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+        self.screenshotActivity = (screenshotActivity ?? AppState.shared.$screenshotActive.eraseToAnyPublisher())
+            .removeDuplicates().sink { [weak self] active in
+                self?.screenshotActive = active
+                self?.rebuildMonitors()
+            }
     }
 
     /// Rebuilds the active monitor set to match the visible actions block size
@@ -118,7 +133,14 @@ final class UsefulLinksHotkeyController {
     /// `false` when the selected item is insert-only (a copy item).
     /// Idempotent: repeated calls always tear down the previous set.
     func start(itemCount: Int, openAvailable: Bool) {
-        stop()
+        requestedItemCount = itemCount; requestedOpenAvailable = openAvailable
+        rebuildMonitors()
+    }
+
+    private func rebuildMonitors() {
+        stopMonitors()
+        let itemCount = requestedItemCount, openAvailable = requestedOpenAvailable
+        guard !screenshotActive else { return }
         guard itemCount > 0 else { return }
 
         let configuration = configurationProvider()
@@ -151,6 +173,12 @@ final class UsefulLinksHotkeyController {
 
     /// Tears down every registered monitor. Safe to call repeatedly.
     func stop() {
+        requestedItemCount = 0; requestedOpenAvailable = false
+        stopMonitors()
+    }
+
+    private func stopMonitors() {
+        registrationGeneration = UUID()
         for monitor in monitors {
             monitor.stop()
         }
@@ -178,7 +206,12 @@ final class UsefulLinksHotkeyController {
             shortcut,
             hotKeyIDValue
         )
-        monitor.setOnHotkey(handler)
+        let generation = registrationGeneration
+        monitor.setOnHotkey { [weak self] in
+            guard let self, self.registrationGeneration == generation,
+                  !self.screenshotActive, self.requestedItemCount > 0 else { return }
+            handler()
+        }
         do {
             try monitor.start()
             monitors.append(monitor)

@@ -20,31 +20,12 @@ enum ScreenBrightnessScale {
         guard currentHeadroom.isFinite, currentHeadroom > 1 else { return 1 }
         return min(maximumExtraGamma, 1.055 * pow(currentHeadroom, 1 / 2.4) - 0.055)
     }
-
-    /// White's light with Extra relative to SDR white: the table factor through sRGB's curve.
-    static let extraLight = pow((maximumExtraGamma + 0.055) / 1.055, 2.4)
-
-    /// White's light at a table factor relative to SDR white: the factor through sRGB's curve.
-    static func light(gammaFactor: Double) -> Double {
-        guard gammaFactor.isFinite, gammaFactor > 1 else { return 1 }
-        return pow((gammaFactor + 0.055) / 1.055, 2.4)
-    }
-
-    /// The display's light relative to its full SDR white, for the battery estimate. The level
-    /// is perceptual, so the backlight's light grows about with its square (an assumption).
-    static func displayLoad(level: Double, gammaFactor: Double) -> Double {
-        let level = clampedLevel(level)
-        return level * level * light(gammaFactor: gammaFactor)
-    }
 }
 
 struct ScreenBrightnessDisplay: Equatable {
     let id: CGDirectDisplayID
     /// `NSScreen.maximumPotentialExtendedDynamicRangeColorComponentValue`.
     let potentialHeadroom: Double
-    /// The Mac's own panel, whose light the battery estimate counts.
-    var isBuiltIn = false
-
     var supportsExtra: Bool { potentialHeadroom > 1.01 }
 }
 
@@ -60,8 +41,6 @@ protocol BrightnessBoost: AnyObject {
     func refresh()
     /// Gives the display its own table back.
     func close()
-    /// The factor the display's table has now; 1 while Extra waits for the headroom or has none.
-    var gammaFactor: Double { get }
 }
 
 @MainActor
@@ -246,23 +225,6 @@ final class ScreenBrightnessController: ObservableObject {
         observers.removeAll()
     }
 
-    /// The built-in display's light for the battery estimate, times the boost Extra applies to it
-    /// now (none while it waits for headroom or has none): 0 without a built-in display (a closed
-    /// lid), nil when its level can't be read. Reads only.
-    func builtInDisplayLoad() -> Double? {
-        guard let builtIn = device.displays().first(where: \.isBuiltIn) else { return 0 }
-        let isCurrent = display?.id == builtIn.id
-        let level: Double
-        if isCurrent, isSettling(builtIn.id) {
-            level = self.level
-        } else {
-            guard let hardware = device.read(builtIn.id), hardware.isFinite else { return nil }
-            level = hardware
-        }
-        let factor = isCurrent && isExtraOn ? boost?.gammaFactor ?? 1 : 1
-        return ScreenBrightnessScale.displayLoad(level: level, gammaFactor: factor)
-    }
-
     private func startExtra() {
         guard !isExtraOn else { return }
         // A closed strip may have an old reading. Start from the actual backlight so the
@@ -362,8 +324,7 @@ final class NativeScreenBrightnessDevice: ScreenBrightnessDevice {
             guard let id = screen.brightnessDisplayID else { return nil }
             return ScreenBrightnessDisplay(
                 id: id,
-                potentialHeadroom: Double(screen.maximumPotentialExtendedDynamicRangeColorComponentValue),
-                isBuiltIn: CGDisplayIsBuiltin(id) != 0)
+                potentialHeadroom: Double(screen.maximumPotentialExtendedDynamicRangeColorComponentValue))
         }
     }
 

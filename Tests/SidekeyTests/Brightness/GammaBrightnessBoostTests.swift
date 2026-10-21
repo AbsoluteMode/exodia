@@ -396,7 +396,7 @@ final class GammaBrightnessBoostTests: XCTestCase {
     // MARK: Factor
 
     func testTheAppliedFactorIsTheBoostTheDisplayHas() {
-        // The battery estimate counts the light the display actually shows.
+        // The applied factor follows the current headroom and suspension.
         let f = BoostFixture()
         f.headroom = 1
         f.boost.tick()
