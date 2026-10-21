@@ -601,8 +601,13 @@ whytap:// links:
   (SettingsWindowSelection.focus), Case opens Toolbox without selecting its
   Touch ID pane and Quit highlights the Quit row (Invariant 7). Unknown ids
   or kinds only wake the island; other schemes, credentials, ports, empty or
-  extra segments and non-alphanumeric ids are rejected and not logged. WHY:
-  .project-docs/decisions/2026-10-20-whytap-links.md
+  extra segments and non-alphanumeric ids are rejected and not logged.
+  whytap://hotkey/<HoverTool>?keys=option+shift+s proposes a tool hotkey: the
+  key needs ⌃ or ⌥ (A-Z, 0-9, US punctuation, F1-F20), Quit is excluded and an
+  unsafe or malformed request only opens Settings -> Hotkeys. Whytap's own
+  dialog asks first; taken keys show a conflict and change nothing. WHY:
+  .project-docs/decisions/2026-10-20-whytap-links.md,
+  .project-docs/decisions/2026-10-21-whytap-link-hotkeys.md
 
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference
@@ -1152,11 +1157,16 @@ input layout, including live recording and previously saved non-English titles.
    deliberate extraction by an approved command. Revalidate current caller
    authority after approval/authentication before granting or releasing
    values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md
-7. **whytap:// links only show.** Any web page can open a link, so a link
-   never records, captures, toggles, changes settings, copies, pastes,
-   authenticates (no Touch ID: Case links stop at Toolbox) or quits, and
-   reports nothing back. Every `WhytapLinkDestination` is classified
+7. **whytap:// links show, or propose an allowlisted change.** Any web page
+   can open a link, so a link never records, captures, toggles, copies,
+   pastes, authenticates (no Touch ID: Case links stop at Toolbox) or quits,
+   and reports nothing back. Every `WhytapLinkDestination` is classified
    show-only in `WhytapLinkTests`; the handler is source-checked for action
-   calls. A link that changes anything needs its own decision first, with
-   in-app confirmation and an allowlist that excludes reading data and
-   network destinations. WHY: .project-docs/decisions/2026-10-20-whytap-links.md
+   calls. A change is a `WhytapLinkChange` case, applied only after the
+   user's Assign in `WhytapLinkConfirmation` (Cancel default, Assign armed
+   after 1 s) through the same validated path as Settings. Today only tool
+   hotkeys with ⌃ or ⌥ (not Quit). Never allow a change that reads or
+   exports data (keys, Case, meetings, clipboard, backups) or changes where
+   data goes (provider routes/endpoints, notification scripts, Monitor,
+   backup destination). WHY: .project-docs/decisions/2026-10-20-whytap-links.md,
+   .project-docs/decisions/2026-10-21-whytap-link-hotkeys.md

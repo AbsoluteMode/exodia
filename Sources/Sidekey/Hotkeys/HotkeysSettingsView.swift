@@ -259,6 +259,11 @@ struct HotkeysSettingsView: View {
                 )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // A change saved elsewhere (a confirmed whytap:// hotkey link) shows
+        // here unless the user has unsaved edits, which stay theirs.
+        .onChange(of: preferences.configuration) { old, new in
+            if draft == old { draft = new }
+        }
         .onDisappear {
             stopRecording()
         }
