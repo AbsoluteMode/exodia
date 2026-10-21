@@ -9,9 +9,9 @@ enum CaseCLIInstallerError: Error, Equatable {
 
     var userMessage: String {
         switch self {
-        case .unknownFlavor: return "неизвестный вариант сборки"
-        case .occupied(let path): return "\(path) уже занят другим файлом"
-        case .failed(let path): return "не удалось создать ссылку \(path)"
+        case .unknownFlavor: return "unknown build flavor"
+        case .occupied(let path): return "\(path) is already used by another file"
+        case .failed(let path): return "couldn’t create the link \(path)"
         }
     }
 }

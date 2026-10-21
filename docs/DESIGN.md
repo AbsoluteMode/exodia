@@ -266,6 +266,13 @@ and disables Refresh; failures show concise text near the period. Refresh,
 period/date and calendar actions retain full-area hover/press, focus outlines
 and inactive disabled states. Existing feature disclosures and layout stay intact.
 
+Update 2026-10-21: ElevenLabs model details distinguish missing recorded audio
+duration from a missing model rate, beside the affected historical model.
+A durationless attempt cannot be priced by fetching a rate; it does not trigger
+that lookup or a misleading rate warning. Unknown costs stay excluded with +
+on partial totals. Known estimates are unchanged; no cost is inferred from a
+failed connection or borrowed from another model.
+
 The revised date popover has 310 pt offscreen fixtures in English/Russian and
 both appearances. Calendar arithmetic covers leap days, DST, previous years
 and future bounds; native month highlight snapshots cover rest/pressed/disabled
@@ -540,7 +547,11 @@ installed app. Older-macOS fallback needs device acceptance.
 ## Text-only Settings sidebar — 2026-10-20
 
 The user requested removal of the sidebar icons and animation on hover.
-Keep section names, order, 220 pt sidebar width and 38 pt row hit targets.
+Keep section names, order and 220 pt sidebar width. As amended 2026-10-21,
+rows have 30 pt hit targets, 4 pt gaps and 10 pt vertical list insets. The ten
+sections and pinned footer fit at the minimum Settings size without scrolling;
+the ScrollView remains a fallback if the section list grows. Why: the user
+requested smaller buttons so every section is immediately visible.
 Removing the icon and gap gives labels 180 pt instead of 144 pt, without
 changing text size or moving any row during interaction.
 
@@ -552,7 +563,10 @@ changing text size or moving any row during interaction.
   Selection remains recognizable during hover.
   FAQ and Quit use the same feedback. Existing navigation highlights remain.
 - Reduce Motion makes the hover response immediate. Native Button actions,
-  keyboard access and focus are preserved. No function requires hovering.
+  keyboard access and focus are preserved. Press adds a stronger full-row
+  fill; keyboard focus has an inset outline, and the selected row exposes its
+  selection to accessibility. Disabled buttons dim and suppress hover/press/focus
+  highlights. No function requires hovering.
 
 Offscreen native Settings fixtures cover the minimum 960 × 560 pt and larger
 1280 × 760 pt window in both appearances. Physical hover, focus/VoiceOver and
@@ -846,7 +860,7 @@ only Connect commits the draft after authentication. The user chose this flow.
   medium labels and the existing white-on-dark island palette. Hover changes
   the fill; keyboard focus adds an outline without moving the row. Native
   buttons expose the agent name and setup action. No new animation is added.
-- Put Accept/Спрашивать and Bypass/Без запроса inside the mode choices, with an
+- Put Accept/Ask first and Bypass/No prompt inside the mode choices, with an
   outline for selection and amber Bypass. Keep the shared-terminal consequence
   visible inside this group when Bypass applies. Why: the decision and its
   consequence should read together, without detached explanatory lines.
@@ -885,12 +899,12 @@ cover normal/hover/pressed/focus/disabled at 310 pt; physical focus remains
 shared-app acceptance. No authorization or registration behavior changes.
 
 Case access polish — 2026-10-21: the user requested thin horizontal rules between
-the «Режим доступа» / «Проекты» headings and their controls. Keep the existing
+the "Access mode" / "Projects" headings and their controls. Keep the existing
 groups and 7 pt spacing; use a 1 pt white rule at 14% opacity. Remove the visible
-«Текущие и новые проекты» caption. «Выбранные» adds a 28 pt search field with a
+"Current and future projects" caption. "Selected projects" adds a 28 pt search field with a
 loupe and clear action, matching every word against project names/descriptions
 without case or diacritic sensitivity. General remains searchable. No matches
-shows «Ничего не найдено». Why: a long project list needs filtering while the
+shows "No matching projects". Why: a long project list needs filtering while the
 current layout already satisfies the user. Search affects only visible rows;
 hidden selections remain in the saved draft. The field has full-area hover,
 native text editing and a focus outline; clear and project rows retain shared
@@ -900,6 +914,15 @@ and disabled controls; native field edits verify search never writes the scope.
 On the synthetic 0.08-gray backdrop, the search border is 3.38:1 at rest and
 3.07:1 on hover; its 70%-white placeholder is 6.99:1 at rest and 5.95:1 on hover.
 Physical input and compositor contrast remain installed-app acceptance.
+
+Case English copy — 2026-10-21: the user chose to translate Case before its
+motion video, so every visible Case string, accessibility label, tooltip, error
+and connector problem is English, in the short sentence case of Settings and the
+hover tools. Case, Connect, Accept, Bypass, General, key names, layout and
+behavior are unchanged. Touch ID reasons are lowercase verb phrases ("open
+Case", "connect Cursor to Case") because macOS shows them as "Whytap is trying
+to <reason>." Hover search keeps the old Russian aliases and adds English key
+terms. Why: Case was the only Russian surface in an English app and website.
 
 ## Case approval controls — 2026-10-21
 
@@ -913,7 +936,7 @@ with only Deny and Allow in the final row. Keep the native black island card.
   hover help and accessibility expose the full original string including line
   breaks. Why: the compact summary must remain inspectable before approval.
 - Temporary Bypass is an actual capsule button with the physical 3
-  hint. The duration is a 34×24 pt native text field followed by мин, without
+  hint. The duration is a 34×24 pt native text field followed by min, without
   arrows. Default 15 and supported 1–240 stay unchanged. Why: direct typing
   replaces repeated stepper clicks and removes the third competing bottom action.
 - Invalid/empty drafts remain editable, show warning text color and disable the
@@ -960,3 +983,19 @@ keeps approval keys suspended. The shared keycap values also feed Help.
 Filter tests cover all other physical keycodes, modified digits, repeats and
 unarmed input; synthetic offscreen fixtures verify the new hints at 310/312 pt.
 Physical keyboard acceptance remains a check on the installed app.
+
+
+Case English copy and interaction feedback — builder review,2026-10-21:
+Use English for Case panels, creation/editing/recovery messages and approval
+copy while preserving IDs, rights, authentication, numeric1/2/3, timing and data.
+The translated project headers, add-key rows, icon actions, reset/retry,
+create/submit and delete-confirm controls use the existing Case access button
+feedback: full-area hover, press and keyboard focus; disabled controls dim and
+show no active hover. Text fields highlight on hover/focus and their full
+capsule focuses the existing editor; bindings, submission and cancellation stay
+with their callers. Edit fields keep their own native focus state.
+The armed reset copy accurately says a new Case is created and the old encrypted
+file is retained, matching CaseVaultStore.reset; it does not promise recovery
+without the original key. The two-step reset and its handlers are unchanged.
+Final English offscreen fixtures and the combined full suite are builder gates;
+physical pointer/keyboard/VoiceOver and the real Touch ID panel remain separate.

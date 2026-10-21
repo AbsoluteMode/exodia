@@ -9,6 +9,9 @@ canonical_for: [feature-costs]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 Maxim reported unavailable scribe_v2 credits beside a working realtime estimate and asked to check the previous fix.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 Maxim chose exact Soniox API prices with local estimates when unavailable, and calculated ElevenLabs credits.
     confirmed_at: 2026-10-21
   - type: url
@@ -138,6 +141,12 @@ without a usable rate remains unavailable rather than borrowing another model's
 rate. Known per-request amounts remain unchanged, and calculated amounts stay ≈.
 Calculated estimates are saved with their own historical event, so later rate
 updates do not reprice saved usage.
+
+Model details distinguish an unknown amount with missing recorded duration
+from one with measured audio but no model rate. A durationless attempt cannot
+use a credit/minute rate, so it does not request one or raise the missing-rate
+warning. Its cost remains unknown and excluded, never zero or a rate borrowed
+from another model. Existing amounts and historical events remain unchanged.
 
 The earlier separate ElevenLabs workspace Reported usage section is superseded
 by this choice. Costs has one feature table and Total, with USD and credits

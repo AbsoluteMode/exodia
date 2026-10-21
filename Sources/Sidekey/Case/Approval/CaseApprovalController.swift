@@ -62,7 +62,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     /// Visible plus waiting prompts.
     var queuedCount: Int { (active == nil ? 0 : 1) + queue.count }
 
-    /// The «На N мин» answer exists only for a positive N.
+    /// The temporary Bypass answer exists only for a positive N.
     var offersTimed: Bool { (current?.timedMinutes ?? 0) > 0 }
 
     func requestApproval(_ r: CaseApprovalRequest) async -> CaseApprovalOutcome {

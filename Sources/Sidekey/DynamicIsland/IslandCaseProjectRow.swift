@@ -11,20 +11,13 @@ struct IslandCaseProjectRow: View {
         isGeneral ? [edit] : [edit, delete]
     }
 
-    /// «Удалить проект <name> и N ключей?» with the Russian plural of «ключ».
+    /// "Delete project <name> and N keys?" with "key" for exactly one.
     static func deleteConfirmation(name: String, keyCount: Int) -> String {
-        "Удалить проект \(name) и \(keyCount) \(keyNoun(keyCount))?"
+        "Delete project \(name) and \(keyCount) \(keyNoun(keyCount))?"
     }
 
     static func keyNoun(_ count: Int) -> String {
-        let lastTwo = abs(count) % 100
-        let last = lastTwo % 10
-        if (11...14).contains(lastTwo) { return "ключей" }
-        switch last {
-        case 1: return "ключ"
-        case 2...4: return "ключа"
-        default: return "ключей"
-        }
+        abs(count) == 1 ? "key" : "keys"
     }
 
     let section: CaseProjectSection
@@ -59,7 +52,7 @@ struct IslandCaseProjectRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle(cornerRadius: 5))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(section.name)
             .accessibilityValue("\(section.keyCount)")
@@ -101,15 +94,15 @@ struct IslandCaseProjectDeleteConfirmation: View {
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
                 Button(action: onCancel) {
-                    pill("Отмена", fill: Color.white.opacity(0.10))
+                    pill("Cancel", fill: Color.white.opacity(0.10))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle(cornerRadius: 11))
                 .accessibilityIdentifier("case.project.delete.cancel")
 
                 Button(action: onConfirm) {
-                    pill("Удалить", fill: Color.red.opacity(0.55))
+                    pill("Delete", fill: Color.red.opacity(0.55))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle(cornerRadius: 11))
                 .accessibilityIdentifier("case.project.delete.confirm")
             }
         }
@@ -127,5 +120,6 @@ struct IslandCaseProjectDeleteConfirmation: View {
             .padding(.horizontal, 10)
             .frame(height: 22)
             .background(Capsule().fill(fill))
+            .contentShape(Capsule())
     }
 }

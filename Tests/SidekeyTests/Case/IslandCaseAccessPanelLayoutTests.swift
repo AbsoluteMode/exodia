@@ -4,7 +4,7 @@ import SwiftUI
 import XCTest
 @testable import Sidekey
 
-/// Offscreen renders of «Доступ приложений». The window sits at -20 000 pt
+/// Offscreen renders of the Case access screen. The window sits at -20 000 pt
 /// and is never ordered front: no visible or key windows.
 @MainActor
 final class IslandCaseAccessPanelLayoutTests: XCTestCase {
@@ -247,8 +247,8 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
 
     func test_error_messages_are_user_facing() {
         XCTAssertEqual(IslandCaseAccessPanel.message(for: CaseViewModelError.authenticationFailed),
-                       "Touch ID не подтверждён — ничего не изменено")
-        XCTAssertEqual(IslandCaseAccessPanel.message(for: CaseViewModelError.invalidMinutes), "Разрешение: от 1 до 240 минут")
+                       "Touch ID not confirmed — nothing changed")
+        XCTAssertEqual(IslandCaseAccessPanel.message(for: CaseViewModelError.invalidMinutes), "Use 1 to 240 minutes")
     }
 
     private func measuredWidth<V: View>(_ view: V, width: CGFloat) -> CGFloat {

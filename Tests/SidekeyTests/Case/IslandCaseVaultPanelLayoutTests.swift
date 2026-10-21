@@ -40,7 +40,7 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
                       "General is expanded by default")
         XCTAssertFalse(IslandCaseVaultPanel.isExpanded(sections[1], expandedIDs: viewModel.expandedProjectIDs, isSearching: false),
                        "Other projects start collapsed")
-        XCTAssertEqual(IslandCaseAddKeyRow.title(projectName: "General"), "+ Ключ в General")
+        XCTAssertEqual(IslandCaseAddKeyRow.title(projectName: "General"), "+ Key in General")
 
         try fixture.saveImage("case-panel-default")
         XCTAssertFalse(fixture.isWindowVisible)
@@ -104,15 +104,15 @@ final class IslandCaseVaultPanelLayoutTests: XCTestCase {
 
     func test_project_delete_confirmation_names_project_and_key_count() {
         XCTAssertEqual(IslandCaseProjectRow.deleteConfirmation(name: "servers", keyCount: 8),
-                       "Удалить проект servers и 8 ключей?")
+                       "Delete project servers and 8 keys?")
         XCTAssertEqual(IslandCaseProjectRow.deleteConfirmation(name: "servers", keyCount: 1),
-                       "Удалить проект servers и 1 ключ?")
+                       "Delete project servers and 1 key?")
         XCTAssertEqual(IslandCaseProjectRow.deleteConfirmation(name: "servers", keyCount: 3),
-                       "Удалить проект servers и 3 ключа?")
-        XCTAssertEqual(IslandCaseProjectRow.deleteConfirmation(name: "servers", keyCount: 12),
-                       "Удалить проект servers и 12 ключей?")
+                       "Delete project servers and 3 keys?")
+        XCTAssertEqual(IslandCaseProjectRow.deleteConfirmation(name: "servers", keyCount: 0),
+                       "Delete project servers and 0 keys?")
         XCTAssertEqual(IslandCaseProjectRow.deleteConfirmation(name: "servers", keyCount: 21),
-                       "Удалить проект servers и 21 ключ?")
+                       "Delete project servers and 21 keys?")
     }
 
     func test_access_row_opens_the_access_screen() throws {

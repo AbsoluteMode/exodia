@@ -17,6 +17,13 @@ final class IslandHoverToolSearchTests: XCTestCase {
         XCTAssertTrue(IslandHoverToolSearch.results(for: "language").contains(.outputLang))
     }
 
+    func testFindsCaseByKeyTermsAndKeepsItsOldAliases() {
+        XCTAssertEqual(IslandHoverToolSearch.results(for: "secrets"), [.caseVault])
+        XCTAssertEqual(IslandHoverToolSearch.results(for: "api keys"), [.caseVault])
+        XCTAssertEqual(IslandHoverToolSearch.results(for: "кейс"), [.caseVault])
+        XCTAssertEqual(IslandHoverToolSearch.results(for: "vault"), [.caseVault])
+    }
+
     func testEmptyAndUnknownQueriesHaveNoResults() {
         XCTAssertFalse(IslandHoverToolSearch.isFiltering("  \n"))
         XCTAssertFalse(IslandHoverToolSearch.isFiltering("!"))

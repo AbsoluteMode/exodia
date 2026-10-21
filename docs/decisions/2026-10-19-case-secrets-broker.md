@@ -89,10 +89,11 @@ without ever receiving its value.
   created only after these checks and successful value resolution, with no
   suspension between validation, grant creation and release on the main actor.
 - **Touch ID text** for a person's `whytap case run` names the nearest app in
-  the helper's parent chain (Terminal, iTerm2…) or "неизвестный процесс" when
+  the helper's parent chain (Terminal, iTerm2…) or "an unknown process" when
   the walk reaches pid 1 without one (ssh, cron, a launchd job), and the
   command on one line, whitespace collapsed, at most 80 characters with the
-  middle cut. It never contains a value.
+  middle cut. It never contains a value. Reasons are lowercase verb phrases
+  because macOS shows them as "Whytap is trying to <reason>."
 - **Names are unique.** The broker refuses (never picks) when a project
   holds two keys with one name or two projects share a name. A backup merge
   renames a clashing incoming project to `name (2)` and key to `NAME_2`, the
@@ -117,8 +118,8 @@ without ever receiving its value.
   that is the beginning of some variant is held back; everything else is
   written at once, so a dev server's "listening" line or a `[y/N]` prompt
   appears immediately (holding a fixed longest-variant tail hid them). Values
-  shorter than 4 bytes are not masked and their row says «не скрываются в
-  выводе». MCP output is never masked-wrapped.
+  shorter than 4 bytes are not masked and their row says "Not masked in
+  output". MCP output is never masked-wrapped.
 - **CLI options** `-p` and `--only` are read only before the command:
   `whytap case run grep --only x f` passes `--only x` to grep.
 
