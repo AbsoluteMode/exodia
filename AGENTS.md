@@ -1068,10 +1068,13 @@ run off the UI thread. Copy text can also be assigned to an arrow without
 changing existing bindings. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
 from every screenshot panel through both key-equivalent and direct window dispatch,
 using physical Z so Russian input works; focused text fields retain native text undo.
-Settings -> Hotkeys has four draggable, dashed arrow slots: Up Pen, Down Blur,
-Left Undo, Right Copy & exit. Drop replaces only the destination; native menus
-provide keyboard selection. Save/Revert/reset, Help and settings backups share
-HotkeyPreferences.screenshotArrowBindings. Bare arrows use those actions,
+ScreenshotToolbar contains four dashed tool squares with adjacent arrow keycaps: Up Blur, Left Shape, Right Pen, Down Text by default.
+Drag a toolbar tool/action or an existing assignment onto a square to replace
+only that destination, or click the square for a native assignment menu and per-arrow
+reset. Changes save immediately through HotkeyPreferences.screenshotArrowBindings;
+Help and settings backups share it. Custom mappings survive this placement change; the previous unmodified stock map
+migrates once to the new four drawing defaults.
+The earlier Settings-only assignment surface is removed. Bare arrows use those actions,
 Shift-arrows move the crop and Option-arrows resize it. Agent Useful Links
 releases its Carbon registrations while Screenshot is active, restores the
 latest visible actions afterwards, and invalidates stale callbacks. Blur defaults to Text and numbers, including

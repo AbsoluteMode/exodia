@@ -6,19 +6,26 @@ final class ScreenshotToolbar: NSView {
     var onCommand: ((ScreenshotCommand) -> Void)?
     var onLayout: (() -> Void)?
     let toolSettings: ScreenshotToolSettings
+    let arrowCluster: ScreenshotArrowCluster
     private let rows = NSStackView()
     private var controls: [NSView] = []
     private var tools: [ScreenshotTool: NSButton] = [:]
     private var commands: [ScreenshotCommand: NSButton] = [:]
-    private var undoButton: NSButton!
-    private var redoButton: NSButton!
+    private var undoButton: ScreenshotToolbarButton!
+    private var redoButton: ScreenshotToolbarButton!
     private var availableWidth: CGFloat = 0
     private var layoutTool: ScreenshotTool?
-    var focusableControls: [NSControl] { controls.compactMap { $0 as? NSControl }.filter { $0.isEnabled && !$0.isHiddenOrHasHiddenAncestor } }
+    var focusableControls: [NSControl] {
+        controls.flatMap { view -> [NSControl] in
+            if view === arrowCluster { return arrowCluster.focusableControls }
+            return (view as? NSControl).map { [$0] } ?? []
+        }.filter { $0.isEnabled && !$0.isHiddenOrHasHiddenAncestor }
+    }
 
-    init(canvas: ScreenshotCanvas, defaults: UserDefaults = .standard) {
+    init(canvas: ScreenshotCanvas, defaults: UserDefaults = .standard, arrowPreferences: HotkeyPreferences? = nil) {
         self.canvas = canvas
         toolSettings = ScreenshotToolSettings(canvas: canvas, defaults: defaults)
+        arrowCluster = ScreenshotArrowCluster(preferences: arrowPreferences ?? .shared)
         super.init(frame: .zero)
         ScreenshotToolbarSurface.install(in: self)
         rows.orientation = .vertical; rows.alignment = .leading; rows.spacing = 4
@@ -28,6 +35,7 @@ final class ScreenshotToolbar: NSView {
             rows.leadingAnchor.constraint(equalTo: leadingAnchor), rows.trailingAnchor.constraint(equalTo: trailingAnchor),
             rows.topAnchor.constraint(equalTo: topAnchor), rows.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+        controls += [arrowCluster, separator()]
         for (tool, symbol, title, help) in [
             (ScreenshotTool.arrow, "arrow.up.right", "", "Arrow · A — point to a detail"),
             (.rectangle, "rectangle", "", "Shape · R / O — draw a rectangle or oval"),
@@ -38,7 +46,8 @@ final class ScreenshotToolbar: NSView {
         ] {
             let button = makeButton(symbol: symbol, title: title, help: help, action: #selector(chooseTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
-            button.toolTip = help + ". Click again to stop drawing and adjust the selection or annotations."
+            button.dragAction = ScreenshotEditorAction(rawValue: tool.rawValue)
+            button.toolTip = help + ". Click again to stop drawing and adjust the selection or annotations. Drag onto an arrow to assign."
             button.setButtonType(.toggle); controls.append(button); tools[tool] = button
         }
         controls.append(separator())
@@ -48,22 +57,27 @@ final class ScreenshotToolbar: NSView {
         ] {
             let button = makeButton(symbol: symbol, help: help, action: #selector(command(_:)))
             button.identifier = NSUserInterfaceItemIdentifier("command.\(command)")
+            button.dragAction = command == .copyText ? .copyText : .share
             controls.append(button); commands[command] = button
         }
         controls.append(separator())
         undoButton = makeButton(symbol: "arrow.uturn.backward", help: "Undo · ⌘Z — undo the last screenshot edit", action: #selector(undo(_:)))
         redoButton = makeButton(symbol: "arrow.uturn.forward", help: "Redo · ⇧⌘Z — restore the last undone edit", action: #selector(redo(_:)))
+        undoButton.dragAction = .undo; redoButton.dragAction = .redo
         controls += [undoButton, redoButton, separator()]
         let download = makeButton(symbol: "arrow.down.to.line", help: "Download to Downloads · ⌘S — save PNG and keep editing", action: #selector(command(_:)))
+        download.dragAction = .download
         commands[.download] = download; controls.append(download)
         let copy = ScreenshotToolbarButton(title: "Copy & exit", target: self, action: #selector(command(_:)))
         copy.bezelStyle = .rounded; copy.bezelColor = .controlAccentColor; copy.focusRingType = .exterior
         copy.isPrimaryAction = true; copy.font = .systemFont(ofSize: 13, weight: .semibold)
         copy.showsReturnKeycap = true
+        copy.dragAction = .copy
         copy.setAccessibilityLabel("Copy screenshot and exit"); copy.toolTip = "Copy screenshot and close editor · Enter / Return / ⌘C"
         copy.setAccessibilityHelp(copy.toolTip)
         commands[.copy] = copy; controls.append(copy)
         let cancel = makeButton(symbol: "xmark", help: "Cancel capture · Esc — close without copying", action: #selector(command(_:)))
+        cancel.dragAction = .cancel
         commands[.cancel] = cancel; controls.append(cancel)
         toolSettings.onCommand = { [weak self] command in self?.onCommand?(command) }
         configure(availableWidth: 1200)
@@ -102,7 +116,11 @@ final class ScreenshotToolbar: NSView {
     func closeAuxiliaryWindows() { toolSettings.closeAuxiliaryWindows() }
     func refresh() {
         guard let canvas else { return }
+        arrowCluster.isEnabled = !canvas.busy
         for (kind, button) in tools {
+            if kind == .rectangle {
+                (button as? ScreenshotToolbarButton)?.dragAction = canvas.tool == .ellipse ? .ellipse : .rectangle
+            }
             button.state = canvas.tool == kind || (kind == .rectangle && canvas.tool == .ellipse) ? .on : .off
             button.isEnabled = !canvas.busy
             button.contentTintColor = button.isEnabled ? .labelColor : .disabledControlTextColor
@@ -118,7 +136,7 @@ final class ScreenshotToolbar: NSView {
             layoutTool = canvas.tool; onLayout?()
         }
     }
-    private func makeButton(symbol: String, title: String = "", help: String, action: Selector) -> NSButton {
+    private func makeButton(symbol: String, title: String = "", help: String, action: Selector) -> ScreenshotToolbarButton {
         let button = ScreenshotToolbarButton(title: title, target: self, action: action)
         button.image = symbol.isEmpty ? nil : NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         button.imagePosition = symbol.isEmpty ? .noImage : title.isEmpty ? .imageOnly : .imageLeading

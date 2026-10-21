@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import XCTest
 @testable import Sidekey
 
@@ -7,11 +6,11 @@ import XCTest
 final class ScreenshotArrowTests: XCTestCase {
     func testDropReplacesOnlyDestinationAndRejectsUnknownOrMultiplePayloads() {
         var bindings = ScreenshotArrowBindings.defaults
-        XCTAssertEqual(bindings[.up], .pen); XCTAssertEqual(bindings[.down], .blur)
-        XCTAssertEqual(bindings[.left], .undo); XCTAssertEqual(bindings[.right], .copy)
+        XCTAssertEqual(bindings[.up], .blur); XCTAssertEqual(bindings[.down], .text)
+        XCTAssertEqual(bindings[.left], .rectangle); XCTAssertEqual(bindings[.right], .pen)
         XCTAssertTrue(bindings.replace(.right, with: [bindings[.up].dragPayload]))
-        XCTAssertEqual(bindings[.right], .pen); XCTAssertEqual(bindings[.up], .pen)
-        XCTAssertEqual(bindings[.down], .blur); XCTAssertEqual(bindings[.left], .undo)
+        XCTAssertEqual(bindings[.right], .blur); XCTAssertEqual(bindings[.up], .blur)
+        XCTAssertEqual(bindings[.down], .text); XCTAssertEqual(bindings[.left], .rectangle)
         let before = bindings
         for payloads in [[], ["external text"], ["whytap.screenshot.action:unknown"],
                          [ScreenshotEditorAction.undo.dragPayload, ScreenshotEditorAction.redo.dragPayload]] {
@@ -29,7 +28,7 @@ final class ScreenshotArrowTests: XCTestCase {
         let prefs = HotkeyPreferences(defaults: defaults)
         var draft = prefs.configuration
         draft.screenshotArrowBindings[.up] = .share
-        XCTAssertEqual(prefs.configuration.screenshotArrowBindings[.up], .pen, "Drafts do not change the running editor before Save")
+        XCTAssertEqual(prefs.configuration.screenshotArrowBindings[.up], .blur, "Drafts do not change the running editor before Save")
         try prefs.apply(draft)
         let restored = HotkeyPreferences(defaults: defaults)
         XCTAssertEqual(restored.configuration.screenshotArrowBindings[.up], .share)
@@ -69,6 +68,7 @@ final class ScreenshotArrowTests: XCTestCase {
         var commands: [ScreenshotCommand] = []
         canvas.onCommand = { commands.append($0) }
         for panel in panels {
+            bindings[.up] = .pen; bindings[.down] = .blur; bindings[.left] = .undo; bindings[.right] = .copy
             try send(.up, to: panel); XCTAssertEqual(canvas.tool, .pen)
             try send(.down, to: panel); XCTAssertEqual(canvas.tool, .blur)
             for action in ScreenshotEditorAction.allCases where action.tool != nil {
@@ -108,30 +108,7 @@ final class ScreenshotArrowTests: XCTestCase {
         XCTAssertTrue(panels.allSatisfy { !$0.isVisible })
     }
 
-    func testRenderArrowSettingsWithNativeHostingView() throws {
-        guard let directory = ProcessInfo.processInfo.environment["WHYTAP_SCREENSHOT_ARROW_RENDER_DIR"] else {
-            throw XCTSkip("Opt-in offscreen rendering")
-        }
-        _ = NSApplication.shared
-        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
-        for (width, scheme, name) in [(360, ColorScheme.light, "light"), (520, .light, "light"), (360, .dark, "dark"), (520, .dark, "dark")] {
-            let host = NSHostingView(rootView: ScreenshotArrowSettingsView(bindings: .constant(.defaults)).padding(16)
-                .frame(width: CGFloat(width), height: 800, alignment: .topLeading)
-                .background(MacSettingsTheme.bgContent).environment(\.colorScheme, scheme))
-            host.frame = CGRect(x: 0, y: 0, width: width, height: 800)
-            let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width, height: 800),
-                styleMask: [.borderless], backing: .buffered, defer: true)
-            window.isReleasedWhenClosed = false; window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua); window.contentView = host
-            defer { window.contentView = nil; window.close() }
-            host.layoutSubtreeIfNeeded()
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
-            host.layoutSubtreeIfNeeded()
-            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: bitmap)
-            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: directory).appendingPathComponent("screenshot-arrows-\(width)-\(name).png"))
-            XCTAssertFalse(window.isVisible)
-        }
-    }
+
 }
 
 @MainActor

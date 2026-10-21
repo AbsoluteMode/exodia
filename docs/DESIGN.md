@@ -1,32 +1,41 @@
 # Interface decisions
 
-## Screenshot arrow assignments — 2026-10-21
+## Screenshot tool squares and arrow hints — 2026-10-21
 
-The person comes to assign four quick screenshot actions. First see the current
-↑/←/↓/→ mapping; then drag an action onto a slot or choose its menu and Save.
-Keep this in Settings Hotkeys so the frozen screenshot retains its compact bar.
+The person comes to annotate a region and configure four quick tools without
+leaving the editor. First see the tool icons in dashed squares, each with its
+arrow-key hint beside it; then drag a tool onto a square or click to reassign it.
 
-- Use an inverted-T arrow cluster with dashed rounded contours, the shared
-  HotkeyHintView keycaps, and an always-visible action name. Why: the user
-  asked for dashed draggable slots and replacement on drop.
-- Defaults are ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. The palette contains every
-  retained tool/command plus Delete annotation and Move crop. A slot is also
-  a drag source; dropping copies and replaces only the destination. Why: these
-  defaults cover drawing, obscuring, correcting and finishing.
-- Each whole slot highlights on hover/press/drop; the native Menu retains
-  keyboard activation and VoiceOver with an explicit focus treatment. Palette
-  items highlight across their entire drag area. Why: pointer users need clear
-  feedback, and dragging cannot be the sole way to assign an action.
-- Reuse semantic settings text/surfaces, 12 pt action text and 8 pt spacing.
-  Three equal columns remain at 360 pt, with wrapping action names; the palette
-  adapts its column count. No animation is added, so reduced motion is unchanged.
-- Screenshot suspends Agent’s Carbon registrations before handling arrows.
-  Native text editing remains first within the editor; modified arrows adjust
-  the crop. Why: screenshot commands must not paste/open an Agent action behind
-  the frozen editor.
+- Put four pairs in one compact row directly on ScreenshotToolbar: a 30 pt
+  dashed rounded square with the assigned tool's 16 pt symbol, then a nearby
+  22 pt arrow keycap using HotkeyHintView. Keep a 5 pt intra-pair gap and 7 pt
+  between pairs. The complete group is 249 × 30 pt. Why: the user found the
+  earlier arrow-shaped cross hard to read and explicitly chose square tool
+  icons with separate arrow shortcut hints. This supersedes both the cross
+  and the earlier Settings-only/inverted-T placement.
+- Defaults are ↑ Blur, ← Shape, → Pen, ↓ Text. Only the old unmodified stock
+  map migrates once; custom mappings remain. Why: the user requested these
+  four drawing tools and rejected duplicating the existing Copy action.
+- The physical keys execute the functions. Clicking a square opens its native
+  assignment menu, including every retained action and Reset this arrow. A
+  drop from any toolbar tool or assigned square replaces only the destination
+  and saves immediately, preserving the source and current screenshot. Why:
+  reassignment should neither finish capture nor require Settings or Save.
+- Track press/drag/release without also activating a dragged source. Escape
+  aborts the pending click; hidden or disabled controls cannot complete it.
+  Why: beginning a drag from Copy/Download must never export on release.
+- Square hit areas highlight completely on hover, press and valid drop, with
+  native focus rings. Tab/Space reach assignment menus. Adjacent keycaps are
+  decorative, pass clicks through and add no focus stop. Busy state disables
+  squares, menus and drops and dims key hints. Why: affordances must match the
+  actual click targets and keep a keyboard/VoiceOver alternative to dragging.
+- Keep the group intact while the surrounding toolbar wraps. Reuse adaptive
+  AppKit popover materials and semantic foregrounds, with no new animation.
+  Screenshot's priority over Agent, text navigation and Command-Z stay intact.
 
-Offscreen native render fixtures cover 360 and 520 pt. They do not establish
-physical drag, keyboard or VoiceOver acceptance in the installed application.
+Native offscreen toolbar renders cover 360/520/900 pt in light/dark appearances.
+Physical dragging, menu/keyboard/VoiceOver and installed-app acceptance remain
+separate from these generated fixtures.
 
 ## Screenshot toolbar and capture reliability — 2026-10-21
 

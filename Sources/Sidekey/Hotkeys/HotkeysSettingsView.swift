@@ -240,8 +240,6 @@ struct HotkeysSettingsView: View {
                         onRecord: { startRecording(.agentClose) }
                     )
 
-                    ScreenshotArrowSettingsView(bindings: $draft.screenshotArrowBindings)
-
                     toolShortcutSection
 
                     conflictBlock
@@ -265,6 +263,7 @@ struct HotkeysSettingsView: View {
         // here unless the user has unsaved edits, which stay theirs.
         .onChange(of: preferences.configuration) { old, new in
             if draft == old { draft = new }
+            else { draft.screenshotArrowBindings = new.screenshotArrowBindings }
         }
         .onDisappear {
             stopRecording()

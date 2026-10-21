@@ -384,7 +384,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(buttons.contains { $0.title == "Blur" && $0.state == .on && $0.image == nil })
         XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix("Download to Downloads") == true && $0.title.isEmpty && $0.image != nil })
         XCTAssertFalse(buttons.contains { $0.toolTip == "More tools" })
-        XCTAssertEqual(buttons.count, 13, "Six annotation tools and seven finish/edit actions remain")
+        XCTAssertEqual(buttons.count, 17, "Thirteen tools/actions including Copy text plus four inline arrow assignment controls")
         for removed in ["Select & crop", "Highlighter", "Spotlight", "Pin above windows", "Output size"] {
             XCTAssertFalse(buttons.contains { $0.toolTip?.hasPrefix(removed) == true }, removed)
         }

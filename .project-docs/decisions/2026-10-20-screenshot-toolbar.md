@@ -12,6 +12,21 @@ sources:
     reference: On 2026-10-21 the user requested restoring screenshot text extraction after finding a use for it, superseding only Copy text removal in the earlier tool reduction.
     confirmed_at: 2026-10-21
   - type: user-confirmed
+    reference: On 2026-10-21 the user replaced the arrow-shaped cross with tool icons in dashed squares and a separate arrow hotkey hint beside each because the cross was hard to understand.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 the user replaced the four stock assignments with Blur, Shape, Pen and Text, rejecting duplicate Copy, and reported the top/bottom arrow outlines pointed the wrong way.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 the user clarified the four arrows must appear as a cross directly on the screenshot toolbar, with reassignment in that same panel rather than Settings.
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Sources/Sidekey/Screenshots/ScreenshotArrowCluster.swift
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Tests/SidekeyTests/Screenshots/ScreenshotArrowToolbarTests.swift
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user reported Cmd-Z still failed after a curved stroke and requested four assignable arrow actions, Screenshot before Agent priority, chosen defaults, replacement on drop and dashed draggable slots.
     confirmed_at: 2026-10-21
   - type: repository
@@ -269,6 +284,48 @@ suspension. Native text fields keep cursor navigation; held export keys do
 not repeat destructive or finish actions. Synthetic tests use unshown windows
 and private subjects/defaults; physical delivery and dragging remain installed
 app acceptance.
+
+# Placement correction — 2026-10-21
+
+The user did not see the arrows because the implementation put them only in
+Settings. They clarified a cardinal cross directly on the screenshot toolbar,
+with reassignment in that same panel. This supersedes the Settings-only surface
+and its inverted-T layout, not the saved four-action contract.
+
+ScreenshotArrowCluster is one 96 × 60 pt toolbar component, retained as a unit
+when controls wrap. Four native buttons draw dashed directional silhouettes
+with the assigned function symbols. Clicking opens a native assignment menu;
+physical arrow keys execute the assigned functions. Every visible toolbar
+function and existing assignment can be dragged onto a destination, replacing
+only that slot and saving immediately. Dragging never also activates its source.
+Menus expose every retained editor action plus per-arrow reset and keyboard/
+VoiceOver access. Busy processing disables assignments, menu items and drops.
+The four stock assignments are now Up Blur, Left Shape, Right Pen, Down Text.
+Only the exact previous stock map migrates once; custom mappings and later
+intentional assignments are preserved. Directional paths account for NSButton's
+flipped coordinates, keeping top Up and bottom Down. Shape dragging follows
+its current Rectangle/Oval choice.
+The former Settings-only component is removed; persistence, Help, backup,
+Command-Z, native text handling and Agent priority stay intact.
+
+# Square tool revision — 2026-10-21
+
+After the preview, the user found the arrow-shaped controls hard to understand
+and chose tool icons in dashed squares with adjacent arrow shortcut hints.
+Replace the cross with one 249 × 30 pt group of four square/keycap pairs on the
+screenshot toolbar. Native 30 pt buttons contain the function symbols; separate
+HotkeyHintView keycaps show Up/Left/Right/Down without taking clicks or focus.
+The whole square is the visible hover/press/focus/drop target. Assignments,
+immediate saving, source-preserving replacement, menu reset, defaults and the
+one-time migration are unchanged. This supersedes the arrow-contour geometry
+and its directional drawing, not the toolbar placement or keyboard contract.
+
+The defaults-migration version travels with the arrow map in the backup
+registry's existing property-list format. Otherwise restoring onto a fresh
+profile would mistake a deliberately reassigned previous stock map for an
+unmigrated map and reset it. A synthetic encrypted settings backup/restore
+regression checks version 2, the exact arrow map, other hotkeys and provider
+selection without accessing real data or credentials.
 
 # Consequences
 
