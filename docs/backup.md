@@ -98,14 +98,20 @@ draft blocks restore, while ordinary backups can continue.
 - Whytap's saved speech and text provider keys (including Anthropic and each
   registered custom server), and independently recoverable
   Case items and secrets.
-- Meeting catalogs, notes and transcripts, plus retained unfinished recordings.
-- Agent, Drop and clipboard history, including app-managed image bytes.
+- Meeting catalogs, notes and transcripts (text only).
 - Recorded Costs history, including exact prices, estimates and unavailable-price
   entries. Restoring keeps spending recorded only on the target Mac, deduplicates
   request IDs and never replaces a reported price with an estimate. Older archives
   without Costs leave this Mac’s Costs history untouched.
 - App-owned Monitor dashboards, notification configuration and working files,
   and the neutral agent workspace's persistent instructions.
+
+Not included: meeting audio, including recordings kept after failed processing,
+and the History feed (clipboard entries and images, recent dictations and agent
+answers). Audio is debugging material that made every snapshot gigabytes, and
+clipboard content can be copied again. Restoring a newer archive leaves this
+Mac's recordings and History as they are. Archives made before 2026-10-21 still
+restore them; their recordings arrive paused.
 
 Case items are merged with the target Mac's vault and encrypted using that
 Mac's own local vault key. Unrelated existing Case items are retained. When a
@@ -120,13 +126,11 @@ over imported registrations, including another ID for the same identity or a
 broader imported executable path. Review them in
 Case -> access after restoring a backup you did not make yourself. Imported
 notification sources and monitoring connections stay disabled until reviewed.
-Unprocessed recordings are recovered without automatically resuming another
-Mac's remote provider jobs.
+Recordings from older archives are recovered without automatically resuming
+another Mac's remote provider jobs.
 
-Clipboard file entries refer to external originals. Those original documents
-are not owned by Whytap and are not copied by this feature. The same applies
-to external scripts, SSH keys, model-provider accounts and credentials managed
-by other applications. Downloaded
+External scripts, SSH keys, model-provider accounts and credentials managed by
+other applications are not owned by Whytap and are not copied. Downloaded
 models, binaries, caches, logs, obsolete project indexes and OS permissions are
 not part of the portable workspace. Archives are bounded to 64 GiB in total,
 8 GiB per file and 200,000 entries; a snapshot exceeding a bound is refused.
@@ -145,14 +149,11 @@ name and five nested directory levels. Unsupported names or links identify the r
 in the error; they are never silently dropped. See the customization guides for
 [notification workers](customization/notifications.md) and
 [Monitor collectors](customization/dashboards.md).
-Retained inactive configurations and recording manifests survive subsequent
-backup/restore cycles. If an older active configuration and its inactive copy
-coexist, both are retained under distinct inert names. Temporary Soniox upload
-bodies are reproducible duplicates; the retained audio is included instead.
-Held original manifests, repair checkpoints and other safe regular files in
-retained recording directories, including nested original audio, travel as inert
-recovery data (up to five path components within a recording). Active provider
-job records do not travel. New archives use schema 4; older Whytap versions must
+Retained inactive configurations survive subsequent backup/restore cycles. If
+an older active configuration and its inactive copy coexist, both are retained
+under distinct inert names. Older archives' retained recording directories
+(held manifests, repair checkpoints, nested original audio) restore as inert
+recovery data; active provider job records never do. New archives use schema 4; older Whytap versions must
 update before restoring them. This version still reads schemas 1–3.
 
 A damaged or incomplete archive is refused before restore. Failed uploads

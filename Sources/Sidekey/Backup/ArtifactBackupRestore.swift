@@ -656,7 +656,8 @@ struct ArtifactRestoreTransaction {
         do {
             try createPrivateDirectory(rollbackRoot)
             let includesUsage = sections.contains(.history) && manifest.entries.contains { $0.path == ArtifactUsageBackup.archivePath }
-            for target in Self.checkpointTargets(for: sections, locations: locations, includesUsage: includesUsage) {
+            for target in Self.checkpointTargets(for: sections, locations: locations, includesUsage: includesUsage,
+                                                 carried: Self.carriedStores(in: manifest)) {
                 let existed = FileManager.default.fileExists(atPath: target.path)
                 guard existed else {
                     // Recorded anyway: a failure must also remove what the
@@ -904,23 +905,41 @@ struct ArtifactRestoreTransaction {
 
     // MARK: Checkpoints and rollback
 
+    /// Stores only older archives carry. Newer ones leave meeting audio and the
+    /// history database out, and restoring them must not replace what this Mac
+    /// has there with nothing.
+    /// WHY: .project-docs/decisions/2026-10-21-backup-essentials-only.md
+    struct CarriedStores: Equatable {
+        var recordings = true
+        var historyDatabase = true
+    }
+
+    static func carriedStores(in manifest: ArtifactBackupManifest) -> CarriedStores {
+        CarriedStores(
+            recordings: manifest.entries.contains { $0.path.lowercased().hasPrefix("meetings/staged/") },
+            historyDatabase: manifest.entries.contains { $0.path == "history/db/history.sqlite" })
+    }
+
     /// Everything a section replaces. The history WAL files matter: a restored
     /// database next to the previous `-wal` would be a corrupt pair.
     static func checkpointTargets(for sections: Set<ArtifactBackupSection>,
-                                  locations: ArtifactBackupLocations, includesUsage: Bool = false) -> [URL] {
+                                  locations: ArtifactBackupLocations, includesUsage: Bool = false,
+                                  carried: CarriedStores = CarriedStores()) -> [URL] {
         var targets: [URL] = []
         if sections.contains(.caseVault) { targets.append(locations.caseVault) }
         if sections.contains(.meetings) {
             targets.append(locations.meetingsCatalog)
-            targets.append(locations.meetingsStaging)
+            if carried.recordings { targets.append(locations.meetingsStaging) }
         }
         if sections.contains(.history) {
-            targets.append(locations.historyDatabase)
-            for suffix in ["-wal", "-shm"] {
-                targets.append(locations.historyDatabase.deletingLastPathComponent()
-                    .appendingPathComponent(locations.historyDatabase.lastPathComponent + suffix))
+            if carried.historyDatabase {
+                targets.append(locations.historyDatabase)
+                for suffix in ["-wal", "-shm"] {
+                    targets.append(locations.historyDatabase.deletingLastPathComponent()
+                        .appendingPathComponent(locations.historyDatabase.lastPathComponent + suffix))
+                }
+                targets.append(locations.historyAssets)
             }
-            targets.append(locations.historyAssets)
             if includesUsage { targets.append(contentsOf: ArtifactUsageBackup.checkpointTargets(locations: locations)) }
         }
         if sections.contains(.workspace) {

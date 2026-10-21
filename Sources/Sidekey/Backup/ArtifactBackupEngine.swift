@@ -23,7 +23,6 @@ struct ArtifactBackupEnvironment {
     /// files cannot serialise against the owning actor/queue, so the app
     /// registers the instances it owns (AppDelegate does this at startup).
     var meetings: ArtifactMeetingsExporting?
-    var history: ArtifactHistoryExporting?
     var usage: ArtifactUsageExporting?
     var faults = ArtifactBackupFaults()
     var now: () -> Date = Date.init
@@ -59,9 +58,8 @@ final class ArtifactBackupEngine {
 
     /// The app hands over the stores it already has open, so an export is a
     /// barrier against their own writers rather than a second connection.
-    func register(meetings: ArtifactMeetingsExporting?, history: ArtifactHistoryExporting?, usage: ArtifactUsageExporting? = nil) {
+    func register(meetings: ArtifactMeetingsExporting?, usage: ArtifactUsageExporting? = nil) {
         if let meetings { environment.meetings = meetings }
-        if let history { environment.history = history }
         if let usage { environment.usage = usage }
     }
 
@@ -99,7 +97,6 @@ final class ArtifactBackupEngine {
             sections: sections, locations: environment.locations, inline: secrets.payloads,
             includeCaseVaultFile: secrets.caseVaultKey != nil, caseVaultKey: secrets.caseVaultKey,
             meetings: sections.contains(.meetings) ? try meetingsExporter() : nil,
-            history: sections.contains(.history) ? try historyExporter() : nil,
             usage: sections.contains(.history) ? environment.usage ?? AIUsageStore(url: environment.locations.usageDatabase) : nil)
 
         let generation = try await stager.stage(request)
@@ -362,16 +359,6 @@ final class ArtifactBackupEngine {
         if let registered = environment.meetings { return registered }
         do { return try MeetingsStore(rootDirectory: environment.locations.meetingsCatalog) }
         catch { throw ArtifactBackupError.readFailed }
-    }
-
-    private func historyExporter() throws -> ArtifactHistoryExporting {
-        if let registered = environment.history { return registered }
-        let database = environment.locations.historyDatabase
-        do {
-            try FileManager.default.createDirectory(at: database.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            return try SQLiteHistoryStore(path: database.path)
-        } catch { throw ArtifactBackupError.readFailed }
     }
 }
 
