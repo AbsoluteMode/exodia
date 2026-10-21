@@ -112,8 +112,16 @@ Voice flow (Drop / dictation):
             OpenRouter, OpenAI or Anthropic with the user's key / a custom OpenAI-compatible
             server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
             The mode is captured at take start:
-            Fast bypasses the LLM; Smart requires processed text and never
-            silently pastes raw speech after a cleanup error or empty result.
+            Fast bypasses AI text processing. Smart first uses dropSmartDecision
+            (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
+            default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
+            A valid needs-cleanup probability <= 0.05 skips editing and uses
+            Fast's verbatim output/filter path without changing the take's mode
+            or speech route. Translation always edits. Missing decision setup,
+            uncertainty, refusal or the 2s deadline keeps the selected cleanup
+            route. Cleanup errors/empty results never silently paste raw speech.
+            Decision models are excluded from LLM/agent pickers. WHY:
+            .project-docs/decisions/2026-10-21-smart-decisions.md
             Smart failures retain the transcript in memory and show Retry with
             the original mode and target; configuration errors open API & Models on
             the Drop Smart cleanup row.
@@ -346,10 +354,11 @@ Case secrets manager:
   grant after authentication/approval, the broker revalidates the current
   caller, registration and project. Revoking or rebinding a registration
   invalidates its pending requests, including queued approvals.
-  Approve uses a non-activating island panel with bare physical digit keys
-  1 (deny), 2 (allow once), 3 (temporary Bypass), including the numeric keypad.
-  Letters, Escape, navigation and modified digits pass to the active app. WHY:
-  docs/decisions/2026-10-21-case-numeric-approval.md. It keeps
+  Approve uses a non-activating island panel with physical Y (allow once),
+  N/Escape (deny) and A (temporary Bypass). Only the minutes field accepts
+  digits, rejecting letters and mixed pastes before insertion. The panel's
+  default first responder is the neutral card; opening a prompt does not select
+  the duration. WHY: docs/decisions/2026-10-21-case-approval-minutes-input.md. It keeps
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
   grants. Temporary Bypass is a separate button beside a native editable
   1–240 minute field (default 15), without stepper arrows; the bottom row has
@@ -734,7 +743,10 @@ Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
 MacPopupLabel. Name/size terms match in any order (`qwen 27`, `qwen27`), ignoring
 case/separators. Search never changes routes; explicit picks retain verification.
 Known catalog dates appear under model IDs: Anthropic Released, OpenAI Created,
-OpenRouter Added to OpenRouter. Unknown/epoch dates stay hidden. Nonempty search
+OpenRouter Added to OpenRouter. Unknown/epoch dates stay hidden.
+Speech models: Deepgram Updated uses cached newest version dates;
+Soniox/ElevenLabs Released uses exact stable IDs with verified official launch
+dates in ModelRegistry. Unknown models/aliases inherit no release date. Nonempty search
 breaks equal-relevance ties by newest date, unknown last, within provider groups;
 equal dates and empty queries keep catalog order. Older caches refresh once for dates.
 Up/Down and Return choose enabled results; Escape clears then closes. Opening

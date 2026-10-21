@@ -33,10 +33,32 @@ final class ModelPickerRenderTests: XCTestCase {
                 PickerOption(model: "unknown-date", state: .new, isSelected: false, hint: nil),
             ] : []), refreshFailed: false)
         }
+        let speechSections: [PickerSection] = [
+            PickerSection(account: .soniox, title: "Soniox", options: [
+                speechOption("stt-async-v5", account: .soniox, selected: true, hint: "with speakers"),
+            ], refreshFailed: false),
+            PickerSection(account: .deepgram, title: "Deepgram", options: [
+                speechOption("nova-3", account: .deepgram, updated: "2026-10-20"),
+                speechOption("nova-3-general", account: .deepgram, updated: "2026-10-20"),
+                speechOption("nova-3-medical", account: .deepgram, updated: "2026-10-06"),
+                speechOption("nova-3-pharma", account: .deepgram, updated: "2026-06-05"),
+            ], refreshFailed: false),
+            PickerSection(account: .elevenLabs, title: "ElevenLabs", options: [
+                speechOption("scribe_v2_realtime", account: .elevenLabs),
+            ], refreshFailed: false),
+        ]
         for dark in [false, true] {
-            for state in ["all", "qwen27", "empty", "no-provider", "unlisted-server", "dates"] {
-                let query = state == "qwen27" ? "qwen 27" : (state == "empty" ? "missing model" : "")
-                let picker = ModelPicker(sections: state == "no-provider" ? [] : (state == "unlisted-server" ? [unlisted] : (state == "dates" ? datedSections : sections)),
+            for state in ["all", "qwen27", "empty", "no-provider", "unlisted-server", "dates", "speech-dates", "speech-scribe"] {
+                let query = state == "qwen27" ? "qwen 27" : (state == "empty" ? "missing model" : (state == "speech-scribe" ? "scribe" : ""))
+                let displayed: [PickerSection]
+                switch state {
+                case "no-provider": displayed = []
+                case "unlisted-server": displayed = [unlisted]
+                case "dates": displayed = datedSections
+                case "speech-dates", "speech-scribe": displayed = speechSections
+                default: displayed = sections
+                }
+                let picker = ModelPicker(sections: displayed,
                                          missingProviderHint: "Add API key", initialQuery: query,
                                          onSelect: { _, _ in }, onRefresh: {}, onAddKey: {},
                                          onClose: {})
@@ -61,5 +83,13 @@ final class ModelPickerRenderTests: XCTestCase {
                 window.close()
             }
         }
+    }
+
+    private func speechOption(_ model: String, account: ProviderAccount, updated: String? = nil,
+                              selected: Bool = false, hint: String? = nil) -> PickerOption {
+        let date = updated.flatMap(ModelCatalogFetcher.deepgramVersionDate)
+            ?? ModelRegistry.documentedReleaseDate(for: model, kind: account.kind)
+        return PickerOption(model: model, state: .verified, isSelected: selected, hint: hint,
+                            dateLabel: ModelStatusResolver.catalogDateLabel(date, account: account), catalogDate: date)
     }
 }

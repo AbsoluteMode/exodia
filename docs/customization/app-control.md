@@ -36,7 +36,7 @@ no arbitrary UserDefaults operation. Keys, permissions, security controls,
 Case contents, transcripts, history, clipboard, recording, shell execution,
 installation and quit are outside this interface.
 
-Feature IDs are `dropFast`, `dropSmart`, `dropSmartCleanup`, `meetings`,
+Feature IDs are `dropFast`, `dropSmart`, `dropSmartDecision`, `dropSmartCleanup`, `meetings`,
 `meetingNotes`, `agent`, `agentVoice`, `voiceSearch`, `translation`,
 `subtitlesAudio` and `subtitlesTranslation`. Accounts use the exact ID returned
 by `list_models`: built-in provider IDs or an already configured server ID.

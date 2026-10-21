@@ -3,7 +3,7 @@ import Foundation
 /// What the app last learned about one account's model catalog. Model metadata
 /// only: no keys, no URLs, no response bodies.
 struct CatalogSnapshot: Codable, Equatable {
-    static let currentMetadataVersion = 2
+    static let currentMetadataVersion = 3
     var models: [CatalogModel]
     /// Last successful load.
     var fetchedAt: Date?
@@ -12,7 +12,7 @@ struct CatalogSnapshot: Codable, Equatable {
     var lastRefreshFailed: Bool
     /// The key may not list models: only the built-in registry applies.
     var limited: Bool
-    /// Older caches remain readable offline, but refresh once to learn dates.
+    /// Older caches remain readable offline, but refresh for dates/capabilities.
     var metadataVersion: Int?
 
     init(models: [CatalogModel] = [], fetchedAt: Date? = nil, lastRefreshFailed: Bool = false, limited: Bool = false) {
@@ -143,7 +143,26 @@ final class ModelCatalogStore: ObservableObject {
         guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode([String: CatalogSnapshot].self, from: data)
         else { return [:] }
-        return decoded
+        var normalized = decoded
+        // v2 classified every text-shaped Jev catalog entry as chat and did
+        // not know OpenAI Decisions. Correct those known capabilities even
+        // offline, before the first picker opens; the version also forces a
+        // normal free catalog refresh instead of waiting for its daily TTL.
+        for (id, snapshot) in decoded where snapshot.metadataVersion != CatalogSnapshot.currentMetadataVersion {
+            var snapshot = snapshot
+            snapshot.models = snapshot.models.map { model in
+                var model = model
+                if id == ProviderAccount.openRouter.storageID,
+                   model.id.hasPrefix("typesafe/jev-"), model.id != "typesafe/jev-router" {
+                    model.uses = [.decision]
+                } else if id == ProviderAccount.openAI.storageID, model.id == ModelRegistry.openAIDecisionModel {
+                    model.uses = (model.uses ?? [.chat, .chatWithTools]).union([.decision])
+                }
+                return model
+            }
+            normalized[id] = snapshot
+        }
+        return normalized
     }
 
     private func persist() {

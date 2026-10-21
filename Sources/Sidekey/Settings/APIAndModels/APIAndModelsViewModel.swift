@@ -31,6 +31,7 @@ struct FeatureRow: Equatable, Identifiable {
         switch feature.mode {
         case .realtime, .recorded: return "Speech"
         case .llm, .llmWithTools: return "Text"
+        case .decision: return "Decision"
         }
     }
     var id: AIFeature { feature }
@@ -49,7 +50,7 @@ struct FeatureGroup: Equatable, Identifiable {
     /// beside the LLM route that processes its text.
     static let layout: [(title: String, features: [AIFeature])] = [
         ("Drop Fast", [.dropFast]),
-        ("Drop Smart", [.dropSmart, .dropSmartCleanup]),
+        ("Drop Smart", [.dropSmart, .dropSmartDecision, .dropSmartCleanup]),
         ("Meetings", [.meetings, .meetingNotes]),
         ("Agent", [.agent]),
         ("Agent voice", [.agentVoice]),
@@ -567,7 +568,7 @@ final class APIAndModelsViewModel: ObservableObject {
             status: resolver.status(for: feature),
             isChecking: checking.contains(feature),
             message: messages[feature] ?? route.flatMap(languageWarning(for:)),
-            provider: route.flatMap(providerChoice(for:)),
+            provider: feature == .dropSmartDecision ? nil : route.flatMap(providerChoice(for:)),
             modelSummary: route?.model ?? "Choose a model"
         )
     }

@@ -12,9 +12,9 @@ final class AIFeatureTests: XCTestCase {
     // MARK: - Registry
 
     func test_features_follow_the_spec_table() {
-        XCTAssertEqual(AIFeature.allCases, [.dropFast, .dropSmart, .dropSmartCleanup, .meetings, .meetingNotes, .agent, .agentVoice, .voiceSearch, .translation, .subtitlesAudio, .subtitlesTranslation])
-        XCTAssertEqual(AIFeature.allCases.map(\.title), ["Drop Fast", "Drop Smart", "Drop Smart cleanup", "Meetings", "Meeting notes", "Agent", "Agent voice", "Voice search", "Translation", "Subtitles audio", "Subtitles translation"])
-        XCTAssertEqual(AIFeature.allCases.map(\.mode.label), ["real-time", "real-time", "LLM", "recorded", "LLM", "LLM with tools", "real-time", "real-time", "LLM", "real-time", "LLM"])
+        XCTAssertEqual(AIFeature.allCases, [.dropFast, .dropSmart, .dropSmartCleanup, .dropSmartDecision, .meetings, .meetingNotes, .agent, .agentVoice, .voiceSearch, .translation, .subtitlesAudio, .subtitlesTranslation])
+        XCTAssertEqual(AIFeature.allCases.map(\.title), ["Drop Fast", "Drop Smart", "Drop Smart cleanup", "Drop Smart decision", "Meetings", "Meeting notes", "Agent", "Agent voice", "Voice search", "Translation", "Subtitles audio", "Subtitles translation"])
+        XCTAssertEqual(AIFeature.allCases.map(\.mode.label), ["real-time", "real-time", "LLM", "Decision", "recorded", "LLM", "LLM with tools", "real-time", "real-time", "LLM", "real-time", "LLM"])
         XCTAssertEqual(AIFeature.drop(.fast), .dropFast)
         XCTAssertEqual(AIFeature.drop(.smart), .dropSmart)
     }
@@ -22,7 +22,7 @@ final class AIFeatureTests: XCTestCase {
     func test_feature_raw_values_are_the_persisted_route_keys() {
         XCTAssertEqual(
             AIFeature.allCases.map(\.rawValue),
-            ["dropFast", "dropSmart", "dropSmartCleanup", "meetings", "meetingNotes", "agent", "agentVoice", "voiceSearch", "translation", "subtitlesAudio", "subtitlesTranslation"]
+            ["dropFast", "dropSmart", "dropSmartCleanup", "dropSmartDecision", "meetings", "meetingNotes", "agent", "agentVoice", "voiceSearch", "translation", "subtitlesAudio", "subtitlesTranslation"]
         )
     }
 
@@ -73,6 +73,11 @@ final class AIFeatureTests: XCTestCase {
                 openRouter: .chat, anthropic: .chat, openAICompatible: .chat
             ),
             TableRow(
+                features: [.dropSmartDecision],
+                soniox: nil, deepgram: nil, elevenLabs: nil,
+                openRouter: .decision, anthropic: nil, openAICompatible: nil
+            ),
+            TableRow(
                 features: [.agent],
                 soniox: nil, deepgram: nil, elevenLabs: nil,
                 openRouter: .chatWithTools, anthropic: .chatWithTools, openAICompatible: nil
@@ -97,14 +102,15 @@ final class AIFeatureTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(visited, 77)
+        XCTAssertEqual(visited, 84)
     }
 
     func test_direct_llm_providers_are_available_for_all_text_modes_only() {
         for kind in [AIProviderKind.openAI, .anthropic] {
             for feature in AIFeature.allCases {
                 let expected: ModelUse? = feature.mode == .llm ? .chat
-                    : (feature.mode == .llmWithTools ? .chatWithTools : nil)
+                    : (feature.mode == .llmWithTools ? .chatWithTools
+                       : (kind == .openAI && feature.mode == .decision ? .decision : nil))
                 XCTAssertEqual(feature.modelUse(on: kind), expected, feature.rawValue)
             }
         }

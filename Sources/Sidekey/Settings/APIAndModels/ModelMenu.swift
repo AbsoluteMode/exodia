@@ -20,7 +20,7 @@ struct ModelMenu: View {
         } label: {
             MacPopupLabel(title: label, minWidth: width ?? 90, maxWidth: width ?? 300)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(APIModelFeedbackStyle(cornerRadius: MacPopupMetrics.radius, focused: focused))
         .focused($focused)
         .help(label)
         .accessibilityLabel("Model for \(feature.title)")

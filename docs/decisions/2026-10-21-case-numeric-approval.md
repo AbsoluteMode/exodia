@@ -2,22 +2,27 @@
 id: case-numeric-approval
 type: decision
 title: Case approval intercepts only bare digit answers
-summary: Replace letter and Escape interception with 1/2/3 so a pending key request preserves normal app input.
-status: confirmed
+summary: Historical mistaken interpretation, superseded by restoring Y/N/A and restricting only the minutes field to digits.
+status: stale
 tags: [case, approval, hotkeys, input]
-canonical_for: [case-approval-answer-keys]
+canonical_for: []
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
-    reference: On 2026-10-21, after a real key-presence request, the user requested digits only because letter interception interfered with using their active app.
+    reference: On 2026-10-21 the user clarified that digits-only referred to the minutes field; they did not request replacing Y/N/A answer shortcuts.
     confirmed_at: 2026-10-21
   - type: repository
     reference: Sources/Sidekey/Case/Approval/CaseApprovalKeyTap.swift
     confirmed_at: 2026-10-21
-related: [2026-10-19-case-secrets-broker.md, ../hotkey.md, ../DESIGN.md]
+related: [2026-10-21-case-approval-minutes-input.md, 2026-10-19-case-secrets-broker.md, ../hotkey.md, ../DESIGN.md]
 ---
 
 # Numeric Case approval
+
+Historical implementation based on a mistaken interpretation. The user
+corrected it the same day: keep Y/N/A and restrict only the minutes input.
+[Answer keys and numeric minutes](2026-10-21-case-approval-minutes-input.md)
+supersedes the implementation below.
 
 Only bare physical 1/2/3 answer the visible request: 1 denies, 2 allows once,
 3 grants temporary Bypass for the displayed minutes. Both the top row and

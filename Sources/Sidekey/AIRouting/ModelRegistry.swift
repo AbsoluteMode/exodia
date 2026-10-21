@@ -4,6 +4,10 @@ import Foundation
 /// recorded-audio model of a provider whose real-time route names a streaming
 /// model. Anything the user picks lives in a `FeatureRoute`.
 enum ModelRegistry {
+    /// Pinned decision defaults; a user's explicit choice lives in FeatureRoute.
+    static let smartDecisionModel = "typesafe/jev-1.14"
+    static let openAIDecisionModel = "gpt-6-luna"
+
     /// Soniox async (file) transcription, the batch counterpart of `stt-rt-*`.
     /// The same model `SonioxFileAPI` and the meeting transcriber send.
     static let sonioxRecordedModel = "stt-async-v5"
@@ -25,7 +29,30 @@ struct RegistryModel: Equatable, Sendable {
 }
 
 extension ModelRegistry {
+    /// Speech catalogs without release timestamps use only exact model IDs
+    /// whose launch dates were checked against the provider's announcement.
+    /// New/unknown IDs never inherit a date from a name, alias or model family.
+    static func documentedReleaseDate(for id: String, kind: AIProviderKind) -> Date? {
+        let day: String
+        switch (kind, id) {
+        // https://soniox.com/docs/stt/models#june-16-2026
+        case (.soniox, "stt-rt-v5"): day = "2026-06-16"
+        // https://soniox.com/docs/stt/models#june-11-2026
+        case (.soniox, "stt-async-v5"): day = "2026-06-11"
+        // https://elevenlabs.io/blog/introducing-scribe-v2-realtime
+        case (.elevenLabs, "scribe_v2_realtime"): day = "2025-11-11"
+        // https://elevenlabs.io/blog/introducing-scribe-v2
+        case (.elevenLabs, "scribe_v2"): day = "2026-01-09"
+        default: return nil
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        return formatter.date(from: day)
+    }
+
     static let models: [RegistryModel] = [
+        RegistryModel(kind: .openRouter, id: smartDecisionModel, uses: [.decision], diarization: false),
+        RegistryModel(kind: .openAI, id: openAIDecisionModel, uses: [.decision], diarization: false),
         RegistryModel(kind: .soniox, id: "stt-rt-v5", uses: [.realtimeSTT], diarization: false),
         RegistryModel(kind: .soniox, id: sonioxRecordedModel, uses: [.asyncSTT], diarization: true),
         RegistryModel(kind: .deepgram, id: "nova-3", uses: [.realtimeSTT], diarization: false),
@@ -56,31 +83,34 @@ extension ModelRegistry {
             switch feature {
             case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio: return "stt-rt-v5"
             case .meetings: return sonioxRecordedModel
-            case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation, .agent: return nil
+            case .dropSmartCleanup, .dropSmartDecision, .meetingNotes, .translation, .subtitlesTranslation, .agent: return nil
             }
         case .deepgram:
             switch feature {
             case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio, .meetings: return "nova-3"
-            case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation, .agent: return nil
+            case .dropSmartCleanup, .dropSmartDecision, .meetingNotes, .translation, .subtitlesTranslation, .agent: return nil
             }
         case .elevenLabs:
             switch feature {
             case .dropFast, .dropSmart, .agentVoice, .voiceSearch, .subtitlesAudio, .meetings: return "scribe_v2_realtime"
-            case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation, .agent: return nil
+            case .dropSmartCleanup, .dropSmartDecision, .meetingNotes, .translation, .subtitlesTranslation, .agent: return nil
             }
         case .openRouter:
             switch feature {
+            case .dropSmartDecision: return smartDecisionModel
             case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation: return "google/gemini-3.8-flash"
             case .agent: return "anthropic/claude-sonnet-5.5"
             case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
             }
         case .anthropic:
             switch feature {
+            case .dropSmartDecision: return nil
             case .agent: return anthropicAgentModel
             case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation: return anthropicAgentModel
             case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
             }
         case .openAI:
+            if feature == .dropSmartDecision { return openAIDecisionModel }
             // The authenticated live catalog is the source of available IDs.
             return nil
         case .openAICompatible:
@@ -96,6 +126,18 @@ extension ModelRegistry {
 
     /// Why the app cannot run a model it can see in a catalog, or `nil`.
     static func knownUnsupportedReason(_ id: String, kind: AIProviderKind, use: ModelUse) -> String? {
+        if use == .decision {
+            switch kind {
+            case .openRouter:
+                return id == smartDecisionModel ? nil : "not a supported decision model"
+            case .openAI:
+                return id == openAIDecisionModel ? nil : "not supported by OpenAI Decisions API"
+            default: return "no decision API adapter"
+            }
+        }
+        if kind == .openRouter, id.hasPrefix("typesafe/jev-"), id != "typesafe/jev-router" {
+            return "decision model, does not generate text"
+        }
         switch kind {
         case .deepgram:
             return id.hasPrefix("flux-") ? "needs Deepgram's v2 streaming API" : nil

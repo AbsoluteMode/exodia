@@ -91,9 +91,10 @@ Case — зашифрованное хранилище ключей по про�
 Зарегистрированные ИИ-приложения (Claude Code, Codex, Cursor, встроенный агент)
 видят только имена проектов и ключей и описания; `whytap case run` запускает
 команду, передавая значения только в её окружении, а вывод маскируется. Режимы
-Accept (запрос под островом: 1 — отклонить, 2 — разрешить, 3 — временный Bypass)
-и Bypass на приложение и проект. Буквы, Escape, навигация и сочетания клавиш
-проходят в активное приложение; цифры ответа временно отключены при вводе минут.
+Accept (запрос под островом: Y — разрешить, N/Escape — отклонить, A — временный Bypass)
+и Bypass на приложение и проект. Только поле минут принимает одни цифры: буквы
+и смешанная вставка отклоняются до появления в поле. При вводе минут клавиши
+ответа отключены; при появлении запроса число не выделяется автоматически.
 Доступ можно ограничить выбранными проектами или разрешить все текущие и новые.
 В запросе Accept временный Bypass — отдельная кнопка рядом с полем числа минут
 (1–240, по умолчанию 15), без стрелок. Внизу только «Deny» и «Allow».
@@ -348,8 +349,16 @@ correction & learning loop
 ```
 
 **Режим Drop фиксируется в начале записи.** Fast вставляет транскрипт с
-фильтром слов-паразитов и не обращается к LLM. Smart вставляет только результат
-обработки выбранной LLM. Если обработка недоступна, завершилась ошибкой или
+фильтром слов-паразитов и не обращается к AI-обработке текста. Smart сначала
+использует отдельную Decision-модель: по умолчанию `typesafe/jev-1.14` через
+OpenRouter; в API & Models → Models → Drop Smart → Decision можно выбрать
+OpenAI Decisions (`gpt-6-luna`) с собственным ключом OpenAI. Это тип решений
+и вероятностей, а не LLM для генерации текста. Если вероятность необходимости
+правок не выше 0,05, текст проходит по Fast-пути без редактирования. Режим
+записи и STT-провайдер остаются Smart. Неуверенный/невалидный ответ, отказ,
+отсутствующая настройка или таймаут 2 с сохраняют полную обработку выбранной
+LLM. Выбранный язык перевода всегда требует LLM. Decision-модели не предлагаются
+для очистки текста, заметок и агента. Если обработка недоступна, завершилась ошибкой или
 вернула пустой текст, островок показывает ошибку Smart и Retry; сырой текст
 автоматически не вставляется. Транскрипт остаётся в памяти до успешного Retry,
 новой записи или выхода. Retry сохраняет исходные режим и приложение-цель;
@@ -387,12 +396,15 @@ the only result message is a brief Key accepted / Key not accepted notice. Faile
 previous key and keep the form open. OpenAI and Anthropic are available to all
 LLM routes with their own provider keys.
 Model results show the provider's date when known: Anthropic `Released`, OpenAI
-`Created`, OpenRouter `Added to OpenRouter`. Unknown or invalid dates have no
+`Created`, OpenRouter `Added to OpenRouter`, Deepgram `Updated` (newest model
+version). Soniox and ElevenLabs show `Released` for exact stable IDs with
+verified official launch dates in the built-in registry; unknown IDs/aliases
+inherit no date. Unknown or invalid dates have no
 placeholder. Nonempty search orders equal-relevance matches by newest date,
 unknown dates last, preserving provider groups and stable ties. Empty search
 keeps catalog order.
 Подписей real-time, recorded и LLM with tools в списке нет. Функции: Drop Fast,
-Drop Smart (распознавание + очистка текста), Meetings (расшифровка + заметки),
+Drop Smart (распознавание + Decision + очистка текста), Meetings (расшифровка + заметки),
 Agent, Agent voice, Voice search, Translation и Subtitles (Speech + отдельная LLM). Ошибки и
 действия для их исправления видны и в свёрнутом состоянии. Над карточкой — тихая пометка «N features have no model ·
 Show»: Show раскрывает первую нужную функцию, прокручивает к ней и на пару секунд
