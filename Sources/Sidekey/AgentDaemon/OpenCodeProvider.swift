@@ -8,7 +8,7 @@ import Darwin
 final class OpenCodeProvider: CLIProvider {
     let id: CLIProviderID = .opencode
     let displayName = "OpenCode"
-    let installURL = URL(string: "https://opencode.ai/docs/")!
+    let installURL = URL(string: "https://opencode.ai/v2/docs/")!
     typealias Runner = (URL, [String], URL, [String: String], String,
                         @escaping (String) -> Void, @escaping (Int32) -> Void) -> CodexProcessTerminating
     private let locate: () -> URL?
@@ -26,7 +26,7 @@ final class OpenCodeProvider: CLIProvider {
     init(locate: @escaping () -> URL? = { OpenCodeBinaryLocator().locate() },
          readKey: @escaping (OpenCodeModelProvider) throws -> String? = OpenCodeProvider.readKeychainKey,
          currentProvider: @escaping () async -> OpenCodeModelProvider = OpenCodeProvider.agentRouteProvider,
-         versionProbe: @escaping (URL) -> ProcessResult? = { ClaudeCodeProvider.defaultRunOneShot(binary: $0, args: ["--version"]) },
+         versionProbe: @escaping (URL) -> ProcessResult? = { OpenCodeVersionProbe.run($0) },
          validateKey: @escaping (OpenCodeModelProvider, String) async -> ConnectOutcome = OpenCodeProvider.validate,
          runStreaming: @escaping Runner = OpenCodeProvider.defaultRunStreaming) {
         self.locate = locate
@@ -92,7 +92,7 @@ final class OpenCodeProvider: CLIProvider {
         let result = await Task.detached { probe(binary) }.value
         guard let result, result.exitCode == 0,
               Self.supportsVersion(result.stdout) else {
-            return .failed(code: "unsupported_version", message: "Install OpenCode 1.17.12 or newer from Settings → Agents.")
+            return .failed(code: "unsupported_version", message: "Update the app’s OpenCode copy in Settings → Agents.")
         }
         return await validateKey(provider, key)
     }
@@ -114,12 +114,31 @@ final class OpenCodeProvider: CLIProvider {
         }
     }
 
+    static func versionComponents(_ raw: String) -> [Int]? {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("opencode ") { value = String(value.dropFirst("opencode ".count)) }
+        if value.hasPrefix("v") { value.removeFirst() }
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else { return nil }
+        let numbers = parts.compactMap { Int($0) }
+        return numbers.count == 3 ? numbers : nil
+    }
+
     static func supportsVersion(_ raw: String) -> Bool {
-        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "v")).split(separator: ".")
-        guard parts.count >= 3, let major = Int(parts[0]), let minor = Int(parts[1]),
-              let patch = Int(parts[2].prefix(while: \.isNumber)) else { return false }
-        return major > 1 || (major == 1 && (minor > 17 || (minor == 17 && patch >= 12)))
+        guard let parts = versionComponents(raw) else { return false }
+        // Keep V1 working during promotion; new app-owned installs always use
+        // the current stable V2. An unknown future major needs compatibility QA.
+        return (parts[0] == 1 && (parts[1] > 17 || (parts[1] == 17 && parts[2] >= 12)))
+            || (parts[0] == 2 && (parts[1] > 1 || (parts[1] == 1 && parts[2] >= 1)))
+    }
+
+    // WHY: .project-docs/decisions/2026-10-21-opencode-v2.md
+    static func runtimeArguments(_ args: [String], version: String) -> [String]? {
+        guard args.first == "run", supportsVersion(version),
+              let major = versionComponents(version)?.first else { return nil }
+        // V2's ordinary run attaches to a shared service, which would bypass
+        // this child's isolated config, credentials and Case caller identity.
+        return major == 2 ? [args[0], "--standalone"] + args.dropFirst() : args
     }
 
     func run(prompt: String, resumeSessionID: String?, options: AgentRunOptions) -> AsyncStream<AgentSSEEvent> {
@@ -155,7 +174,7 @@ final class OpenCodeProvider: CLIProvider {
                 return fail("workspace_error", "Couldn’t create the local OpenCode workspace.")
             }
             var args = ["run", "--format", "json", "--model", "\(provider.openCodeID)/\(model)",
-                        "--dir", workingDir.path, "--title", "Whytap"]
+                        "--title", "Whytap"]
             if let session = resumeSessionID { args += ["--session", session] }
             if options.allowActions { args.append("--auto") }
             continuation.yield(.started(turnId: UUID().uuidString, requestId: "", sessionId: resumeSessionID ?? ""))
@@ -197,7 +216,17 @@ final class OpenCodeProvider: CLIProvider {
             let input = Pipe()
             let output = Pipe()
             process.executableURL = binary
-            process.arguments = args
+            if args.first == "run" {
+                guard let probe = OpenCodeVersionProbe.run(binary),
+                      probe.exitCode == 0,
+                      let arguments = runtimeArguments(args, version: probe.stdout) else {
+                    onExit(-1)
+                    return
+                }
+                process.arguments = arguments
+            } else {
+                process.arguments = args
+            }
             process.currentDirectoryURL = workingDirectory
             process.environment = environment
             process.standardInput = input

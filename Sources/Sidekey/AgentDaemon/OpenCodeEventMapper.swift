@@ -33,7 +33,7 @@ struct OpenCodeEventMapper {
             let tool = part["tool"] as? String ?? "tool"
             let label: String
             switch tool {
-            case "bash": label = "Running a command"
+            case "bash", "shell": label = "Running a command"
             case "read": label = "Reading"
             case "edit", "write", "apply_patch": label = "Editing"
             case "glob", "grep": label = "Searching"

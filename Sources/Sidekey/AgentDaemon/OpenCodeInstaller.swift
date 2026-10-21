@@ -6,7 +6,7 @@ enum OpenCodeInstallError: Error, LocalizedError {
     case invalidRelease, invalidDownload, checksum, extraction
     var errorDescription: String? {
         switch self {
-        case .invalidRelease: return "Couldn’t find an official OpenCode release for this Mac."
+        case .invalidRelease: return "Couldn’t find an official stable OpenCode 2 release for this Mac."
         case .invalidDownload: return "Couldn’t download OpenCode. Check your connection and retry."
         case .checksum: return "OpenCode checksum verification failed. Retry the download."
         case .extraction: return "Couldn’t install OpenCode. The previous installation is unchanged."
@@ -14,58 +14,94 @@ enum OpenCodeInstallError: Error, LocalizedError {
     }
 }
 
+// WHY: .project-docs/decisions/2026-10-21-opencode-v2.md
+// V2's official installer distributes native packages through npm, while the
+// GitHub releases/latest endpoint still supplies V1. Read package metadata and
+// verify its SHA-512 integrity without running npm or any installation script.
 struct OpenCodeInstaller {
-    struct Asset: Decodable {
-        let name: String
-        let browser_download_url: String
-        let digest: String?
-    }
-    struct Release: Decodable { let tag_name: String; let assets: [Asset] }
+    struct Distribution: Decodable { let tarball: String; let integrity: String? }
+    struct Package: Decodable { let name: String; let version: String; let dist: Distribution }
     var session: URLSession = .shared
     var destination: URL = OpenCodeBinaryLocator.managedBinaryURL
 
-    static func assetName(appleSilicon: Bool) -> String {
-        appleSilicon ? "opencode-darwin-arm64.zip" : "opencode-darwin-x64-baseline.zip"
+    static func packageName(appleSilicon: Bool) -> String {
+        appleSilicon ? "@opencode/cli-darwin-arm64" : "@opencode/cli-darwin-x64-baseline"
     }
 
-    static func verify(_ data: Data, digest: String?) -> Bool {
-        guard let digest, digest.hasPrefix("sha256:") else { return false }
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return digest.lowercased() == "sha256:\(hash)"
+    static func verify(_ data: Data, integrity: String?) -> Bool {
+        guard let integrity, integrity.hasPrefix("sha512-"),
+              let expected = Data(base64Encoded: String(integrity.dropFirst(7))),
+              expected.count == SHA512.Digest.byteCount else { return false }
+        return Data(SHA512.hash(data: data)) == expected
     }
 
-    /// Explicit user action only. Never executes a downloaded installer script
-    /// and never modifies Homebrew/npm/global user installations.
-    func install() async throws -> String {
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/anomalyco/opencode/releases/latest")!)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+    static func archiveURL(package: Package, expectedName: String, version: String) -> URL? {
+        guard package.name == expectedName, package.version == version,
+              OpenCodeProvider.versionComponents(version)?.first == 2,
+              OpenCodeProvider.versionComponents(version)?.map(String.init).joined(separator: ".") == version,
+              OpenCodeProvider.supportsVersion(version) else { return nil }
+        let filename = String(expectedName.dropFirst("@opencode/".count))
+        let expected = "https://registry.npmjs.org/\(expectedName)/-/\(filename)-\(version).tgz"
+        guard package.dist.tarball == expected else { return nil }
+        return URL(string: expected)
+    }
+
+    private func metadata(at url: URL) async throws -> Package {
+        var request = URLRequest(url: url)
         request.timeoutInterval = 30
-        let (metadata, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
-              let release = try? JSONDecoder().decode(Release.self, from: metadata),
-              let asset = release.assets.first(where: { $0.name == Self.assetName(appleSilicon: HostArchitecture.isAppleSilicon) }),
-              let url = URL(string: asset.browser_download_url), url.scheme == "https", url.host == "github.com",
-              url.path.hasPrefix("/anomalyco/opencode/releases/download/") else { throw OpenCodeInstallError.invalidRelease }
-        let (archive, downloadResponse) = try await session.download(from: url)
+              let package = try? JSONDecoder().decode(Package.self, from: data) else {
+            throw OpenCodeInstallError.invalidRelease
+        }
+        return package
+    }
+
+    /// Explicit user action only. No global installation or shell configuration
+    /// is changed, and a failed download/extraction keeps the previous binary.
+    func install() async throws -> String {
+        let release = try await metadata(at: URL(string: "https://registry.npmjs.org/@opencode%2fcli/latest")!)
+        guard release.name == "@opencode/cli",
+              OpenCodeProvider.versionComponents(release.version)?.first == 2,
+              OpenCodeProvider.versionComponents(release.version)?.map(String.init).joined(separator: ".") == release.version,
+              OpenCodeProvider.supportsVersion(release.version) else { throw OpenCodeInstallError.invalidRelease }
+        let name = Self.packageName(appleSilicon: HostArchitecture.isAppleSilicon)
+        let encodedName = name.replacingOccurrences(of: "/", with: "%2f")
+        let package = try await metadata(at: URL(string: "https://registry.npmjs.org/\(encodedName)/\(release.version)")!)
+        guard let url = Self.archiveURL(package: package, expectedName: name, version: release.version) else {
+            throw OpenCodeInstallError.invalidRelease
+        }
+        let (archive, response) = try await session.download(from: url)
         defer { try? FileManager.default.removeItem(at: archive) }
-        guard (downloadResponse as? HTTPURLResponse)?.statusCode == 200,
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
               let size = try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size > 0, size <= 500 * 1024 * 1024 else { throw OpenCodeInstallError.invalidDownload }
         let data = try Data(contentsOf: archive, options: .mappedIfSafe)
-        guard Self.verify(data, digest: asset.digest) else { throw OpenCodeInstallError.checksum }
+        guard Self.verify(data, integrity: package.dist.integrity) else { throw OpenCodeInstallError.checksum }
         try Task.checkCancellation()
         let target = destination
+        let version = release.version
         try await Task.detached {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            // Extract one exact entry to stdout; zip paths can never escape into
-            // another user directory and no installation script runs.
-            process.arguments = ["-p", archive.path, "opencode"]
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+            // Only this exact entry reaches stdout. Archive paths never become
+            // filesystem writes, and package scripts are never extracted/run.
+            process.arguments = ["-xOzf", archive.path, "package/bin/opencode"]
             let output = Pipe()
             process.standardOutput = output
             process.standardError = FileHandle.nullDevice
             try process.run()
-            let binary = output.fileHandleForReading.readDataToEndOfFile()
+            var binary = Data()
+            while true {
+                let chunk = output.fileHandleForReading.availableData
+                if chunk.isEmpty { break }
+                guard binary.count + chunk.count <= 500 * 1024 * 1024 else {
+                    if process.isRunning { process.terminate() }
+                    process.waitUntilExit()
+                    throw OpenCodeInstallError.extraction
+                }
+                binary.append(chunk)
+            }
             process.waitUntilExit()
             guard process.terminationStatus == 0, !binary.isEmpty else { throw OpenCodeInstallError.extraction }
             try FileManager.default.createDirectory(at: target.deletingLastPathComponent(),
@@ -74,10 +110,12 @@ struct OpenCodeInstaller {
             defer { try? FileManager.default.removeItem(at: staged) }
             try binary.write(to: staged, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staged.path)
-            // chmod happens before the atomic rename, so failure cannot replace
-            // a working executable with an incomplete or non-executable file.
+            let probe = OpenCodeVersionProbe.run(staged)
+            guard probe?.exitCode == 0,
+                  probe.flatMap({ OpenCodeProvider.versionComponents($0.stdout) }) == OpenCodeProvider.versionComponents(version)
+            else { throw OpenCodeInstallError.extraction }
             guard rename(staged.path, target.path) == 0 else { throw OpenCodeInstallError.extraction }
         }.value
-        return release.tag_name
+        return version
     }
 }

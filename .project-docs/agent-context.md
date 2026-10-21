@@ -160,13 +160,16 @@ Voice flow (Drop / dictation):
 Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop, route of agentVoice
-       -> OpenCodeProvider -> opencode run --format json --model
-          <openrouter|openai|anthropic>/<selected-model> --dir <local workspace>,
+       -> OpenCodeProvider -> opencode run --standalone --format json --model
+          <openrouter|openai|anthropic>/<selected-model>, Process cwd = local workspace,
           prompt on stdin; provider and model come from the agent feature's
           route in AIRoutingStore
        -> complete text/tool events rendered progressively in the island
-  Settings -> Agents installs an app-managed OpenCode binary from its official
-  GitHub release after SHA-256 digest verification, or locates an existing CLI.
+  Settings -> Agents installs the current stable OpenCode 2 native binary from
+  the official @opencode npm channel after SHA-512 integrity and staged version
+  verification, or locates an existing CLI. V2 uses a private standalone server;
+  supported V1 remains usable during promotion. No global tools or install scripts
+  are modified/run. WHY: .project-docs/decisions/2026-10-21-opencode-v2.md
   The agent's key and model are chosen in Settings -> API & Models (the
   Agent row: OpenRouter, OpenAI or Anthropic from their live catalogs); the Agents tab shows "Model: <provider> · <id>"
   with Change in API & Models, and Save & connect only checks the local
@@ -1094,7 +1097,7 @@ input layout, including live recording and previously saved non-English titles.
    a key for, OpenRouter's provider list (latency, throughput) for a model
    selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
-   Check now, its official GitHub release download, `google.com` opened in the
+   Check now, its official OpenCode native package downloads from the npm registry, `google.com` opened in the
    browser, the Sparkle feed on GitHub Releases, and optional encrypted backups
    to the user's own GitHub repository or selected sync folder.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
