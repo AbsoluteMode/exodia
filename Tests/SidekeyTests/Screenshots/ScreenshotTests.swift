@@ -414,13 +414,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(copy.accessibilityLabel(), "Copy screenshot and exit")
         let download = try XCTUnwrap(buttons.first { $0.toolTip?.hasPrefix("Download to Downloads") == true })
         let copyText = try XCTUnwrap(buttons.first { $0.identifier?.rawValue == "command.copyText" })
-        var textRequests = 0
-        toolbar.onCommand = { if case .copyText = $0 { textRequests += 1 } }
+        var textRequests = 0, copyRequests = 0
+        toolbar.onCommand = {
+            if case .copyText = $0 { textRequests += 1 }
+            if case .copy = $0 { copyRequests += 1 }
+        }
         copyText.performClick(nil)
         XCTAssertEqual(textRequests, 1)
         XCTAssertTrue(toolbar.focusableControls.contains(copyText))
-        var copyRequests = 0
-        toolbar.onCommand = { if case .copy = $0 { copyRequests += 1 } }
         let label = try XCTUnwrap(settings.compactMap { $0 as? NSTextField }.first { $0.placeholderString == "Label · click to place" })
         label.stringValue = "Test label"
         _ = label.sendAction(label.action, to: label.target)
