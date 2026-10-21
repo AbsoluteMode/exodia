@@ -136,8 +136,10 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         let started = ContinuousClock.now
         let usageStartedAt = Date()
         var providerReference: String?
+        let sonioxReference = UUID().uuidString
         func usageEvent(_ context: AIUsageContext, failed: Bool) -> AIUsageEvent {
-            let id = providerReference.map { "elevenlabs:\($0)" } ?? UUID().uuidString
+            let id = context.account == .soniox ? "soniox:\(sonioxReference)"
+                : providerReference.map { "elevenlabs:\($0)" } ?? UUID().uuidString
             if failed {
                 return AIUsageEvent(id: id, createdAt: usageStartedAt, context: context,
                                     currency: context.currency, amount: nil, basis: .unavailable)
@@ -148,7 +150,7 @@ struct ProviderBatchTranscriber: BatchTranscribing {
             let result: String
             switch route {
             case .soniox(let apiKey, let model):
-                result = try await soniox(wav, apiKey: apiKey, model: model, language: language)
+                result = try await soniox(wav, apiKey: apiKey, model: model, language: language, reference: sonioxReference)
             case .deepgram(let apiKey, let model):
                 result = try await deepgram(wav, apiKey: apiKey, model: model, language: language)
             case .elevenLabs(let apiKey, let model):
@@ -250,7 +252,7 @@ struct ProviderBatchTranscriber: BatchTranscribing {
 
     /// Soniox file API: upload, job, poll, transcript. The file and the job
     /// are deleted afterwards, whatever the outcome.
-    private func soniox(_ wav: Data, apiKey: String, model: String, language: String?) async throws -> String {
+    private func soniox(_ wav: Data, apiKey: String, model: String, language: String?, reference: String) async throws -> String {
         var form = MultipartFormBody()
         form.wav(wav)
         var upload = SonioxFileAPI.request(path: "files", method: "POST", apiKey: apiKey)
@@ -265,7 +267,7 @@ struct ProviderBatchTranscriber: BatchTranscribing {
         // The realtime request's hints: the chosen language, then English.
         var hints = language.map { [$0] } ?? []
         if !hints.contains("en") { hints.append("en") }
-        let job: [String: Any] = ["model": model, "file_id": fileID, "language_hints": hints]
+        let job: [String: Any] = ["model": model, "file_id": fileID, "language_hints": hints, "client_reference_id": reference]
         var create = SonioxFileAPI.request(path: "transcriptions", method: "POST", apiKey: apiKey)
         create.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let created = try await send(create, body: JSONSerialization.data(withJSONObject: job))

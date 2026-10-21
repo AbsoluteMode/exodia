@@ -212,6 +212,6 @@ actor SonioxBYOKSession: BYOKUpstreamSession {
     }
 
     func usageSnapshot() async -> BYOKUsageSnapshot? {
-        BYOKUsageSnapshot(acceptedAudioBytes: audioBytes, failed: usageFailed)
+        BYOKUsageSnapshot(acceptedAudioBytes: audioBytes, failed: usageFailed, providerReference: clientReferenceID)
     }
 }

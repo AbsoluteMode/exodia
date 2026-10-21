@@ -691,15 +691,17 @@ period; hover/click/keyboard focus reveals their models. One Price column
 retains explicit USD and ElevenLabs credit units, both when mixed. Each visit
 starts at This month; matching neutral From/To controls open a dismissing native
 calendar. No permanent bottom explanation or sticky text-segment highlight.
-OpenRouter response costs are reported; Soniox public hourly equivalents and
-OpenCode's computed step prices are estimates. ElevenLabs feature estimates use
-recorded audio minutes times the matching STT model's reported credits/minute,
-marked ≈ without rewriting journal amounts. A separate Reported usage section
-reads the workspace usage API for the same dates, grouped by API key/model;
-it explicitly includes other apps and is never added to feature Total. The live
-request log has no credit column; do not restore speculative request-ID billing.
-Missing rates or billing failures stay unavailable with a retryable explanation,
-never zero. Partial totals show +. No balance deltas or USD-to-credit conversion.
+OpenRouter response costs are reported. Soniox reads exact request cost_usd from
+usage logs by random client reference and historical model; missing/delayed API
+prices retain public hourly estimates marked ≈. New meeting checkpoints retain
+the same reference across retries. Exact prices upgrade estimated journal rows
+once, never duplicate or downgrade reported costs. ElevenLabs feature estimates
+use recorded audio minutes times a cached STT model credit/minute rate, marked ≈.
+Only model rates/update time are cached; rate refresh failures retain usable
+rates. First-use models without a rate stay unavailable. Recording never makes
+a billing read. No workspace Reported usage block, balance deltas, account-total
+allocation or USD-to-credit conversion. Missing prices are never zero; partial
+totals show +. OpenCode's computed step prices remain estimates.
 Tracking starts with this update; synthetic model checks are excluded. WHY:
 .project-docs/decisions/2026-10-20-feature-costs.md
 

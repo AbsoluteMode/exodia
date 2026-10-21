@@ -69,9 +69,9 @@ final class AIUsageMeteredSession: BYOKUpstreamSession {
                 event = AIUsageEvent(createdAt: started, context: context, currency: context.currency,
                                      amount: nil, basis: .unavailable, audioSeconds: seconds)
             }
-            if context.account == .elevenLabs, let reference = snapshot?.providerReference,
+            if [.elevenLabs, .soniox].contains(context.account), let reference = snapshot?.providerReference,
                !reference.isEmpty, reference.count <= 256 {
-                event.id = "elevenlabs:\(reference)"
+                event.id = (context.account == .soniox ? "soniox:" : "elevenlabs:") + reference
             }
             record(event)
         }

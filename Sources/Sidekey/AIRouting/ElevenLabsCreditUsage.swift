@@ -2,6 +2,10 @@ import Foundation
 import CoreFoundation
 
 enum AIUsageNumber {
+    static func decimal(_ value: Any?) -> Double? {
+        if let string = value as? String, let number = Double(string), number.isFinite, number >= 0 { return number }
+        return nonnegative(value)
+    }
     static func nonnegative(_ value: Any?) -> Double? {
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
               number.doubleValue.isFinite, number.doubleValue >= 0 else { return nil }
@@ -58,15 +62,62 @@ actor ElevenLabsCreditUsage {
     static let shared = ElevenLabsCreditUsage()
     private let session: URLSession
     private let readKey: () throws -> String?
+    private let cacheURL: URL
+    private var cache: RateCache?
+    private var cacheLoaded = false
+    private struct RateCache: Codable {
+        let updatedAt: Date
+        let rates: [String: Double]
+    }
 
-    init(session: URLSession = .shared, readKey: @escaping () throws -> String? = {
+    init(session: URLSession = .shared,
+         cacheURL: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(BuildConfig.bundleID).appendingPathComponent("elevenlabs-credit-rates.json"),
+         readKey: @escaping () throws -> String? = {
         switch ProviderKeyStore().lookup(account: BYOKKeyStore.account(for: .elevenLabs)) {
         case .key(let key): return key
         case .absent: return nil
         case .unreadable: throw ElevenLabsBillingError.keyUnavailable
         }
     }) {
-        self.session = session; self.readKey = readKey
+        self.session = session; self.cacheURL = cacheURL; self.readKey = readKey
+    }
+
+    /// Rate metadata only: no account totals, key names or provider identifiers.
+    /// Once learned, local estimates survive API outages and period changes.
+    func estimates(for events: [AIUsageEvent], now: Date = Date(), refresh: Bool = true) async -> [AIUsageEvent] {
+        if !cacheLoaded {
+            cache = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode(RateCache.self, from: $0) }
+            cacheLoaded = true
+        }
+        let models = Set(events.filter { $0.context.account == .elevenLabs }.map { $0.context.model })
+        guard !models.isEmpty else { return events }
+        if refresh, cache == nil || now.timeIntervalSince(cache!.updatedAt) > 86400 || models.contains(where: { cache?.rates[$0] == nil }) {
+            let interval = DateInterval(start: now.addingTimeInterval(-31 * 86400), end: now)
+            if let usage = try? await usage(in: interval) {
+                var rates = cache?.rates ?? [:]
+                for model in models {
+                    let rows = usage.rows.filter { $0.product == "STT" && $0.model == model && ($0.minutes ?? 0) > 0 }
+                    let minutes = rows.reduce(0) { $0 + ($1.minutes ?? 0) }
+                    let rate = rows.reduce(0) { $0 + $1.credits } / minutes
+                    if rate.isFinite, rate > 0 { rates[model] = rate }
+                }
+                cache = RateCache(updatedAt: now, rates: rates)
+                if let data = try? JSONEncoder().encode(cache!) {
+                    try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? data.write(to: cacheURL, options: .atomic)
+                }
+            }
+        }
+        return events.map { event in
+            guard event.context.account == .elevenLabs, event.currency == .elevenLabsCredits,
+                  event.amount == nil, event.audioSeconds > 0,
+                  let rate = cache?.rates[event.context.model], rate.isFinite, rate > 0 else { return event }
+            let amount = event.audioSeconds / 60 * rate
+            guard amount.isFinite else { return event }
+            return AIUsageEvent(id: event.id, createdAt: event.createdAt, context: event.context,
+                                currency: event.currency, amount: amount, basis: .estimated, audioSeconds: event.audioSeconds)
+        }
     }
 
     func usage(in interval: DateInterval) async throws -> ElevenLabsBillingUsage? {
