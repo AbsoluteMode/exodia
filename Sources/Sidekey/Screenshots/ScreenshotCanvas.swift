@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 enum ScreenshotCommand: Hashable { case cancel, copy, download, share }
 
@@ -20,6 +21,7 @@ final class ScreenshotCanvas: NSView {
     var onSelection: (() -> Void)?
     var onBlur: ((CGRect, ScreenshotBlurMode) -> Void)?
     var onCommand: ((ScreenshotCommand) -> Void)?
+    let arrowBindings: @MainActor () -> ScreenshotArrowBindings
 
     private struct Snapshot { let selection: CGRect; let annotations: [ScreenshotAnnotation] }
     private var undoStates: [Snapshot] = [], redoStates: [Snapshot] = []
@@ -35,8 +37,9 @@ final class ScreenshotCanvas: NSView {
     var canUndo: Bool { !busy && !undoStates.isEmpty }
     var canRedo: Bool { !busy && !redoStates.isEmpty }
 
-    init(image: CGImage, size: CGSize) {
+    init(image: CGImage, size: CGSize, arrowBindings: (@MainActor () -> ScreenshotArrowBindings)? = nil) {
         source = image; documentSize = size
+        self.arrowBindings = arrowBindings ?? { HotkeyPreferences.shared.screenshotArrowBindings }
         super.init(frame: CGRect(origin: .zero, size: size))
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
@@ -213,11 +216,17 @@ final class ScreenshotCanvas: NSView {
         if [36, 76].contains(event.keyCode), !(window?.firstResponder is NSTextView) {
             keyDown(with: event); return true
         }
-        guard !(window?.firstResponder is NSTextView), event.modifierFlags.contains(.command) else { return super.performKeyEquivalent(with: event) }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard !(window?.firstResponder is NSTextView), modifiers == .command || modifiers == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
+        // The physical Z key also produces я in Russian. Command dispatch can
+        // reach a nonactivating panel without a main-menu key-equivalent pass.
+        // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+        if event.keyCode == UInt16(kVK_ANSI_Z) {
+            modifiers.contains(.shift) ? redo() : undo(); return true
+        }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "c": onCommand?(.copy); return true
         case "s": if !busy { onCommand?(.download) }; return true
-        case "z": event.modifierFlags.contains(.shift) ? redo() : undo(); return true
         default: return super.performKeyEquivalent(with: event)
         }
     }
@@ -235,6 +244,15 @@ final class ScreenshotCanvas: NSView {
             guard !selection.isEmpty else { return }
             onCommand?(.copy)
             return
+        }
+        if let arrow = ScreenshotArrow(keyCode: event.keyCode),
+           event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty {
+            let action = arrowBindings()[arrow]
+            if action != .moveCrop {
+                // Holding an export key must not execute the same command repeatedly.
+                if !event.isARepeat { perform(action) }
+                return
+            }
         }
         guard !busy else { return }
         if [51, 117].contains(event.keyCode), let id = selectedAnnotation {
@@ -259,5 +277,25 @@ final class ScreenshotCanvas: NSView {
         // The window forwards editor keys here. Bubbling an unknown key back
         // to that window re-enters this method until the stack overflows.
         // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+    }
+
+    private func perform(_ action: ScreenshotEditorAction) {
+        if action == .cancel { cancelOperation(nil); return }
+        guard !busy else { return }
+        guard beforeDrag == nil else { return }
+        if let tool = action.tool { selectTool(tool); return }
+        switch action {
+        case .undo: undo()
+        case .redo: redo()
+        case .copy: if !selection.isEmpty { onCommand?(.copy) }
+        case .download: if !selection.isEmpty { onCommand?(.download) }
+        case .share: if !selection.isEmpty { onCommand?(.share) }
+        case .cancel: cancelOperation(nil)
+        case .deleteAnnotation:
+            guard let id = selectedAnnotation else { return }
+            checkpoint(snapshot()); annotations.removeAll { $0.id == id }; selectedAnnotation = nil
+            needsDisplay = true; onChange?()
+        default: break
+        }
     }
 }

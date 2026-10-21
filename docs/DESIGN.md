@@ -1,5 +1,33 @@
 # Interface decisions
 
+## Screenshot arrow assignments — 2026-10-21
+
+The person comes to assign four quick screenshot actions. First see the current
+↑/←/↓/→ mapping; then drag an action onto a slot or choose its menu and Save.
+Keep this in Settings Hotkeys so the frozen screenshot retains its compact bar.
+
+- Use an inverted-T arrow cluster with dashed rounded contours, the shared
+  HotkeyHintView keycaps, and an always-visible action name. Why: the user
+  asked for dashed draggable slots and replacement on drop.
+- Defaults are ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. The palette contains every
+  retained tool/command plus Delete annotation and Move crop. A slot is also
+  a drag source; dropping copies and replaces only the destination. Why: these
+  defaults cover drawing, obscuring, correcting and finishing.
+- Each whole slot highlights on hover/press/drop; the native Menu retains
+  keyboard activation and VoiceOver with an explicit focus treatment. Palette
+  items highlight across their entire drag area. Why: pointer users need clear
+  feedback, and dragging cannot be the sole way to assign an action.
+- Reuse semantic settings text/surfaces, 12 pt action text and 8 pt spacing.
+  Three equal columns remain at 360 pt, with wrapping action names; the palette
+  adapts its column count. No animation is added, so reduced motion is unchanged.
+- Screenshot suspends Agent’s Carbon registrations before handling arrows.
+  Native text editing remains first within the editor; modified arrows adjust
+  the crop. Why: screenshot commands must not paste/open an Agent action behind
+  the frozen editor.
+
+Offscreen native render fixtures cover 360 and 520 pt. They do not establish
+physical drag, keyboard or VoiceOver acceptance in the installed application.
+
 ## Screenshot toolbar and capture reliability — 2026-10-21
 
 The user comes to annotate a screenshot, discover the available tools, then

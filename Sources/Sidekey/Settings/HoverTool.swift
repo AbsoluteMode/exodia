@@ -95,7 +95,7 @@ enum HoverToolRegistry {
                                  description: "Open server status and custom dashboards")
         case .brightness:
             return HoverToolInfo(title: "Display", sfSymbol: "sun.max", kind: .inlinePanel,
-                                 description: "Screen brightness, Extra boost and battery time")
+                                 description: "Screen brightness and Extra boost")
         case .tasks:
             return HoverToolInfo(title: "To-do", sfSymbol: "checklist", kind: .inlinePanel,
                                  description: "Quick local tasks and completion history")

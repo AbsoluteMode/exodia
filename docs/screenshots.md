@@ -82,8 +82,15 @@ There is no provider setup, account, app-managed model download or API request.
 
 Editor shortcuts, also listed in Help: A Arrow, R Rectangle,
 O Oval, P Pen, T Text, B Blur, N Numbered steps, ⌘C Copy,
-⌘S Download, ⌘Z Undo, ⇧⌘Z Redo. Arrow keys move the crop, Shift moves 10 points,
-Option resizes. Delete removes the selected annotation. Escape cancels the
+⌘S Download, ⌘Z Undo, ⇧⌘Z Redo. Undo/redo also work with Russian input.
+Bare arrows default to ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. Change these in
+Settings → Hotkeys → Screenshot arrows: drag an action onto a dashed slot to
+replace it, drag an existing assignment to another slot, or click a slot for
+the keyboard-accessible menu. Save applies the choices; Revert discards edits.
+Shift-arrows move the crop 10 points; Option-arrows resize it. Move crop can
+also be assigned to a bare arrow for 1-point movement. Screenshot owns arrows
+before Agent; text fields keep native cursor movement. Closing Screenshot
+restores Agent’s current arrow actions. Delete removes the selected annotation. Escape cancels the
 current drawing first, then capture. Return requires a selected area, then copies that area and closes. These are local editor commands.
 
 Opening Screenshot again while capturing or editing keeps the current editor

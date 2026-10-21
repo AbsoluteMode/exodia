@@ -481,8 +481,8 @@ Brightness inside hover:
   search; its capsule title is Display, which fits one line of the narrowest
   capsule. HoverLayoutStore.defaultSlots and saved layouts are unchanged.
   HoverSlotRouter resolves .openPanel(.brightness) to IslandBrightnessStrip:
-  Back, a white capsule backlight slider, an Extra switch and one status line
-  (a notice, or the battery time left). The switch is the Settings MacSwitch
+  Back, a white capsule backlight slider and an Extra switch. A status line
+  appears only for a notice or unavailable brightness. The switch is the Settings MacSwitch
   at its 30x18 compact size, blue while on: the island is never the active
   app's key window, where the native switch draws its on state gray. The strip
   is 68 pt (76 pt band, 126 pt with music) and needsKeyboardFocus for its
@@ -553,22 +553,10 @@ Brightness inside hover:
   macOS disabled, the presses in progress finish with macOS. The tap needs
   Accessibility, is reinstalled with the hotkeys and retried when the Settings
   pane appears. They are the Mac's keys, not a Whytap hotkey: no Help row.
-  BatteryRuntimeMonitor reads IOKit power sources and AppleSmartBattery once a
-  minute from launch, and every 5 s while the strip is visible. Each sample is
-  the system load that PowerTelemetryData's accumulators average between two
-  updates 30-180 s apart (a longer gap such as sleep adds none), with the
-  built-in display's light averaged over the same span: level squared, times
-  the light of the table factor Extra currently applies to it (x2.35 at 1.45,
-  x1 without headroom), 0 with the lid closed. A factor change on its own is
-  counted at the next reading (5 s with the strip, 60 s without). Over the last 30 minutes the load's
-  slope over that light (ridge toward a 5 W prior, 1-15 W, at most 80% of the
-  mean load) moves the display's share to the current light, so a slider or
-  Extra change recomputes the line at once without reading the battery. On
-  battery macOS's estimate comes first until five samples exist, adjusted the
-  same way from the light of the minute before its reading (about what macOS
-  averages) to the current light; on power the line shows the
-  time if unplugged. The history stays in memory: battery readings and key
-  events are never written to disk, logged or sent. WHY:
+  The battery percentage and runtime line were removed at the user's request
+  on 2026-10-21 because the displayed values were unreliable. The estimator,
+  IOKit battery reader and background history sampling are removed too.
+  Brightness key events are never written to disk, logged or sent. WHY:
   .project-docs/decisions/2026-10-18-brightness-tool.md
 
 Hover tool search and pointer routing:
@@ -1056,7 +1044,15 @@ remains a drag. Clicking the active tool again stops drawing and permits
 selection/annotation adjustment without an extra selector. Highlighter,
 Spotlight, Copy text, Pin above windows and
 Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
-from either panel; focused text fields retain native text undo. Blur defaults to Text and numbers, including
+from every screenshot panel through both key-equivalent and direct window dispatch,
+using physical Z so Russian input works; focused text fields retain native text undo.
+Settings -> Hotkeys has four draggable, dashed arrow slots: Up Pen, Down Blur,
+Left Undo, Right Copy & exit. Drop replaces only the destination; native menus
+provide keyboard selection. Save/Revert/reset, Help and settings backups share
+HotkeyPreferences.screenshotArrowBindings. Bare arrows use those actions,
+Shift-arrows move the crop and Option-arrows resize it. Agent Useful Links
+releases its Carbon registrations while Screenshot is active, restores the
+latest visible actions afterwards, and invalidates stale callbacks. Blur defaults to Text and numbers, including
 standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
 without language correction. Dark crops are
 normalized only for detection; output keeps original colors. Each text region

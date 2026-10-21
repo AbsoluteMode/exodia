@@ -51,7 +51,7 @@ smaller capsules in a drawer matching the actual compact island width.
 Monitor opens its dashboard picker inside the same hover drawer; see
 [dashboard contracts](../docs/customization/dashboards.md).
 Brightness, added from the catalog, opens a backlight slider with an Extra
-(EDR) switch and the battery time left: [brightness tool](decisions/2026-10-18-brightness-tool.md).
+(EDR) switch: [brightness tool](decisions/2026-10-18-brightness-tool.md).
 
 Public source: [AbsoluteMode/whytap](https://github.com/AbsoluteMode/whytap).
 Naming and storage compatibility: [restored Whytap name](decisions/2026-10-19-whytap-name.md).

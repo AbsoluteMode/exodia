@@ -62,11 +62,8 @@ while its hover strip is open (each Brightness keys press opens it), and reads t
 level once when hover opens with Display pinned and when Settings -> Toolbox ->
 Display appears. While Extra is on, it also reads the selected display's level
 every half second with the strip closed, so any decrease turns Extra off.
-For the time left on battery it reads the battery charge and load
-through IOKit, and the built-in display's backlight level through DisplayServices,
-once a minute from launch and every 5 seconds while the strip is open, and keeps
-the last half hour of readings in memory only: they are never written to disk,
-logged or sent. While Extra is on, it scales the display's
+The tool does not read battery charge or load and keeps no battery history.
+While Extra is on, it scales the display's
 transfer table through Quartz; macOS gives the display its own table back when
 Whytap quits, crashes included. Only the Brightness keys switch is saved. The
 tool requests no macOS permissions; Brightness keys use Accessibility (below).
