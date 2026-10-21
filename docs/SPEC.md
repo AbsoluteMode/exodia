@@ -386,6 +386,11 @@ opens its inline form with only Save and Remove. Validation stays automatic;
 the only result message is a brief Key accepted / Key not accepted notice. Failed or unreachable checks preserve the
 previous key and keep the form open. OpenAI and Anthropic are available to all
 LLM routes with their own provider keys.
+Model results show the provider's date when known: Anthropic `Released`, OpenAI
+`Created`, OpenRouter `Added to OpenRouter`. Unknown or invalid dates have no
+placeholder. Nonempty search orders equal-relevance matches by newest date,
+unknown dates last, preserving provider groups and stable ties. Empty search
+keeps catalog order.
 Подписей real-time, recorded и LLM with tools в списке нет. Функции: Drop Fast,
 Drop Smart (распознавание + очистка текста), Meetings (расшифровка + заметки),
 Agent, Agent voice, Voice search, Translation и Subtitles (Speech + отдельная LLM). Ошибки и

@@ -728,6 +728,10 @@ form. Opening hints never checks balances or changes routes. WHY:
 Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
 MacPopupLabel. Name/size terms match in any order (`qwen 27`, `qwen27`), ignoring
 case/separators. Search never changes routes; explicit picks retain verification.
+Known catalog dates appear under model IDs: Anthropic Released, OpenAI Created,
+OpenRouter Added to OpenRouter. Unknown/epoch dates stay hidden. Nonempty search
+breaks equal-relevance ties by newest date, unknown last, within provider groups;
+equal dates and empty queries keep catalog order. Older caches refresh once for dates.
 Up/Down and Return choose enabled results; Escape clears then closes. Opening
 the picker refreshes stale/failed catalogs automatically; the footer has no
 Refresh models or Other model ID actions. Custom servers without /models offer

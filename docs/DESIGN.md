@@ -171,11 +171,24 @@ The closed control retains the shared 30 pt popup label and existing widths.
   commands; the user removed Refresh models and Other model ID on 2026-10-21.
 - Match every query term in any order, ignoring case, diacritics, width and
   separators. Split letters/digits: `qwen 27` and `qwen27` find
-  `qwen/qwen3.8-27b`. Prefer contiguous matches within each provider, preserving
-  the catalog order for ties. Why: remembering a family and size should suffice.
+  `qwen/qwen3.8-27b`. Prefer contiguous matches within each provider. For a
+  nonempty query, equally relevant models sort by newest catalog date, with
+  unknown dates last; equal/missing dates retain catalog order. An empty query
+  retains catalog order and provider groups never move. Why: relevance comes
+  first, then recency helps choose between equivalent matches.
 - Keep provider headings, current-selection checkmarks, cached-refresh failures
   and disabled unsupported models. A two-line model label and full-ID tooltip
   handle long names. Exact account/model pairs remain distinct.
+- Show a secondary date line under each dated model: Anthropic `Released`,
+  OpenAI `Created`, OpenRouter `Added to OpenRouter`. Why: their APIs describe
+  different events, so a shared release label would mislead. Hide missing,
+  malformed and Unix-epoch dates without a placeholder. Format the provider's
+  UTC day in the user's date locale; dates participate in search announcements.
+  Refresh older metadata caches once on opening, retaining offline results.
+  No new controls or motion; the existing full-row feedback covers the date.
+  Sources: [Anthropic](https://platform.claude.com/docs/en/api/models/list),
+  [OpenAI](https://developers.openai.com/api/reference/resources/models),
+  [OpenRouter](https://openrouter.ai/docs/guides/overview/models#model-object-schema).
 - The native search field owns normal editing and IME composition. Up/Down
   moves through enabled results and scrolls them into view; Return selects.
   Escape clears the query, then closes; outside click dismisses. Focus returns
@@ -190,7 +203,11 @@ The closed control retains the shared 30 pt popup label and existing widths.
 Offscreen native fixtures cover the 440 pt picker in both appearances, filtered,
 empty, absent-provider, stale-catalog and long/disabled-row states. Search and
 native editing-command tests cover matching, stable ordering, account identity,
-keyboard bounds and IME Return. These checks do not prove physical focus,
+keyboard bounds and IME Return. Dated fixtures add all three date meanings,
+unknown dates and long IDs in both appearances. Secondary date text contrast
+is 6.62:1 light / 6.84:1 dark, or 5.30:1 / 5.45:1 on the active row.
+Tie-order tests preserve better matches, unknown-last ordering and stable ties.
+These checks do not prove physical focus,
 popover dismissal or VoiceOver on the installed app; those remain acceptance.
 The interpretation that a family plus size is the useful search input follows
 the user's example; typo correction and model aliases are outside this change.
