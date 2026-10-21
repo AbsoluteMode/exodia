@@ -6,6 +6,14 @@ import Foundation
 /// `/chat/completions` endpoint the user owns (OpenRouter or a custom base
 /// URL). Nothing here talks to a Whytap server.
 struct PostProcessor {
+    struct Output: Sendable {
+        let text: String
+        let usedEditor: Bool
+
+        func deliveryProfile(_ requested: SmartFormattingProfile) -> SmartFormattingProfile {
+            usedEditor ? requested : .plain
+        }
+    }
     let llmRoute: DirectLLMRouteResolver
     let openRouterClient: any OpenRouterLLMClienting
     /// Where a model refusal is recorded; `nil` is `ModelCheckStore.shared`.
@@ -44,7 +52,16 @@ struct PostProcessor {
     /// Throws when no LLM is chosen or the chosen route is not usable (missing
     /// key / base URL, endpoint unreachable). Smart retains the transcript for
     /// Retry on failure; Fast bypasses this processor entirely.
-    func process(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil) async throws -> String {
+    func process(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil, formatting: SmartFormattingProfile = .plain) async throws -> String {
+        let output = try await processOutput(rawText, targetApp: targetApp, appContext: appContext, screenshot: screenshot,
+                                             language: language, outputLanguage: outputLanguage,
+                                             transcriptionMode: transcriptionMode, formatting: formatting)
+        return output.text
+    }
+
+    /// Retain provenance: a clean Decision's verbatim output must not acquire
+    /// a Markdown interpretation merely because its app supports rich paste.
+    func processOutput(_ rawText: String, targetApp: String?, appContext: String? = nil, screenshot: Data? = nil, language: String? = nil, outputLanguage: String? = nil, transcriptionMode: String? = nil, formatting: SmartFormattingProfile = .plain) async throws -> Output {
         _ = screenshot
         guard let route = try await llmRoute.routeIfEnabled() else {
             throw OpenRouterLLMError.notConfigured
@@ -58,7 +75,7 @@ struct PostProcessor {
                     rawText, targetApp: targetApp, appContext: appContext, language: language
                 )
                 try Task.checkCancellation()
-                if useFast { return rawText }
+                if useFast { return Output(text: rawText, usedEditor: false) }
             } catch {
                 try Task.checkCancellation()
                 // Missing decision key, timeout, refusal or malformed verdict:
@@ -71,7 +88,8 @@ struct PostProcessor {
             context: Self.composeContext(targetApp: targetApp, appContext: appContext),
             language: language,
             outputLanguage: outputLanguage,
-            transcriptionMode: transcriptionMode
+            transcriptionMode: transcriptionMode,
+            formatting: formatting
         )
         do {
             let cleaned = try await openRouterClient.complete(route: route, messages: messages)
@@ -79,7 +97,7 @@ struct PostProcessor {
             await MainActor.run {
                 (checks ?? .shared).clearRefusal(feature: .dropSmartCleanup, model: route.model)
             }
-            return cleaned
+            return Output(text: cleaned, usedEditor: true)
         } catch let error as OpenRouterLLMError where error.isModelRefusal {
             // The row says so until this model works or is picked again; Drop still inserts the
             // retained transcript for Retry (the caller's concern).
@@ -95,7 +113,8 @@ struct PostProcessor {
         context: String?,
         language: String?,
         outputLanguage: String?,
-        transcriptionMode: String?
+        transcriptionMode: String?,
+        formatting: SmartFormattingProfile = .plain
     ) -> [OpenRouterChatMessage] {
         var parts: [String] = []
         if let context, !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -111,8 +130,9 @@ struct PostProcessor {
             parts.append("Transcription mode: \(transcriptionMode)")
         }
         parts.append(transcript)
+        let system = formatting.instructions.map { Self.systemPrompt + "\n\n" + $0 } ?? Self.systemPrompt
         return [
-            OpenRouterChatMessage(role: "system", content: Self.systemPrompt),
+            OpenRouterChatMessage(role: "system", content: system),
             OpenRouterChatMessage(role: "user", content: parts.joined(separator: "\n\n")),
         ]
     }

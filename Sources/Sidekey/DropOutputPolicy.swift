@@ -10,6 +10,7 @@ struct DropOutputPolicy {
     func prepare(
         rawText: String,
         fillerTerms: [String],
+        preservingMarkdown: () -> Bool = { false },
         cleanup: () async throws -> String
     ) async throws -> String {
         try Task.checkCancellation()
@@ -19,7 +20,9 @@ struct DropOutputPolicy {
         case .smart: output = try await cleanup()
         }
         try Task.checkCancellation()
-        let filtered = DropFillerFilter.apply(output, removing: fillerTerms)
+        let filter: (String) -> String = { DropFillerFilter.apply($0, removing: fillerTerms) }
+        let filtered = mode == .smart && preservingMarkdown()
+            ? SmartMarkdownProtection.filtering(output, apply: filter) : filter(output)
         if filtered.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             guard mode == .fast else { throw OpenRouterLLMError.emptyContent }
             return rawText

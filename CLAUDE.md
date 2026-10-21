@@ -138,6 +138,14 @@ Voice flow (Drop / dictation):
        replace only their fragment; nested requests stay requests. The prompt
        is calibrated on GPT-6 Sol and does not change selected routes. WHY:
        .project-docs/decisions/2026-10-21-smart-editor-prompt.md
+       SmartFormattingProfile selects destination syntax from app identity and
+       focused AX role/document metadata (within the same 1.5s context deadline).
+       Markdown editors/recognized web composers use a fixed syntax subset;
+       IDEs require a real Markdown file, and single-line/unknown fields stay plain.
+       Slack/Telegram use local RTF + semantic HTML + plain clipboard fallback;
+       code/URLs survive filler stripping and every flavor is restored after
+       paste. Fast and clean-Decision editor bypass stay unchanged. WHY:
+       .project-docs/decisions/2026-10-21-smart-destination-formatting.md
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting
