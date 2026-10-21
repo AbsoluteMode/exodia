@@ -170,6 +170,14 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         let parked = "manifest.json.restored-inactive"
         try source.write("retained record", to: recording.appendingPathComponent(parked))
         try source.write("retained audio", to: recording.appendingPathComponent("chunk-000.wav"))
+        let held = "manifest.json.held-20000101-000000"
+        let repaired = "soniox-transcription.json.pre-realign-20000101-000000"
+        try source.write("held original", to: recording.appendingPathComponent(held))
+        try source.write("earlier checkpoint", to: recording.appendingPathComponent(repaired))
+        try source.write("original mixed audio", to: recording.appendingPathComponent("orig-mixed-20000101/chunk-000.wav"))
+        try source.write("nested original record", to: recording.appendingPathComponent("orig-mixed-20000101/manifest.json"))
+        try source.write("Finder metadata", to: source.locations.meetingsStaging.appendingPathComponent(".DS_Store"))
+        try source.write("active remote job", to: recording.appendingPathComponent("soniox-transcription.json"))
         let upload = recording.appendingPathComponent("soniox-upload-\(UUID().uuidString).tmp")
         try source.write("disposable multipart", to: upload)
         try FileManager.default.setAttributes([.modificationDate: Date.distantPast], ofItemAtPath: upload.path)
@@ -199,6 +207,12 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: thirdEnvironment)
         XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/\(parked)")), "retained record")
         XCTAssertFalse(third.exists(third.locations.meetingsStaging.appendingPathComponent("\(id)/manifest.json")))
+        XCTAssertFalse(third.exists(third.locations.meetingsStaging.appendingPathComponent("\(id)/soniox-transcription.json")))
+        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/\(held)")), "held original")
+        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/\(repaired)")), "earlier checkpoint")
+        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/orig-mixed-20000101/chunk-000.wav")), "original mixed audio")
+        XCTAssertEqual(third.contents(of: third.locations.meetingsStaging.appendingPathComponent("\(id)/orig-mixed-20000101/manifest.json")), "nested original record")
+        XCTAssertThrowsError(try ArtifactRestoreDestination.resolve("meetings/staged/\(id)/SONIOX-TRANSCRIPTION.JSON", in: third.locations))
         XCTAssertEqual(third.contents(of: third.locations.notifyRoot
             .appendingPathComponent("sources/example.json.restored-invalid")), "preserved source")
     }
@@ -228,6 +242,53 @@ final class ArtifactBackupCoverageTests: XCTestCase {
         XCTAssertTrue(retained.contains("earlier source"))
         XCTAssertFalse(target.exists(target.locations.monitorRoot.appendingPathComponent("servers.json")))
         XCTAssertFalse(target.exists(target.locations.notifyRoot.appendingPathComponent("sources/example.json")))
+    }
+
+    func testUnchangedRetainedGenerationsHaveAStableContentFingerprint() async throws {
+        let source = try profile()
+        let recording = source.locations.meetingsStaging.appendingPathComponent(UUID().uuidString)
+        try source.write("active record", to: recording.appendingPathComponent("manifest.json"))
+        try source.write("earlier record", to: recording.appendingPathComponent("manifest.json.restored-inactive"))
+        try source.write("already retained", to: recording.appendingPathComponent("manifest-retained-0.json.restored-inactive"))
+        try source.write("current", to: source.locations.monitorRoot.appendingPathComponent("servers.json"))
+        try source.write("previous", to: source.locations.monitorRoot.appendingPathComponent("servers.json.restored-inactive"))
+        try source.write("retained", to: source.locations.monitorRoot.appendingPathComponent("restored-files-retained-0/note.txt"))
+        let engine = ArtifactBackupEngine(environment: source.environment()), key = ArtifactBackupTestKeys.make()
+        let first = try await engine.createArchive(at: archive(in: source), key: key)
+        let secondFile = archive(in: source)
+        let second = try await engine.createArchive(at: secondFile, key: key)
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(first.contentFingerprint, second.contentFingerprint)
+        let unchangedFile = archive(in: source)
+        let unchanged = try await engine.createArchiveIfChanged(at: unchangedFile, key: key,
+                                                                previousFingerprint: second.contentFingerprint)
+        XCTAssertNil(unchanged)
+        XCTAssertFalse(source.exists(unchangedFile), "Unchanged content does not produce another encrypted archive")
+        try source.write("changed!", to: source.locations.monitorRoot.appendingPathComponent("servers.json"))
+        let changed = try await engine.createArchiveIfChanged(at: unchangedFile, key: key,
+                                                              previousFingerprint: second.contentFingerprint)
+        XCTAssertNotNil(changed)
+        XCTAssertNotEqual(changed?.contentFingerprint, second.contentFingerprint)
+    }
+
+    func testNestedRetainedRecordingLinksAreRejectedWithoutFollowingThem() async throws {
+        let source = try profile(), id = UUID().uuidString
+        let outside = source.root.appendingPathComponent("outside.wav")
+        try source.write("outside", to: outside)
+        let folder = source.locations.meetingsStaging.appendingPathComponent("\(id)/originals")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent("audio.wav").path,
+                                                   withDestinationPath: outside.path)
+        let file = archive(in: source)
+        do {
+            _ = try await ArtifactBackupEngine(environment: source.environment())
+                .createArchive(at: file, key: ArtifactBackupTestKeys.make(), sections: [.meetings])
+            XCTFail("Never follow links in retained originals")
+        } catch {
+            XCTAssertEqual(error as? ArtifactBackupError, .unsupportedFile("Recordings/\(id)/originals/audio.wav"))
+        }
+        XCTAssertFalse(source.exists(file))
+        XCTAssertEqual(source.contents(of: outside), "outside")
     }
 
     func testLegacyArchiveWithActiveAndInactiveConfigurationPreservesBoth() async throws {

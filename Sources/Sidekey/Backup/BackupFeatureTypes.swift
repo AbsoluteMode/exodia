@@ -24,11 +24,13 @@ struct ArtifactBackupSummary: Codable, Equatable, Identifiable {
     var totalBytes: Int64
     var fileCount: Int
     var sections: Set<ArtifactBackupSection>
+    var contentFingerprint: String? = nil
 
     /// The wire date is rounded by the archive's ISO-8601 encoder.
     func matchesArchive(_ other: Self) -> Bool {
         id == other.id && totalBytes == other.totalBytes && fileCount == other.fileCount
             && sections == other.sections && abs(createdAt.timeIntervalSince(other.createdAt)) < 1
+            && (contentFingerprint == nil || other.contentFingerprint == nil || contentFingerprint == other.contentFingerprint)
     }
 }
 
@@ -89,6 +91,8 @@ struct BackupEngineActions {
     var checkpoint: @MainActor () -> ArtifactRecoveryCheckpoint? = { nil }
     var parked: @MainActor () -> [ArtifactParkedItem] = { [] }
     var activate: @MainActor (ArtifactParkedItem) throws -> Void = { _ in }
+    /// A coherent export is still hashed; unchanged content creates no archive.
+    var createIfChanged: (@MainActor (URL, Data, String?) async throws -> ArtifactBackupSummary?)? = nil
     static var live: Self {
         Self(create: { try await ArtifactBackupEngine.shared.createArchive(at: $0, key: $1) },
              inspect: { try await ArtifactBackupEngine.shared.inspectArchive(at: $0, key: $1) },
@@ -96,6 +100,7 @@ struct BackupEngineActions {
              cancelPlanned: { try ArtifactBackupEngine.shared.cancelPlannedRestore() },
              checkpoint: { ArtifactBackupEngine.shared.recoveryCheckpoint() },
              parked: { ArtifactBackupEngine.shared.parkedRestoredItems() },
-             activate: { try ArtifactBackupEngine.shared.activateParkedItem($0) })
+             activate: { try ArtifactBackupEngine.shared.activateParkedItem($0) },
+             createIfChanged: { try await ArtifactBackupEngine.shared.createArchiveIfChanged(at: $0, key: $1, previousFingerprint: $2) })
     }
 }

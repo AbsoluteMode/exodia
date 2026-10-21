@@ -24,6 +24,7 @@ struct ArtifactBackupEnvironment {
     /// registers the instances it owns (AppDelegate does this at startup).
     var meetings: ArtifactMeetingsExporting?
     var history: ArtifactHistoryExporting?
+    var usage: ArtifactUsageExporting?
     var faults = ArtifactBackupFaults()
     var now: () -> Date = Date.init
 
@@ -58,9 +59,10 @@ final class ArtifactBackupEngine {
 
     /// The app hands over the stores it already has open, so an export is a
     /// barrier against their own writers rather than a second connection.
-    func register(meetings: ArtifactMeetingsExporting?, history: ArtifactHistoryExporting?) {
+    func register(meetings: ArtifactMeetingsExporting?, history: ArtifactHistoryExporting?, usage: ArtifactUsageExporting? = nil) {
         if let meetings { environment.meetings = meetings }
         if let history { environment.history = history }
+        if let usage { environment.usage = usage }
     }
 
     // MARK: - Create
@@ -71,6 +73,20 @@ final class ArtifactBackupEngine {
 
     func createArchive(at url: URL, key: Data,
                        sections: Set<ArtifactBackupSection>) async throws -> ArtifactBackupSummary {
+        guard let summary = try await createGeneration(at: url, key: key, sections: sections, previousFingerprint: nil) else {
+            throw ArtifactBackupError.writeFailed
+        }
+        return summary
+    }
+
+    func createArchiveIfChanged(at url: URL, key: Data,
+                                previousFingerprint: String?) async throws -> ArtifactBackupSummary? {
+        try await createGeneration(at: url, key: key, sections: Set(ArtifactBackupSection.allCases),
+                                   previousFingerprint: previousFingerprint)
+    }
+
+    private func createGeneration(at url: URL, key: Data, sections: Set<ArtifactBackupSection>,
+                                  previousFingerprint: String?) async throws -> ArtifactBackupSummary? {
         guard key.count == 32 else { throw ArtifactBackupError.keyUnavailable }
         guard !sections.isEmpty else { throw ArtifactBackupError.nothingSelected }
         guard !isWorking else { throw ArtifactBackupError.busy }
@@ -83,7 +99,8 @@ final class ArtifactBackupEngine {
             sections: sections, locations: environment.locations, inline: secrets.payloads,
             includeCaseVaultFile: secrets.caseVaultKey != nil, caseVaultKey: secrets.caseVaultKey,
             meetings: sections.contains(.meetings) ? try meetingsExporter() : nil,
-            history: sections.contains(.history) ? try historyExporter() : nil)
+            history: sections.contains(.history) ? try historyExporter() : nil,
+            usage: sections.contains(.history) ? environment.usage ?? AIUsageStore(url: environment.locations.usageDatabase) : nil)
 
         let generation = try await stager.stage(request)
         do {
@@ -102,12 +119,16 @@ final class ArtifactBackupEngine {
                 },
                 contentBytes: generation.contentBytes,
                 warnings: Array((warnings + generation.warnings).prefix(64)))
+            if manifest.contentFingerprint == previousFingerprint {
+                await stager.discard(generation.directory)
+                return nil
+            }
             let archiveBytes = try await stager.writeArchive(to: url, archiveKey: key, manifest: manifest,
                                                              entries: generation.entries)
             await stager.discard(generation.directory)
             return ArtifactBackupSummary(id: manifest.id, createdAt: manifest.createdAt,
                                          totalBytes: archiveBytes, fileCount: manifest.entries.count,
-                                         sections: present)
+                                         sections: present, contentFingerprint: manifest.contentFingerprint)
         } catch {
             await stager.discard(generation.directory)
             throw error
@@ -137,7 +158,8 @@ final class ArtifactBackupEngine {
                                             createdAt: verification.manifest.createdAt,
                                             totalBytes: size,
                                             fileCount: verification.manifest.entries.count,
-                                            sections: Set(verification.manifest.sections))
+                                            sections: Set(verification.manifest.sections),
+                                            contentFingerprint: verification.manifest.contentFingerprint)
         return ArtifactBackupPreview(summary: summary, warnings: Array(warnings.prefix(64)))
     }
 

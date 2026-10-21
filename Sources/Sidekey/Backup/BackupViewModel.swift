@@ -78,6 +78,8 @@ final class BackupViewModel: ObservableObject {
     private var nextAutomaticAttempt = Date.distantPast
     private var stalledSourceStamp: String?
     private var githubRequiresReconnect = false
+    private var lastContentCheck = Date.distantPast
+    static let contentCheckInterval: TimeInterval = 3600
 
     init(defaults: UserDefaults = .standard,
          keyStore: TokenStore = KeychainStore(account: BackupViewModel.keyAccount),
@@ -175,6 +177,7 @@ final class BackupViewModel: ObservableObject {
         }
         recoveryCheckpoint = engine.checkpoint(); parkedItems = engine.parked()
         sourceStamp = defaults.string(forKey: "backup.source-stamp.v1")
+        lastContentCheck = defaults.object(forKey: "backup.last-content-check.v1") as? Date ?? .distantPast
         needsFullBackup = lastBackupAt == nil || sourceStamp == nil
         await captureSettings()
         if defaults.string(forKey: "backup.destination-kind.v1") == "github" {
@@ -555,6 +558,7 @@ final class BackupViewModel: ObservableObject {
             github = transport; githubConnectionState = .connected; githubConnectionError = nil
             githubRequiresReconnect = false
             transferFailureCount = 0; nextAutomaticAttempt = .distantPast
+            lastAttempt = .distantPast
             destinationName = "GitHub · " + name
             selectDestination(id: "github:" + name.lowercased())
             defaults.set("github", forKey: "backup.destination-kind.v1")
@@ -766,7 +770,7 @@ final class BackupViewModel: ObservableObject {
     }
 
     @discardableResult
-    private func performBackupNow() async -> Bool {
+    private func performBackupNow(automatic: Bool = false) async -> Bool {
         guard !isBusy, !needsRestart, !hasPendingMaintenance else { return false }
         guard recoverySaved, destinationKind != nil else { beginSetup(); return false }
         guard idle() else { errorMessage = ConfigBackupError.busy.localizedDescription; return false }
@@ -779,32 +783,50 @@ final class BackupViewModel: ObservableObject {
             let capturedStamp = await Task.detached(priority: .utility) { probe() }.value
             attemptedStamp = capturedStamp
             try Task.checkCancellation()
-            // Retrying an already verified local snapshot comes first. A failed
-            // destination must not create another full archive on every edit.
-            if let destinationID = defaults.string(forKey: "backup.destination-id.v1"),
-               !(try await local.pendingCopies(destinationID: destinationID)).isEmpty {
-                _ = try await copyPending(key: key)
-            }
             let file = try await local.archiveURL(); unfinished = file
-            let summary = try await engine.create(file, key)
-            _ = try await engine.inspect(file, key)
-            let stored = try await local.record(summary, from: file); unfinished = nil
-            lastBackupAt = Date(); defaults.set(lastBackupAt, forKey: "backup.last-local.v1")
+            let keyID = ConfigBackupArchive.keyID(key)
+            let previous = try await local.records().first { $0.recoveryOnly != true && $0.archiveKeyID == keyID
+                && FileManager.default.fileExists(atPath: local.root.appendingPathComponent($0.summary.id.uuidString.lowercased() + ".exodiabackup").path) }
+            let summary: ArtifactBackupSummary?
+            if let create = engine.createIfChanged {
+                summary = try await create(file, key, previous?.summary.contentFingerprint)
+            } else { summary = try await engine.create(file, key) }
+            var current: (UUID, URL)?
+            if let summary {
+                guard try await engine.inspect(file, key).summary.matchesArchive(summary) else { throw ConfigBackupError.invalidArchive }
+                let stored = try await local.record(summary, from: file, automatic: true, archiveKeyID: keyID)
+                unfinished = nil
+                current = (summary.id, stored)
+                lastBackupAt = summary.createdAt; defaults.set(lastBackupAt, forKey: "backup.last-local.v1")
+            }
+            if let id = summary?.id ?? previous?.summary.id { try await local.coalescePending(keeping: id) }
+            lastContentCheck = now(); defaults.set(lastContentCheck, forKey: "backup.last-content-check.v1")
             needsFullBackup = changeRevision != revision
             sourceStamp = capturedStamp
             defaults.set(capturedStamp, forKey: "backup.source-stamp.v1")
-            await refreshVersionsQuietly()
-            try await copyPending(current: (summary.id, stored), key: key)
-            await refreshVersionsQuietly()
+            await refreshVersionsQuietly(includeDestination: false)
+            // A disconnected destination never prevents a fresh local snapshot.
+            // Network backoff applies to transfer, not artifact capture.
+            if (!automatic || now() >= nextAutomaticAttempt) && !githubRequiresReconnect {
+                try await copyPending(current: current, key: key)
+            }
+            await refreshVersionsQuietly(includeDestination: false)
             let finishedStamp = await Task.detached(priority: .utility) { probe() }.value
             if finishedStamp != capturedStamp || changeRevision != revision { needsFullBackup = true }
-            errorMessage = nil
-            transferFailureCount = 0; nextAutomaticAttempt = .distantPast; stalledSourceStamp = nil
-            statusText = destinationKind == "github" ? "Encrypted backup uploaded to GitHub and checked." : "Encrypted backup saved and checked in your folder. Cloud sync is managed by your sync service."
+            let pending = try await local.pendingCopies(destinationID: defaults.string(forKey: "backup.destination-id.v1") ?? "")
+            if pending.isEmpty && (destinationKind != "github" || githubConnectionState == .connected) {
+                errorMessage = nil
+                transferFailureCount = 0; nextAutomaticAttempt = .distantPast
+                statusText = destinationKind == "github" ? "Encrypted backup uploaded to GitHub and checked." : "Encrypted backup saved and checked in your folder. Cloud sync is managed by your sync service."
+            } else { statusText = "Fresh encrypted snapshot saved on this Mac. Upload is pending." }
+            stalledSourceStamp = nil
             isBusy = false
-            return true
+            return pending.isEmpty && (destinationKind != "github" || githubConnectionState == .connected)
         } catch {
             if let unfinished { try? FileManager.default.removeItem(at: unfinished) }
+            // Bound unchanged source failures by the hourly content schedule.
+            // A changed metadata hint or an explicit action can retry sooner.
+            lastContentCheck = now(); defaults.set(lastContentCheck, forKey: "backup.last-content-check.v1")
             isBusy = false; recordBackupFailure(error, sourceStamp: attemptedStamp); fail(error)
             return false
         }
@@ -814,9 +836,10 @@ final class BackupViewModel: ObservableObject {
     private func copyPending(current: (UUID, URL)? = nil, key: Data) async throws -> Int {
         guard let destinationID = defaults.string(forKey: "backup.destination-id.v1") else { throw ConfigBackupError.saveFailed }
         let pending = try await local.pendingCopies(destinationID: destinationID)
-        // Retry the newest first. Unsent versions remain local even if upload
-        // or a provider request limit interrupts this pass.
-        for record in pending.prefix(3) {
+        // Finish a resumable transfer before preparing the latest generation.
+        // Offline edits can then replace the one unprepared pending snapshot.
+        let ordered = pending.filter { $0.preparation != nil } + pending.filter { $0.preparation == nil }
+        for record in ordered.prefix(3) {
             try Task.checkCancellation()
             let file = await local.fileURL(record.summary.id)
             if current?.0 != record.summary.id {
@@ -880,13 +903,13 @@ final class BackupViewModel: ObservableObject {
         errorMessage = nil
         await refreshVersionsQuietly()
     }
-    private func refreshVersionsQuietly() async {
+    private func refreshVersionsQuietly(includeDestination: Bool = true) async {
         do {
             let revision = destinationRevision
             var all = try await local.versions(destinationID: defaults.string(forKey: "backup.destination-id.v1"))
-            if destinationKind == "github", let github {
+            if includeDestination, destinationKind == "github", let github {
                 for version in try await github.versions() where !all.contains(where: { $0.id == version.id }) { all.append(version) }
-            } else if destinationKind == "folder" {
+            } else if includeDestination, destinationKind == "folder" {
                 let folder = try backupFolder()
                 let access = folder.startAccessingSecurityScopedResource(); defer { if access { folder.stopAccessingSecurityScopedResource() } }
                 let urls = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .creationDateKey], options: [.skipsHiddenFiles])
@@ -1215,20 +1238,24 @@ final class BackupViewModel: ObservableObject {
         let probe = changeProbe
         let stamp = await Task.detached(priority: .utility) { probe() }.value
         if stamp != sourceStamp { markDirty() }
+        let contentCheckDue = now().timeIntervalSince(lastContentCheck) >= Self.contentCheckInterval
         guard isEnabled, recoverySaved, idle(), now().timeIntervalSince(lastAttempt) >= 120,
-              now() >= nextAutomaticAttempt, stamp != stalledSourceStamp else { return }
-        if destinationKind == "github", githubConnectionState != .connected {
-            guard !githubRequiresReconnect, github != nil else { return }
+              stamp != stalledSourceStamp || contentCheckDue else { return }
+        if destinationKind == "github", githubConnectionState != .connected,
+           !githubRequiresReconnect, github != nil, now() >= nextAutomaticAttempt {
             await retainOperation(.connection) {
                 self.isBusy = true
                 await self.updateGitHubConnection()
                 self.isBusy = false
             }
             guard !stopped, !Task.isCancelled, !needsRestart, !hasPendingMaintenance,
-                  isEnabled, recoverySaved, idle(), githubConnectionState == .connected else { return }
+                  isEnabled, recoverySaved, idle() else { return }
         }
-        if needsFullBackup { await backupNow() }
-        else if let pending = try? await local.pendingCopies(destinationID: defaults.string(forKey: "backup.destination-id.v1") ?? ""), !pending.isEmpty {
+        if needsFullBackup || contentCheckDue {
+            await retainOperation(.backup) { await self.performBackupNow(automatic: true) }
+        }
+        else if now() >= nextAutomaticAttempt, !githubRequiresReconnect,
+                let pending = try? await local.pendingCopies(destinationID: defaults.string(forKey: "backup.destination-id.v1") ?? ""), !pending.isEmpty {
             await retainOperation(.backup) { await self.retryPendingCopies() }
         }
     }
@@ -1307,7 +1334,7 @@ extension Notification.Name {
 /// coherent store export and full authenticated archive validation.
 enum BackupChangeProbe {
     static func stamp(locations paths: ArtifactBackupLocations = .production) -> String {
-        let roots = [paths.caseVault, paths.historyDatabase,
+        let roots = [paths.caseVault, paths.historyDatabase, paths.usageDatabase,
                      paths.historyDatabase.deletingLastPathComponent().appendingPathComponent("history.sqlite-wal"),
                      paths.historyAssets, paths.monitorRoot, paths.notifyRoot, paths.meetingsCatalog,
                      paths.meetingsStaging, paths.agentMemory, paths.plannerArchive]
@@ -1329,7 +1356,7 @@ enum BackupChangeProbe {
                         walk.skipDescendants()
                         continue
                     }
-                    if values.count >= ArtifactBackupManifest.maxEntries { return "over-limit-" + UUID().uuidString }
+                    if values.count >= ArtifactBackupManifest.maxEntries { return "over-limit" }
                     add(file)
                 }
             }

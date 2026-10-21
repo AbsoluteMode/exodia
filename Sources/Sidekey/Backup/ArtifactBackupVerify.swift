@@ -74,7 +74,7 @@ enum ArtifactArchiveVerifier {
         var databases: [String: URL] = [:]
         var planner: URL?
         for entry in manifest.entries {
-            let isDatabase = entry.path == meetingsDatabasePath || entry.path == historyDatabasePath
+            let isDatabase = entry.path == meetingsDatabasePath || entry.path == historyDatabasePath || entry.path == ArtifactUsageBackup.archivePath
             var inlineKind: ArtifactRestoreDestination.Inline?
             if wanted.contains(entry.section) {
                 // Resolving every wanted path up front refuses unknown roots
@@ -103,8 +103,7 @@ enum ArtifactArchiveVerifier {
                 continue
             }
             if isDatabase, wanted.contains(entry.section) {
-                let file = scratch.appendingPathComponent(
-                    entry.path == meetingsDatabasePath ? "meetings.sqlite" : "history.sqlite")
+                let file = scratch.appendingPathComponent(URL(fileURLWithPath: entry.path).lastPathComponent)
                 try write(entry: entry, from: reader, to: file)
                 databases[entry.path] = file
                 continue
@@ -138,6 +137,9 @@ enum ArtifactArchiveVerifier {
         }
         if wanted.contains(.history), let database = databases[historyDatabasePath] {
             try validateHistory(database, paths: paths)
+        }
+        if wanted.contains(.history), let database = databases[ArtifactUsageBackup.archivePath] {
+            try ArtifactUsageBackup.validate(database: database)
         }
         if wanted.contains(.planner), let planner {
             do { _ = try PlannerStore.decodeArchive(Data(contentsOf: planner)) }

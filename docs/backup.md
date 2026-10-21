@@ -23,10 +23,14 @@ Older copies obtain that date from their authenticated archive manifest.
 
 There are no data-selection switches, code verification steps or confirmation
 screens. Created GitHub backups synchronize automatically, including copies made
-before automatic sync was introduced. Changes are checked every minute; uploads
-are spaced at least two minutes apart and wait while recording or agent work is
-active. Failed uploads keep their local copy and retry before creating another
-full archive, so every offline edit does not add another full copy. Network
+before automatic sync was introduced. Settings, keys and artifact metadata are checked every minute. At least once
+an hour while Whytap is running and idle, a coherent export is hashed by content,
+even if no file metadata changed. A matching hash creates no archive or upload.
+Changed data produces a fresh encrypted local snapshot before any network work.
+Attempts are spaced at least two minutes apart and wait during recording or
+agent work. Without a connection, the newest pending automatic snapshot replaces
+superseded unprepared snapshots; a resumable upload and verified older copies
+are retained. Connection failures do not prevent fresh local capture. Network
 retries back off to at most once every fifteen minutes, or longer if GitHub
 requests it. Starting without a network also retries the connection in the
 background; opening Settings is not required. Account or repository
@@ -73,6 +77,10 @@ draft blocks restore, while ordinary backups can continue.
   Case items and secrets.
 - Meeting catalogs, notes and transcripts, plus retained unfinished recordings.
 - Agent, Drop and clipboard history, including app-managed image bytes.
+- Recorded Costs history, including exact prices, estimates and unavailable-price
+  entries. Restoring keeps spending recorded only on the target Mac, deduplicates
+  request IDs and never replaces a reported price with an estimate. Older archives
+  without Costs leave this Mac’s Costs history untouched.
 - App-owned Monitor dashboards, notification configuration and working files,
   and the neutral agent workspace's persistent instructions.
 
@@ -118,8 +126,11 @@ Retained inactive configurations and recording manifests survive subsequent
 backup/restore cycles. If an older active configuration and its inactive copy
 coexist, both are retained under distinct inert names. Temporary Soniox upload
 bodies are reproducible duplicates; the retained audio is included instead.
-New archives use schema 3 for these inert filenames; older Whytap versions must
-update before restoring them. This version still reads schemas 1 and 2.
+Held original manifests, repair checkpoints and other safe regular files in
+retained recording directories, including nested original audio, travel as inert
+recovery data (up to five path components within a recording). Active provider
+job records do not travel. New archives use schema 4; older Whytap versions must
+update before restoring them. This version still reads schemas 1–3.
 
 A damaged or incomplete archive is refused before restore. Failed uploads
 keep the local copy for retry. Existing copies are retained; the simplified

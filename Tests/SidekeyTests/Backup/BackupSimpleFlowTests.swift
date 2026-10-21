@@ -49,7 +49,11 @@ final class BackupSimpleFlowTests: XCTestCase {
                 return try await engine.createArchive(at: file, key: key)
             },
                 inspect: { try await engine.inspectArchive(at: $0, key: $1) },
-                stage: { try await engine.stageRestore(from: $0, key: $1, sections: $2) }),
+                stage: { try await engine.stageRestore(from: $0, key: $1, sections: $2) },
+                createIfChanged: { file, key, previous in
+                    await beforeCreate()
+                    return try await engine.createArchiveIfChanged(at: file, key: key, previousFingerprint: previous)
+                }),
             changeProbe: changeProbe, idle: idle, providerStore: environment.credentialStore,
             previousRestoreOutcome: { nil }, archivedKeyStore: { _ in MemoryTokenStore() },
             pendingKeyStore: MemoryTokenStore(), githubSession: session, now: now,
@@ -222,13 +226,20 @@ final class BackupSimpleFlowTests: XCTestCase {
         offline = true
         for index in 0..<6 {
             source.defaults.set("offline-\(index)", forKey: "sidekey.preferences.transcriptionMode")
+            try source.write("unique-artifact-\(index)", to: source.locations.monitorRoot.appendingPathComponent("dashboards/notes.txt"))
             time.addTimeInterval(1_000)
             await model.poll()
         }
         let archives = try FileManager.default.contentsOfDirectory(atPath: source.root.appendingPathComponent("archives").path)
             .filter { $0.hasSuffix(".exodiabackup") }
-        XCTAssertEqual(archives.count, 2, "Retain the working generation and one pending generation without copying every edit")
+        XCTAssertLessThanOrEqual(archives.count, 3, "Retain the working generation, resumable transfer and freshest pending snapshot")
         XCTAssertEqual(remote.publishCount, 1)
+        let freshest = try XCTUnwrap(model.versions.first?.localURL)
+        let localTarget = try profile(), localEnvironment = localTarget.environment()
+        try await ArtifactBackupEngine(environment: localEnvironment).stageRestore(from: freshest,
+            key: ConfigBackupArchive.key(from: code), sections: [.workspace])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: localEnvironment)
+        XCTAssertEqual(localTarget.contents(of: localTarget.locations.monitorRoot.appendingPathComponent("dashboards/notes.txt")), "unique-artifact-5")
         offline = false
         time.addTimeInterval(1_000)
         await model.poll()
@@ -241,6 +252,78 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertNil(restore.errorMessage)
         _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
         XCTAssertEqual(target.defaults.string(forKey: "sidekey.preferences.transcriptionMode"), "offline-5")
+        XCTAssertEqual(target.contents(of: target.locations.monitorRoot.appendingPathComponent("dashboards/notes.txt")), "unique-artifact-5")
+    }
+
+    func testHourlyContentHashFindsAnArtifactChangeWithoutAMetadataHintAndDeduplicatesUnchangedData() async throws {
+        let source = try profile(), target = try profile()
+        let file = source.locations.monitorRoot.appendingPathComponent("dashboards/note.txt")
+        try source.write("version-one", to: file)
+        var time = Date(), captures = 0
+        let model = model(source, now: { time }, changeProbe: { "unchanged-metadata-hint" }, beforeCreate: { captures += 1 })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.poll()
+        await model.backupEverything()
+        let code = model.recoveryCode
+        XCTAssertEqual(captures, 1)
+        time.addTimeInterval(3600)
+        await model.poll()
+        XCTAssertEqual(captures, 2, "Hash coherent content at least hourly even without a metadata hint")
+        XCTAssertEqual(remote.publishCount, 1, "An unchanged hash must not create or upload a snapshot")
+        XCTAssertEqual(model.versions.count, 1)
+        try source.write("version-two", to: file)
+        time.addTimeInterval(3599)
+        await model.poll()
+        XCTAssertEqual(remote.publishCount, 1)
+        time.addTimeInterval(1)
+        await model.poll()
+        XCTAssertEqual(captures, 3)
+        XCTAssertEqual(remote.publishCount, 2)
+        XCTAssertNil(model.errorMessage)
+        let restore = self.model(target)
+        await restore.connectGitHub(token: "synthetic-token")
+        await restore.restoreEverything(code: code)
+        XCTAssertNil(restore.errorMessage)
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
+        XCTAssertEqual(target.contents(of: target.locations.monitorRoot.appendingPathComponent("dashboards/note.txt")), "version-two")
+    }
+
+    func testUnchangedUnsupportedSourceRetriesAtMostHourly() async throws {
+        let source = try profile()
+        var time = Date(), captures = 0
+        let model = model(source, now: { time }, beforeCreate: { captures += 1 })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.poll()
+        await model.backupEverything()
+        XCTAssertEqual(captures, 1)
+        try source.write("unsupported", to: source.locations.notifyRoot.appendingPathComponent(".env"))
+        time.addTimeInterval(3600)
+        await model.poll()
+        XCTAssertEqual(captures, 2)
+        XCTAssertNotNil(model.errorMessage)
+        for _ in 0..<3 { time.addTimeInterval(121); await model.poll() }
+        XCTAssertEqual(captures, 2, "Do not restage an unchanged failing source every two minutes")
+        time.addTimeInterval(3600)
+        await model.poll()
+        XCTAssertEqual(captures, 3, "Retry source validation on the next hourly check")
+    }
+
+    func testMetadataOnlyArtifactChangeDoesNotCreateAnotherArchiveOrRelease() async throws {
+        let source = try profile()
+        let file = source.locations.monitorRoot.appendingPathComponent("dashboards/note.txt")
+        try source.write("unchanged", to: file)
+        var time = Date()
+        let locations = source.locations
+        let model = model(source, now: { time }, changeProbe: { BackupChangeProbe.stamp(locations: locations) })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.poll()
+        await model.backupEverything()
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(10)], ofItemAtPath: file.path)
+        time.addTimeInterval(121)
+        await model.poll()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(remote.publishCount, 1)
+        XCTAssertEqual(model.versions.count, 1)
     }
 
     func testNewMacCannotAccidentallyReplaceTheRecoveryCodeBeforeRestore() async throws {
@@ -293,7 +376,7 @@ final class BackupSimpleFlowTests: XCTestCase {
             if failure == 403 {
                 time.addTimeInterval(1_000)
                 await restarted.poll()
-                XCTAssertEqual(StubURLProtocol.capturedRequests.count, requests, "Honor GitHub's Retry-After")
+                XCTAssertEqual(StubURLProtocol.capturedRequests.count, requests, "Honor GitHub's Retry-After: \(StubURLProtocol.capturedRequests.dropFirst(requests).map { $0.url!.path })")
             }
             time.addTimeInterval(2_000)
             await restarted.poll()

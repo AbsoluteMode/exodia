@@ -906,18 +906,26 @@ and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
 pauses and maintenance never show Backup synced. Background sync keeps the same
 recovery credential without revealing it. WHY:
 `.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
-Pending transfers are retried before creating another full archive. Network
-failures back off, including a connection check after an offline launch, while
+At least hourly while running and idle, coherent content is hashed even without
+metadata changes. Only changed content creates a new encrypted archive. Capture
+precedes network transfer: retain the freshest pending automatic generation and
+a resumable upload, coalescing only superseded unprepared automatic snapshots
+after a verified replacement is durable. Network failures back off, including
+a connection check after an offline launch, while
 actual authentication/permission/public-repository failures require reconnecting.
 GitHub rate-limit deadlines are respected. Unchanged unsupported inputs suspend
 automatic export retries.
-Schema 3 preserves inactive configurations across repeated restores, including
-coexisting older copies; schemas 1 and 2 remain readable. Local Case application
+Schema 4 preserves opaque retained recording originals and repair checkpoints
+as inert files, excluding active provider jobs. Inactive configurations and
+coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application
 policies precede imports, including matching identities with different UUIDs.
 WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
+Costs history is exported by the live AIUsageStore actor and verified with a
+strict schema/row validator. Restore retains target-only spending and the best
+known price per request ID; older archives without Costs leave it untouched.
 Short recording chunks use the archive entry ceiling rather than a separate
 4096-file limit. WHY:
 `.project-docs/decisions/2026-10-20-simple-github-backup.md`.
