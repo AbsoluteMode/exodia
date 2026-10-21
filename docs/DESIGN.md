@@ -1007,3 +1007,20 @@ offscreen test; the explicit focus target prevents default field traversal.
 Focused tests cover native insertion/paste, neutral initial focus, shortcut
 arming, duration editing, queue replacement and offscreen English card hints.
 Installed physical keyboard acceptance remains pending until a new request.
+
+## Smart Decision — 2026-10-21
+
+The user opens Drop Smart to see and change the speech, decision and editing
+models independently. Keep the chosen disclosure layout: Speech → Decision → Text,
+with the current provider/model visible in each row. Decision is a separate model
+type and never appears in text-generation or agent pickers. A short explanation
+below the selectors describes Fast/Smart routing and uncertainty.
+
+Reuse the searchable ModelMenu and existing popup hover, pressed, focus, disabled,
+Escape and focus-return behavior. No new interactive component or animation is
+introduced. Existing adaptive system colors and desktop widths remain authoritative.
+Offscreen fixtures cover the expanded group at 600/900 pt content widths and both
+appearances, plus the two-provider decision picker. Physical pointer/keyboard
+interaction and live provider inference remain acceptance on the installed app.
+The 0.05 cutoff is conservative policy; its quality on real dictation is an
+unvalidated assumption, not a measured classifier accuracy guarantee.

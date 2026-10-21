@@ -10,24 +10,28 @@ struct PostProcessor {
     let openRouterClient: any OpenRouterLLMClienting
     /// Where a model refusal is recorded; `nil` is `ModelCheckStore.shared`.
     private let checks: ModelCheckStore?
+    private let decision: (any SmartTextDeciding)?
 
     /// Cleanup runs on the Drop Smart cleanup route, read at every call.
     @MainActor
     init() {
         self.init(
             llmRoute: .live(.dropSmartCleanup),
-            openRouterClient: OpenRouterLLMClient(profile: .dictation)
+            openRouterClient: OpenRouterLLMClient(profile: .dictation),
+            decision: SmartTextDecision()
         )
     }
 
     init(
         llmRoute: DirectLLMRouteResolver,
         openRouterClient: any OpenRouterLLMClienting = OpenRouterLLMClient(profile: .dictation),
-        checks: ModelCheckStore? = nil
+        checks: ModelCheckStore? = nil,
+        decision: (any SmartTextDeciding)? = nil
     ) {
         self.llmRoute = llmRoute
         self.openRouterClient = openRouterClient
         self.checks = checks
+        self.decision = decision
     }
 
     /// `screenshot` parameter is preserved for caller compatibility but is
@@ -45,6 +49,23 @@ struct PostProcessor {
         guard let route = try await llmRoute.routeIfEnabled() else {
             throw OpenRouterLLMError.notConfigured
         }
+        // Translation always needs the editor. A failed/uncertain decision
+        // keeps strict Smart behavior, including its existing Retry on failure.
+        // WHY: .project-docs/decisions/2026-10-21-smart-decisions.md
+        if let decision, outputLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            do {
+                let useFast = try await decision.canUseFastPath(
+                    rawText, targetApp: targetApp, appContext: appContext, language: language
+                )
+                try Task.checkCancellation()
+                if useFast { return rawText }
+            } catch {
+                try Task.checkCancellation()
+                // Missing decision key, timeout, refusal or malformed verdict:
+                // continue with the user's existing cleanup provider.
+            }
+        }
+        try Task.checkCancellation()
         let messages = Self.openRouterMessages(
             transcript: Self.wrapTranscript(rawText),
             context: Self.composeContext(targetApp: targetApp, appContext: appContext),
@@ -61,7 +82,7 @@ struct PostProcessor {
             return cleaned
         } catch let error as OpenRouterLLMError where error.isModelRefusal {
             // The row says so until this model works or is picked again; Drop still inserts the
-            // raw text (the caller's concern, as for any cleanup failure).
+            // retained transcript for Retry (the caller's concern).
             await MainActor.run {
                 (checks ?? .shared).recordRefusal(feature: .dropSmartCleanup, model: route.model, at: Date())
             }

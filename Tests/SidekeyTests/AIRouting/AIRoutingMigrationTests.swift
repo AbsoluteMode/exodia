@@ -75,7 +75,7 @@ final class AIRoutingMigrationTests: XCTestCase {
         _ routing: AIRoutingStore,
         file: StaticString = #filePath, line: UInt = #line
     ) {
-        for feature in AIFeature.allCases {
+        for feature in AIFeature.allCases where feature != .dropSmartDecision {
             XCTAssertNil(routing.route(for: feature), "\(feature) should be Not set", file: file, line: line)
         }
     }
@@ -114,7 +114,7 @@ final class AIRoutingMigrationTests: XCTestCase {
         XCTAssertEqual(
             env.routing.route(for: .agent), FeatureRoute(account: .openRouter, model: "anthropic/claude-sonnet-5.5")
         )
-        for feature in AIFeature.allCases {
+        for feature in AIFeature.allCases where feature != .dropSmartDecision {
             XCTAssertEqual(env.routing.migratedRoute(for: feature), env.routing.route(for: feature), "\(feature)")
         }
         XCTAssertTrue(env.routing.isMigrated)
@@ -388,7 +388,7 @@ final class AIRoutingMigrationTests: XCTestCase {
         try env.keys.save("openrouter-key", account: Account.openRouter)
         migrate(env, appleSilicon: true)
         let afterFirstRun = env.routing.state
-        XCTAssertEqual(afterFirstRun.routes.count, 8)
+        XCTAssertEqual(afterFirstRun.routes.count, 9)
         XCTAssertNil(env.routing.route(for: .translation))
         XCTAssertNil(env.routing.route(for: .subtitlesAudio))
 

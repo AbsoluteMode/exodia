@@ -118,7 +118,7 @@ struct ModelStatusResolver {
         // An empty list says nothing (ElevenLabs lists no speech models, a
         // server may have no /models), and a stale or partial one is never
         // grounds to call a model gone (Review Focus 4).
-        if let snapshot, snapshot.isAuthoritative, !snapshot.models.isEmpty, entry == nil {
+        if use != .decision, let snapshot, snapshot.isAuthoritative, !snapshot.models.isEmpty, entry == nil {
             return .removedByProvider
         }
         if let target = entry?.aliasOf { return .deprecatedAlias(of: target) }
@@ -329,6 +329,8 @@ struct ModelStatusResolver {
             if let uses = entry.uses, !uses.contains(.realtimeSTT) { return "recorded only" }
         case .asyncSTT:
             if let uses = entry.uses, !uses.contains(.asyncSTT) { return "real-time only" }
+        case .decision:
+            if let uses = entry.uses, !uses.contains(.decision) { return "not a decision model" }
         case .chat:
             if let uses = entry.uses, !uses.contains(.chat) { return "not a text model" }
         case .chatWithTools:
@@ -339,7 +341,7 @@ struct ModelStatusResolver {
         switch feature {
         case .agent: minimum = ModelRegistry.agentMinContext
         case .meetingNotes: minimum = ModelRegistry.meetingNotesMinContext
-        case .dropFast, .dropSmart, .dropSmartCleanup, .meetings, .agentVoice, .voiceSearch, .translation, .subtitlesTranslation, .subtitlesAudio: minimum = nil
+        case .dropFast, .dropSmart, .dropSmartCleanup, .dropSmartDecision, .meetings, .agentVoice, .voiceSearch, .translation, .subtitlesTranslation, .subtitlesAudio: minimum = nil
         }
         if let minimum, let context = entry.contextLength, context < minimum {
             return "context under 64K tokens"
@@ -352,6 +354,8 @@ struct ModelStatusResolver {
         case .dropSmartCleanup:
             let entry = catalogs.snapshot(for: account)?.models.first { $0.id == model }
             return entry?.reasoning?.mandatory == true ? "always reasons, slower" : nil
+        case .dropSmartDecision:
+            return account == .openAI ? "OpenAI Decisions API" : "Decision · chooses Fast or Smart processing"
         case .meetings:
             let registered = ModelRegistry.models.first {
                 $0.kind == account.kind && $0.id == model && $0.uses.contains(use)
