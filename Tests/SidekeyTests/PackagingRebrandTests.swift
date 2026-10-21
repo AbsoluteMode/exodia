@@ -113,10 +113,12 @@ final class PackagingRebrandTests: XCTestCase {
 
     /// The offline preflight reports the committed team without touching the
     /// keychain, so it also runs on Macs without the Developer ID certificate.
+    /// A build alone, like the builder's local refresh, is not notarized.
     func test_communityPreflightNeedsNoCredentialsOrNotarization() throws {
-        for script in ["scripts/build-dmg.sh", "scripts/user-release.sh"] {
+        for (script, arguments) in [("scripts/build-dmg.sh", ["--preflight-only"]),
+                                    ("scripts/user-release.sh", ["--build-only", "--preflight-only"])] {
             let result = try runScript(try projectRoot().appendingPathComponent(script),
-                arguments: ["--preflight-only"],
+                arguments: arguments,
                 environment: ["PATH": "/usr/bin:/bin", "FLAVOR": "prod", "BUILD_VERSION": "42"])
             XCTAssertEqual(result.status, 0, result.output)
             let lastLine = try XCTUnwrap(result.output.split(separator: "\n").last)
@@ -126,6 +128,7 @@ final class PackagingRebrandTests: XCTestCase {
             XCTAssertEqual(plan["code_signing"] as? String, "team:UVBKCN5PPV")
             XCTAssertEqual(plan["requires_apple_developer"] as? Bool, true)
             XCTAssertEqual(plan["requires_notarization"] as? Bool, false)
+            XCTAssertEqual(plan["notarization"] as? String, "none")
             XCTAssertEqual(plan["architectures"] as? [String], ["arm64", "x86_64"])
             XCTAssertEqual(plan["bundle_id"] as? String, "com.rootwise.sidekey")
         }
@@ -449,10 +452,18 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertNotEqual(community.status, 0)
         XCTAssertTrue(community.output.contains("archive code signing does not match"), community.output)
 
+        // A team release is published notarized; an unnotarized team archive
+        // passes only with the explicit opt-out.
         try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg", codeSigning: "team:TEAMID1234")
+        let unnotarized = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+                                        environment: environment)
+        XCTAssertNotEqual(unnotarized.status, 0)
+        XCTAssertTrue(unnotarized.output.contains("archive notarization (none) does not match the requested release (notarized)"),
+                      unnotarized.output)
         let signed = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
-                                   environment: environment)
+                                   environment: environment.merging(["EXODIA_NOTARIZE": "0"]) { $1 })
         XCTAssertNotEqual(signed.status, 0)
+        XCTAssertTrue(signed.output.contains("publishing without Apple notarization"), signed.output)
         XCTAssertTrue(signed.output.contains("already exists; refusing to overwrite"), signed.output)
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), signed.output)
     }
@@ -485,6 +496,332 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertNotEqual(result.status, 0)
         XCTAssertTrue(result.output.contains("already exists; refusing to overwrite"), result.output)
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), result.output)
+    }
+
+    // MARK: Apple notarization
+    // WHY: docs/decisions/2026-10-21-notarized-releases.md
+
+    /// A run that publishes a team build notarizes it; the key comes from Case.
+    func test_publishingPreflightNotarizesTheTeamBuild() throws {
+        let script = try projectRoot().appendingPathComponent("scripts/user-release.sh")
+        let environment = ["PATH": "/usr/bin:/bin", "FLAVOR": "prod", "BUILD_VERSION": "42"]
+        func plan(_ arguments: [String], _ extra: [String: String] = [:]) throws -> [String: Any] {
+            let result = try runScript(script, arguments: arguments,
+                                       environment: environment.merging(extra) { $1 })
+            XCTAssertEqual(result.status, 0, result.output)
+            let lastLine = try XCTUnwrap(result.output.split(separator: "\n").last)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lastLine.utf8)) as? [String: Any])
+        }
+
+        let publication = try plan(["--preflight-only"])
+        XCTAssertEqual(publication["requires_notarization"] as? Bool, true)
+        XCTAssertEqual(publication["notarization"] as? String, "notarized")
+        XCTAssertEqual(publication["notarization_credentials"] as? String, "case:whytap")
+        XCTAssertEqual(publication["notarization_keys"] as? [String],
+                       ["ASC_API_KEY_ID", "ASC_API_KEY_ISSUER_ID", "ASC_API_KEY_P8"])
+        XCTAssertEqual(publication["code_signing"] as? String, "team:UVBKCN5PPV")
+
+        let optedOut = try plan(["--preflight-only"], ["EXODIA_NOTARIZE": "0"])
+        XCTAssertEqual(optedOut["notarization"] as? String, "none")
+        let requested = try plan(["--build-only", "--preflight-only"], ["EXODIA_NOTARIZE": "1"])
+        XCTAssertEqual(requested["notarization"] as? String, "notarized")
+
+        let invalid = try runScript(script, arguments: ["--preflight-only"],
+                                    environment: environment.merging(["EXODIA_NOTARIZE": "yes"]) { $1 })
+        XCTAssertEqual(invalid.status, 1, invalid.output)
+        XCTAssertTrue(invalid.output.contains("EXODIA_NOTARIZE must be 0 or 1"), invalid.output)
+    }
+
+    /// Only Developer ID code can be notarized.
+    func test_notarizationNeedsTheDeveloperIDTeam() throws {
+        let adhoc = try runBuildFixture(arguments: ["--preflight-only"], environment: ["EXODIA_NOTARIZE": "1"])
+        XCTAssertEqual(adhoc.result.status, 1, adhoc.result.output)
+        XCTAssertTrue(adhoc.result.output.contains("cannot be notarized"), adhoc.result.output)
+        XCTAssertNil(adhoc.calls, adhoc.result.output)
+
+        let optedOut = try runBuildFixture(teamID: "TEAMID1234",
+            environment: ["EXODIA_NOTARIZE": "1", "EXODIA_COMMUNITY_SIGNING": "adhoc"])
+        XCTAssertEqual(optedOut.result.status, 1, optedOut.result.output)
+        XCTAssertTrue(optedOut.result.output.contains("cannot be notarized"), optedOut.result.output)
+        XCTAssertNil(optedOut.calls, optedOut.result.output)
+
+        let invalid = try runBuildFixture(teamID: "TEAMID1234", environment: ["EXODIA_NOTARIZE": "yes"])
+        XCTAssertEqual(invalid.result.status, 2, invalid.result.output)
+        XCTAssertNil(invalid.calls, invalid.result.output)
+    }
+
+    /// Until the App Store Connect key is in Case, a notarized build stops
+    /// before compiling and names exactly the missing keys. Only key names are read.
+    func test_notarizedBuildNamesMissingCaseKeysBeforeCompiling() throws {
+        let team = "TEAMID1234"
+        let identities = "  1) 0123456789ABCDEF0123456789ABCDEF01234567 \"Developer ID Application: Test Person (\(team))\"\n"
+            + "     1 valid identities found\n"
+        let notarize = ["EXODIA_NOTARIZE": "1"]
+        func listing(_ names: [String]) -> String {
+            (["NAME                PROJECT  DESCRIPTION"] + names.map { "\($0)  whytap" }).joined(separator: "\n") + "\n"
+        }
+
+        let empty = try runBuildFixture(teamID: team, securityOutput: identities,
+                                        caseListing: listing(["GITHUB_LENDING_KEY"]), environment: notarize)
+        XCTAssertEqual(empty.result.status, 1, empty.result.output)
+        XCTAssertTrue(empty.result.output.contains("Missing keys: ASC_API_KEY_ID ASC_API_KEY_ISSUER_ID ASC_API_KEY_P8"),
+                      empty.result.output)
+        XCTAssertTrue(empty.result.output.contains("Whytap Case project whytap"), empty.result.output)
+        XCTAssertEqual(empty.calls, "identity-lookup\nnotary-tools\ncase-ls\n")
+
+        let partial = try runBuildFixture(teamID: team, securityOutput: identities,
+            caseListing: listing(["ASC_API_KEY_ID", "ASC_API_KEY_P8_OLD", "ASC_API_KEY_P8"]), environment: notarize)
+        XCTAssertEqual(partial.result.status, 1, partial.result.output)
+        XCTAssertTrue(partial.result.output.contains("Missing keys: ASC_API_KEY_ISSUER_ID\n"), partial.result.output)
+        XCTAssertNil(partial.calls?.range(of: "compiler"), partial.result.output)
+
+        let noHelper = try runBuildFixture(teamID: team, securityOutput: identities, environment: notarize)
+        XCTAssertEqual(noHelper.result.status, 1, noHelper.result.output)
+        XCTAssertTrue(noHelper.result.output.contains("its command is missing"), noHelper.result.output)
+        XCTAssertEqual(noHelper.calls, "identity-lookup\nnotary-tools\n")
+
+        let locked = try runBuildFixture(teamID: team, securityOutput: identities, caseListing: "",
+                                         caseStatus: 4, environment: notarize)
+        XCTAssertEqual(locked.result.status, 1, locked.result.output)
+        XCTAssertTrue(locked.result.output.contains("could not list project whytap (exit 4)"), locked.result.output)
+        XCTAssertNil(locked.calls?.range(of: "compiler"), locked.result.output)
+
+        let ready = try runBuildFixture(teamID: team, securityOutput: identities,
+            caseListing: listing(["ASC_API_KEY_ID", "ASC_API_KEY_ISSUER_ID", "ASC_API_KEY_P8"]), environment: notarize)
+        XCTAssertEqual(ready.result.status, 64, ready.result.output)
+        XCTAssertEqual(ready.calls, "identity-lookup\nnotary-tools\ncase-ls\ncompiler\n")
+        XCTAssertTrue(ready.result.output.contains("Notarization key found in Whytap Case project whytap"),
+                      ready.result.output)
+
+        // Without notarization neither Apple's notary tools nor Case are used.
+        let plain = try runBuildFixture(teamID: team, securityOutput: identities, caseListing: listing([]))
+        XCTAssertEqual(plain.calls, "identity-lookup\ncompiler\n")
+    }
+
+    /// The .p8 reaches notarytool only as a private file that is gone afterwards,
+    /// in whichever form a single-line Case field kept it; nothing prints it.
+    func test_notarySubmissionKeepsTheKeyPrivateAndRemovesIt() throws {
+        let key = try makeNotaryKey()
+        let pem = try String(contentsOf: key, encoding: .utf8)
+        let base64File = Data(pem.utf8).base64EncodedString()
+        for stored in [pem, pem.replacingOccurrences(of: "\n", with: " "),
+                       pem.replacingOccurrences(of: "\n", with: ""),
+                       pem.replacingOccurrences(of: "\n", with: "\\n"), base64File] {
+            let run = try runNotarySubmission(status: "Accepted", p8: stored)
+            XCTAssertEqual(run.result.status, 0, run.result.output)
+            XCTAssertTrue(run.result.output.contains("Apple accepted Whytap.zip (submission \(Self.submissionID))"),
+                          run.result.output)
+            XCTAssertEqual(run.keyMode, "600")
+            XCTAssertEqual(run.keyCopy, pem)
+            XCTAssertEqual(run.leftovers, [], "the private key file must be removed")
+            XCTAssertTrue(run.calls.hasPrefix("notarytool submit "), run.calls)
+            XCTAssertTrue(run.calls.contains("--wait --timeout 1200 --output-format json"), run.calls)
+            XCTAssertFalse(run.calls.contains("BEGIN PRIVATE KEY"), "the key must never be an argument")
+            for secret in [Self.keyID, Self.issuerID] + pem.split(separator: "\n").map(String.init) {
+                XCTAssertFalse(run.result.output.contains(secret), "output contains key material: \(run.result.output)")
+            }
+        }
+    }
+
+    func test_notarySubmissionKeepsTheLogOfARejectedArchive() throws {
+        let pem = try String(contentsOf: try makeNotaryKey(), encoding: .utf8)
+        let rejected = try runNotarySubmission(status: "Invalid", p8: pem)
+        XCTAssertEqual(rejected.result.status, 1, rejected.result.output)
+        XCTAssertTrue(rejected.result.output.contains("status Invalid"), rejected.result.output)
+        XCTAssertTrue(rejected.result.output.contains("error: The signature does not include a secure timestamp."),
+                      rejected.result.output)
+        XCTAssertEqual(rejected.logs, ["notarization-\(Self.submissionID).json"])
+        XCTAssertTrue(rejected.calls.contains("notarytool log \(Self.submissionID) "), rejected.calls)
+        XCTAssertEqual(rejected.leftovers, [])
+
+        // A timeout or network failure before Apple recorded a submission.
+        let unsubmitted = try runNotarySubmission(status: nil, p8: pem, submitStatus: 1)
+        XCTAssertEqual(unsubmitted.result.status, 1, unsubmitted.result.output)
+        XCTAssertTrue(unsubmitted.result.output.contains("No submission was recorded"), unsubmitted.result.output)
+        XCTAssertEqual(unsubmitted.logs, [])
+        XCTAssertEqual(unsubmitted.leftovers, [])
+    }
+
+    func test_notarySubmissionNamesMissingOrMalformedKeys() throws {
+        let pem = try String(contentsOf: try makeNotaryKey(), encoding: .utf8)
+        let missing = try runNotarySubmission(status: "Accepted", p8: pem, omit: ["ASC_API_KEY_ISSUER_ID"])
+        XCTAssertEqual(missing.result.status, 1, missing.result.output)
+        XCTAssertTrue(missing.result.output.contains("needs ASC_API_KEY_ISSUER_ID in its environment"),
+                      missing.result.output)
+        XCTAssertEqual(missing.calls, "")
+
+        let malformed = try runNotarySubmission(status: "Accepted", p8: "not a key")
+        XCTAssertEqual(malformed.result.status, 1, malformed.result.output)
+        XCTAssertTrue(malformed.result.output.contains("ASC_API_KEY_P8 must hold the contents of the AuthKey_<key ID>.p8 file"),
+                      malformed.result.output)
+        XCTAssertEqual(malformed.calls, "")
+        XCTAssertEqual(malformed.leftovers, [])
+    }
+
+    /// The upload checks the archive itself, not only the manifest's claim,
+    /// before any GitHub call or key access.
+    func test_publicationChecksTheStapledTicketOfANotarizedArchive() throws {
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for directory in ["scripts", "Resources", "build", "bin"] {
+            try FileManager.default.createDirectory(at: temporary.appendingPathComponent(directory),
+                withIntermediateDirectories: true)
+        }
+        let root = try projectRoot()
+        for relative in ["scripts/upload-release.sh", "Resources/Info.plist.template"] {
+            try FileManager.default.copyItem(at: root.appendingPathComponent(relative),
+                to: temporary.appendingPathComponent(relative))
+        }
+        try "TEAMID1234\n".write(to: temporary.appendingPathComponent("Resources/developer-id-team.txt"),
+                                 atomically: true, encoding: .utf8)
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Whytap-9.9.9-build42.dmg"))
+        let github = temporary.appendingPathComponent("github-calls.txt")
+        try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
+        #!/bin/bash
+        echo "$1 $2" >> "$PROBE_GITHUB"
+        if [ "$1 $2" = "auth status" ] || [ "$1 $2" = "release view" ]; then exit 0; fi
+        exit 74
+        """#)
+        try executable(at: temporary.appendingPathComponent("bin/xcrun"), contents: #"""
+        #!/bin/bash
+        [ "$1 $2" = "stapler validate" ] || exit 71
+        exit "$PROBE_STAPLER_STATUS"
+        """#)
+        try executable(at: temporary.appendingPathComponent("bin/spctl"), contents: #"""
+        #!/bin/bash
+        [ "$*" = "--assess -vv --type open --context context:primary-signature $7" ] || exit 71
+        printf '%s: accepted\nsource=%s\n' "$7" "$PROBE_SOURCE"
+        """#)
+        try prepareProvenanceFixture(temporary)
+        try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg", codeSigning: "team:TEAMID1234",
+                        notarization: "notarized")
+        func upload(stapler: String, source: String) throws -> (status: Int32, output: String) {
+            try? FileManager.default.removeItem(at: github)
+            return try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+                environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                              "FLAVOR": "prod", "APP_BUNDLE_NAME": "Whytap", "SHORT_VERSION": "9.9.9",
+                              "BUILD_VERSION": "42", "PROBE_GITHUB": github.path,
+                              "PROBE_STAPLER_STATUS": stapler, "PROBE_SOURCE": source])
+        }
+
+        let unstapled = try upload(stapler: "65", source: "Notarized Developer ID")
+        XCTAssertNotEqual(unstapled.status, 0)
+        XCTAssertTrue(unstapled.output.contains("no valid stapled notarization ticket; refusing publication"),
+                      unstapled.output)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: github.path), unstapled.output)
+
+        let unnotarized = try upload(stapler: "0", source: "Unnotarized Developer ID")
+        XCTAssertNotEqual(unnotarized.status, 0)
+        XCTAssertTrue(unnotarized.output.contains("does not accept Whytap-9.9.9-build42.dmg as notarized"),
+                      unnotarized.output)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: github.path), unnotarized.output)
+
+        let notarized = try upload(stapler: "0", source: "Notarized Developer ID")
+        XCTAssertNotEqual(notarized.status, 0)
+        XCTAssertTrue(notarized.output.contains("stapled ticket and Gatekeeper assessment verified"), notarized.output)
+        XCTAssertTrue(notarized.output.contains("already exists; refusing to overwrite"), notarized.output)
+        XCTAssertEqual(try String(contentsOf: github, encoding: .utf8), "auth status\nrelease view\n")
+
+        // The opt-out does not accept a notarized archive's manifest either.
+        let mismatched = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+            environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                          "FLAVOR": "prod", "APP_BUNDLE_NAME": "Whytap", "SHORT_VERSION": "9.9.9",
+                          "BUILD_VERSION": "42", "PROBE_GITHUB": github.path, "EXODIA_NOTARIZE": "0"])
+        XCTAssertNotEqual(mismatched.status, 0)
+        XCTAssertTrue(mismatched.output.contains("archive notarization (notarized) does not match"), mismatched.output)
+    }
+
+    func test_provenanceRecordsNotarizationOnlyForDeveloperID() throws {
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try FileManager.default.createDirectory(at: temporary.appendingPathComponent("build"),
+                                                withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: temporary.appendingPathComponent("scripts"),
+                                                withIntermediateDirectories: true)
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Whytap-9.9.9-build42.dmg"))
+        try prepareProvenanceFixture(temporary)
+        let archive = "Whytap-9.9.9-build42.dmg"
+        let identity = String(repeating: "a", count: 40)
+        try sealFixture(temporary, archiveName: archive, codeSigning: "adhoc", notarization: "notarized",
+                        expectSuccess: false, failure: "only Developer ID builds")
+        try sealFixture(temporary, archiveName: archive, codeSigning: "certificate:" + identity,
+                        notarization: "notarized", expectSuccess: false, failure: "only Developer ID builds")
+        try sealFixture(temporary, archiveName: archive, codeSigning: "developer-id", distribution: "developer-id",
+                        expectSuccess: false, failure: "always notarized")
+        try sealFixture(temporary, archiveName: archive, codeSigning: "team:TEAMID1234", notarization: "notarized")
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf:
+            temporary.appendingPathComponent("build/\(archive).manifest.json"))) as? [String: Any])
+        XCTAssertEqual(manifest["schema_version"] as? Int, 3)
+        XCTAssertEqual(manifest["code_signing"] as? String, "team:TEAMID1234")
+        XCTAssertEqual(manifest["notarization"] as? String, "notarized")
+    }
+
+    private static let keyID = "ABCDE12345"
+    private static let issuerID = "69a6de70-0000-47e3-e053-5b8c7c11a4d1"
+    private static let submissionID = "11111111-2222-3333-4444-555555555555"
+
+    /// A throwaway PKCS#8 P-256 key in the format of an App Store Connect .p8 file.
+    private func makeNotaryKey() throws -> URL {
+        let directory = try temporaryDirectory()
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let key = directory.appendingPathComponent("AuthKey_\(Self.keyID).p8")
+        let created = try runTool(URL(fileURLWithPath: "/bin/sh"), arguments: ["-c",
+            "/usr/bin/openssl ecparam -name prime256v1 -genkey -noout | /usr/bin/openssl pkcs8 -topk8 -nocrypt -out \"$1\"",
+            "sh", key.path], environment: ["PATH": "/usr/bin:/bin"])
+        XCTAssertEqual(created.status, 0, created.output)
+        return key
+    }
+
+    /// Runs notarize-submit.sh against a notarytool stub answering `status`
+    /// (nil: no answer) and reports what the stub saw and what stayed behind.
+    private func runNotarySubmission(status: String?, p8: String, submitStatus: Int32 = 0,
+                                     omit: Set<String> = []) throws
+        -> (result: (status: Int32, output: String), calls: String, keyMode: String?, keyCopy: String?,
+            logs: [String], leftovers: [String]) {
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for directory in ["bin", "logs", "tmp"] {
+            try FileManager.default.createDirectory(at: temporary.appendingPathComponent(directory),
+                withIntermediateDirectories: true)
+        }
+        let archive = temporary.appendingPathComponent("Whytap.zip")
+        try Data("archive".utf8).write(to: archive)
+        let answer = status.map { #"{"id":"\#(Self.submissionID)","status":"\#($0)","message":"Processing complete"}"# } ?? ""
+        try executable(at: temporary.appendingPathComponent("bin/xcrun"), contents: """
+        #!/bin/bash
+        echo "$*" >> "$PROBE_DIR/calls"
+        if [ "$1 $2" = "notarytool submit" ]; then
+            while [ "$#" -gt 0 ]; do
+                if [ "$1" = "--key" ]; then key="$2"; fi
+                shift
+            done
+            stat -f %Lp "$key" > "$PROBE_DIR/key-mode"
+            cp "$key" "$PROBE_DIR/key-copy"
+            echo '\(answer)'
+            exit \(submitStatus)
+        fi
+        if [ "$1 $2" = "notarytool log" ]; then
+            for last; do :; done
+            echo '{"issues":[{"severity":"error","path":"Whytap.zip/Whytap.app","message":"The signature does not include a secure timestamp."}]}' > "$last"
+            exit 0
+        fi
+        exit 71
+        """)
+        var environment = ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                           "TMPDIR": temporary.appendingPathComponent("tmp").path, "PROBE_DIR": temporary.path,
+                           "ASC_API_KEY_ID": Self.keyID, "ASC_API_KEY_ISSUER_ID": Self.issuerID,
+                           "ASC_API_KEY_P8": p8]
+        for name in omit { environment.removeValue(forKey: name) }
+        let result = try runScript(try projectRoot().appendingPathComponent("scripts/notarize-submit.sh"),
+            arguments: [archive.path, temporary.appendingPathComponent("logs").path], environment: environment)
+        func read(_ name: String) -> String? {
+            try? String(contentsOf: temporary.appendingPathComponent(name), encoding: .utf8)
+        }
+        let files = { (name: String) in
+            ((try? FileManager.default.subpathsOfDirectory(atPath: temporary.appendingPathComponent(name).path)) ?? []).sorted()
+        }
+        return (result, read("calls") ?? "", read("key-mode")?.trimmingCharacters(in: .whitespacesAndNewlines),
+                read("key-copy"), files("logs"), files("tmp"))
     }
 
     func test_scriptRunnerDrainsOutputLargerThanPipeCapacity() throws {
@@ -522,8 +859,12 @@ final class PackagingRebrandTests: XCTestCase {
     /// Runs build-dmg.sh in a minimal committed checkout whose compiler stub exits 64.
     /// `calls` lists the stubbed compiler and Apple tools that ran, nil when none did.
     /// With `securityOutput` the `security` stub prints it as the identity listing.
+    /// With `caseListing` a Case helper stub prints it for `case ls -p whytap`
+    /// and exits with `caseStatus`; without it the helper is missing. The real
+    /// Case is never used.
     private func runBuildFixture(certificate: URL? = nil, teamID: String? = nil,
-                                 securityOutput: String? = nil, arguments: [String] = [],
+                                 securityOutput: String? = nil, caseListing: String? = nil,
+                                 caseStatus: Int32 = 0, arguments: [String] = [],
                                  environment: [String: String] = [:]) throws
         -> (result: (status: Int32, output: String), calls: String?) {
         let temporary = try temporaryDirectory()
@@ -578,14 +919,37 @@ final class PackagingRebrandTests: XCTestCase {
             echo 26.4
             exit 0
         fi
+        if [ "$*" = "notarytool --version" ]; then
+            echo notary-tools >> "$PROBE_MARKER"
+            echo 1.1.1
+            exit 0
+        fi
         echo unexpected-apple >> "$PROBE_MARKER"
         exit 71
         """#)
+        let caseHelper = temporary.appendingPathComponent("case-helper/whytap")
+        if let caseListing {
+            try FileManager.default.createDirectory(at: caseHelper.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            let listing = temporary.appendingPathComponent("case-listing.txt")
+            try caseListing.write(to: listing, atomically: true, encoding: .utf8)
+            try executable(at: caseHelper, contents: """
+            #!/bin/bash
+            if [ "$*" != "case ls -p whytap" ]; then
+                echo unexpected-case >> "$PROBE_MARKER"
+                exit 70
+            fi
+            echo case-ls >> "$PROBE_MARKER"
+            cat '\(listing.path)'
+            exit \(caseStatus)
+            """)
+        }
         try prepareProvenanceFixture(temporary)
         let result = try runScript(temporary.appendingPathComponent("scripts/build-dmg.sh"),
             arguments: arguments,
             environment: ["PATH": tools.path + ":/usr/bin:/bin", "PROBE_MARKER": marker.path,
-                          "BUILD_VERSION": "42", "FLAVOR": "prod"].merging(environment) { $1 })
+                          "BUILD_VERSION": "42", "FLAVOR": "prod",
+                          "EXODIA_CASE_HELPER": caseHelper.path].merging(environment) { $1 })
         return (result, try? String(contentsOf: marker, encoding: .utf8))
     }
 
@@ -633,7 +997,9 @@ final class PackagingRebrandTests: XCTestCase {
 
     @discardableResult
     private func sealFixture(_ directory: URL, archiveName: String, codeSigning: String,
-                             expectSuccess: Bool = true) throws -> Int32 {
+                             notarization: String = "none", distribution: String = "community",
+                             expectSuccess: Bool = true,
+                             failure: String = "code signing must be") throws -> Int32 {
         let helper = directory.appendingPathComponent("scripts/release-provenance.py")
         let environment = ["PATH": "/usr/bin:/bin", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
         let captured = try runTool(URL(fileURLWithPath: "/usr/bin/python3"),
@@ -642,13 +1008,14 @@ final class PackagingRebrandTests: XCTestCase {
         let result = try runTool(URL(fileURLWithPath: "/usr/bin/python3"), arguments: [helper.path, "seal",
             "--project-root", directory.path, "--source-sha", captured.output.trimmingCharacters(in: .whitespacesAndNewlines),
             "--archive", directory.appendingPathComponent("build/" + archiveName).path,
-            "--version", "9.9.9", "--build", "42", "--flavor", "prod", "--distribution", "community",
-            "--code-signing", codeSigning],
+            "--version", "9.9.9", "--build", "42", "--flavor", "prod", "--distribution", distribution,
+            "--code-signing", codeSigning, "--notarization", notarization],
             environment: environment)
         if expectSuccess {
             XCTAssertEqual(result.status, 0, result.output)
         } else {
-            XCTAssertTrue(result.output.contains("code signing must be"), result.output)
+            XCTAssertNotEqual(result.status, 0, result.output)
+            XCTAssertTrue(result.output.contains(failure), result.output)
         }
         return result.status
     }

@@ -34,6 +34,9 @@ related: [2026-10-19-community-signing-identity.md, 2026-10-17-community-updates
 
 # Developer ID team signing
 
+> Update 2026-10-21: published team builds are now also notarized; see
+> [notarized releases](../../docs/decisions/2026-10-21-notarized-releases.md).
+
 ## Context
 
 Since the [community certificate](2026-10-19-community-signing-identity.md),

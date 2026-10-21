@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
 # user-release.sh - community binary build and Sparkle release pipeline.
-# Default community signing needs no notarization: the Developer ID certificate
-# of the team in Resources/developer-id-team.txt from the login keychain; without
-# that file Whytap's self-signed certificate when
-# Resources/community-signing-certificate.pem is committed, otherwise ad-hoc.
-# Optional Developer-ID + notarization mode: EXODIA_LEGACY_SIGNED_RELEASE=1.
+# Community signing: the Developer ID certificate of the team in
+# Resources/developer-id-team.txt from the login keychain; without that file
+# Whytap's self-signed certificate when Resources/community-signing-certificate.pem
+# is committed, otherwise ad-hoc. A run that publishes a team build also
+# notarizes and staples it (EXODIA_NOTARIZE, default 1 when publishing);
+# --build-only notarizes only with EXODIA_NOTARIZE=1.
+# Optional older Developer-ID + notarization mode: EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
 # One command: build and sign the DMG on a Mac, then publish it as
 # a GitHub Release with archive EdDSA signatures in the Sparkle appcast so that
@@ -24,6 +26,7 @@
 #
 # Publication credentials come from the environment:
 #   TEAM_ID / ASC_API_KEY_*      optional legacy Developer-ID mode only
+#   (team notarization reads ASC_API_KEY_* from Whytap Case project whytap)
 #   EXODIA_COMMUNITY_SIGNING_KEY PEM key of the community certificate (build step;
 #                                see community-signing-bootstrap.sh)
 #   SPARKLE_ED_PRIVATE_KEY       base64 Ed25519 seed (see sparkle-keys-bootstrap.sh)
@@ -42,9 +45,10 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 usage() {
     cat <<'EOF2'
 Whytap community binary pipeline (signed DMG -> GitHub -> Sparkle-verified updates).
-No notarization is required by the default mode. With the committed
-Resources/developer-id-team.txt the build signs with that team's Developer ID
-Application certificate from the login keychain.
+With the committed Resources/developer-id-team.txt the build signs with that
+team's Developer ID Application certificate from the login keychain. A run that
+publishes also notarizes and staples the team build; --build-only does so only
+with EXODIA_NOTARIZE=1.
 
 Usage:
   FLAVOR=prod ./scripts/user-release.sh
@@ -57,6 +61,8 @@ Usage:
 
 Required for building with the committed Developer ID team:
   that team's Developer ID Application certificate in the login keychain
+Required for notarizing (publication, or EXODIA_NOTARIZE=1):
+  ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID, ASC_API_KEY_P8 in Whytap Case project whytap
 Required for building with the committed community certificate:
   EXODIA_COMMUNITY_SIGNING_KEY or EXODIA_COMMUNITY_SIGNING_KEY_FILE
 Required only for publication:
@@ -69,6 +75,7 @@ Optional:
   SHORT_VERSION       default: max(VERSION, live appcast shortVersionString)
   BUILD_VERSION       default: max(live appcast build, installed build) + 1
   RELEASE_NOTES_FILE  markdown body for the GitHub Release
+  EXODIA_NOTARIZE     1 notarizes a team build; 0 publishes one without notarization
 EOF2
 }
 
@@ -142,10 +149,6 @@ case "$FLAVOR" in
         ;;
 esac
 
-if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
-    exec /bin/bash "${PROJECT_DIR}/scripts/build-dmg.sh" --preflight-only
-fi
-
 # Mirrors build-dmg.sh: a test certificate override, then the committed
 # Developer ID team, then the committed community certificate, unless opted out.
 # WHY: .project-docs/decisions/2026-10-21-developer-id-team-signing.md
@@ -159,6 +162,25 @@ if [ "${LEGACY_SIGNED_RELEASE}" = "0" ] && [ "${EXODIA_COMMUNITY_SIGNING:-auto}"
     elif [ -f "${COMMUNITY_SIGNING_CERTIFICATE}" ]; then
         CERTIFICATE_SIGNING=1
     fi
+fi
+# A run that publishes a team build notarizes it; --build-only, used for local
+# refreshes, does so only on request. EXODIA_NOTARIZE=0 is an explicit opt-out.
+# WHY: docs/decisions/2026-10-21-notarized-releases.md
+case "${EXODIA_NOTARIZE:-}" in
+    "")
+        if [ "${TEAM_SIGNING}" -eq 1 ] && [ "$UPLOAD_STEP" -eq 1 ]; then
+            EXODIA_NOTARIZE=1
+        else
+            EXODIA_NOTARIZE=0
+        fi
+        ;;
+    0|1) ;;
+    *) die "EXODIA_NOTARIZE must be 0 or 1" ;;
+esac
+export EXODIA_NOTARIZE
+
+if [ "$PREFLIGHT_ONLY" -eq 1 ]; then
+    exec /bin/bash "${PROJECT_DIR}/scripts/build-dmg.sh" --preflight-only
 fi
 if [ "$BUILD_STEP" -eq 1 ] && [ "$UPLOAD_STEP" -eq 1 ] && [ "$DRY_RUN" -eq 0 ] && \
    { [ -n "${EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE:-}" ] || [ "${EXODIA_COMMUNITY_SIGNING:-auto}" != "auto" ]; }; then
@@ -301,6 +323,8 @@ echo "Repository: ${GITHUB_REPO}"
 echo "Flavor: ${FLAVOR}"
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "Distribution: Developer ID + notarization (explicit legacy mode)"
+elif [ "${TEAM_SIGNING}" -eq 1 ] && [ "${EXODIA_NOTARIZE}" = "1" ]; then
+    echo "Distribution: community (Developer ID team certificate, Apple-notarized and stapled)"
 elif [ "${TEAM_SIGNING}" -eq 1 ]; then
     echo "Distribution: community (Developer ID team certificate, no Apple notarization)"
 elif [ "${CERTIFICATE_SIGNING}" -eq 1 ]; then
