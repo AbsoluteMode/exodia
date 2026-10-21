@@ -3,6 +3,7 @@ import Foundation
 /// What the app last learned about one account's model catalog. Model metadata
 /// only: no keys, no URLs, no response bodies.
 struct CatalogSnapshot: Codable, Equatable {
+    static let currentMetadataVersion = 2
     var models: [CatalogModel]
     /// Last successful load.
     var fetchedAt: Date?
@@ -11,12 +12,15 @@ struct CatalogSnapshot: Codable, Equatable {
     var lastRefreshFailed: Bool
     /// The key may not list models: only the built-in registry applies.
     var limited: Bool
+    /// Older caches remain readable offline, but refresh once to learn dates.
+    var metadataVersion: Int?
 
     init(models: [CatalogModel] = [], fetchedAt: Date? = nil, lastRefreshFailed: Bool = false, limited: Bool = false) {
         self.models = models
         self.fetchedAt = fetchedAt
         self.lastRefreshFailed = lastRefreshFailed
         self.limited = limited
+        self.metadataVersion = Self.currentMetadataVersion
     }
 
     /// The list can be trusted to say a model is gone.
@@ -66,7 +70,9 @@ final class ModelCatalogStore: ObservableObject {
     /// Loads the catalog unless the cached one is younger than the TTL and its
     /// last refresh worked.
     func refreshIfStale(_ account: ProviderAccount, apiKey: String?, server: ServerEndpoint?) async {
+        let needsDateMetadata = [ProviderAccount.openAI, .anthropic, .openRouter].contains(account)
         if let snapshot = snapshots[account.storageID],
+           (!needsDateMetadata || snapshot.metadataVersion == CatalogSnapshot.currentMetadataVersion),
            let fetchedAt = snapshot.fetchedAt,
            !snapshot.lastRefreshFailed,
            now().timeIntervalSince(fetchedAt) < ttl {
@@ -86,6 +92,7 @@ final class ModelCatalogStore: ObservableObject {
             snapshot.fetchedAt = now()
             snapshot.lastRefreshFailed = false
             snapshot.limited = false
+            snapshot.metadataVersion = CatalogSnapshot.currentMetadataVersion
         } catch let error as CatalogFetchError {
             switch Self.outcome(of: error, account: account) {
             case .emptyCatalog:

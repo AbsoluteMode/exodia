@@ -163,6 +163,12 @@ struct ModelPicker: View {
                     Text(result.option.model)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let date = result.option.dateLabel {
+                        Text(date)
+                            .font(.system(size: 11))
+                            .foregroundStyle(MacSettingsTheme.text2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let hint = result.option.hint {
                         Text(hint).font(.system(size: 11)).foregroundStyle(MacSettingsTheme.text2)
                     }
@@ -199,7 +205,8 @@ struct ModelPicker: View {
         let matches = results
         guard let index = matches.firstIndex(where: { $0.id == activeID }) else { return nil }
         let result = matches[index]
-        return "\(result.providerTitle), \(result.option.model), \(index + 1) of \(matches.count)"
+        let date = result.option.dateLabel.map { ", \($0)" } ?? ""
+        return "\(result.providerTitle), \(result.option.model)\(date), \(index + 1) of \(matches.count)"
     }
 
     private func move(_ offset: Int) {

@@ -85,7 +85,15 @@ enum ModelPickerSearch {
             }
             .enumerated()
             .sorted { lhs, rhs in
-                lhs.element.rank == rhs.element.rank ? lhs.offset < rhs.offset : lhs.element.rank < rhs.element.rank
+                if lhs.element.rank != rhs.element.rank { return lhs.element.rank < rhs.element.rank }
+                // Search relevance wins; recency only breaks a tie within the
+                // existing provider group. Unknown dates follow known dates.
+                if !terms.isEmpty {
+                    let left = lhs.element.result.option.catalogDate ?? .distantPast
+                    let right = rhs.element.result.option.catalogDate ?? .distantPast
+                    if left != right { return left > right }
+                }
+                return lhs.offset < rhs.offset
             }
             .map(\.element.result)
         }
