@@ -72,7 +72,9 @@ Store Connect key in the environment (Doppler).
   `whytap case run -p whytap --only ...`.
 - `notarize-submit.sh` writes the private key to a 0600 file in a private
   temporary directory, wipes it on exit or interruption, waits at most 20 minutes
-  and exits 0 only for `Accepted`. A rejected submission's log is saved under
+  and exits 0 only for `Accepted`. It turns tracing off before reading the key
+  and runs notarytool in the background, so SIGTERM removes the key at once
+  instead of after the wait. A rejected submission's log is saved under
   `build/`. The legacy mode now calls the same script with its environment.
 
 ## Why
@@ -110,7 +112,15 @@ Store Connect key in the environment (Doppler).
   space-joined, line-break-free, literal-`\n` and base64 forms; the temporary
   directory was empty afterwards; output contained no key ID, issuer or key line;
   an Invalid verdict saved and summarized the log; an unsubmitted failure,
-  missing variables and a malformed key exit 1 without calling notarytool.
+  unreadable output, an In Progress timeout, Accepted with a failing exit and a
+  failed log download all exit 1; missing variables and a malformed key exit 1
+  without calling notarytool. `bash -x` and inherited `SHELLOPTS=xtrace` print
+  no key line. SIGTERM during a stalled notarytool exits 143 at once with the
+  temporary directory empty; the same test on the earlier foreground call waited
+  30 s, as did a direct shell experiment.
+- An independent Codex review of the first version found the tracing and the
+  deferred SIGTERM cleanup; both are fixed and covered above. It found no
+  publication bypass, ordering or legacy-mode regression.
 - The upload refuses an unnotarized team manifest by default, accepts it with
   `EXODIA_NOTARIZE=0` (with a warning), refuses a notarized manifest whose DMG
   fails `stapler validate` or Gatekeeper, and only then calls GitHub.
@@ -119,9 +129,10 @@ Store Connect key in the environment (Doppler).
 - On this Mac with the real Case: `FLAVOR=beta EXODIA_NOTARIZE=1 build-dmg.sh`
   stopped before compiling and named `ASC_API_KEY_ID ASC_API_KEY_ISSUER_ID
   ASC_API_KEY_P8`.
-- Not yet tested: a real Apple submission, stapling and the Gatekeeper result.
-  They wait for the App Store Connect key in Case and a beta build through the
-  builder.
+- Not yet tested: a real Apple submission, the `case run` command line with the
+  real Case, stapling and the Gatekeeper result (the build fixture stops at the
+  compiler). They wait for the App Store Connect key in Case and a beta build
+  through the builder.
 
 ## Rejected
 

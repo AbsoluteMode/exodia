@@ -20,6 +20,8 @@
 # WHY: docs/decisions/2026-10-21-notarized-releases.md
 
 set -euo pipefail
+# Tracing (bash -x, or xtrace inherited through SHELLOPTS) would print the key.
+set +x
 
 if [ "$#" -ne 2 ]; then
     echo "usage: notarize-submit.sh <archive.zip|archive.dmg> <log directory>" >&2
@@ -47,6 +49,7 @@ if [ "${#missing[@]}" -gt 0 ]; then
 fi
 
 KEY_DIR=""
+NOTARYTOOL_PID=""
 wipe_file() {
     local size
     if [ -f "$1" ]; then
@@ -58,6 +61,10 @@ wipe_file() {
     fi
 }
 cleanup() {
+    if [ -n "${NOTARYTOOL_PID}" ]; then
+        kill "${NOTARYTOOL_PID}" 2>/dev/null || true
+        wait "${NOTARYTOOL_PID}" 2>/dev/null || true
+    fi
     if [ -n "${KEY_DIR}" ] && [ -d "${KEY_DIR}" ]; then
         wipe_file "${KEY_DIR}/AuthKey.p8"
         rm -rf "${KEY_DIR}"
@@ -109,6 +116,18 @@ with os.fdopen(descriptor, "w", encoding="ascii") as handle:
 PYKEY
 chmod 600 "${KEY_FILE}"
 
+# Bash runs a trap only after a foreground child returns, so a stalled
+# notarytool would keep the key file on disk past SIGTERM. Run it in the
+# background: `wait` returns on a signal, and cleanup() stops notarytool first.
+run_notarytool() {
+    local status=0
+    xcrun notarytool "$@" &
+    NOTARYTOOL_PID=$!
+    wait "${NOTARYTOOL_PID}" || status=$?
+    NOTARYTOOL_PID=""
+    return "${status}"
+}
+
 # Prints one field of the final notarytool JSON answer, empty when absent.
 submission_field() {
     /usr/bin/python3 -I - "${RESULT_FILE}" "$1" <<'PYFIELD'
@@ -134,7 +153,7 @@ echo "▶ Notarizing ${ARCHIVE_NAME} (waiting for Apple, at most 20 minutes)..."
 # --timeout 1200 caps the wait: Apple's queue has stalled for many hours
 # (May 2026), and the submission continues on Apple's side after a timeout.
 submit_status=0
-xcrun notarytool submit "${ARCHIVE}" \
+run_notarytool submit "${ARCHIVE}" \
     --key "${KEY_FILE}" \
     --key-id "${ASC_API_KEY_ID}" \
     --issuer "${ASC_API_KEY_ISSUER_ID}" \
@@ -168,7 +187,7 @@ if [ -z "${submission_status}" ] || [ "${submission_status}" = "In Progress" ]; 
 fi
 
 LOG_FILE="${LOG_DIR}/notarization-${submission_id}.json"
-if xcrun notarytool log "${submission_id}" \
+if run_notarytool log "${submission_id}" \
         --key "${KEY_FILE}" \
         --key-id "${ASC_API_KEY_ID}" \
         --issuer "${ASC_API_KEY_ISSUER_ID}" \

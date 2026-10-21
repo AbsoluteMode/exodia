@@ -621,6 +621,61 @@ final class PackagingRebrandTests: XCTestCase {
                 XCTAssertFalse(run.result.output.contains(secret), "output contains key material: \(run.result.output)")
             }
         }
+
+        // Tracing, requested or inherited through SHELLOPTS, never prints the key.
+        for (options, extra) in [(["-x"], [String: String]()), ([], ["SHELLOPTS": "xtrace"])] {
+            let traced = try runNotarySubmission(status: "Accepted", p8: pem, bashOptions: options,
+                                                 environment: extra)
+            XCTAssertEqual(traced.result.status, 0, traced.result.output)
+            for line in pem.split(separator: "\n") where !line.hasPrefix("-----") {
+                XCTAssertFalse(traced.result.output.contains(line), "trace printed the key: \(traced.result.output)")
+            }
+        }
+    }
+
+    /// Bash defers traps while a foreground child runs; a stalled notarytool
+    /// must not keep the key on disk after the build is stopped.
+    func test_notarySubmissionRemovesTheKeyWhenStoppedDuringTheWait() throws {
+        let pem = try String(contentsOf: try makeNotaryKey(), encoding: .utf8)
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for directory in ["bin", "logs", "tmp"] {
+            try FileManager.default.createDirectory(at: temporary.appendingPathComponent(directory),
+                withIntermediateDirectories: true)
+        }
+        let archive = temporary.appendingPathComponent("Whytap.zip")
+        try Data("archive".utf8).write(to: archive)
+        let waiting = temporary.appendingPathComponent("waiting")
+        try executable(at: temporary.appendingPathComponent("bin/xcrun"), contents: """
+        #!/bin/bash
+        touch '\(waiting.path)'
+        exec /bin/sleep 30
+        """)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [try projectRoot().appendingPathComponent("scripts/notarize-submit.sh").path,
+                             archive.path, temporary.appendingPathComponent("logs").path]
+        process.environment = ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                               "TMPDIR": temporary.appendingPathComponent("tmp").path,
+                               "ASC_API_KEY_ID": Self.keyID, "ASC_API_KEY_ISSUER_ID": Self.issuerID,
+                               "ASC_API_KEY_P8": pem]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let deadline = Date().addingTimeInterval(20)
+        while !FileManager.default.fileExists(atPath: waiting.path) && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: waiting.path), "notarytool stub never started")
+        let tmp = temporary.appendingPathComponent("tmp").path
+        XCTAssertFalse(try FileManager.default.subpathsOfDirectory(atPath: tmp).isEmpty, "the key file exists while waiting")
+        // SIGTERM to the script alone, as a stopped build delivers it.
+        let stopped = Date()
+        XCTAssertEqual(kill(process.processIdentifier, SIGTERM), 0)
+        process.waitUntilExit()
+        XCTAssertLessThan(Date().timeIntervalSince(stopped), 10, "SIGTERM waited for notarytool")
+        XCTAssertEqual(process.terminationStatus, 143)
+        XCTAssertEqual(try FileManager.default.subpathsOfDirectory(atPath: tmp), [])
     }
 
     func test_notarySubmissionKeepsTheLogOfARejectedArchive() throws {
@@ -640,6 +695,28 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertTrue(unsubmitted.result.output.contains("No submission was recorded"), unsubmitted.result.output)
         XCTAssertEqual(unsubmitted.logs, [])
         XCTAssertEqual(unsubmitted.leftovers, [])
+
+        let unreadable = try runNotarySubmission(status: nil, p8: pem, answer: "Error: not JSON")
+        XCTAssertEqual(unreadable.result.status, 1, unreadable.result.output)
+        XCTAssertTrue(unreadable.result.output.contains("status unknown"), unreadable.result.output)
+        XCTAssertTrue(unreadable.result.output.contains("No submission was recorded"), unreadable.result.output)
+
+        // The wait timed out while Apple was still processing.
+        let processing = try runNotarySubmission(status: "In Progress", p8: pem, submitStatus: 1)
+        XCTAssertEqual(processing.result.status, 1, processing.result.output)
+        XCTAssertTrue(processing.result.output.contains("still processing on Apple's side"), processing.result.output)
+        XCTAssertFalse(processing.calls.contains("notarytool log"), processing.calls)
+
+        // Both the verdict and notarytool's exit status must say accepted.
+        let contradictory = try runNotarySubmission(status: "Accepted", p8: pem, submitStatus: 1)
+        XCTAssertEqual(contradictory.result.status, 1, contradictory.result.output)
+        XCTAssertEqual(contradictory.leftovers, [])
+
+        let noLog = try runNotarySubmission(status: "Invalid", p8: pem, logStatus: 1)
+        XCTAssertEqual(noLog.result.status, 1, noLog.result.output)
+        XCTAssertTrue(noLog.result.output.contains("Could not download the log of submission \(Self.submissionID)"),
+                      noLog.result.output)
+        XCTAssertEqual(noLog.leftovers, [])
     }
 
     func test_notarySubmissionNamesMissingOrMalformedKeys() throws {
@@ -691,17 +768,19 @@ final class PackagingRebrandTests: XCTestCase {
         #!/bin/bash
         [ "$*" = "--assess -vv --type open --context context:primary-signature $7" ] || exit 71
         printf '%s: accepted\nsource=%s\n' "$7" "$PROBE_SOURCE"
+        exit "${PROBE_SPCTL_STATUS:-0}"
         """#)
         try prepareProvenanceFixture(temporary)
         try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg", codeSigning: "team:TEAMID1234",
                         notarization: "notarized")
-        func upload(stapler: String, source: String) throws -> (status: Int32, output: String) {
+        func upload(stapler: String, source: String, spctl: String = "0") throws -> (status: Int32, output: String) {
             try? FileManager.default.removeItem(at: github)
             return try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
                 environment: ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
                               "FLAVOR": "prod", "APP_BUNDLE_NAME": "Whytap", "SHORT_VERSION": "9.9.9",
                               "BUILD_VERSION": "42", "PROBE_GITHUB": github.path,
-                              "PROBE_STAPLER_STATUS": stapler, "PROBE_SOURCE": source])
+                              "PROBE_STAPLER_STATUS": stapler, "PROBE_SOURCE": source,
+                              "PROBE_SPCTL_STATUS": spctl])
         }
 
         let unstapled = try upload(stapler: "65", source: "Notarized Developer ID")
@@ -715,6 +794,11 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertTrue(unnotarized.output.contains("does not accept Whytap-9.9.9-build42.dmg as notarized"),
                       unnotarized.output)
         XCTAssertFalse(FileManager.default.fileExists(atPath: github.path), unnotarized.output)
+
+        let rejected = try upload(stapler: "0", source: "Notarized Developer ID", spctl: "3")
+        XCTAssertNotEqual(rejected.status, 0)
+        XCTAssertTrue(rejected.output.contains("does not accept Whytap-9.9.9-build42.dmg as notarized"), rejected.output)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: github.path), rejected.output)
 
         let notarized = try upload(stapler: "0", source: "Notarized Developer ID")
         XCTAssertNotEqual(notarized.status, 0)
@@ -775,7 +859,9 @@ final class PackagingRebrandTests: XCTestCase {
     /// Runs notarize-submit.sh against a notarytool stub answering `status`
     /// (nil: no answer) and reports what the stub saw and what stayed behind.
     private func runNotarySubmission(status: String?, p8: String, submitStatus: Int32 = 0,
-                                     omit: Set<String> = []) throws
+                                     answer: String? = nil, logStatus: Int32 = 0,
+                                     omit: Set<String> = [], bashOptions: [String] = [],
+                                     environment extra: [String: String] = [:]) throws
         -> (result: (status: Int32, output: String), calls: String, keyMode: String?, keyCopy: String?,
             logs: [String], leftovers: [String]) {
         let temporary = try temporaryDirectory()
@@ -786,7 +872,8 @@ final class PackagingRebrandTests: XCTestCase {
         }
         let archive = temporary.appendingPathComponent("Whytap.zip")
         try Data("archive".utf8).write(to: archive)
-        let answer = status.map { #"{"id":"\#(Self.submissionID)","status":"\#($0)","message":"Processing complete"}"# } ?? ""
+        let answer = answer
+            ?? status.map { #"{"id":"\#(Self.submissionID)","status":"\#($0)","message":"Processing complete"}"# } ?? ""
         try executable(at: temporary.appendingPathComponent("bin/xcrun"), contents: """
         #!/bin/bash
         echo "$*" >> "$PROBE_DIR/calls"
@@ -803,7 +890,7 @@ final class PackagingRebrandTests: XCTestCase {
         if [ "$1 $2" = "notarytool log" ]; then
             for last; do :; done
             echo '{"issues":[{"severity":"error","path":"Whytap.zip/Whytap.app","message":"The signature does not include a secure timestamp."}]}' > "$last"
-            exit 0
+            exit \(logStatus)
         fi
         exit 71
         """)
@@ -811,9 +898,11 @@ final class PackagingRebrandTests: XCTestCase {
                            "TMPDIR": temporary.appendingPathComponent("tmp").path, "PROBE_DIR": temporary.path,
                            "ASC_API_KEY_ID": Self.keyID, "ASC_API_KEY_ISSUER_ID": Self.issuerID,
                            "ASC_API_KEY_P8": p8]
+        environment.merge(extra) { $1 }
         for name in omit { environment.removeValue(forKey: name) }
-        let result = try runScript(try projectRoot().appendingPathComponent("scripts/notarize-submit.sh"),
-            arguments: [archive.path, temporary.appendingPathComponent("logs").path], environment: environment)
+        let result = try runTool(URL(fileURLWithPath: "/bin/bash"), arguments: bashOptions + [
+            try projectRoot().appendingPathComponent("scripts/notarize-submit.sh").path,
+            archive.path, temporary.appendingPathComponent("logs").path], environment: environment)
         func read(_ name: String) -> String? {
             try? String(contentsOf: temporary.appendingPathComponent(name), encoding: .utf8)
         }
