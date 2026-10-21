@@ -76,7 +76,8 @@ meeting text, not audio, and no clipboard history.
   related warnings; restoring it into a clean profile creates no staging
   directory or History database.
 - Damaged excluded data (a missing clipboard image, a missing recording chunk,
-  a stray file or a link in the staging root) no longer fails a backup.
+  a stray file in the staging root, a link inside a recording) no longer fails
+  a backup.
 - Clipboard copies and new recording chunks do not change the content
   fingerprint or the change probe; an agent-memory edit still does.
 - Restoring a newer archive with meetings, Costs and workspace keeps the

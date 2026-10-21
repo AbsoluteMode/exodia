@@ -26,7 +26,7 @@ sources:
   - type: url
     reference: https://docs.python.org/3/library/venv.html
     confirmed_at: 2026-10-21
-related: [2026-10-19-config-backup.md, 2026-10-21-backup-reliability.md, 2026-10-21-backup-capture-pacing.md]
+related: [2026-10-19-config-backup.md, 2026-10-21-backup-reliability.md, 2026-10-21-backup-capture-pacing.md, 2026-10-21-backup-essentials-only.md]
 ---
 
 # Honor explicitly tagged workspace caches during backup

@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Backup/ArtifactBackupStaging.swift
     confirmed_at: 2026-10-20
-related: [2026-10-20-backup-auto-sync.md, ../project.md, 2026-10-19-config-backup.md, 2026-10-19-backup-management.md, 2026-10-21-backup-resume-digest.md]
+related: [2026-10-20-backup-auto-sync.md, ../project.md, 2026-10-19-config-backup.md, 2026-10-19-backup-management.md, 2026-10-21-backup-resume-digest.md, 2026-10-21-backup-essentials-only.md]
 ---
 
 # GitHub integration and simple complete backup

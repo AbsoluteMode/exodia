@@ -23,7 +23,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Backup/BackupCapturePacingTests.swift
     confirmed_at: 2026-10-21
-related: [2026-10-20-backup-auto-sync.md, 2026-10-21-backup-reliability.md, 2026-10-19-config-backup.md, 2026-10-21-backup-tagged-caches.md]
+related: [2026-10-20-backup-auto-sync.md, 2026-10-21-backup-reliability.md, 2026-10-19-config-backup.md, 2026-10-21-backup-tagged-caches.md, 2026-10-21-backup-essentials-only.md]
 ---
 
 # Pace automatic captures, bound local copies, show a pause
@@ -98,7 +98,10 @@ after 32 deltas or when no local parent exists (2.4 GB here). With continuous
 source changes, an hourly cadence adds about (2.4 GB + 32 × ~25 MB) / 33 ≈
 100 MB per upload, roughly 1–2.5 GB per day of running time, previously up to
 ~25 uploads per hour. Remote releases are still never deleted automatically;
-pruning superseded chains is a separate destructive decision.
+pruning superseded chains is a separate destructive decision. Since meeting
+audio and the History database left backups (2026-10-21-backup-essentials-only),
+a complete archive is about 95 MB in this profile, so every figure above
+shrinks accordingly.
 
 ## Tested
 
