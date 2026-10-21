@@ -48,7 +48,7 @@ final class PostProcessorOpenRouterTests: XCTestCase {
         XCTAssertEqual(openRouter.lastEndpoint?.sendsOpenRouterHeaders, true)
         XCTAssertEqual(openRouter.lastModel, "openrouter/auto")
         XCTAssertEqual(openRouter.lastMessages.first?.role, "system")
-        XCTAssertTrue(openRouter.lastMessages.first?.content.contains("Главное правило") == true)
+        XCTAssertEqual(openRouter.lastMessages.first?.content, PostProcessor.systemPrompt)
         let userMessage = try XCTUnwrap(openRouter.lastMessages.last?.content)
         XCTAssertTrue(userMessage.contains("Active app: Slack"))
         XCTAssertTrue(userMessage.contains("Thread with Alice"))
@@ -86,6 +86,31 @@ final class PostProcessorOpenRouterTests: XCTestCase {
         XCTAssertEqual(openRouter.lastEndpoint?.requiresAPIKey, false)
         XCTAssertEqual(openRouter.lastEndpoint?.sendsOpenRouterHeaders, false)
         XCTAssertEqual(openRouter.lastModel, "llama/local")
+    }
+
+    func testSmartSolParagraphsAndListsReachDeliveryWithoutFlattening() async throws {
+        let env = makeEnv()
+        try env.keys.save("or-key", account: OpenRouterLLMKeyStore.account)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "openai/gpt-6-sol"), for: .dropSmartCleanup)
+        let output = "Проверь импорт, пожалуйста.\n\nНа staging:\n- мм, сохрани валидацию;\n- проверь возврат;\n- не трогай production."
+        let client = FakeOpenRouterClient(completion: output)
+        let result = try await DropOutputPolicy(mode: .smart).prepare(rawText: "messy speech", fillerTerms: ["мм"]) {
+            try await env.processor(client).process("messy speech", targetApp: "Slack", language: "ru", transcriptionMode: "smart")
+        }
+        XCTAssertEqual(result, "Проверь импорт, пожалуйста.\n\nНа staging:\n- Сохрани валидацию;\n- проверь возврат;\n- не трогай production.")
+        XCTAssertEqual(client.lastModel, "openai/gpt-6-sol")
+        XCTAssertEqual(client.lastMessages.first?.content, PostProcessor.systemPrompt)
+    }
+
+    func testSmartOutputLanguageHintAndEditorParagraphsArePreservedTogether() async throws {
+        let env = makeEnv()
+        let server = env.routing.addServer(name: "Test", baseURL: "http://localhost:8000/v1")
+        env.routing.setRoute(FeatureRoute(account: .server(server.id), model: "test-model"), for: .dropSmartCleanup)
+        let output = "Please check the import.\n\nKeep validation enabled; do not change production."
+        let client = FakeOpenRouterClient(completion: output)
+        let result = try await env.processor(client).process("Проверь импорт", targetApp: nil, language: "ru", outputLanguage: "en", transcriptionMode: "smart")
+        XCTAssertEqual(result, output)
+        XCTAssertTrue(client.lastMessages.last?.content.contains("Output language hint: en") == true)
     }
 
     func testServerWithoutBaseURLDoesNotFallbackToBackend() async throws {

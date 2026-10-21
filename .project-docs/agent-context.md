@@ -122,6 +122,12 @@ Voice flow (Drop / dictation):
             mode changes from every control. The cleanup provider mark appears
             only while processing; paste shows “pasting…” without a provider. WHY:
             .project-docs/decisions/2026-10-19-strict-drop-modes.md
+       Smart's editor prompt consolidates repeated requests while
+       retaining independent facts, reasons, constraints and uncertainty; long
+       messages use blank-line paragraphs and plain lists. Self-corrections
+       replace only their fragment; nested requests stay requests. The prompt
+       is calibrated on GPT-6 Sol and does not change selected routes. WHY:
+       .project-docs/decisions/2026-10-21-smart-editor-prompt.md
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting
