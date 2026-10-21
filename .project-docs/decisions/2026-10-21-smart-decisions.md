@@ -23,7 +23,7 @@ sources:
   - type: url
     reference: https://developers.openai.com/api/docs/guides/decisions
     confirmed_at: 2026-10-21
-related: [2026-10-19-strict-drop-modes.md]
+related: [2026-10-19-strict-drop-modes.md, 2026-10-21-smart-decision-calibration.md]
 ---
 
 # Smart Decision routing
@@ -52,7 +52,9 @@ integration requested. Neither replaces the accepted decision stage.
   user explicitly selects it. The two adapters use their own provider keys.
 - Evaluate whether the transcript needs editing, using the same app/language
   references as cleanup. Treat every input field as data, never instructions.
-- Skip editing only for a valid needs-cleanup probability no higher than 0.05.
+- Skip editing only for a valid needs-cleanup probability no higher than the
+  model-specific cutoff: 0.40 for exact OpenRouter `typesafe/jev-1.14`, 0.05
+  otherwise. The linked calibration record owns the evidence and limitations.
   Return the original text through the existing filler/output policy. Keep the
   take's Smart mode, speech route, recovery and Retry identity unchanged.
 - Explicit output-language conversion always uses the editor. Inputs longer
@@ -79,8 +81,9 @@ the local implementation. No real user content or paid inference is used in test
 
 ## Comments and objections
 
-The 0.05 cutoff is a conservative implementation policy. Classifier accuracy on
-real multilingual dictation is not measured; a confident decision can be wrong.
+The initial 0.05 cutoff was a conservative implementation policy. The linked
+calibration record supersedes that cutoff for Jev 1.14 after actual dictation
+analysis; other models remain uncalibrated. A confident decision can be wrong.
 The two-second deadline caps added waiting when the service is unavailable.
 
 ## Resolution
