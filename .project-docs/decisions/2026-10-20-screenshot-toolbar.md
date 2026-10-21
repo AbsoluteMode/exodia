@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user replaced the arrow-shaped cross with tool icons in dashed squares and a separate arrow hotkey hint beside each because the cross was hard to understand.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user replaced the four stock assignments with Blur, Shape, Pen and Text, rejecting duplicate Copy, and reported the top/bottom arrow outlines pointed the wrong way.
     confirmed_at: 2026-10-21
   - type: user-confirmed
@@ -278,6 +281,18 @@ flipped coordinates, keeping top Up and bottom Down. Shape dragging follows
 its current Rectangle/Oval choice.
 The former Settings-only component is removed; persistence, Help, backup,
 Command-Z, native text handling and Agent priority stay intact.
+
+# Square tool revision — 2026-10-21
+
+After the preview, the user found the arrow-shaped controls hard to understand
+and chose tool icons in dashed squares with adjacent arrow shortcut hints.
+Replace the cross with one 249 × 30 pt group of four square/keycap pairs on the
+screenshot toolbar. Native 30 pt buttons contain the function symbols; separate
+HotkeyHintView keycaps show Up/Left/Right/Down without taking clicks or focus.
+The whole square is the visible hover/press/focus/drop target. Assignments,
+immediate saving, source-preserving replacement, menu reset, defaults and the
+one-time migration are unchanged. This supersedes the arrow-contour geometry
+and its directional drawing, not the toolbar placement or keyboard contract.
 
 # Consequences
 

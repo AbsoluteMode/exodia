@@ -1,42 +1,41 @@
 # Interface decisions
 
-## Screenshot arrow assignments — 2026-10-21
+## Screenshot tool squares and arrow hints — 2026-10-21
 
-The person comes to annotate a captured region and configure four quick actions
-without leaving it. First see four directional controls on the screenshot toolbar,
-then drag a toolbar function onto one or click it to change its assignment.
+The person comes to annotate a region and configure four quick tools without
+leaving the editor. First see the tool icons in dashed squares, each with its
+arrow-key hint beside it; then drag a tool onto a square or click to reassign it.
 
-- Place the four controls in a compact 96 × 60 pt cardinal cross inside the
-  existing wrapping toolbar: Up above Left/Right, Down below. Each outline is
-  an actual directional arrow with a dashed contour and the assigned function's
-  symbol inside. Account for NSButton's flipped coordinates so the top outline
-  points up and the bottom outline points down. Why: the user clarified the controls belong on the screenshot
-  toolbar itself and must look like a cross; the earlier Settings-only/inverted-T
-  placement was an incorrect interpretation and is superseded.
-- Use defaults ↑ Blur, ← Shape, → Pen, ↓ Text. The earlier stock map
-  migrates once; custom mappings remain. Why: the user chose four drawing tools
-  and rejected duplicating the existing Copy action.
-  The physical keys execute those actions. Clicking a contour opens a native
-  assignment menu, including every retained tool/command and Reset this arrow.
-  Why: changing a Copy/Cancel binding must never finish the capture accidentally.
-- Existing toolbar tools/actions and the assigned arrows are native drag sources.
-  A drop replaces only its destination and saves immediately; the source remains.
-  A tracked drag must not also select the source tool, export or open a menu.
-  Why: reassignment belongs in the same panel, without a trip to Settings or Save.
-- Reuse the toolbar's popover material and adaptive semantic AppKit colors. Arrow
-  shapes highlight on hover, press and valid drop, and draw native focus masks.
-  Tab traverses all four controls; Space opens the same menu. Busy state disables
-  assignments, their drop targets and menu items. Why: dragging needs clear
-  feedback and an equivalent keyboard/VoiceOver path.
-- Keep the cross together when the rest of the toolbar wraps; all existing tools
-  and finish actions stay visible. No new animation is introduced. Why: narrow
-  displays must retain the four-way geometry and direct access to Copy & exit.
-- Screenshot still suspends Agent's Carbon registrations; text fields keep native
-  cursor navigation and modified arrows adjust the crop. Command-Z retains the
-  physical-key fix. Why: this placement correction must preserve editing priority.
+- Put four pairs in one compact row directly on ScreenshotToolbar: a 30 pt
+  dashed rounded square with the assigned tool's 16 pt symbol, then a nearby
+  22 pt arrow keycap using HotkeyHintView. Keep a 5 pt intra-pair gap and 7 pt
+  between pairs. The complete group is 249 × 30 pt. Why: the user found the
+  earlier arrow-shaped cross hard to read and explicitly chose square tool
+  icons with separate arrow shortcut hints. This supersedes both the cross
+  and the earlier Settings-only/inverted-T placement.
+- Defaults are ↑ Blur, ← Shape, → Pen, ↓ Text. Only the old unmodified stock
+  map migrates once; custom mappings remain. Why: the user requested these
+  four drawing tools and rejected duplicating the existing Copy action.
+- The physical keys execute the functions. Clicking a square opens its native
+  assignment menu, including every retained action and Reset this arrow. A
+  drop from any toolbar tool or assigned square replaces only the destination
+  and saves immediately, preserving the source and current screenshot. Why:
+  reassignment should neither finish capture nor require Settings or Save.
+- Track press/drag/release without also activating a dragged source. Escape
+  aborts the pending click; hidden or disabled controls cannot complete it.
+  Why: beginning a drag from Copy/Download must never export on release.
+- Square hit areas highlight completely on hover, press and valid drop, with
+  native focus rings. Tab/Space reach assignment menus. Adjacent keycaps are
+  decorative, pass clicks through and add no focus stop. Busy state disables
+  squares, menus and drops and dims key hints. Why: affordances must match the
+  actual click targets and keep a keyboard/VoiceOver alternative to dragging.
+- Keep the group intact while the surrounding toolbar wraps. Reuse adaptive
+  AppKit popover materials and semantic foregrounds, with no new animation.
+  Screenshot's priority over Agent, text navigation and Command-Z stay intact.
 
 Native offscreen toolbar renders cover 360/520/900 pt in light/dark appearances.
-They do not establish physical drag/menu/VoiceOver acceptance in the installed app.
+Physical dragging, menu/keyboard/VoiceOver and installed-app acceptance remain
+separate from these generated fixtures.
 
 ## Screenshot toolbar and capture reliability — 2026-10-21
 

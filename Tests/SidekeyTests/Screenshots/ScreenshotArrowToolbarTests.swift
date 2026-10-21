@@ -21,39 +21,29 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
         return (canvas, ScreenshotToolbar(canvas: canvas, defaults: defaults, arrowPreferences: prefs), prefs, defaults)
     }
 
-    func testCrossIsInToolbarWithAllFourFocusableAssignmentControls() throws {
+    func testFourSquareAssignmentsAndAdjacentArrowKeycapsAreInToolbar() throws {
         let (_, toolbar, _, _) = try fixture()
         toolbar.arrowCluster.layoutSubtreeIfNeeded()
         let buttons = toolbar.arrowCluster.buttons
         XCTAssertEqual(buttons.count, 4)
         let up = try XCTUnwrap(buttons[.up]), down = try XCTUnwrap(buttons[.down])
         let left = try XCTUnwrap(buttons[.left]), right = try XCTUnwrap(buttons[.right])
-        XCTAssertEqual(up.frame.midX, down.frame.midX)
-        XCTAssertGreaterThan(up.frame.midY, left.frame.midY)
-        XCTAssertEqual(left.frame.midY, right.frame.midY)
-        XCTAssertLessThan(down.frame.midY, left.frame.midY)
-        XCTAssertLessThan(left.frame.midX, up.frame.midX)
-        XCTAssertGreaterThan(right.frame.midX, up.frame.midX)
+        let ordered = [up, left, right, down]
+        let frames = ordered.map { $0.convert($0.bounds, to: toolbar.arrowCluster) }
+        for frame in frames { XCTAssertEqual(frame.width, frame.height) }
+        for index in 1..<frames.count { XCTAssertGreaterThan(frames[index].minX, frames[index - 1].maxX) }
+        XCTAssertTrue(frames.allSatisfy { $0.midY == frames[0].midY })
         XCTAssertTrue(buttons.values.allSatisfy { $0.isDescendant(of: toolbar) && toolbar.focusableControls.contains($0) })
         for (direction, button) in buttons {
             XCTAssertEqual(button.assignmentArrow, direction)
             XCTAssertEqual(button.dragAction, ScreenshotArrowBindings.defaults[direction])
             XCTAssertEqual(button.menu?.items.filter { !$0.isSeparatorItem && $0.state == .on }.count, 1)
             XCTAssertTrue(button.toolTip?.contains("Changes save immediately") == true)
-            // Hit-test a wide shoulder on the pointed side and the same point
-            // on the narrow shaft side. This catches flipped Up/Down drawings.
-            let shoulder: CGPoint, shaft: CGPoint
-            switch direction {
-            case .up: shoulder = CGPoint(x: 0.16, y: 0.67); shaft = CGPoint(x: 0.16, y: 0.30)
-            case .down: shoulder = CGPoint(x: 0.16, y: 0.33); shaft = CGPoint(x: 0.16, y: 0.70)
-            case .left: shoulder = CGPoint(x: 0.33, y: 0.16); shaft = CGPoint(x: 0.70, y: 0.16)
-            case .right: shoulder = CGPoint(x: 0.67, y: 0.16); shaft = CGPoint(x: 0.30, y: 0.16)
-            }
-            func parentPoint(_ p: CGPoint) -> CGPoint {
-                button.convert(CGPoint(x: p.x * button.bounds.width, y: (button.isFlipped ? 1 - p.y : p.y) * button.bounds.height), to: button.superview)
-            }
-            XCTAssertTrue(button.hitTest(parentPoint(shoulder)) === button, "Wrong outline direction: \(direction)")
-            XCTAssertNil(button.hitTest(parentPoint(shaft)), "The shaft must remain narrower than the arrowhead")
+            let pair = try XCTUnwrap(button.superview)
+            let hint = try XCTUnwrap(pair.subviews.first { $0.identifier?.rawValue == "screenshot.arrow-keycap.\(direction.rawValue)" })
+            XCTAssertGreaterThan(hint.frame.minX, button.frame.maxX)
+            XCTAssertFalse(hint.acceptsFirstResponder)
+            XCTAssertNil(hint.hitTest(CGPoint(x: hint.frame.midX, y: hint.frame.midY)))
         }
     }
 
@@ -177,7 +167,7 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
         XCTAssertFalse(window.isVisible)
     }
 
-    func testRenderActualScreenshotToolbarWithInlineArrowCross() throws {
+    func testRenderActualScreenshotToolbarWithSquareToolsAndArrowHints() throws {
         guard let directory = ProcessInfo.processInfo.environment["WHYTAP_SCREENSHOT_ARROW_RENDER_DIR"] else {
             throw XCTSkip("Opt-in native toolbar renders")
         }

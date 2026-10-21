@@ -1054,10 +1054,9 @@ Spotlight, Copy text, Pin above windows and
 Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
 from every screenshot panel through both key-equivalent and direct window dispatch,
 using physical Z so Russian input works; focused text fields retain native text undo.
-ScreenshotToolbar contains a compact four-way cross with dashed arrow-shaped
-assignment controls: Up Blur, Left Shape, Right Pen, Down Text by default.
-Drag a toolbar tool/action or an existing assignment onto an arrow to replace
-only that destination, or click it for a native assignment menu and per-arrow
+ScreenshotToolbar contains four dashed tool squares with adjacent arrow keycaps: Up Blur, Left Shape, Right Pen, Down Text by default.
+Drag a toolbar tool/action or an existing assignment onto a square to replace
+only that destination, or click the square for a native assignment menu and per-arrow
 reset. Changes save immediately through HotkeyPreferences.screenshotArrowBindings;
 Help and settings backups share it. Custom mappings survive this placement change; the previous unmodified stock map
 migrates once to the new four drawing defaults.

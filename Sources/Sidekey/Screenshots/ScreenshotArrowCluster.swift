@@ -1,18 +1,23 @@
 import AppKit
 import Combine
+import SwiftUI
 
 /// Assignment controls live with the screenshot tools. They never execute an
 /// export on click: the physical arrows run actions; clicking changes a binding.
 @MainActor
 final class ScreenshotArrowCluster: NSView {
-    static let size = CGSize(width: 96, height: 60)
+    static let size = CGSize(width: 249, height: 30)
+    private static let order: [ScreenshotArrow] = [.up, .left, .right, .down]
     private let preferences: HotkeyPreferences
     private var observation: AnyCancellable?
+    private var pairs: [ScreenshotArrow: NSView] = [:]
+    private var hints: [ScreenshotArrow: NSView] = [:]
     private(set) var buttons: [ScreenshotArrow: ScreenshotToolbarButton] = [:]
     var isEnabled = true {
         didSet {
-            for button in buttons.values {
+            for (direction, button) in buttons {
                 button.isEnabled = isEnabled
+                hints[direction]?.alphaValue = isEnabled ? 1 : 0.45
                 button.menu?.items.filter { !$0.isSeparatorItem }.forEach { $0.isEnabled = isEnabled }
             }
         }
@@ -23,7 +28,7 @@ final class ScreenshotArrowCluster: NSView {
         self.preferences = preferences
         super.init(frame: CGRect(origin: .zero, size: Self.size))
         setAccessibilityElement(false)
-        for direction in ScreenshotArrow.allCases {
+        for direction in Self.order {
             let button = ScreenshotToolbarButton(title: "", target: self, action: #selector(showAssignments(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(direction.rawValue)
             button.assignmentArrow = direction
@@ -33,7 +38,13 @@ final class ScreenshotArrowCluster: NSView {
                 self.preferences.screenshotArrowBindings[direction] = action
                 return true
             }
-            addSubview(button); buttons[direction] = button
+            let pair = NSView()
+            pair.addSubview(button)
+            let hint = ScreenshotArrowKeycapHostingView(rootView:
+                HotkeyHintView(contents: [.text(direction.glyph)], style: .keycaps).accessibilityHidden(true))
+            hint.identifier = NSUserInterfaceItemIdentifier("screenshot.arrow-keycap.\(direction.rawValue)")
+            pair.addSubview(hint)
+            addSubview(pair); pairs[direction] = pair; hints[direction] = hint; buttons[direction] = button
         }
         widthAnchor.constraint(equalToConstant: Self.size.width).isActive = true
         heightAnchor.constraint(equalToConstant: Self.size.height).isActive = true
@@ -43,10 +54,11 @@ final class ScreenshotArrowCluster: NSView {
     override var intrinsicContentSize: NSSize { Self.size }
     override func layout() {
         super.layout()
-        buttons[.up]?.frame = CGRect(x: 32, y: 32, width: 32, height: 28)
-        buttons[.left]?.frame = CGRect(x: 0, y: 16, width: 32, height: 28)
-        buttons[.right]?.frame = CGRect(x: 64, y: 16, width: 32, height: 28)
-        buttons[.down]?.frame = CGRect(x: 32, y: 0, width: 32, height: 28)
+        for (index, direction) in Self.order.enumerated() {
+            pairs[direction]?.frame = CGRect(x: index * 64, y: 0, width: 57, height: 30)
+            buttons[direction]?.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
+            hints[direction]?.frame = CGRect(x: 35, y: 4, width: 22, height: 22)
+        }
     }
 
     private func refresh(_ bindings: ScreenshotArrowBindings) {
@@ -56,7 +68,7 @@ final class ScreenshotArrowCluster: NSView {
             button.image = NSImage(systemSymbolName: action.symbol, accessibilityDescription: nil)
             button.setAccessibilityLabel("\(direction.glyph) \(action.title) — change assignment")
             button.setAccessibilityValue(action.title)
-            button.toolTip = "\(direction.glyph): \(action.title). Drag a toolbar tool here to replace this action, drag this assignment to another arrow, or click to choose. Changes save immediately."
+            button.toolTip = "\(direction.glyph): \(action.title). Drag a toolbar tool here to replace this action, drag this assignment to another square, or click to choose. Changes save immediately."
             button.setAccessibilityHelp(button.toolTip)
             let menu = NSMenu(title: "\(direction.glyph) arrow")
             menu.autoenablesItems = false
@@ -84,4 +96,11 @@ final class ScreenshotArrowCluster: NSView {
               let direction = ScreenshotArrow(rawValue: parts[0]), let action = ScreenshotEditorAction(rawValue: parts[1]) else { return }
         preferences.screenshotArrowBindings[direction] = action
     }
+}
+
+/// A nearby keyboard hint is not a second click or focus target.
+@MainActor
+private final class ScreenshotArrowKeycapHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var acceptsFirstResponder: Bool { false }
 }

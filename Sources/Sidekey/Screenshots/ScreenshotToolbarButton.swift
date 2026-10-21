@@ -75,7 +75,7 @@ final class ScreenshotToolbarButton: NSButton, NSDraggingSource {
                 return
             }
             let point = convert(next.locationInWindow, from: nil)
-            let inside = assignmentArrow == nil ? bounds.contains(point) : arrowPath().contains(point)
+            let inside = bounds.contains(point)
             if next.type == .leftMouseUp {
                 if inside, let action { NSApp.sendAction(action, to: target, from: self) }
                 return
@@ -105,7 +105,7 @@ final class ScreenshotToolbarButton: NSButton, NSDraggingSource {
     private func dragOperation(_ sender: NSDraggingInfo) -> NSDragOperation {
         let point = convert(sender.draggingLocation, from: nil)
         let raw = sender.draggingPasteboard.string(forType: Self.actionPasteboardType)
-        dropHovered = isEnabled && onDropAction != nil && arrowPath().contains(point)
+        dropHovered = isEnabled && onDropAction != nil && bounds.contains(point)
             && raw.flatMap(ScreenshotEditorAction.init(dragPayload:)) != nil
         needsDisplay = true
         return dropHovered ? .copy : []
@@ -120,31 +120,6 @@ final class ScreenshotToolbarButton: NSButton, NSDraggingSource {
         return acceptAssignment(from: sender.draggingPasteboard)
     }
 
-    private func arrowPoint(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-        let point: CGPoint
-        switch assignmentArrow {
-        case .down: point = CGPoint(x: 1 - x, y: 1 - y)
-        case .left: point = CGPoint(x: 1 - y, y: x)
-        case .right: point = CGPoint(x: y, y: 1 - x)
-        default: point = CGPoint(x: x, y: y)
-        }
-        // NSButton uses flipped coordinates. Keep Up visually up rather than
-        // mirroring the directional outline around the horizontal axis.
-        return CGPoint(x: bounds.minX + point.x * bounds.width,
-                       y: bounds.minY + (isFlipped ? 1 - point.y : point.y) * bounds.height)
-    }
-    private func arrowPath() -> NSBezierPath {
-        let path = NSBezierPath()
-        path.move(to: arrowPoint(0.5, 0.96))
-        for (x, y) in [(0.96, 0.60), (0.80, 0.60), (0.80, 0.04), (0.20, 0.04), (0.20, 0.60), (0.04, 0.60)] {
-            path.line(to: arrowPoint(x, y))
-        }
-        path.close(); return path
-    }
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        if assignmentArrow != nil, !arrowPath().contains(convert(point, from: superview)) { return nil }
-        return super.hitTest(point)
-    }
 
     override var isEnabled: Bool {
         didSet {
@@ -168,7 +143,7 @@ final class ScreenshotToolbarButton: NSButton, NSDraggingSource {
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
         if assignmentArrow != nil {
-            let path = arrowPath()
+            let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
             let active = isEnabled && (hovered || isHighlighted || dropHovered)
             (active ? NSColor.controlAccentColor.withAlphaComponent(isHighlighted ? 0.28 : 0.16) : NSColor.labelColor.withAlphaComponent(isEnabled ? 0.035 : 0.015)).setFill()
             path.fill()
@@ -177,8 +152,8 @@ final class ScreenshotToolbarButton: NSButton, NSDraggingSource {
             path.setLineDash([3, 2], count: 2, phase: 0); path.stroke()
             let foreground = isEnabled ? NSColor.labelColor : .disabledControlTextColor
             if let symbol = image?.withSymbolConfiguration(.init(paletteColors: [foreground])) {
-                let center = arrowPoint(0.5, 0.33)
-                let scale = min(12 / symbol.size.width, 12 / symbol.size.height)
+                let center = CGPoint(x: bounds.midX, y: bounds.midY)
+                let scale = min(16 / symbol.size.width, 16 / symbol.size.height)
                 let rect = CGRect(x: center.x - symbol.size.width * scale / 2, y: center.y - symbol.size.height * scale / 2,
                                   width: symbol.size.width * scale, height: symbol.size.height * scale)
                 symbol.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
@@ -232,7 +207,6 @@ final class ScreenshotToolbarButton: NSButton, NSDraggingSource {
         }
     }
     override func drawFocusRingMask() {
-        if assignmentArrow != nil { arrowPath().fill(); return }
         NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
     }
     override var focusRingMaskBounds: NSRect { bounds }
