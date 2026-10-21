@@ -9,7 +9,7 @@ canonical_for: [backup-content-scope]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
-    reference: On 2026-10-21 the user decided that backups keep only what matters — meeting text, not audio ("записи не надо только текст"), and no clipboard history, which can be taken from the Mac at any time; meeting audio is only useful for debugging in development builds.
+    reference: On 2026-10-21 the user decided that backups keep only what matters — meeting text, not audio (meeting text only, no recordings), and no clipboard history, which can be taken from the Mac at any time; meeting audio is only useful for debugging in development builds.
     confirmed_at: 2026-10-21
   - type: trace
     reference: Metadata sizes on the maintainer's Mac (du, no content read) — meetings-staging 2.4 GB, history.sqlite 147 MB plus 33 MB WAL/images, versus 95 MB for meeting text, Notify, Case, Costs, planner and agent memory together.
