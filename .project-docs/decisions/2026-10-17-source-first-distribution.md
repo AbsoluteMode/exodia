@@ -20,7 +20,7 @@ sources:
   - type: repository
     reference: docs/install.md
     confirmed_at: 2026-10-17
-related: [2026-10-19-community-signing-identity.md, 2026-10-17-community-updates.md, ../project.md, 2026-09-10-public-installation.md, 2026-09-10-byok-and-local-builds.md]
+related: [2026-10-19-community-signing-identity.md, 2026-10-17-community-updates.md, ../project.md, 2026-09-10-public-installation.md, 2026-09-10-byok-and-local-builds.md, 2026-10-21-developer-id-team-signing.md]
 ---
 
 # Source-first distribution
