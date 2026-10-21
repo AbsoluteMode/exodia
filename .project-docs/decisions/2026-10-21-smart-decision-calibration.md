@@ -20,7 +20,7 @@ sources:
   - type: url
     reference: https://docs.typesafe.ai/primitives/noul
     confirmed_at: 2026-10-21
-related: [2026-10-21-smart-decisions.md]
+related: [2026-10-21-smart-decisions.md, 2026-10-21-smart-editor-prompt.md]
 ---
 
 # Jev routing calibration
@@ -124,6 +124,38 @@ Private pairs and replay responses remain local in ignored build output;
 only aggregate results belong in source control and public review.
 
 ## Future context behavior
+
+### Later short-message experiments: not promoted
+
+The user subsequently reported that short correct messages still enter the
+editor and may change only one valid word. The accepted target is concrete
+repair for short messages, with useful structure retained for long ones.
+Inspect 35 additional authorized raw/edited pairs, assigning labels before
+scoring: 14 useful edits, 13 unnecessary, 7 borderline, 1 unfinished/excluded.
+These are editorial judgments, not user-confirmed labels or historical model
+scores. Do not infer a real defect solely from a changed word.
+
+Five new English/Russian questions distinguish defects from synonyms, word
+order, conversational vocabulary and minor punctuation. Test against the
+earlier corpus, the additional pairs and fourteen structural/short controls.
+The strongest explicit-example candidate at cutoff 0.25 retained 36/38 useful
+development edits and skipped 34/57 unnecessary edits. A subsequent mixed
+regression run missed useful grammar/name repairs; one provider HTTP 529 was
+kept separate from classifier accuracy. In a new all-example replay it retained
+55/59 useful edits and skipped 48/75 unnecessary edits. All five synthetic
+short-repair controls passed, but real grammar misses remained. At 0.20 it
+retained 58/59 and skipped only 34/75 unnecessary edits, offering no convincing
+aggregate improvement over the existing pair. The repeated near-boundary
+scores varied. Eight of 134 real-example requests in that replay took over
+the runtime's 2s deadline and would keep the editor regardless of probability.
+Replay latency is not a reconstructed measurement of the user's original takes.
+
+These are reused tuning/regression examples, not an independent quality
+estimate. Keep all alternative prompts/cutoffs out of production; the current
+pair remains the structural prompt SHA-256 above and cutoff 0.40. Record the
+unresolved short-message routing problem rather than declaring it fixed.
+The separate conservative Sol change reduces rewriting when an unnecessary
+editor pass still occurs; it does not establish that Jev skips that pass.
 
 The accepted direction is for both the decision and the editor to consider
 the destination: casual chat, a document and an AI prompt can have different
