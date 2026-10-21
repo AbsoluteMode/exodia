@@ -148,6 +148,11 @@ default cannot turn an unnotarized archive into a notarized release.
 - Not yet tested at the time of writing: a real Apple submission, stapling and
   the Gatekeeper result (the build fixture stops at the compiler). The beta
   build through the builder (queue ticket 125) is the release gate.
+- Builder qualification on 2026-10-21: beta 2.2.17 (1566), source
+  `a425c667415a75dc58380833fe24184863f4daf6`, passed. Apple accepted the app ZIP
+  and DMG; both stapled tickets validate and both Gatekeeper assessments report
+  `Notarized Developer ID`, with signing team `UVBKCN5PPV`. The beta was not
+  launched, installed or published. Production remains a separate gated action.
 
 ## Rejected
 

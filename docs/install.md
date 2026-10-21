@@ -22,8 +22,14 @@ Releases up to 2.2.15 were not notarized: if macOS says it cannot verify the
 developer of such a download, follow **System Settings → Privacy & Security →
 Open Anyway** for that download;
 [Apple explains this per-app approval](https://support.apple.com/102445).
+
+Notarization does not grant Microphone, Accessibility or Keychain access. The
+first upgrade from an older community-signed build may ask for those again.
+Approve Keychain access in the macOS window only (Always Allow if you trust
+this Whytap build); never enter the login password into an agent or chat.
+Later updates signed by the same team retain the same identity.
 You never install or trust a certificate yourself. Because every community
-build carries the same team identity, macOS keeps privacy permissions such as
+current team build carries the same identity, macOS keeps privacy permissions such as
 Microphone and System Audio Recording and access to Whytap's Keychain items
 across updates. Earlier builds were signed with Whytap's self-signed
 certificate or ad hoc, so the first team-signed update asks for these
