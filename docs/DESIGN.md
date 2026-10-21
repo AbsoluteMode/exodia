@@ -858,7 +858,7 @@ rights. No alternative composition or decorative screen is needed.
 
 | Component | Behavior and reason |
 | --- | --- |
-| Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
+| Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. The project with the best match (own or a key's) comes first; equal ones keep project order. A query word that starts a word of a project name lets the rest of the query match that project's keys. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
 | Client picker | Discovers installed OpenCode, Claude Code and Cursor only after Connect (no Codex). Shows bundled brand marks, loading, no installed clients or already-connected states. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. The arbitrary program picker is removed. |
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects includes future projects (explained in native help); Selected shows searchable checkboxes and denies unchecked projects at the broker. Filtering preserves the full draft selection. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
@@ -887,6 +887,15 @@ key-only matches remain filtered. Search results expose + Key so the found
 project can be used without clearing the query manually. Adding explicitly
 expands that project before leaving search; existing cached metadata and
 lazy rendering remain.
+
+### Case search ranking — 2026-10-21
+
+Sections follow each project's best match instead of the alphabet, so the
+project holding the wanted key is scanned first. `whytap github` finds
+whytap's GITHUB keys, below any key spelling out the whole query; a project
+matched only by its first word then shows just its matching keys.
+Later query parts that start a key-name word add to a partial match; parts of three or more letters may be one typo off (`github_lan` finds GITHUB_LENDING_KEY). WHY:
+`docs/decisions/2026-10-21-case-search-project-ranking.md`.
 
 
 ## Compact To-do in hover — 2026-10-20
