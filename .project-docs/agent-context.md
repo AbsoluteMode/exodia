@@ -1022,7 +1022,15 @@ remains a drag. Clicking the active tool again stops drawing and permits
 selection/annotation adjustment without an extra selector. Highlighter,
 Spotlight, Copy text, Pin above windows and
 Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
-from either panel; focused text fields retain native text undo. Blur defaults to Text and numbers, including
+from every screenshot panel through both key-equivalent and direct window dispatch,
+using physical Z so Russian input works; focused text fields retain native text undo.
+Settings -> Hotkeys has four draggable, dashed arrow slots: Up Pen, Down Blur,
+Left Undo, Right Copy & exit. Drop replaces only the destination; native menus
+provide keyboard selection. Save/Revert/reset, Help and settings backups share
+HotkeyPreferences.screenshotArrowBindings. Bare arrows use those actions,
+Shift-arrows move the crop and Option-arrows resize it. Agent Useful Links
+releases its Carbon registrations while Screenshot is active, restores the
+latest visible actions afterwards, and invalidates stale callbacks. Blur defaults to Text and numbers, including
 standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
 without language correction. Dark crops are
 normalized only for detection; output keeps original colors. Each text region
