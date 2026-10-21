@@ -1,7 +1,9 @@
-# Whytap application-control plugin
+# Whytap agent plugin
 
-The local `plugins/whytap` MCP plugin reads the running application's state and
-changes allowlisted settings through the app. It does not need Accessibility,
+The local `plugins/whytap` plugin includes two stdio MCP servers: `whytap` for
+live application state, models and allowlisted settings, and `case` for
+authorized Case project and key names. Case never returns secret values over
+MCP. The application-control server does not need Accessibility,
 mouse/keyboard automation, a source checkout at runtime, or provider keys in
 the agent's configuration. The plugin requires a Whytap build that includes
 `whytap app`; an older helper cannot serve these tools. Source tests do not establish
@@ -34,13 +36,44 @@ Smart) and `autoHideIsland` (boolean). `get_settings` enumerates accepted codes.
 Unknown fields, settings, feature IDs and wrong types are rejected. There is
 no arbitrary UserDefaults operation. Keys, permissions, security controls,
 Case contents, transcripts, history, clipboard, recording, shell execution,
-installation and quit are outside this interface.
+installation and quit are outside the application-control server.
 
 Feature IDs are `dropFast`, `dropSmart`, `dropSmartDecision`, `dropSmartCleanup`, `meetings`,
 `meetingNotes`, `agent`, `agentVoice`, `voiceSearch`, `translation`,
 `subtitlesAudio` and `subtitlesTranslation`. Accounts use the exact ID returned
 by `list_models`: built-in provider IDs or an already configured server ID.
-The plugin cannot add a provider, change an endpoint URL or read a key.
+The application-control server cannot add a provider, change an endpoint URL
+or read a key.
+
+## Case projects and keys
+
+The same plugin also starts `whytap case mcp`, reusing the existing Case server:
+
+| MCP tool | Behavior |
+| --- | --- |
+| `case_list_projects` | Authorized project names, descriptions and key counts |
+| `case_list_keys` | Find authorized keys by name, description or project name using `query`; optionally restrict `project` |
+
+Search directly with `case_list_keys(query: "name or description")`; listing
+projects first is optional. To use a key, run the existing CLI in the agent's
+own terminal, with single quotes so the outer shell cannot expand its value:
+
+```sh
+/Applications/Whytap.app/Contents/Helpers/whytap case ls
+/Applications/Whytap.app/Contents/Helpers/whytap case run --only KEY_NAME '<command using $KEY_NAME>'
+```
+
+These are command templates: replace the key and command with the intended
+operation. Add `-p <project>` when the same key name exists in several projects.
+Case injects values into the child environment and masks recognized values in
+output on a best-effort basis. MCP has no command-execution or value-read tool.
+
+Installing the plugin does not register the agent or broaden its Case rights.
+The existing client registration, project scope, Accept/Bypass policy and
+approval flow still apply. An unregistered client must first be connected in
+Whytap -> Case -> Connect. The standalone Case MCP connection remains supported;
+hosts with both connections may show duplicate Case tools. Keep the working
+connection until the plugin's Case tools have connected and been verified.
 
 ## Read, change, verify
 
@@ -91,7 +124,8 @@ to `plugins/whytap`. It follows the [official plugin packaging format](https://d
 with a [local stdio MCP server](https://developers.openai.com/plugins/deploy/desktop-only).
 Use a local marketplace to install it in Codex. The package is not publicly
 published and does not require a hosted Whytap service. Other MCP hosts can
-configure the helper command and `app`, `mcp` arguments directly.
+configure the helper command with `app`, `mcp` for application controls and
+`case`, `mcp` for Case discovery directly.
 
 With the current Codex CLI, run from this checkout:
 

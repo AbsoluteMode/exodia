@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Case/Clients/CaseClientConnector.swift
     confirmed_at: 2026-10-21
-related: []
+related: [2026-10-21-claude-desktop-binary-layout.md]
 ---
 
 # Case Connect offers Claude Code again
@@ -59,17 +59,17 @@ Codex stays out because the user asked only for Claude Code.
 
 No live app check: feature sessions must not launch the app.
 
-## Known limit
+## Desktop layout follow-up
 
-`ClaudeBinaryLocator` looks for the desktop app's copy at
-`Claude/claude-code/<version>/claude.app`, but current Claude desktop builds
-(2.1.299, 2.1.304 on the maintainer's Mac) add a hash directory:
-`<version>/<hash>/claude.app`. A Mac with only the desktop app and no `claude`
-in the known paths or login-shell PATH is therefore not detected yet, so Connect
-does not offer Claude Code there. The desktop copy is signed
-`com.anthropic.claude-code` by team `Q6L2SF6YDW`, matching the broker identity.
-Extending the locator is a separate follow-up because ClaudeCodeProvider and the
-agent setup checklist share it.
+The initial catalog change found that the locator did not recognize the
+desktop app's newer `<version>/<hash>/claude.app` layout. The integrated
+[locator follow-up](2026-10-21-claude-desktop-binary-layout.md) now accepts
+both flat and hash-folder layouts, compares versions numerically and uses a
+stable tie-break. Executable regular files and symlinked CLI installs count;
+directories and other special files do not. The existing newer-legacy-CLI
+preference and broker identity remain unchanged. Actual Connect/Touch ID/MCP
+setup against the user's Claude configuration remains a separate acceptance
+step; the builder does not change that configuration for smoke.
 
 ## Alternatives rejected
 

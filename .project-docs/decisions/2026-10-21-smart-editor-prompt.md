@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/PostProcessorOpenRouterTests.swift
     confirmed_at: 2026-10-21
-related: [2026-10-19-strict-drop-modes.md]
+related: [2026-10-19-strict-drop-modes.md, 2026-10-21-smart-destination-formatting.md]
 ---
 
 # Smart message editing

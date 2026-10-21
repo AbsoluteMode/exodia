@@ -17,6 +17,12 @@ sources:
   - type: repository
     reference: Sources/WhytapCaseKit/AppControlMCPServer.swift
     confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 the user requested easier access to Whytap Case through the CLI or the existing plugin.
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: plugins/whytap/mcp.json
+    confirmed_at: 2026-10-21
 related: [../processes/local-customization.md]
 ---
 
@@ -52,6 +58,13 @@ retrying; it cannot guarantee rollback of an already completed change.
 MCP cancellation notifications and EOF close the pending request's socket;
 the app's existing disconnect watcher cancels its task. The stdio reader
 stays responsive while tools run, with a limit of 16 pending calls.
+
+The plugin also bundles the existing names-only Case MCP as a second server.
+This makes one plugin installation expose both interfaces while keeping their
+authorization paths separate. Case uses its existing registrations, project
+scope and approvals; installing the plugin grants no access. Secret use remains
+in `whytap case run` through the agent's own terminal. Neither MCP server gains
+a value-read or command-execution tool.
 
 ## Sources
 

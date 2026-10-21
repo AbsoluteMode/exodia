@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import Sidekey
 
 @MainActor
@@ -34,6 +35,7 @@ final class SmartTextDecisionTests: XCTestCase {
         XCTAssertNil(body["messages"])
         let questions = try XCTUnwrap(body["questions"] as? [String: [String: String]])
         XCTAssertEqual(questions["needs_cleanup"]?["type"], "noul")
+        XCTAssertEqual(questions["needs_cleanup"]?["instructions"], JevDecisionCalibration.instructions)
     }
 
     func test_openai_request_uses_decisions_and_predicate() throws {
@@ -45,6 +47,38 @@ final class SmartTextDecisionTests: XCTestCase {
         let questions = try XCTUnwrap(body["questions"] as? [[String: String]])
         XCTAssertEqual(questions.first?["type"], "predicate")
         XCTAssertEqual(questions.first?["name"], "needs_cleanup")
+        XCTAssertEqual(questions.first?["instructions"], TextDecisionClient.instructions)
+    }
+
+    func test_calibrated_jev_threshold_is_model_specific_and_keeps_context() async throws {
+        let env = environment()
+        try env.keys.save("synthetic-decision-key", account: ProviderAccount.openRouter.keychainAccount(in: env.routing)!)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "typesafe/jev-1.14"), for: .dropSmartDecision)
+        let client = Client(nil)
+        let decision = SmartTextDecision(resolver: FeatureRouteResolver(routing: env.routing, keys: env.keys), client: client)
+        for (p, expected) in [(0.05, true), (0.40, true), (0.401, false), (0.50, false), (1.0, false), (-0.1, false), (Double.nan, false)] {
+            client.probability = p
+            let result = try await decision.canUseFastPath("Synthetic message.", targetApp: "Telegram", appContext: "Reference only", language: "ru")
+            XCTAssertEqual(result, expected)
+        }
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(client.input).utf8)) as? [String: String])
+        XCTAssertTrue(state["context"]?.contains("Telegram") == true)
+        XCTAssertTrue(state["context"]?.contains("Reference only") == true)
+        XCTAssertEqual(state["language"], "ru")
+        let other = ResolvedRoute(feature: .dropSmartDecision, account: .openRouter,
+                                  model: "typesafe/jev-1.15", apiKey: "synthetic-key", server: nil)
+        XCTAssertEqual(SmartTextDecision.fastPathThreshold(for: other), 0.05)
+        XCTAssertEqual(SmartTextDecision.fastPathThreshold(for: route(.openAI)), 0.05)
+        client.probability = nil
+        let missing = try await decision.canUseFastPath("Synthetic message.", targetApp: nil, appContext: nil, language: nil)
+        XCTAssertFalse(missing)
+    }
+
+    func test_measured_jev_prompt_is_pinned_until_recalibrated() {
+        let hash = SHA256.hash(data: Data(JevDecisionCalibration.instructions.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hash, "2cc0b99d305d93850f3922f8e35155b7d936dcde665f64ece549eb171497255f",
+                       "Changing the measured question requires rerunning calibration, not just updating this hash.")
     }
 
     func test_typed_responses_and_refusals_never_become_generated_text() throws {
@@ -181,6 +215,25 @@ final class SmartTextDecisionTests: XCTestCase {
         XCTAssertFalse(openAI.first { $0.id == "gpt-4o" }?.uses?.contains(.decision) == true)
         XCTAssertNotNil(ModelRegistry.knownUnsupportedReason("typesafe/jev-1.14", kind: .openRouter, use: .chat))
         XCTAssertNotNil(ModelRegistry.knownUnsupportedReason("gpt-4o", kind: .openAI, use: .decision))
+    }
+
+    func testRecognizedDestinationDoesNotForceExtraEditorCallForCleanText() async throws {
+        let env = environment(), judge = Judge(), editor = Editor()
+        try env.keys.save("cleanup-key", account: OpenRouterLLMKeyStore.account)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "cleanup-model"), for: .dropSmartCleanup)
+        let processor = PostProcessor(llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: env.routing, keys: env.keys), openRouterClient: editor, decision: judge)
+        let text = "Проверь a*b*c и __literal__."
+        let result = try await processor.processOutput(text, targetApp: "Telegram", formatting: .telegram)
+        XCTAssertEqual(result.text, text)
+        XCTAssertFalse(result.usedEditor)
+        XCTAssertEqual(result.deliveryProfile(.telegram), .plain)
+        XCTAssertEqual(editor.calls, 0)
+        XCTAssertEqual(judge.calls, 1)
+        judge.result = .success(false)
+        let edited = try await processor.processOutput("uh hello", targetApp: "Telegram", formatting: .telegram)
+        XCTAssertTrue(edited.usedEditor)
+        XCTAssertEqual(edited.deliveryProfile(.telegram), .telegram)
+        XCTAssertEqual(editor.calls, 1)
     }
 
     func test_cancelling_decision_stops_both_raw_delivery_and_editor() async throws {
