@@ -11,23 +11,35 @@ struct ClaudeBinaryLocator {
         }
     }
 
+    /// Home folder for the per-user locations; tests pass a temporary one.
+    var homeDirectory: String = NSHomeDirectory()
+
     /// Legacy fixed install locations, highest priority first. Used as a
     /// fallback when no Claude Desktop-managed install is present.
-    static let knownPaths: [String] = [
-        "\(NSHomeDirectory())/.claude/local/claude",
-        "/opt/homebrew/bin/claude",
-        "/usr/local/bin/claude",
-        "\(NSHomeDirectory())/.local/bin/claude",
-    ]
+    var knownPaths: [String] {
+        [
+            "\(homeDirectory)/.claude/local/claude",
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            "\(homeDirectory)/.local/bin/claude",
+        ]
+    }
 
     /// Claude Desktop keeps an auto-updated copy here, one versioned subdir per
-    /// release: `.../claude-code/<version>/claude.app/Contents/MacOS/claude`.
+    /// release. Older desktop builds put the app straight inside it
+    /// (`<version>/claude.app`); current ones (2.1.299+) add a build-hash
+    /// folder (`<version>/<hash>/claude.app`). Both layouts are accepted.
     /// This is normally the newest claude on the machine — and the one that
     /// knows the latest models (e.g. opus 4.8), which is why we prefer it.
-    static let desktopManagedDir =
-        "\(NSHomeDirectory())/Library/Application Support/Claude/claude-code"
+    /// WHY: .project-docs/decisions/2026-10-21-claude-desktop-binary-layout.md
+    var desktopManagedDir: String {
+        "\(homeDirectory)/Library/Application Support/Claude/claude-code"
+    }
 
-    var fileExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    /// The CLI inside a desktop-managed `claude.app`.
+    static let appBinaryPath = "claude.app/Contents/MacOS/claude"
+
+    var fileExists: (String) -> Bool = ClaudeBinaryLocator.isExecutableFile
     var listDirectory: (String) -> [String] = {
         (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? []
     }
@@ -58,20 +70,28 @@ struct ClaudeBinaryLocator {
     }
 
     /// Highest-version Claude Desktop-managed binary that exists, version parsed
-    /// from the path segment (no process spawn).
+    /// from the path segment (no process spawn). Each version folder is checked
+    /// for the flat layout and for every hash folder inside it.
     func newestDesktopManaged() -> (url: URL, version: SemVer)? {
-        listDirectory(Self.desktopManagedDir)
-            .compactMap { name -> (url: URL, version: SemVer)? in
-                guard let version = Self.parseSemVer(name) else { return nil }
-                let path = "\(Self.desktopManagedDir)/\(name)/claude.app/Contents/MacOS/claude"
-                return fileExists(path) ? (URL(fileURLWithPath: path), version) : nil
+        let root = desktopManagedDir
+        return listDirectory(root)
+            .flatMap { name -> [(url: URL, version: SemVer)] in
+                guard let version = Self.parseSemVer(name) else { return [] }
+                let versionDir = "\(root)/\(name)"
+                let appParents = [versionDir] + listDirectory(versionDir).map { "\(versionDir)/\($0)" }
+                return appParents
+                    .map { "\($0)/\(Self.appBinaryPath)" }
+                    .filter(fileExists)
+                    .map { (URL(fileURLWithPath: $0), version) }
             }
-            .max { $0.version < $1.version }
+            // Numeric version first; the path only breaks ties (two copies of
+            // one version), so the pick never depends on directory listing order.
+            .max { ($0.version, $0.url.path) < ($1.version, $1.url.path) }
     }
 
     /// The pre-existing fixed-path / login-shell resolution.
     func legacyLocate() -> URL? {
-        for path in Self.knownPaths where fileExists(path) {
+        for path in knownPaths where fileExists(path) {
             return URL(fileURLWithPath: path)
         }
         if let resolved = loginShellWhich() {
@@ -90,6 +110,15 @@ struct ClaudeBinaryLocator {
         let ns = head as NSString
         func group(_ i: Int) -> Int { Int(ns.substring(with: m.range(at: i))) ?? 0 }
         return SemVer(major: group(1), minor: group(2), patch: group(3))
+    }
+
+    /// An executable regular file (symlinks followed). A directory passes
+    /// `isExecutableFile` too, so it is ruled out explicitly.
+    static func isExecutableFile(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && !isDirectory.boolValue
+            && FileManager.default.isExecutableFile(atPath: path)
     }
 
     static func defaultVersionOf(_ url: URL) -> String? {
