@@ -91,4 +91,4 @@ frequent restarts instead of starting their verification over.
 - Excluding retained meeting recordings to shrink the archive: a product choice
   about recovery data, not a transport fix.
 
-2026-10-21 · PR: see the pull request that adds this file.
+2026-10-21 · PR: https://github.com/AbsoluteMode/whytap/pull/182
