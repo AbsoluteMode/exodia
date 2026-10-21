@@ -988,7 +988,8 @@ never deleted automatically. WHY:
 Backups carry meeting text only (catalog, notes, transcripts) and no History
 database (clipboard, recent dictations, agent answers): retained audio is
 debugging material and made every snapshot gigabytes; clipboard can be copied
-again. The history section holds Costs. Neither churns the change probe.
+again. The history section holds Costs. Neither meeting audio nor the History
+database churns the change probe; Costs changes remain tracked.
 Restoring a newer archive leaves this Mac's recordings and History untouched;
 older archives still restore them, recordings parked. WHY:
 `.project-docs/decisions/2026-10-21-backup-essentials-only.md`.
