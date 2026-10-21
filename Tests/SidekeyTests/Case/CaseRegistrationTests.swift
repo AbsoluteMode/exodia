@@ -354,38 +354,62 @@ final class CaseRegistrationTests: XCTestCase {
         XCTAssertEqual(builtIn.problems, [])
         let other = await setup.disconnect(.executablePath("/Applications/Other.app"))
         XCTAssertEqual(other.problems, [])
+        // The located Claude Code CLI is offered again; Cursor is absent here.
         let detected = await setup.detectInstalledClients()
-        XCTAssertEqual(detected, [.builtInOpenCode])
+        XCTAssertEqual(detected, [.builtInOpenCode, .claudeCode])
     }
 
-    func test_connect_catalog_only_offers_installed_opencode_and_cursor() async throws {
+    func test_connect_catalog_offers_installed_opencode_claude_code_and_cursor_only() async throws {
+        XCTAssertEqual(CaseKnownClient.connectableClients, [.builtInOpenCode, .claudeCode, .cursor])
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("case-detection-\(UUID().uuidString)")
-        // Discovery must not install a CLI, write a config or request authentication.
+        let runner = FakeCommandRunner()
+        // Discovery must not install a CLI, write a config, run a client or request authentication.
+        // An installed Codex is never offered: it stays a legacy registration only.
         for openCodeInstalled in [false, true] {
-            for cursorInstalled in [false, true] {
-                let setup = CaseClientSetup(helperURL: nil, binDir: home, flavorName: "prod",
-                                            connectors: [.cursor: CursorCaseConnector(home: home, appInstalled: { cursorInstalled })],
-                                            builtInAgentAvailable: { openCodeInstalled })
-                let found = await setup.detectInstalledClients()
-                var expected: [CaseKnownClient] = []
-                if openCodeInstalled { expected.append(.builtInOpenCode) }
-                if cursorInstalled { expected.append(.cursor) }
-                XCTAssertEqual(found, expected)
+            for claudeInstalled in [false, true] {
+                for cursorInstalled in [false, true] {
+                    let claudeConnector = ClaudeCodeCaseConnector(
+                        home: home, socketPath: "/tmp/x.sock", runner: runner,
+                        locate: { claudeInstalled ? URL(fileURLWithPath: "/usr/local/bin/claude") : nil })
+                    let codexConnector = CodexCaseConnector(home: home, runner: runner,
+                                                            locate: { URL(fileURLWithPath: "/usr/local/bin/codex") })
+                    let setup = CaseClientSetup(helperURL: nil, binDir: home, flavorName: "prod",
+                                                connectors: [.claudeCode: claudeConnector,
+                                                             .codex: codexConnector,
+                                                             .cursor: CursorCaseConnector(home: home, appInstalled: { cursorInstalled })],
+                                                builtInAgentAvailable: { openCodeInstalled })
+                    let found = await setup.detectInstalledClients()
+                    var expected: [CaseKnownClient] = []
+                    if openCodeInstalled { expected.append(.builtInOpenCode) }
+                    if claudeInstalled { expected.append(.claudeCode) }
+                    if cursorInstalled { expected.append(.cursor) }
+                    XCTAssertEqual(found, expected,
+                                   "OpenCode \(openCodeInstalled), Claude Code \(claudeInstalled), Cursor \(cursorInstalled)")
+                }
             }
         }
+        XCTAssertTrue(runner.calls.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: home.path))
     }
 
-    func test_picker_filters_legacy_and_registered_clients_without_changing_saved_rights() async throws {
+    func test_picker_offers_claude_code_until_registered_and_never_codex() async throws {
         let fx = try await Fixture(payload: payload())
         fx.clients.detected = [.claudeCode, .cursor, .codex, .builtInOpenCode]
         let available = await fx.vm.availableClientsToRegister()
-        XCTAssertEqual(available, [.builtInOpenCode, .cursor])
+        XCTAssertEqual(available, [.builtInOpenCode, .claudeCode, .cursor])
+
+        // Not installed: not offered.
+        fx.clients.detected = [.cursor, .codex]
+        let withoutClaude = await fx.vm.availableClientsToRegister()
+        XCTAssertEqual(withoutClaude, [.cursor])
+
+        fx.clients.detected = [.claudeCode, .cursor, .codex, .builtInOpenCode]
         _ = try await fx.vm.registerApp(claude, name: "Claude Code")
         _ = try await fx.vm.registerApp(.builtInOpenCode, name: "OpenCode", projects: [serversID])
         fx.auth.reasons.removeAll()
         fx.clients.connected.removeAll()
         let savedApps = fx.vm.registrations
+        // Already registered: edited from its icon, not offered again.
         let remaining = await fx.vm.availableClientsToRegister()
         XCTAssertEqual(remaining, [.cursor])
         XCTAssertEqual(fx.vm.registrations, savedApps)

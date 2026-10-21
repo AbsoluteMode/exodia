@@ -115,13 +115,15 @@ Voice flow (Drop / dictation):
             Fast bypasses AI text processing. Smart first uses dropSmartDecision
             (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
             default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
-            A valid needs-cleanup probability <= 0.05 skips editing and uses
+            A valid needs-cleanup probability <= 0.40 for exact OpenRouter
+            typesafe/jev-1.14 (<= 0.05 for other routes) skips editing and uses
             Fast's verbatim output/filter path without changing the take's mode
             or speech route. Translation always edits. Missing decision setup,
             uncertainty, refusal or the 2s deadline keeps the selected cleanup
             route. Cleanup errors/empty results never silently paste raw speech.
             Decision models are excluded from LLM/agent pickers. WHY:
-            .project-docs/decisions/2026-10-21-smart-decisions.md
+            .project-docs/decisions/2026-10-21-smart-decisions.md,
+            .project-docs/decisions/2026-10-21-smart-decision-calibration.md
             Smart failures retain the transcript in memory and show Retry with
             the original mode and target; configuration errors open API & Models on
             the Drop Smart cleanup row.
@@ -323,9 +325,11 @@ Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
   appear as app icons; clicking one opens that client's policy. An always-visible
-  Connect button offers only installed OpenCode and Cursor with bundled logos,
-  then grouped project scope and Accept/Bypass before registration. There is no
-  arbitrary program picker; existing legacy registrations stay editable. Mode
+  Connect button offers only installed OpenCode, Claude Code and Cursor with
+  bundled logos, then grouped project scope and Accept/Bypass before registration.
+  Codex is not offered. There is no arbitrary program picker; existing legacy
+  registrations stay editable. WHY:
+  .project-docs/decisions/2026-10-21-case-connect-claude-code.md. Mode
   and project headings have thin horizontal dividers above their controls.
   Selected projects has a metadata search that preserves the full draft selection;
   All projects includes future projects, with its explanation in native help.
