@@ -100,8 +100,8 @@ enum HoverToolRegistry {
             return HoverToolInfo(title: "To-do", sfSymbol: "checklist", kind: .inlinePanel,
                                  description: "Quick local tasks and completion history")
         case .calendar:
-            return HoverToolInfo(title: "Calendar", sfSymbol: "calendar", kind: .action,
-                                 description: "Your schedule from Whytap, Apple, Google, Outlook and Zoom")
+            return HoverToolInfo(title: "Calendar", sfSymbol: "calendar", kind: .inlinePanel,
+                                 description: "Today's schedule and connected calendars")
         case .translate:
             return HoverToolInfo(title: "Translate", sfSymbol: "character.bubble", kind: .action,
                                  description: "Translate text with your chosen LLM")

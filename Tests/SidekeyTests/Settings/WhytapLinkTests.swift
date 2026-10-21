@@ -74,7 +74,7 @@ final class WhytapLinkTests: XCTestCase {
         XCTAssertEqual(destination("whytap://tool/quit"), .settings(.quitRow))
         XCTAssertEqual(destination("whytap://tool/settings"), .settings(.tab(.apiAndModels)))
         XCTAssertEqual(destination("whytap://tool/tasks"), .hoverPanel(.tasks))
-        XCTAssertEqual(destination("whytap://tool/calendar"), .planner(.calendar))
+        XCTAssertEqual(destination("whytap://tool/calendar"), .hoverPanel(.calendar))
         XCTAssertEqual(destination("whytap://tool/translate"), .translation(.text))
         XCTAssertEqual(destination("whytap://tool/subtitles"), .translation(.subtitles))
     }
@@ -91,7 +91,7 @@ final class WhytapLinkTests: XCTestCase {
             // Toolbox panes whose action is an explicit button. Case's pane
             // requests Touch ID on appear and is excluded.
             return [.dropMode, .meetingRecord, .screenshot].contains(tool)
-        case .settings, .planner, .translation, .island:
+        case .settings, .translation, .island:
             return true
         }
     }
@@ -99,7 +99,7 @@ final class WhytapLinkTests: XCTestCase {
     /// Each inline panel is reviewed for what it does when it appears.
     private func isShowOnly(_ panel: HoverInlinePanel) -> Bool {
         switch panel {
-        case .history, .tasks, .notifications, .vocabularyEditor, .fillerEditor,
+        case .history, .tasks, .calendar, .notifications, .vocabularyEditor, .fillerEditor,
              .inputLanguagePicker, .outputLanguagePicker, .monitor, .brightness:
             // Show content; changes need a click or typing.
             return true

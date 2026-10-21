@@ -22,18 +22,28 @@ enum CalendarAccountSettings {
 struct CalendarClientConfiguration: Equatable {
     var clientID: String
     var clientSecret: String?
+    var publicAccessApproved = false
+
+    static func secretAfterClientIDChange(from oldID: String, to newID: String, currentSecret: String,
+                                         registered: Self?) -> String {
+        let old = oldID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let new = newID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard old != new else { return currentSecret }
+        if new == registered?.clientID { return registered?.clientSecret ?? "" }
+        return ""
+    }
 
     /// Public native-client configuration, supplied by the app owner when packaging.
     /// User access/refresh tokens never belong in this dictionary.
     static func registered(_ provider: CalendarProvider, info: [String: Any]? = Bundle.main.infoDictionary) -> Self? {
         guard provider != .apple,
-              let clients = info?["WhytapCalendarOAuthClients"] as? [String: [String: String]],
-              let client = clients[provider.rawValue], let id = client["clientID"],
+              let clients = info?["WhytapCalendarOAuthClients"] as? [String: Any],
+              let client = clients[provider.rawValue] as? [String: Any], let id = client["clientID"] as? String,
               !id.isEmpty, id.utf8.count <= 8192, !id.contains(where: { $0.isWhitespace || $0 == "\0" }) else { return nil }
         // Google desktop clients are public clients; their generated client secret
         // is public native-app configuration, not a confidential web-app secret.
-        let secret = provider == .google ? client["clientSecret"] : nil
+        let secret = provider == .google ? client["clientSecret"] as? String : nil
         guard (secret?.utf8.count ?? 0) <= 8192 else { return nil }
-        return Self(clientID: id, clientSecret: secret)
+        return Self(clientID: id, clientSecret: secret, publicAccessApproved: client["publicAccessApproved"] as? String == "true")
     }
 }

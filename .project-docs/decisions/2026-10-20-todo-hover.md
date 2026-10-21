@@ -17,13 +17,14 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Planner/PlannerStore.swift
     confirmed_at: 2026-10-20
-related: [2026-10-19-planner.md]
+related: [2026-10-19-planner.md, 2026-10-21-calendar-hover.md]
 ---
 
 ## Decision
 
 To-do opens inside the existing hover drawer, preserving catalog identity and
-saved slot/hotkey mappings. Calendar keeps its native Planner window. Tasks use
+saved slot/hotkey mappings. Calendar's subsequent move into Hover is specified
+in [Calendar in Hover](2026-10-21-calendar-hover.md). Tasks use
 the existing private atomic archive and backup path.
 
 The active view contains incomplete tasks and tasks completed during this opening.

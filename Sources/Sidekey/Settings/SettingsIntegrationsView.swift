@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 struct SettingsIntegrationsView: View {
     @ObservedObject var model: BackupViewModel = .shared
+    @ObservedObject var calendarConnections: CalendarConnections = .shared
     @State private var showToken = false
     @State private var token = ""
 
@@ -17,15 +18,15 @@ struct SettingsIntegrationsView: View {
                             GitHubConnectionLabel(model: model)
                             Spacer()
                             if model.canUseGitHubBackup {
-                                MacButton(title: "Check connection", style: .default, isEnabled: !model.isBusy) {
+                                IntegrationAction(title: "Check connection", enabled: !model.isBusy) {
                                     Task { await model.checkGitHubConnection() }
                                 }
-                                MacButton(title: "Disconnect", style: .ghost,
-                                          isEnabled: !model.isBusy && !model.hasPendingMaintenance && !model.needsRestart) {
+                                IntegrationAction(title: "Disconnect",
+                                          enabled: !model.isBusy && !model.hasPendingMaintenance && !model.needsRestart) {
                                     model.disconnectGitHub()
                                 }
                             } else {
-                                MacButton(title: "Connect GitHub", style: .primary, isEnabled: !model.isBusy) {
+                                IntegrationAction(title: "Connect GitHub", primary: true, enabled: !model.isBusy) {
                                     Task {
                                         await model.connectExistingGitHub()
                                         if !model.canUseGitHubBackup { showToken = true }
@@ -40,16 +41,16 @@ struct SettingsIntegrationsView: View {
                             SecureField("GitHub access token", text: $token)
                                 .textFieldStyle(.roundedBorder).onSubmit { connectToken() }
                             HStack {
-                                Link("Create token", destination: URL(string: "https://github.com/settings/tokens/new?scopes=repo&description=Whytap%20Backup")!)
+                                IntegrationLink(title: "Create token", destination: URL(string: "https://github.com/settings/tokens/new?scopes=repo&description=Whytap%20Backup")!)
                                     .font(.system(size: 12))
                                 Spacer()
-                                MacButton(title: "Connect", style: .primary,
-                                          isEnabled: !model.isBusy && !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                                IntegrationAction(title: "Connect", primary: true,
+                                          enabled: !model.isBusy && !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                                     connectToken()
                                 }
                             }
                         } else {
-                            MacButton(title: "Use access token", style: .ghost, isEnabled: !model.isBusy) { showToken = true }
+                            IntegrationAction(title: "Use access token", enabled: !model.isBusy) { showToken = true }
                         }
                         if let error = model.githubConnectionError {
                             Text(error).font(.system(size: 12)).foregroundStyle(MacSettingsTheme.orange)
@@ -57,6 +58,7 @@ struct SettingsIntegrationsView: View {
                         }
                     }.padding(14)
                 }
+                SettingsCalendarIntegrationsView(connections: calendarConnections)
             }
             .foregroundStyle(MacSettingsTheme.text)
             .padding(.horizontal, 24).padding(.vertical, 22)

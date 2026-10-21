@@ -15,7 +15,6 @@ enum WhytapLinkDestination: Equatable {
     case settings(HoverNavigationTarget)
     /// Open Settings -> Toolbox with this tool's pane selected.
     case toolboxTool(HoverTool)
-    case planner(PlannerSection)
     case translation(TranslationWindowController.Mode)
     /// A well-formed link to something this version does not have (a newer
     /// tile, tab or link kind): only show the island.
@@ -108,7 +107,7 @@ enum WhytapLink {
         case .quit: return .settings(.quitRow)
         case .settings: return .settings(.tab(.apiAndModels))
         case .tasks: return .hoverPanel(.tasks)
-        case .calendar: return .planner(.calendar)
+        case .calendar: return .hoverPanel(.calendar)
         case .translate: return .translation(.text)
         // The window opens idle; subtitles start from its own button.
         case .subtitles: return .translation(.subtitles)

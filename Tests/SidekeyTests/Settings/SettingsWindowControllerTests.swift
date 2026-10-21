@@ -69,6 +69,8 @@ final class SettingsWindowControllerTests: XCTestCase {
         let controller = SettingsWindowController()
         var deps = ToolboxDeps()
         deps.currentDropMode = { .smart }
+        var inlinePanel: HoverInlinePanel?
+        deps.openHoverPanel = { inlinePanel = $0 }
 
         controller.configure(toolboxDeps: deps)
 
@@ -76,6 +78,8 @@ final class SettingsWindowControllerTests: XCTestCase {
             controller.window?.contentViewController as? NSHostingController<SettingsWindowView>
         )
         XCTAssertEqual(hosting.rootView.toolboxDeps.currentDropMode(), .smart)
+        hosting.rootView.toolboxDeps.openHoverPanel(.calendar)
+        XCTAssertEqual(inlinePanel, .calendar)
     }
 
     func test_showSchedulesDeferredRecenterAfterKeyOrdering() throws {

@@ -229,7 +229,8 @@ final class CalendarConnectionTests: XCTestCase {
         for provider in [CalendarProvider.google, .microsoft, .zoom] {
         let opened = expectation(description: "browser authorization")
         var authorization: URL?
-        let browser = CalendarBrowserSignIn(timeoutSeconds: 3) { url in authorization = url; opened.fulfill(); return true }
+        let info: [String: Any] = ["WhytapCalendarOAuthClients": [provider.rawValue: ["clientID": "fixture", "publicAccessApproved": "true"]]]
+        let browser = CalendarBrowserSignIn(timeoutSeconds: 3, configurationInfo: info) { url in authorization = url; opened.fulfill(); return true }
         let task = Task { try await browser.authorize(provider: provider, clientID: "fixture", state: "expected", verifier: CalendarPKCE.random()) }
         await fulfillment(of: [opened], timeout: 2)
         let query = try XCTUnwrap(URLComponents(url: XCTUnwrap(authorization), resolvingAgainstBaseURL: false)?.queryItems)
