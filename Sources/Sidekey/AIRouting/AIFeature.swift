@@ -7,6 +7,7 @@ enum AIFeatureMode: String, Codable, Sendable {
     case recorded
     case llm
     case llmWithTools
+    case decision
 
     var label: String {
         switch self {
@@ -14,6 +15,7 @@ enum AIFeatureMode: String, Codable, Sendable {
         case .recorded: return "recorded"
         case .llm: return "LLM"
         case .llmWithTools: return "LLM with tools"
+        case .decision: return "Decision"
         }
     }
 }
@@ -26,6 +28,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
     case dropFast
     case dropSmart
     case dropSmartCleanup
+    case dropSmartDecision
     case meetings
     case meetingNotes
     case agent
@@ -40,6 +43,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
         case .dropFast: return "Drop Fast"
         case .dropSmart: return "Drop Smart"
         case .dropSmartCleanup: return "Drop Smart cleanup"
+        case .dropSmartDecision: return "Drop Smart decision"
         case .meetings: return "Meetings"
         case .meetingNotes: return "Meeting notes"
         case .agent: return "Agent"
@@ -57,6 +61,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
         case .meetings: return .recorded
         case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation: return .llm
         case .agent: return .llmWithTools
+        case .dropSmartDecision: return .decision
         }
     }
 
@@ -96,6 +101,11 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
             case .openRouter, .openAI, .anthropic, .openAICompatible: return .chat
             case .soniox, .deepgram, .elevenLabs: return nil
             }
+        case .decision:
+            switch kind {
+            case .openRouter, .openAI: return .decision
+            case .soniox, .deepgram, .elevenLabs, .anthropic, .openAICompatible: return nil
+            }
         case .llmWithTools:
             switch kind {
             case .openRouter, .openAI, .anthropic: return .chatWithTools
@@ -115,6 +125,8 @@ enum ModelUse: String, Codable, Sendable {
     case chat
     /// Text in, text out, with tool calls (the agent).
     case chatWithTools
+    /// Typed decisions and probabilities, with no generated text.
+    case decision
 }
 
 /// What a provider can do. Which key it runs on is the account's business
