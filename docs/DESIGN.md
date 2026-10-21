@@ -714,7 +714,7 @@ rights. No alternative composition or decorative screen is needed.
 | Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
 | Client picker | Discovers installed OpenCode and Cursor only after Connect. Shows bundled brand marks, loading, no installed clients or already-connected states. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. The arbitrary program picker is removed. |
-| Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
+| Rights | Default Accept asks before use; Bypass allows use without prompts. All projects includes future projects (explained in native help); Selected shows searchable checkboxes and denies unchecked projects at the broker. Filtering preserves the full draft selection. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
 | Approval | The request shows the command, app, project and key names. A native editable field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical A use that value. The bottom row contains Deny/Allow only. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
@@ -810,8 +810,8 @@ only Connect commits the draft after authentication. The user chose this flow.
   outline for selection and amber Bypass. Keep the shared-terminal consequence
   visible inside this group when Bypass applies. Why: the decision and its
   consequence should read together, without detached explanatory lines.
-- Put all/selected project controls and their summary/checklist in a separate
-  group. All explicitly includes current and new projects; unchecked projects
+- Put all/selected project controls and their checklist in a separate
+  group. All includes current and new projects, explained in native help; unchecked projects
   remain denied. Existing project overrides get their own group. Why: scope
   must stay clear without a loose footer between unrelated controls.
 - The primary Connect/Save button contains a Touch ID glyph. Native help and its
@@ -843,6 +843,23 @@ Why: the user requires visible evidence of interactivity, beyond a button shape
 or tooltip. Picker rows use the same feedback family. Offscreen state fixtures
 cover normal/hover/pressed/focus/disabled at 310 pt; physical focus remains
 shared-app acceptance. No authorization or registration behavior changes.
+
+Case access polish — 2026-10-21: the user requested thin horizontal rules between
+the «Режим доступа» / «Проекты» headings and their controls. Keep the existing
+groups and 7 pt spacing; use a 1 pt white rule at 14% opacity. Remove the visible
+«Текущие и новые проекты» caption. «Выбранные» adds a 28 pt search field with a
+loupe and clear action, matching every word against project names/descriptions
+without case or diacritic sensitivity. General remains searchable. No matches
+shows «Ничего не найдено». Why: a long project list needs filtering while the
+current layout already satisfies the user. Search affects only visible rows;
+hidden selections remain in the saved draft. The field has full-area hover,
+native text editing and a focus outline; clear and project rows retain shared
+hover/press/focus/disabled feedback. Escape keeps the existing panel dismissal.
+Synthetic offscreen fixtures cover 310/390 pt, long names, matches, no matches
+and disabled controls; native field edits verify search never writes the scope.
+On the synthetic 0.08-gray backdrop, the search border is 3.38:1 at rest and
+3.07:1 on hover; its 70%-white placeholder is 6.99:1 at rest and 5.95:1 on hover.
+Physical input and compositor contrast remain installed-app acceptance.
 
 ## Case approval controls — 2026-10-21
 
