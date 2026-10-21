@@ -249,6 +249,13 @@ and disables Refresh; failures show concise text near the period. Refresh,
 period/date and calendar actions retain full-area hover/press, focus outlines
 and inactive disabled states. Existing feature disclosures and layout stay intact.
 
+Update 2026-10-21: ElevenLabs model details distinguish missing recorded audio
+duration from a missing model rate, beside the affected historical model.
+A durationless attempt cannot be priced by fetching a rate; it does not trigger
+that lookup or a misleading rate warning. Unknown costs stay excluded with +
+on partial totals. Known estimates are unchanged; no cost is inferred from a
+failed connection or borrowed from another model.
+
 The revised date popover has 310 pt offscreen fixtures in English/Russian and
 both appearances. Calendar arithmetic covers leap days, DST, previous years
 and future bounds; native month highlight snapshots cover rest/pressed/disabled
@@ -500,7 +507,11 @@ installed app. Older-macOS fallback needs device acceptance.
 ## Text-only Settings sidebar — 2026-10-20
 
 The user requested removal of the sidebar icons and animation on hover.
-Keep section names, order, 220 pt sidebar width and 38 pt row hit targets.
+Keep section names, order and 220 pt sidebar width. As amended 2026-10-21,
+rows have 30 pt hit targets, 4 pt gaps and 10 pt vertical list insets. The ten
+sections and pinned footer fit at the minimum Settings size without scrolling;
+the ScrollView remains a fallback if the section list grows. Why: the user
+requested smaller buttons so every section is immediately visible.
 Removing the icon and gap gives labels 180 pt instead of 144 pt, without
 changing text size or moving any row during interaction.
 
@@ -512,7 +523,10 @@ changing text size or moving any row during interaction.
   Selection remains recognizable during hover.
   FAQ and Quit use the same feedback. Existing navigation highlights remain.
 - Reduce Motion makes the hover response immediate. Native Button actions,
-  keyboard access and focus are preserved. No function requires hovering.
+  keyboard access and focus are preserved. Press adds a stronger full-row
+  fill; keyboard focus has an inset outline, and the selected row exposes its
+  selection to accessibility. Disabled buttons dim and suppress hover/press/focus
+  highlights. No function requires hovering.
 
 Offscreen native Settings fixtures cover the minimum 960 × 560 pt and larger
 1280 × 760 pt window in both appearances. Physical hover, focus/VoiceOver and
