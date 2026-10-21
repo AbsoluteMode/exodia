@@ -47,6 +47,14 @@ enum DropFillerFilter {
     /// True when only whitespace separates `location` from the start of
     /// text or a sentence terminator (`.`, `!`, `?`).
     private static func isSentenceInitial(_ ns: NSString, location: Int) -> Bool {
+        // A new paragraph or a plain list item can begin without a sentence
+        // terminator on the previous line. Consume the removed filler's comma
+        // there too, instead of leaving "-, text" or an orphan leading comma.
+        let line = ns.lineRange(for: NSRange(location: location, length: 0))
+        let prefix = ns.substring(with: NSRange(location: line.location, length: location - line.location))
+        if prefix.range(of: "^[ \\t]*(?:(?:[-•]|[0-9]+[.)])[ \\t]+)?$", options: .regularExpression) != nil {
+            return true
+        }
         var i = location - 1
         while i >= 0 {
             guard let scalar = UnicodeScalar(ns.character(at: i)) else { return false }
