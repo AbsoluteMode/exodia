@@ -960,7 +960,7 @@ bundle id, keychain service and feed), see `Sources/Sidekey/BuildConfig.swift`.
 Settings → Integrations connects GitHub using an existing CLI login or an access
 token. Settings → Backup shows its synchronization status, a GitHub Releases link and Back up /
 Restore backup. Back up always includes all supported user data and stored keys,
-uploads and verifies ciphertext, then displays the recovery code without a
+except meeting audio and the History database (see below), uploads and verifies ciphertext, then displays the recovery code without a
 paste-back step. Restore takes only that code and stages every included section
 from the newest completed matching-key GitHub snapshot by authenticated capture
 date, without a selection/confirmation wizard. A new Mac restores existing
@@ -985,6 +985,14 @@ and the newest copied archive (the next delta parent), released after each uploa
 and at launch; entries whose archive vanished are forgotten. GitHub copies are
 never deleted automatically. WHY:
 `.project-docs/decisions/2026-10-21-backup-capture-pacing.md`.
+Backups carry meeting text only (catalog, notes, transcripts) and no History
+database (clipboard, recent dictations, agent answers): retained audio is
+debugging material and made every snapshot gigabytes; clipboard can be copied
+again. The history section holds Costs. Neither meeting audio nor the History
+database churns the change probe; Costs changes remain tracked.
+Restoring a newer archive leaves this Mac's recordings and History untouched;
+older archives still restore them, recordings parked. WHY:
+`.project-docs/decisions/2026-10-21-backup-essentials-only.md`.
 At least hourly while running and idle, coherent content is hashed even without
 metadata changes. Only changed content creates a new encrypted archive. Calendar
 refresh-token rotation uses the same client-identity comparison as settings
@@ -999,8 +1007,8 @@ the verified snapshot tag or a new managed draft. Unchanged unsupported inputs
 retry at most hourly. Startup removes recognized abandoned scratch generations
 and unindexed transfer files, preserving indexed/resumable/recovery data and
 files protected by unreadable or explicitly parked catalogs.
-Schema 4 preserves opaque retained recording originals and repair checkpoints
-as inert files, excluding active provider jobs. Inactive configurations and
+Older schema-4 archives restore retained recording originals and repair
+checkpoints as inert files, excluding active provider jobs. Inactive configurations and
 coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application
 policies precede imports, including matching identities with different UUIDs.
 WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
@@ -1016,17 +1024,16 @@ API & Models routes, server registrations and their provider keys are included.
 Costs history is exported by the live AIUsageStore actor and verified with a
 strict schema/row validator. Restore retains target-only spending and the best
 known price per request ID; older archives without Costs leave it untouched.
-Short recording chunks use the archive entry ceiling rather than a separate
-4096-file limit. WHY:
+WHY:
 `.project-docs/decisions/2026-10-20-simple-github-backup.md`.
 Workspace traversal and change detection honor valid regular `CACHEDIR.TAG`
 markers on nested Monitor/Notify directories. Tagged runtime dependencies are
 excluded with an archive warning; nearby scripts, configuration and working
-data remain included. Names alone never exclude a directory, links are not
-followed and retained recordings never honor cache tags. WHY:
+data remain included. Names alone never exclude a directory and links are not
+followed. WHY:
 `.project-docs/decisions/2026-10-21-backup-tagged-caches.md`.
 
-ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
+ArtifactBackupEngine receives the actual live MeetingsStore/AIUsageStore
 instances, whose export methods freeze database/sidecar generations. Restore
 validates into a parked transaction and applies before any stores or jobs open,
 with durable rollback of files, preferences and provider keys. Committed

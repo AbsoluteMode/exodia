@@ -10,8 +10,8 @@ enum ArtifactBackupSection: String, Codable, CaseIterable, Identifiable {
         case .settings: return "Settings"
         case .credentials: return "Provider keys"
         case .caseVault: return "Case"
-        case .meetings: return "Meetings & recordings"
-        case .history: return "History & saved images"
+        case .meetings: return "Meeting notes"
+        case .history: return "Costs"
         case .workspace: return "Dashboards & agent instructions"
         case .planner: return "To-do & calendar"
         }

@@ -68,21 +68,10 @@ struct ArtifactExportedFile: Sendable {
     let url: URL
 }
 
-struct ArtifactHistoryExport: Sendable {
-    let files: [ArtifactExportedFile]
-    /// Clipboard rows that only reference the user's own files. The backup
-    /// does not own those bytes and must say so.
-    let externalLinkCount: Int
-}
-
 /// A coherent export is a store-level responsibility: SQLite's own snapshot
 /// mechanism cannot coordinate the sidecar files a row points at.
 protocol ArtifactMeetingsExporting: Sendable {
     func exportArtifactGeneration(into directory: URL) async throws -> [ArtifactExportedFile]
-}
-
-protocol ArtifactHistoryExporting: Sendable {
-    func exportArtifactGeneration(into directory: URL, assetsFrom assets: URL) throws -> ArtifactHistoryExport
 }
 
 // MARK: - Staged generation
@@ -118,7 +107,6 @@ struct ArtifactBackupStageRequest: Sendable {
     /// with exactly the key the archive carries.
     var caseVaultKey: Data?
     var meetings: ArtifactMeetingsExporting?
-    var history: ArtifactHistoryExporting?
     var usage: ArtifactUsageExporting? = nil
 }
 
@@ -131,7 +119,7 @@ struct ArtifactBackupGeneration: Sendable {
 
 /// An explicit cache tag, rather than a directory-name guess, identifies
 /// disposable worker dependencies such as uv-created Python environments.
-/// Only workspace trees honor it; retained recordings never do.
+/// Only workspace trees honor it.
 /// WHY: .project-docs/decisions/2026-10-21-backup-tagged-caches.md
 enum ArtifactBackupCache {
     private static let signature = Data("Signature: 8a477f597d28d172789f06886806bc55".utf8)
@@ -155,12 +143,11 @@ enum ArtifactBackupCache {
 }
 
 /// Off-main worker. Staging, hashing and the encrypted write all happen on
-/// this actor's executor, so a large meeting recording never blocks the UI.
+/// this actor's executor, so a large backup never blocks the UI.
 ///
 /// Coverage rule: an application-owned file that exists but cannot be included
-/// fails the backup. Only bytes the app does not own (the user's original
-/// clipboard files, scripts and credentials living outside our roots) and
-/// files that are still being written are reported as warnings.
+/// fails the backup. Only bytes the app does not own (scripts and credentials
+/// living outside our roots) are reported as warnings.
 /// WHY: .project-docs/decisions/2026-10-19-config-backup.md
 actor ArtifactBackupStager {
     private let fileManager = FileManager.default
@@ -176,19 +163,10 @@ actor ArtifactBackupStager {
         /// trimmed out of a "complete" snapshot.
         static let workspaceDepth = 5
         static let agentMemory: Int64 = 8 * 1024 * 1024
-        static let recordingFile: Int64 = 8 * 1024 * 1024 * 1024
-        // Short audio chunks accumulate across retained meetings. The archive
-        // already bounds total entries and bytes; 4096 rejected normal profiles.
-        // WHY: .project-docs/decisions/2026-10-20-simple-github-backup.md
-        static let recordingFiles = ArtifactBackupManifest.maxEntries
-        static let recordingDirectories = 1024
-        /// A chunk rotates every 30 s (`MeetingsConfig.chunkRotationSeconds`),
-        /// so a `.tmp` untouched for ten rotations is not being written: it is
-        /// a crash leftover whose bytes exist nowhere else and must travel.
-        static let abandonedTemporarySeconds: TimeInterval = 300
     }
 
-    /// Provider job state never travels: a restored copy must not resume a
+    /// Older archives carried retained recordings. Their provider job state is
+    /// still refused on restore: a restored copy must not resume a
     /// transcription job that belongs to the original Mac.
     static func isRecordingRuntimeFile(_ relative: String) -> Bool {
         guard !relative.contains("/") else { return false }
@@ -230,10 +208,10 @@ actor ArtifactBackupStager {
                                                               warnings: &warnings))
             }
             if request.sections.contains(.meetings) {
-                entries.append(contentsOf: try await stageMeetings(request, into: directory, warnings: &warnings))
+                entries.append(contentsOf: try await stageMeetings(request, into: directory))
             }
             if request.sections.contains(.history) {
-                entries.append(contentsOf: try await stageHistory(request, into: directory, warnings: &warnings))
+                entries.append(contentsOf: try await stageHistory(request, into: directory))
             }
             if request.sections.contains(.planner), fileManager.fileExists(atPath: request.locations.plannerArchive.path) {
                 let copy = directory.appendingPathComponent("planner-v1.json")
@@ -374,119 +352,27 @@ actor ArtifactBackupStager {
         return try entry(for: copy, path: "case/vault.enc", section: .caseVault)
     }
 
-    private func stageMeetings(_ request: ArtifactBackupStageRequest, into directory: URL,
-                               warnings: inout [String]) async throws -> [ArtifactStagedEntry] {
+    /// Meeting notes, transcripts and the catalog only. Audio never travels:
+    /// a retained recording is debugging material, and gigabytes of it made
+    /// every snapshot huge. The history database (clipboard, recent dictations
+    /// and agent answers) is left out too; the history section carries Costs.
+    /// WHY: .project-docs/decisions/2026-10-21-backup-essentials-only.md
+    private func stageMeetings(_ request: ArtifactBackupStageRequest, into directory: URL) async throws -> [ArtifactStagedEntry] {
         guard let exporter = request.meetings else { throw ArtifactBackupError.missingSection }
         let staged = directory.appendingPathComponent("meetings", isDirectory: true)
         try createPrivateDirectory(staged)
-        var entries: [ArtifactStagedEntry] = []
-        for file in try await exporter.exportArtifactGeneration(into: staged) {
-            entries.append(try entry(for: file.url, path: "meetings/" + file.relativePath, section: .meetings))
+        return try await exporter.exportArtifactGeneration(into: staged).map {
+            try entry(for: $0.url, path: "meetings/" + $0.relativePath, section: .meetings)
         }
-        entries.append(contentsOf: try stageRecordings(request, into: staged, warnings: &warnings))
-        return entries
     }
 
-    /// Staged audio is the only copy of a meeting whose processing failed or
-    /// crashed, so every retained byte travels — finalize manifests, chunk
-    /// sidecars and raw orphan WAVs alike — as inert recovery files. Only a
-    /// chunk still being written (`*.tmp`, which the recorder renames when it
-    /// commits) and the provider's remote job record are left out, and the
-    /// first is reported.
-    private func stageRecordings(_ request: ArtifactBackupStageRequest, into staged: URL,
-                                 warnings: inout [String]) throws -> [ArtifactStagedEntry] {
-        let root = request.locations.meetingsStaging
-        guard fileManager.fileExists(atPath: root.path) else { return [] }
-        try validateOwnedRoot(root)
-        let children = try listDirectory(root).filter { !Self.systemMetadataNames.contains($0.lastPathComponent) }
-        guard children.count <= Limit.recordingDirectories else { throw ArtifactBackupError.tooLarge }
-        var entries: [ArtifactStagedEntry] = []
-        var unfinished = 0
-        var retained = 0
-        for child in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            if Self.systemMetadataNames.contains(child.lastPathComponent) { continue }
-            let values = try resourceValues(child)
-            guard values.isSymbolicLink != true else { throw ArtifactBackupError.unsafeContent }
-            guard values.isDirectory == true else {
-                // The staging root holds one directory per recording; a stray
-                // file there is unknown data, not something to drop silently.
-                throw ArtifactBackupError.invalidContent(child.lastPathComponent)
-            }
-            guard UUID(uuidString: child.lastPathComponent) != nil else {
-                throw ArtifactBackupError.invalidContent(child.lastPathComponent)
-            }
-            let name = child.lastPathComponent
-            let target = staged.appendingPathComponent("staged", isDirectory: true)
-                .appendingPathComponent(name, isDirectory: true)
-            var produced: [ArtifactStagedEntry] = []
-            var copied = Set<String>()
-            try walk(child, relative: "", depth: 1, maxDepth: Limit.workspaceDepth, pathLabel: "Recordings/" + name) { file, relative in
-                if Self.isRecordingRuntimeFile(relative) { return }
-                // Multipart upload bodies duplicate retained WAVs. They are
-                // disposable transport state even after a crash or long upload.
-                if !relative.contains("/"), relative.hasSuffix(".tmp"), try self.isBeingWritten(file) { unfinished += 1; return }
-                guard retained < Limit.recordingFiles else { throw ArtifactBackupError.tooLarge }
-                retained += 1
-                var archivedName = relative
-                if relative == MeetingFinalizeManifest.fileName + ArtifactRestoreDestination.parkedSuffix
-                    && self.fileManager.fileExists(atPath: child.appendingPathComponent(MeetingFinalizeManifest.fileName).path)
-                {
-                    var index = 0
-                    repeat {
-                        archivedName = "manifest-retained-\(index).json" + ArtifactRestoreDestination.parkedSuffix
-                        index += 1
-                    } while self.fileManager.fileExists(atPath: child.appendingPathComponent(archivedName).path)
-                }
-                let copy = target.appendingPathComponent(archivedName, isDirectory: false)
-                try self.createPrivateDirectory(copy.deletingLastPathComponent())
-                _ = try self.copyStable(file, to: copy, limit: Limit.recordingFile, required: true)
-                copied.insert(relative)
-                produced.append(try self.entry(for: copy, path: "meetings/staged/\(name)/\(archivedName)",
-                                               section: .meetings))
-            }
-            guard !produced.isEmpty else { continue }
-            // A finalize record names the chunks the recovery path will read.
-            // One of them missing is a damaged profile, not something to pack
-            // into a "complete" backup. An unreadable record keeps its bytes
-            // (it may be the only copy) and is reported instead.
-            let manifestURL = child.appendingPathComponent(MeetingFinalizeManifest.fileName)
-            if copied.contains(MeetingFinalizeManifest.fileName) {
-                if let data = try? Data(contentsOf: manifestURL), data.count <= 1_000_000,
-                   let manifest = try? JSONDecoder().decode(MeetingFinalizeManifest.self, from: data) {
-                    for chunk in manifest.chunkFileNames where !copied.contains(chunk) {
-                        throw ArtifactBackupError.requiredFileMissing(chunk)
-                    }
-                } else {
-                    warnings.append("A recording's finalize record could not be read. Its files are in this backup as recovery data.")
-                }
-            }
-            entries.append(contentsOf: produced)
-        }
-        if unfinished > 0 {
-            warnings.append("\(unfinished) recording chunk(s) were still being written and are not in this backup. They are included once their recording finishes.")
-        }
-        if !entries.isEmpty {
-            warnings.append("Unprocessed recordings are included. After a restore their audio is kept, but Whytap does not transcribe them automatically.")
-        }
-        return entries
-    }
-
-    private func stageHistory(_ request: ArtifactBackupStageRequest, into directory: URL,
-                              warnings: inout [String]) async throws -> [ArtifactStagedEntry] {
-        guard let exporter = request.history else { throw ArtifactBackupError.missingSection }
+    private func stageHistory(_ request: ArtifactBackupStageRequest, into directory: URL) async throws -> [ArtifactStagedEntry] {
         let staged = directory.appendingPathComponent("history", isDirectory: true)
         try createPrivateDirectory(staged)
-        let export = try exporter.exportArtifactGeneration(into: staged, assetsFrom: request.locations.historyAssets)
-        if export.externalLinkCount > 0 {
-            warnings.append("\(export.externalLinkCount) clipboard entries only link to your own files. Those original files are not inside this backup.")
+        guard let file = try await request.usage?.exportArtifactGeneration(into: staged.appendingPathComponent("db")) else {
+            return []
         }
-        var entries = try export.files.map {
-            try entry(for: $0.url, path: "history/" + $0.relativePath, section: .history)
-        }
-        if let file = try await request.usage?.exportArtifactGeneration(into: staged.appendingPathComponent("db")) {
-            entries.append(try entry(for: file, path: ArtifactUsageBackup.archivePath, section: .history))
-        }
-        return entries
+        return [try entry(for: file, path: ArtifactUsageBackup.archivePath, section: .history)]
     }
 
     /// Monitor and Notify own whole private directories: dashboards, server
@@ -634,15 +520,6 @@ actor ArtifactBackupStager {
             }
             try visit(item, child)
         }
-    }
-
-    /// True while a temporary chunk still belongs to a live recording. An
-    /// older one is a crash leftover: its bytes are retained audio and travel
-    /// as inert recovery data.
-    private func isBeingWritten(_ file: URL) throws -> Bool {
-        let values = try resourceValues(file)
-        guard let modified = values.contentModificationDate else { return true }
-        return Date().timeIntervalSince(modified) < Limit.abandonedTemporarySeconds
     }
 
     private func listDirectory(_ directory: URL) throws -> [URL] {

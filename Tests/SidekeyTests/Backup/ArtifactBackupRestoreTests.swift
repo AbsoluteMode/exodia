@@ -17,8 +17,8 @@ final class ArtifactBackupRestoreTests: XCTestCase {
         profiles.removeAll()
     }
 
-    /// A small archive with meetings, history and the agent workspace.
-    private func makeArchive() async throws -> (URL, Data) {
+    /// A small archive with meetings and the agent workspace, optionally Costs.
+    private func makeArchive(withCosts: Bool = false) async throws -> (URL, Data) {
         var profile = try ArtifactBackupTestProfile()
         profiles.append(profile)
         profile.defaults.set("deepgram", forKey: "sidekey.models.byokProvider")
@@ -30,19 +30,17 @@ final class ArtifactBackupRestoreTests: XCTestCase {
                                             title: "Archived", syncStatus: .new, serverVersion: 1,
                                             createdAt: now),
             markdown: "# Archived meeting")
-        try FileManager.default.createDirectory(
-            at: profile.locations.historyDatabase.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
-        let history = try SQLiteHistoryStore(path: profile.locations.historyDatabase.path)
-        for index in 0..<3 {
-            _ = try history.insertClipboardTextEntry(createdAt: now, text: "row \(index)")
-        }
         try profile.write("# Archived memory", to: profile.locations.agentMemory)
         let key = ArtifactBackupTestKeys.make()
         let url = profile.root.appendingPathComponent("archive.exodiabackup")
-        _ = try await ArtifactBackupEngine(environment: profile.environment(meetings: meetings,
-                                                                           history: history))
-            .createArchive(at: url, key: key)
+        var environment = profile.environment(meetings: meetings)
+        if withCosts {
+            let usage = AIUsageStore(url: profile.locations.usageDatabase)
+            try await usage.insert(AIUsageEvent(context: .init(feature: .agent, account: .openRouter, model: "synthetic/model"),
+                                                currency: .usd, amount: 0.01, basis: .reported))
+            environment.usage = usage
+        }
+        _ = try await ArtifactBackupEngine(environment: environment).createArchive(at: url, key: key)
         return (url, key)
     }
 
@@ -66,7 +64,7 @@ final class ArtifactBackupRestoreTests: XCTestCase {
         let target = try makePopulatedTarget()
         let arming = target.environment()
         try await ArtifactBackupEngine(environment: arming).stageRestore(
-            from: archive, key: key, sections: [.meetings, .history, .workspace])
+            from: archive, key: key, sections: [.meetings, .workspace])
 
         var faults = ArtifactBackupFaults()
         faults.beforeCommit = { throw ArtifactBackupError.writeFailed }
@@ -183,9 +181,15 @@ final class ArtifactBackupRestoreTests: XCTestCase {
         XCTAssertFalse(target.exists(pendingRoot(target).appendingPathComponent("plan.json")))
     }
 
-    func testStaleHistoryWalFilesAreReplacedTogetherWithTheDatabase() async throws {
-        let (archive, key) = try await makeArchive()
+    func testOlderArchiveReplacesStaleHistoryWalFilesTogetherWithTheDatabase() async throws {
         let target = try makePopulatedTarget()
+        let key = ArtifactBackupTestKeys.make()
+        let archive = target.root.appendingPathComponent("legacy.exodiabackup")
+        let database = try ArtifactBackupLegacyContent.historyDatabase(
+            texts: ["row 0", "row 1", "row 2"], scratch: target.root.appendingPathComponent("scratch"))
+        _ = try ArtifactBackupTestArchive.make(at: archive, key: key, entries: [
+            (path: "history/db/history.sqlite", section: .history, data: database)
+        ])
         let wal = target.locations.historyDatabase.deletingLastPathComponent()
             .appendingPathComponent("history.sqlite-wal")
         let shm = target.locations.historyDatabase.deletingLastPathComponent()
@@ -202,6 +206,34 @@ final class ArtifactBackupRestoreTests: XCTestCase {
         XCTAssertFalse(target.exists(shm))
         let restored = try SQLiteHistoryStore(path: target.locations.historyDatabase.path)
         XCTAssertEqual(try restored.latestClipboardEntries(limit: 20).count, 3)
+    }
+
+    /// New archives carry no meeting audio and no history database. Restoring
+    /// one keeps what this Mac has there instead of replacing it with nothing.
+    func testNewArchiveLeavesThisMacsHistoryAndRecordingsAlone() async throws {
+        let (archive, key) = try await makeArchive(withCosts: true)
+        let target = try makePopulatedTarget()
+        let wal = target.locations.historyDatabase.deletingLastPathComponent()
+            .appendingPathComponent("history.sqlite-wal")
+        try target.write("local wal", to: wal)
+        let recording = target.locations.meetingsStaging
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("chunk-000.wav")
+        try target.write("local audio", to: recording)
+
+        let environment = target.environment()
+        let engine = ArtifactBackupEngine(environment: environment)
+        let preview = try await engine.inspectArchive(at: archive, key: key)
+        XCTAssertTrue(preview.summary.sections.isSuperset(of: [.meetings, .history, .workspace]))
+        try await engine.stageRestore(from: archive, key: key, sections: preview.summary.sections)
+        XCTAssertEqual(try ArtifactBackupEngine.applyPendingRestore(environment: environment)?.state, .applied)
+
+        XCTAssertEqual(target.contents(of: target.locations.agentMemory), "# Archived memory")
+        XCTAssertEqual(target.contents(of: target.locations.historyDatabase), "local history db")
+        XCTAssertEqual(target.contents(of: wal), "local wal")
+        XCTAssertEqual(target.contents(of: target.locations.historyAssets
+            .appendingPathComponent("local-asset.png")), "my own asset")
+        XCTAssertEqual(target.contents(of: recording), "local audio")
     }
 
     func testDestinationMappingAcceptsOnlyRecognisedPaths() throws {
