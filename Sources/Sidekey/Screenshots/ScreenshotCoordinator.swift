@@ -355,6 +355,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             switch command {
             case .copy:
                 export(canvas, download: false)
+            case .copyText: copyText(canvas)
             case .download: export(canvas, download: true)
             case .share:
                 guard let toolbar else { return }
@@ -400,6 +401,28 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                 canvas.busy = false
                 self.copyWaitReason = nil; self.copyAfterProcessing = false
                 self.report(download ? "Couldn’t download to Downloads. Check folder access and free space, then try again." : error.localizedDescription, canvas: canvas)
+            }
+        }
+    }
+
+    private func copyText(_ canvas: ScreenshotCanvas) {
+        guard let token = generation else { return }
+        let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations, crop = canvas.selection
+        canvas.busyMessage = "Reading text on this Mac… · Esc: cancel capture"
+        copyWaitReason = nil; copyAfterProcessing = false
+        canvas.busy = true
+        task = Task { [weak self, weak canvas] in
+            let result = await ScreenshotTextCopy.perform(source: source, size: size, annotations: annotations, crop: crop,
+                                                          isCurrent: { [weak self] in self?.generation == token })
+            guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
+            canvas.busy = false
+            switch result {
+            case .copied: self.cancel()
+            case .empty:
+                self.report("No readable text or numbers found. Adjust the selection or copy the image.", canvas: canvas)
+            case .failed:
+                self.report("Couldn’t copy text. Try again or copy the image.", canvas: canvas)
+            case .discarded: break
             }
         }
     }

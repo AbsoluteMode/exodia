@@ -1,7 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 
-enum ScreenshotCommand: Hashable { case cancel, copy, download, share }
+enum ScreenshotCommand: Hashable { case cancel, copy, copyText, download, share }
 
 @MainActor
 final class ScreenshotCanvas: NSView {
@@ -288,6 +288,7 @@ final class ScreenshotCanvas: NSView {
         case .undo: undo()
         case .redo: redo()
         case .copy: if !selection.isEmpty { onCommand?(.copy) }
+        case .copyText: if !selection.isEmpty { onCommand?(.copyText) }
         case .download: if !selection.isEmpty { onCommand?(.download) }
         case .share: if !selection.isEmpty { onCommand?(.share) }
         case .cancel: cancelOperation(nil)

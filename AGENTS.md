@@ -344,7 +344,10 @@ Case secrets manager:
   Mode explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
   on hover/keyboard focus. Search matches project and key names/descriptions,
   including empty projects and General. A matching project shows all its keys;
-  key-only matches show only those keys. + Key opens a separate creation field,
+  key-only matches show only those keys. Results put the project with the best
+  match first (equal ones keep project order); a query word starting a word of a
+  project name lets the rest match that project's keys (`whytap github`); later
+  words of 3+ letters tolerate one typo (`github_lan`). + Key opens a separate creation field,
   including from a project search result; typing/Return in search never writes. Navigation is white and explanations are
   short. Case has no Doppler integration or import screen.
   All explicitly opened hover submenus survive pointer exit until Back, an
@@ -991,6 +994,12 @@ as inert files, excluding active provider jobs. Inactive configurations and
 coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application
 policies precede imports, including matching identities with different UUIDs.
 WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
+A resumed upload accepts an existing draft part when GitHub's reported
+`sha256:` digest matches the local part, without downloading it; a mismatch
+replaces it, and assets without a usable digest are compared by one download.
+New parts and the index are still read back before publishing. Settings shows
+"Uploading backup part N of M…". WHY:
+`.project-docs/decisions/2026-10-21-backup-resume-digest.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
@@ -1046,12 +1055,17 @@ without selection does nothing, double-click does not select a full display,
 and the passive instruction strip is removed. Return copies the selected area
 and closes, waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
-Shape, Pen, Text, Blur, Numbered steps and system sharing remain on the main
+Shape, Pen, Text, Blur, Numbered steps, Copy text and system sharing remain on the main
 toolbar. There is no Select/crop button or V shortcut; initial area selection
 remains a drag. Clicking the active tool again stops drawing and permits
 selection/annotation adjustment without an extra selector. Highlighter,
-Spotlight, Copy text, Pin above windows and
-Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
+Spotlight, Pin above windows and
+Output size are removed, including their commands/shortcuts. Copy text uses accurate
+on-device Vision recognition on the flattened, edited crop, including Blur,
+then copies plain text and closes. Empty/error results keep the editor open;
+Escape cancels and generation checks reject late results. Rendering and OCR
+run off the UI thread. Copy text can also be assigned to an arrow without
+changing existing bindings. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
 from every screenshot panel through both key-equivalent and direct window dispatch,
 using physical Z so Russian input works; focused text fields retain native text undo.
 ScreenshotToolbar contains four dashed tool squares with adjacent arrow keycaps: Up Blur, Left Shape, Right Pen, Down Text by default.

@@ -391,7 +391,7 @@ an existing arrow assignment onto another square to replace only the destination
 the source stays available. Click a square to choose any tool/command from its
 native menu or reset that direction. Changes save immediately and preserve the
 screenshot. The physical arrow keys execute the assigned functions. Shift-arrows move the crop 10 points; Option-arrows resize it. Assign
-Move crop in an arrow menu for 1-point movement. Screenshot temporarily releases
+Move crop in an arrow menu for 1-point movement. Copy text remains available in the same assignment catalog without a new default shortcut; custom assignments are preserved. Screenshot temporarily releases
 Agent Useful Links hotkeys so it owns arrows first, including while an annotation
 text field is focused (native cursor movement). Agent registrations return after
 the editor closes, using the latest visible actions. Delete removes a selected

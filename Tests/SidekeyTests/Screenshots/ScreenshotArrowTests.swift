@@ -75,7 +75,7 @@ final class ScreenshotArrowTests: XCTestCase {
                 bindings[.up] = action
                 try send(.up, to: panel); XCTAssertEqual(canvas.tool, action.tool)
             }
-            for (action, command) in [(ScreenshotEditorAction.copy, ScreenshotCommand.copy), (.download, .download), (.share, .share), (.cancel, .cancel)] {
+            for (action, command) in [(ScreenshotEditorAction.copy, ScreenshotCommand.copy), (.copyText, .copyText), (.download, .download), (.share, .share), (.cancel, .cancel)] {
                 bindings[.right] = action
                 try send(.right, to: panel); XCTAssertEqual(commands.last, command)
                 let count = commands.count

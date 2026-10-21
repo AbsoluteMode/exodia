@@ -128,7 +128,7 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
         let (_, toolbar, _, _) = try fixture()
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         let actions = descendants(toolbar).compactMap { ($0 as? ScreenshotToolbarButton)?.dragAction }
-        for action: ScreenshotEditorAction in [.pen, .blur, .arrow, .rectangle, .text, .counter, .copy, .share, .download, .cancel, .undo, .redo] {
+        for action: ScreenshotEditorAction in [.pen, .blur, .arrow, .rectangle, .text, .counter, .copy, .copyText, .share, .download, .cancel, .undo, .redo] {
             XCTAssertTrue(actions.contains(action), "Missing drag source: \(action.title)")
         }
     }
