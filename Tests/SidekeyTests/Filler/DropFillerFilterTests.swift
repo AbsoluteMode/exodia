@@ -44,4 +44,19 @@ final class DropFillerFilterTests: XCTestCase {
     func testFillerSurroundedByCommas() {
         XCTAssertEqual(DropFillerFilter.apply("ну, мм, и всё", removing: ["мм"]), "ну, и всё")
     }
+
+    func testParagraphInitialFillerKeepsBlankLineAndRemovesOrphanComma() {
+        XCTAssertEqual(DropFillerFilter.apply("Нужны две проверки:\n\nмм, проверь импорт.", removing: ["мм"]),
+                       "Нужны две проверки:\n\nПроверь импорт.")
+    }
+
+    func testBulletedFillerKeepsListAndParagraphBoundaries() {
+        XCTAssertEqual(DropFillerFilter.apply("Проверь:\n- мм, импорт;\n- экспорт.\n\nНа production ничего не меняй.", removing: ["мм"]),
+                       "Проверь:\n- Импорт;\n- экспорт.\n\nНа production ничего не меняй.")
+    }
+
+    func testNumberedFillerKeepsNumbering() {
+        XCTAssertEqual(DropFillerFilter.apply("1) мм, проверь импорт.\n2. мм, проверь экспорт.", removing: ["мм"]),
+                       "1) Проверь импорт.\n2. Проверь экспорт.")
+    }
 }
