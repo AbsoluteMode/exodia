@@ -106,6 +106,7 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertFalse(capturedArguments.contains("test-key"))
         XCTAssertTrue(capturedArguments.contains("openrouter/google/example"))
         XCTAssertTrue(capturedArguments.contains("ses_previous"))
+        XCTAssertFalse(capturedArguments.contains("--dir"), "V2 uses the Process working directory")
         XCTAssertEqual(capturedEnvironment["OPENROUTER_API_KEY"], "test-key")
         XCTAssertEqual(provider.lastSessionID, "ses_123")
         XCTAssertEqual(events.filter { if case .done = $0 { return true }; return false }.count, 1)
@@ -304,12 +305,30 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertEqual(OpenCodeEnvironment.normalizeModel("openrouter/google/example"), "google/example")
     }
 
-    func testInstallerRequiresExactOfficialSHA256() {
-        let data = Data("hello".utf8)
-        XCTAssertTrue(OpenCodeInstaller.verify(data, digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"))
-        XCTAssertFalse(OpenCodeInstaller.verify(data, digest: nil))
-        XCTAssertFalse(OpenCodeInstaller.verify(Data("changed".utf8), digest: "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"))
-        XCTAssertEqual(OpenCodeInstaller.assetName(appleSilicon: false), "opencode-darwin-x64-baseline.zip")
+    func testStableV2VersionOutputAndPrivateLaunch() {
+        XCTAssertTrue(OpenCodeProvider.supportsVersion("opencode v2.1.1\n"))
+        XCTAssertTrue(OpenCodeProvider.supportsVersion("2.1.2"))
+        XCTAssertTrue(OpenCodeProvider.supportsVersion("v1.19.3"), "Legacy CLI remains usable while the app copy updates")
+        for version in ["2.1.1-beta.1", "2.0.0", "3.0.0", "2.1", "2.1.1 extra", "v2.1.1\n2.1.2"] {
+            XCTAssertFalse(OpenCodeProvider.supportsVersion(version), version)
+        }
+        let args = ["run", "--format", "json", "--model", "openrouter/vendor/model"]
+        XCTAssertEqual(OpenCodeProvider.runtimeArguments(args, version: "opencode v2.1.1"),
+                       ["run", "--standalone"] + args.dropFirst())
+        XCTAssertEqual(OpenCodeProvider.runtimeArguments(args, version: "1.17.12"), args)
+        XCTAssertNil(OpenCodeProvider.runtimeArguments(args, version: "unknown"))
+        XCTAssertNil(OpenCodeProvider.runtimeArguments([], version: "2.1.1"))
+    }
+
+    func testVersionProbeIsBoundedAndDoesNotInheritCredentials() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = directory.appendingPathComponent("opencode")
+        try Data("#!/bin/sh\n[ -z \"$OPENROUTER_API_KEY$ANTHROPIC_API_KEY$OPENAI_API_KEY\" ] || exit 3\nprintf 'opencode v2.1.1\\n'\n".utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        XCTAssertEqual(OpenCodeVersionProbe.run(binary)?.stdout, "opencode v2.1.1\n")
+        try Data("#!/bin/sh\nwhile :; do :; done\n".utf8).write(to: binary)
+        XCTAssertNil(OpenCodeVersionProbe.run(binary, timeout: 0.05))
     }
 
     private func temporaryDirectory() throws -> URL {

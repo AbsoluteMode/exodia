@@ -1,4 +1,5 @@
 // Tests/SidekeyTests/Settings/WhytapLinkTests.swift
+import AppKit
 import XCTest
 @testable import Sidekey
 
@@ -139,14 +140,28 @@ final class WhytapLinkTests: XCTestCase {
         XCTAssertLessThan(confirm.lowerBound, apply.lowerBound)
         XCTAssertEqual(propose.components(separatedBy: ".apply(").count, 2, "one apply call")
 
-        let dialog = try body(of: "static func confirm(_ change: WhytapLinkChange",
-                              in: "Sources/Sidekey/Settings/WhytapLinkConfirmation.swift")
-        let cancel = try XCTUnwrap(dialog.range(of: "addButton(withTitle: \"Cancel\")"))
-        let assign = try XCTUnwrap(dialog.range(of: "addButton(withTitle: \"Assign\")"))
-        XCTAssertLessThan(cancel.lowerBound, assign.lowerBound, "Cancel must be the default button")
-        XCTAssertTrue(dialog.contains("assign.isEnabled = false"))
-        XCTAssertTrue(dialog.contains("assign.keyEquivalent = \"\""))
         XCTAssertGreaterThanOrEqual(WhytapLinkConfirmation.armingDelay, 1.0)
+    }
+
+    @MainActor
+    func test_native_confirmation_defaults_to_cancel_without_showing_a_window() throws {
+        _ = NSApplication.shared
+        let combo = try XCTUnwrap(WhytapLink.linkCombo(from: "option+shift+s"))
+        let alert = WhytapLinkConfirmation.makeDialog(.toolHotkey(.screenshot, combo), replacing: nil)
+        XCTAssertEqual(alert.buttons.count, 2)
+        let cancel = alert.buttons[0]
+        let assign = alert.buttons[1]
+        XCTAssertEqual(cancel.title, "Cancel")
+        XCTAssertEqual(cancel.keyEquivalent, "\r", "A first Cancel title alone receives Escape, not Return")
+        XCTAssertTrue(alert.window.defaultButtonCell === cancel.cell)
+        XCTAssertEqual(assign.title, "Assign")
+        XCTAssertEqual(assign.keyEquivalent, "")
+        XCTAssertFalse(assign.isEnabled)
+        XCTAssertFalse(alert.window.isVisible)
+        alert.layout()
+        XCTAssertTrue(alert.window.defaultButtonCell === cancel.cell)
+        XCTAssertEqual(cancel.keyEquivalent, "\r")
+        XCTAssertFalse(alert.window.isVisible, "Layout must remain offscreen; never runModal in this fixture")
     }
 
     func test_scheme_and_kind_are_case_insensitive_but_ids_are_not() {

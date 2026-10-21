@@ -17,10 +17,12 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Settings/WhytapLinkConfirmation.swift
     confirmed_at: 2026-10-21
-related: [2026-10-20-whytap-links.md, ../../docs/decisions/2026-10-19-feature-hotkeys.md]
+related: [2026-10-20-whytap-links.md]
 ---
 
 ## Context
+
+The existing [feature hotkey decision](../../docs/decisions/2026-10-19-feature-hotkeys.md) owns normal tool binding behavior.
 
 The website's question page can already link to the place a feature lives.
 The user wants it to go one step further: a visitor says which hotkey they
@@ -44,7 +46,9 @@ the protection cannot depend on where the link came from.
   tools, fixed Help/History strip) are a `conflict` shown to the user with
   nothing changed; otherwise `confirm(current:)`.
 - `WhytapLinkConfirmation` is an NSAlert in Whytap: Cancel is the first,
-  default button (Return cancels), Assign has no key equivalent and is
+  default button explicitly through its window defaultButtonCell (a Cancel title
+  alone receives Escape from AppKit). Return cancels; a modal-local Escape
+  handler cancels only this alert and is removed on exit. Assign has no key equivalent and is
   disabled for one second. One confirmation at a time; links arriving during
   it are dropped. After Assign the plan is rechecked and the change goes
   through `HotkeyPreferences.apply`, the validated path Settings Save uses;
@@ -73,8 +77,10 @@ malformed queries only show Hotkeys; plan results for free keys, replacement,
 unchanged and conflicts with Meeting record, Help and another tool; applying
 changes only that tool; a temporary `HotkeyPreferences` saves it and reloads
 it. `WhytapLinkTests` source-checks that the URL handler never calls `apply`,
-that `propose` confirms before its single `apply`, and that the dialog adds
-Cancel first and disables Assign. Removing the confirmation (an `apply` in the
+that `propose` confirms before its single `apply`. An actual native NSAlert
+factory regression checks Cancel is the Return default before/after offscreen
+layout and Assign has no key equivalent and starts disabled. The fixture never
+activates or displays the dialog; Escape delivery remains installed acceptance. Removing the confirmation (an `apply` in the
 handler) was shown to fail that test. The dialog itself and LaunchServices
 delivery are verified only on the installed build.
 

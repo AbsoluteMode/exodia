@@ -1738,6 +1738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handle(_ request: WhytapLinkRequest) {
+        guard !isConfirmingLinkChange else { return }
         switch request {
         case .show(let destination):
             show(destination)

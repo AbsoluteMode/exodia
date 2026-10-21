@@ -12,6 +12,28 @@ enum WhytapLinkConfirmation {
 
     /// `true` only when the user clicked Assign.
     static func confirm(_ change: WhytapLinkChange, replacing current: HotkeyShortcut?) -> Bool {
+        let alert = makeDialog(change, replacing: current)
+        let assign = alert.buttons[1]
+        let escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let cancelled = MainActor.assumeIsolated {
+                guard event.keyCode == 53, NSApp.modalWindow === alert.window else { return false }
+                NSApp.abortModal()
+                return true
+            }
+            return cancelled ? nil : event
+        }
+        defer { if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) } }
+        let timer = Timer(timeInterval: armingDelay, repeats: false) { _ in
+            MainActor.assumeIsolated { assign.isEnabled = true }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        defer { timer.invalidate() }
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    /// Builds the real native dialog without displaying or activating it.
+    static func makeDialog(_ change: WhytapLinkChange, replacing current: HotkeyShortcut?) -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
         switch change {
@@ -23,17 +45,14 @@ enum WhytapLinkConfirmation {
             alert.informativeText = "A link asked Whytap to set this hotkey. \(replaced) "
                 + "Nothing changes unless you click Assign. You can change it later in Settings -> Hotkeys."
         }
-        alert.addButton(withTitle: "Cancel")
+        let cancel = alert.addButton(withTitle: "Cancel")
         let assign = alert.addButton(withTitle: "Assign")
         assign.keyEquivalent = ""
         assign.isEnabled = false
-        let timer = Timer(timeInterval: armingDelay, repeats: false) { _ in
-            MainActor.assumeIsolated { assign.isEnabled = true }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        defer { timer.invalidate() }
-        NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertSecondButtonReturn
+        // A button titled Cancel receives Escape even when added first.
+        // Set the Return default explicitly; the modal-local monitor keeps Escape.
+        alert.window.defaultButtonCell = cancel.cell as? NSButtonCell
+        return alert
     }
 
     static func showConflict(_ change: WhytapLinkChange, owners: [String]) {
