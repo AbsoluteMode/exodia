@@ -717,7 +717,7 @@ rights. No alternative composition or decorative screen is needed.
 | Rights | Default Accept asks before use; Bypass allows use without prompts. All projects includes future projects (explained in native help); Selected shows searchable checkboxes and denies unchecked projects at the broker. Filtering preserves the full draft selection. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
-| Approval | The request shows the command, app, project and key names. A native editable field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical A use that value. The bottom row contains Deny/Allow only. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
+| Approval | The request shows the command, app, project and key names. A native editable field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical 3 use that value. The bottom row contains Deny (1)/Allow (2) only. Letters and Escape pass through. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
 
 Display metadata and project sections are rebuilt when the vault changes and
 reused for renders. Search only filters/ranks metadata; values never enter its
@@ -881,7 +881,7 @@ with only Deny and Allow in the final row. Keep the native black island card.
   and buttons, 11 pt monospaced command). The command stays one line; native
   hover help and accessibility expose the full original string including line
   breaks. Why: the compact summary must remain inspectable before approval.
-- Temporary Bypass is an actual capsule button with the existing physical A
+- Temporary Bypass is an actual capsule button with the physical 3
   hint. The duration is a 34×24 pt native text field followed by min, without
   arrows. Default 15 and supported 1–240 stay unchanged. Why: direct typing
   replaces repeated stepper clicks and removes the third competing bottom action.
@@ -895,7 +895,7 @@ with only Deny and Allow in the final row. Keep the native black island card.
   Approval hotkeys are suspended before the first typed character; clicks on
   the other actions still work after the existing quiet period. Finish editing,
   timeout, hide or replacement by a queued prompt releases the old field editor
-  and key status. Why: numeric entry must not trigger Y/N/A/Escape or trap later
+  and key status. Why: numeric entry must not trigger approval answers or trap later
   typing in a panel that no longer contains the original field.
 - Buttons visibly highlight their full capsule on hover, change fill while
   pressed and show a keyboard-focus outline. Disabled/unarmed buttons dim and
@@ -917,3 +917,15 @@ VoiceOver, native tooltip timing, text selection/IME and real Touch ID remain
 shared-app acceptance after promotion. A real authorized key-presence check on the
 previous installed build returned only a static presence confirmation; it does
 not validate this new UI. No secret value was printed or sent over the network.
+
+Numeric approval follow-up — 2026-10-21: after a real key-presence request, the
+user reported that letter interception interfered with their active app and
+requested digits only. Use 1 for Deny, 2 for Allow and 3 for temporary Bypass,
+in both the top row and numeric keypad. These hints replace the letters in the
+existing capsules without changing layout, colors, hover, focus or timing.
+Letters, Escape, navigation and digits with Command/Control/Option/Shift pass
+through; Shift punctuation must not authorize a command. The duration editor
+keeps approval keys suspended. The shared keycap values also feed Help.
+Filter tests cover all other physical keycodes, modified digits, repeats and
+unarmed input; synthetic offscreen fixtures verify the new hints at 310/312 pt.
+Physical keyboard acceptance remains a check on the installed app.

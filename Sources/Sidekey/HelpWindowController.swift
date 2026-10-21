@@ -95,21 +95,21 @@ enum HelpWindowContent {
                 detail: "While a Case request is on screen, allow the command once. Works on any keyboard layout.",
                 iconName: "checkmark.circle",
                 prefix: nil,
-                contents: [.text("Y")]
+                contents: [.text(CaseApprovalKey.yes.keycap)]
             ),
             HelpHotkeyRowSpec(
                 title: "Case — deny",
-                detail: "While a Case request is on screen, deny it. Escape denies too.",
+                detail: "While a Case request is on screen, deny it. Letters and Escape stay with your app.",
                 iconName: "xmark.octagon",
                 prefix: nil,
-                contents: [.text("N")]
+                contents: [.text(CaseApprovalKey.no.keycap)]
             ),
             HelpHotkeyRowSpec(
                 title: "Case — allow for minutes",
                 detail: "While a Case request is on screen, let this app use this project without asking for the set minutes.",
                 iconName: "timer",
                 prefix: nil,
-                contents: [.text("A")]
+                contents: [.text(CaseApprovalKey.timed.keycap)]
             ),
             // ROO-208: the three per-mode rows (`⌥1` Agent / `⌥2` Drop /
             // `⌥3` Clipboard) collapse into a single unified-strip row.

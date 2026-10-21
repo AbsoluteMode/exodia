@@ -56,7 +56,7 @@ struct CaseApprovalView: View {
             }
             if request.timedMinutes > 0 {
                 HStack(spacing: 8) {
-                    CaseApprovalButton(title: "Temporary Bypass", key: "A", prominent: false) {
+                    CaseApprovalButton(title: "Temporary Bypass", key: CaseApprovalKey.timed.keycap, prominent: false) {
                         onChoose(.allowTimed(minutes: selectedMinutes))
                     }
                     .disabled(!isArmed || !validTimedInput)
@@ -161,8 +161,8 @@ struct CaseApprovalView: View {
 
     private var buttons: some View {
         HStack(spacing: 6) {
-            CaseApprovalButton(title: "Deny", key: "N", prominent: false) { onChoose(.deny) }
-            CaseApprovalButton(title: "Allow", key: "Y", prominent: true) { onChoose(.allow) }
+            CaseApprovalButton(title: "Deny", key: CaseApprovalKey.no.keycap, prominent: false) { onChoose(.deny) }
+            CaseApprovalButton(title: "Allow", key: CaseApprovalKey.yes.keycap, prominent: true) { onChoose(.allow) }
         }
         .opacity(isArmed ? 1 : 0.5)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isArmed)
