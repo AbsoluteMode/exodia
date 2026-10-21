@@ -35,6 +35,7 @@ struct IslandCaseVaultPanel: View {
     var onOpenAccessScreen: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
     @State private var valueDraft = ""
     @State private var nameDraft = ""
@@ -94,14 +95,14 @@ struct IslandCaseVaultPanel: View {
 
             if case let .needsReset(message) = viewModel.unlockState {
                 Button(action: resetCase) {
-                    unlockPill(title: viewModel.isResetArmed ? "Подтвердить сброс" : "Сбросить Case")
+                    unlockPill(title: viewModel.isResetArmed ? "Confirm reset" : "Reset Case")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CaseAccessButtonStyle(cornerRadius: 15))
                 .disabled(isUnlocking)
 
-                // Armed: spell out the stakes — the second press is irreversible.
+                // Armed: describe the new vault and the encrypted file retained by reset().
                 Text(viewModel.isResetArmed
-                    ? "Case будет удалён навсегда. Нажмите ещё раз для подтверждения."
+                    ? "Create a new Case? The old encrypted file is kept. Click again to confirm."
                     : message)
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.52))
@@ -110,7 +111,7 @@ struct IslandCaseVaultPanel: View {
                     .minimumScaleFactor(0.8)
                     .padding(.horizontal, 14)
             } else if case let .needsNewerApp(message) = viewModel.unlockState {
-                unlockPill(title: "Нужно обновление")
+                unlockPill(title: "Update required")
 
                 Text(message)
                     .font(.system(size: 9.5, weight: .medium))
@@ -121,16 +122,16 @@ struct IslandCaseVaultPanel: View {
                     .padding(.horizontal, 14)
             } else {
                 if isUnlocking || !hasTriggeredInitialUnlock {
-                    unlockPill(title: "Открываю…")
+                    unlockPill(title: "Opening…")
                 } else {
                     Button(action: unlock) {
-                        unlockPill(title: "Открыть ещё раз")
+                        unlockPill(title: "Try again")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CaseAccessButtonStyle(cornerRadius: 15))
                     .disabled(isUnlocking)
                 }
 
-                Text("Touch ID или пароль macOS")
+                Text("Touch ID or your Mac password")
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.46))
 
@@ -205,7 +206,7 @@ struct IslandCaseVaultPanel: View {
         HStack(spacing: 6) {
             ZStack(alignment: .leading) {
                 if viewModel.query.isEmpty {
-                    Text("Поиск ключей и проектов")
+                    Text("Search keys and projects")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.70))
                         .lineLimit(1)
@@ -215,7 +216,7 @@ struct IslandCaseVaultPanel: View {
                 }
 
                 TextField("", text: $viewModel.query)
-                    .accessibilityLabel("Поиск ключей и проектов")
+                    .accessibilityLabel("Search keys and projects")
                     .accessibilityIdentifier("case.search")
                     .font(.system(size: IslandCaseVaultStyle.inputFontSize, weight: .medium))
                     .textFieldStyle(.plain)
@@ -225,10 +226,12 @@ struct IslandCaseVaultPanel: View {
             }
             .frame(height: IslandCaseVaultStyle.inputHeight)
             .background(Capsule().fill(Color.white.opacity(0.13)))
-            .overlay(Capsule().stroke(inputBorderColor, lineWidth: 0.8))
+            .modifier(CaseVaultFieldFeedback(focused: inputFocused == .search, border: inputBorderColor))
+            .contentShape(Capsule())
+            .onTapGesture { if isEnabled { inputFocused = .search } }
 
             Button(action: startCreatingProject) {
-                Text("+ Проект")
+                Text("+ Project")
                     .font(.system(size: IslandCaseVaultStyle.nameFontSize, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.88))
                     .lineLimit(1)
@@ -238,7 +241,7 @@ struct IslandCaseVaultPanel: View {
                     .background(Capsule().fill(Color.white.opacity(0.10)))
                     .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.7))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle(cornerRadius: IslandCaseVaultStyle.inputHeight / 2))
             .accessibilityIdentifier("case.project.create")
         }
     }
@@ -248,11 +251,11 @@ struct IslandCaseVaultPanel: View {
             Group {
                 switch viewModel.inputMode {
                 case .name:
-                    TextField("Имя нового ключа", text: $nameDraft)
-                        .accessibilityLabel("Имя нового ключа")
+                    TextField("New key name", text: $nameDraft)
+                        .accessibilityLabel("New key name")
                 case .value:
-                    SecureField("Значение ключа", text: $valueDraft)
-                        .accessibilityLabel("Значение ключа")
+                    SecureField("Key value", text: $valueDraft)
+                        .accessibilityLabel("Key value")
                 }
             }
             .textFieldStyle(.plain)
@@ -261,15 +264,18 @@ struct IslandCaseVaultPanel: View {
             .padding(.horizontal, 10)
             .frame(height: IslandCaseVaultStyle.inputHeight)
             .background(Capsule().fill(.white.opacity(0.10)))
+            .modifier(CaseVaultFieldFeedback(focused: inputFocused == .newKey, border: inputBorderColor))
             .focused($inputFocused, equals: .newKey)
+            .contentShape(Capsule())
+            .onTapGesture { if isEnabled { inputFocused = .newKey } }
             .onSubmit(submitInput)
             Button(action: submitInput) {
                 Image(systemName: "arrow.right.circle")
                     .frame(width: 24, height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CaseAccessButtonStyle(cornerRadius: 7))
             .foregroundStyle(.white.opacity(0.92))
-            .accessibilityLabel(viewModel.inputMode == .name ? "Далее: значение ключа" : "Добавить ключ")
+            .accessibilityLabel(viewModel.inputMode == .name ? "Next: key value" : "Add key")
             IslandCaseIconButton(action: Self.cancelInputAction) {
                 valueDraft = ""
                 nameDraft = ""
@@ -284,7 +290,7 @@ struct IslandCaseVaultPanel: View {
     private static let cancelInputAction = IslandCaseRowAction(
         systemImage: "xmark",
         accessibilityIdentifier: "case.input.cancel",
-        accessibilityLabel: "Отменить ввод ключа"
+        accessibilityLabel: "Cancel new key"
     )
 
     private var inputBorderColor: Color {
@@ -300,7 +306,7 @@ struct IslandCaseVaultPanel: View {
                     LazyVStack(spacing: 4) {
                         Color.clear.frame(height: 1).id(topScrollID)
                         if sections.isEmpty, searching {
-                            Text("Ничего не найдено")
+                            Text("No results")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.78))
                                 .padding(.vertical, 12)
@@ -402,16 +408,16 @@ struct IslandCaseVaultPanel: View {
     private func secretEditControls(_ row: CaseDisplayRow) -> some View {
         VStack(spacing: 4) {
             editField {
-                TextField("Имя", text: $editName)
+                TextField("Name", text: $editName)
                     .font(.system(size: 9.5, weight: .medium, design: .monospaced))
             }
             editField {
-                SecureField("Новое значение", text: $editValue)
+                SecureField("New value", text: $editValue)
                     .font(.system(size: 9.5, weight: .medium))
                     .onSubmit { saveSecretEdit(row) }
             }
             editField {
-                TextField("Описание", text: $editDescription)
+                TextField("Description", text: $editDescription)
                     .font(.system(size: 9.5, weight: .medium))
                     .onSubmit { saveSecretEdit(row) }
             }
@@ -431,13 +437,13 @@ struct IslandCaseVaultPanel: View {
         VStack(spacing: 4) {
             if !isGeneral {
                 editField {
-                    TextField("Название проекта", text: $projectNameDraft)
+                    TextField("Project name", text: $projectNameDraft)
                         .font(.system(size: 9.5, weight: .medium))
                         .onSubmit(saveProjectEditor)
                 }
             }
             editField {
-                TextField("Описание", text: $projectDescriptionDraft)
+                TextField("Description", text: $projectDescriptionDraft)
                     .font(.system(size: 9.5, weight: .medium))
                     .onSubmit(saveProjectEditor)
             }
@@ -452,12 +458,7 @@ struct IslandCaseVaultPanel: View {
     }
 
     private func editField<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .textFieldStyle(.plain)
-            .foregroundStyle(.white.opacity(0.90))
-            .padding(.horizontal, 7)
-            .frame(height: 22)
-            .background(Capsule().fill(Color.white.opacity(0.10)))
+        CaseVaultEditField(content: content())
     }
 
     private func editButtons(onSave: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
@@ -471,13 +472,13 @@ struct IslandCaseVaultPanel: View {
     private static let saveEditAction = IslandCaseRowAction(
         systemImage: "checkmark",
         accessibilityIdentifier: "case.edit.save",
-        accessibilityLabel: "Сохранить"
+        accessibilityLabel: "Save"
     )
 
     private static let cancelEditAction = IslandCaseRowAction(
         systemImage: "xmark",
         accessibilityIdentifier: "case.edit.cancel",
-        accessibilityLabel: "Отменить правку"
+        accessibilityLabel: "Cancel editing"
     )
 
     private var accessRow: some View {
@@ -720,31 +721,31 @@ struct IslandCaseVaultPanel: View {
     private func caseErrorMessage(for error: Error, isProjectAction: Bool = false) -> String {
         switch error {
         case CaseNameValidationError.empty:
-            return "Введите имя"
+            return "Enter a name"
         case CaseNameValidationError.rawTooLong:
-            return "Имя слишком длинное"
+            return "Name is too long"
         case CaseNameValidationError.nonASCII:
-            return "Только A-Z, 0-9 и разделители"
+            return "Only A-Z, 0-9 and separators"
         case CaseNameValidationError.normalizedTooLong:
-            return "Имя после приведения слишком длинное"
+            return "Name is too long after formatting"
         case CaseViewModelError.duplicateName:
-            return isProjectAction ? "Такой проект уже есть" : "Такой ключ уже есть"
+            return isProjectAction ? "This project already exists" : "This key already exists"
         case CaseViewModelError.emptyValue:
-            return "Введите значение"
+            return "Enter a value"
         case CaseViewModelError.valueTooLong:
-            return "Значение слишком длинное"
+            return "Value is too long"
         case CaseViewModelError.invalidProjectName:
-            return "Недопустимое имя проекта"
+            return "Invalid project name"
         case CaseViewModelError.invalidProjectOperation:
-            return "Этот проект нельзя изменить"
+            return "This project can’t be changed"
         case CaseViewModelError.descriptionTooLong:
-            return "Описание слишком длинное"
+            return "Description is too long"
         case CaseViewModelError.missingProject:
-            return "Проект не найден"
+            return "Project not found"
         case CaseViewModelError.locked:
-            return "Case заблокирован"
+            return "Case is locked"
         default:
-            return "Не получилось"
+            return "Something went wrong"
         }
     }
 }
@@ -752,4 +753,43 @@ struct IslandCaseVaultPanel: View {
 private enum ProjectEditor: Equatable {
     case create
     case edit(UUID)
+}
+
+
+/// Shared field feedback changes drawing only; bindings and submission stay with callers.
+// WHY: docs/DESIGN.md — Case English copy and interaction feedback.
+private struct CaseVaultFieldFeedback: ViewModifier {
+    let focused: Bool
+    var border: Color = .white.opacity(0.18)
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(Capsule().strokeBorder(enabled && focused ? .white.opacity(0.8)
+                : enabled && hovered ? .white.opacity(0.5) : border, lineWidth: 1)
+                .allowsHitTesting(false))
+            .opacity(enabled ? 1 : 0.4)
+            .onHover { hovered = enabled && $0 }
+            .onChange(of: enabled) { _, active in if !active { hovered = false } }
+    }
+}
+
+private struct CaseVaultEditField<Content: View>: View {
+    let content: Content
+    @Environment(\.isEnabled) private var isEnabled
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        content
+            .textFieldStyle(.plain)
+            .focused($focused)
+            .foregroundStyle(.white.opacity(0.90))
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
+            .modifier(CaseVaultFieldFeedback(focused: focused))
+            .contentShape(Capsule())
+            .onTapGesture { if isEnabled { focused = true } }
+    }
 }

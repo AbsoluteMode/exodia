@@ -347,7 +347,7 @@ final class CaseBrokerTests: XCTestCase {
 
         let allowed = await run(project: "alpha", only: ["DB_URL"])
         XCTAssertEqual(allowed, .runEnvironment(["DB_URL": "fake-alpha-db-0002"]))
-        XCTAssertEqual(auth.reasons, ["Неизвестный процесс хочет запустить «npm test» с ключами проекта alpha"])
+        XCTAssertEqual(auth.reasons, ["let an unknown process run “npm test” with keys from project alpha"])
 
         auth.fails = true
         let refused = await run(project: "alpha")
@@ -361,8 +361,8 @@ final class CaseBrokerTests: XCTestCase {
         let long = "docker compose -f deploy/compose.prod.yml run --rm migrate\n  && ./scripts/seed.sh --env production --force"
         _ = await run(project: "alpha", only: ["DB_URL"], command: long)
         let reason = try? XCTUnwrap(auth.reasons.first)
-        XCTAssertEqual(reason?.hasPrefix("iTerm2 хочет запустить «"), true)
-        XCTAssertEqual(reason?.hasSuffix("» с ключами проекта alpha"), true)
+        XCTAssertEqual(reason?.hasPrefix("let iTerm2 run “"), true)
+        XCTAssertEqual(reason?.hasSuffix("” with keys from project alpha"), true)
         let shown = CaseBroker.commandSummary(long)
         XCTAssertEqual(shown.count, 80)
         XCTAssertFalse(shown.contains("\n"))

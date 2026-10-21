@@ -28,7 +28,7 @@ struct CaseApprovalView: View {
     // MARK: Copy (pure, tested)
 
     static func titleText(_ r: CaseApprovalRequest) -> String {
-        "\(r.appName) хочет запустить команду"
+        "\(r.appName) wants to run a command"
     }
 
     static func keysText(_ r: CaseApprovalRequest) -> String {
@@ -36,7 +36,7 @@ struct CaseApprovalView: View {
     }
 
     static func timedTitle(minutes: Int) -> String {
-        "Bypass \(minutes) мин"
+        "Bypass for \(minutes) min"
     }
 
     /// The command on a single line: line breaks and runs of whitespace collapse to
@@ -56,13 +56,13 @@ struct CaseApprovalView: View {
             }
             if request.timedMinutes > 0 {
                 HStack(spacing: 8) {
-                    CaseApprovalButton(title: "Временный Bypass", key: CaseApprovalKey.timed.keycap, prominent: false) {
+                    CaseApprovalButton(title: "Temporary Bypass", key: CaseApprovalKey.timed.keycap, prominent: false) {
                         onChoose(.allowTimed(minutes: selectedMinutes))
                     }
                     .disabled(!isArmed || !validTimedInput)
                     .opacity(isArmed && validTimedInput ? 1 : 0.5)
                     .accessibilityLabel(Self.timedTitle(minutes: selectedMinutes))
-                    .help("Без повторного запроса для этого агента и проекта на \(selectedMinutes) мин")
+                    .help("No prompts for this agent and project for \(selectedMinutes) min")
                     .accessibilityIdentifier("case.approval.timed")
                     HStack(spacing: 4) {
                         CaseApprovalMinutesField(value: selectedMinutes, onChange: onTimedMinutesChange,
@@ -75,7 +75,7 @@ struct CaseApprovalView: View {
                             .onHover { hoveringMinutes = $0 }
                             .overlay(RoundedRectangle(cornerRadius: 5)
                                 .strokeBorder(editingMinutes ? .white.opacity(0.75) : .white.opacity(0.16), lineWidth: 1))
-                        Text("мин")
+                        Text("min")
                             .font(.system(size: 10.5))
                             .foregroundStyle(.white.opacity(0.78))
                     }
@@ -114,7 +114,7 @@ struct CaseApprovalView: View {
                     .foregroundStyle(Color.white)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text("хочет запустить команду")
+                Text("wants to run a command")
                     .font(.system(size: 12.5))
                     .foregroundStyle(Color.white.opacity(0.62))
                     .lineLimit(1)
@@ -128,7 +128,7 @@ struct CaseApprovalView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1.5)
                     .background(Capsule().fill(Color.white.opacity(0.14)))
-                    .accessibilityLabel("Ещё \(pendingCount) в очереди")
+                    .accessibilityLabel("\(pendingCount) more in queue")
             }
         }
         .frame(height: 16)
@@ -156,13 +156,13 @@ struct CaseApprovalView: View {
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5))
             .help(request.command)
-            .accessibilityLabel("Команда: \(request.command)")
+            .accessibilityLabel("Command: \(request.command)")
     }
 
     private var buttons: some View {
         HStack(spacing: 6) {
-            CaseApprovalButton(title: "Отклонить", key: CaseApprovalKey.no.keycap, prominent: false) { onChoose(.deny) }
-            CaseApprovalButton(title: "Разрешить", key: CaseApprovalKey.yes.keycap, prominent: true) { onChoose(.allow) }
+            CaseApprovalButton(title: "Deny", key: CaseApprovalKey.no.keycap, prominent: false) { onChoose(.deny) }
+            CaseApprovalButton(title: "Allow", key: CaseApprovalKey.yes.keycap, prominent: true) { onChoose(.allow) }
         }
         .opacity(isArmed ? 1 : 0.5)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isArmed)
@@ -198,10 +198,10 @@ struct CaseApprovalMinutesField: NSViewRepresentable {
         field.stringValue = String(value)
         field.delegate = context.coordinator
         field.onEditingChange = onEditingChange
-        field.setAccessibilityLabel("Временный Bypass, минуты")
-        field.setAccessibilityHelp("От 1 до 240 минут. Return завершает ввод, Escape отменяет изменение.")
+        field.setAccessibilityLabel("Temporary Bypass, minutes")
+        field.setAccessibilityHelp("1 to 240 minutes. Return confirms, Escape restores the previous value.")
         field.setAccessibilityIdentifier("case.approval.minutes")
-        field.toolTip = "От 1 до 240 минут"
+        field.toolTip = "1 to 240 minutes"
         return field
     }
 
@@ -341,7 +341,7 @@ private struct CaseApprovalButton: View {
         .focused($focused)
         .overlay(Capsule().strokeBorder(focused && isEnabled ? .white.opacity(0.9) : .clear, lineWidth: 1))
         .accessibilityLabel(title)
-        .accessibilityHint("Клавиша \(key)")
+        .accessibilityHint("Press \(key)")
     }
 
 }

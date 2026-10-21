@@ -18,7 +18,7 @@ struct IslandCaseSecretRow: View {
     static let delete = IslandCaseRowAction(systemImage: "trash", accessibilityIdentifier: "case.secret.delete", accessibilityLabel: "Delete key")
     static let actions = [edit, copy, delete]
     /// Under a key whose value is too short for `whytap case run` to mask.
-    static let notMaskedHint = "не скрываются в выводе"
+    static let notMaskedHint = "Not masked in output"
 
     let row: CaseDisplayRow
     var isDropTargeted = false
@@ -52,7 +52,7 @@ struct IslandCaseSecretRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .accessibilityIdentifier("case.secret.notMasked")
-                        .help("Значение короче 4 байт: whytap case run не сможет скрыть его в выводе")
+                        .help("This value is under 4 bytes, so whytap case run can’t mask it in output")
                 }
             }
             .layoutPriority(-1)
@@ -86,13 +86,13 @@ struct IslandCaseSecretRow: View {
     }
 }
 
-/// «+ Ключ в <project>» at the end of an expanded project.
+/// "+ Key in <project>" at the end of an expanded project.
 struct IslandCaseAddKeyRow: View {
     let projectName: String
     let action: () -> Void
 
     static func title(projectName: String) -> String {
-        "+ Ключ в \(projectName)"
+        "+ Key in \(projectName)"
     }
 
     var body: some View {
@@ -108,7 +108,7 @@ struct IslandCaseAddKeyRow: View {
                     .stroke(Color.white.opacity(0.16), style: StrokeStyle(lineWidth: 0.8, dash: [3, 2])))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle(cornerRadius: IslandCaseVaultStyle.rowCornerRadius))
         .accessibilityIdentifier("case.project.addKey")
     }
 }
@@ -124,8 +124,9 @@ struct IslandCaseIconButton: View {
                 .foregroundStyle(.white.opacity(0.74))
                 .frame(width: IslandCaseVaultStyle.iconButtonSize, height: IslandCaseVaultStyle.iconButtonSize)
                 .background(Circle().fill(Color.white.opacity(0.08)))
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CaseAccessButtonStyle(cornerRadius: IslandCaseVaultStyle.iconButtonSize / 2))
         .help(action.accessibilityLabel)
         .accessibilityLabel(action.accessibilityLabel)
         .accessibilityIdentifier(action.accessibilityIdentifier)

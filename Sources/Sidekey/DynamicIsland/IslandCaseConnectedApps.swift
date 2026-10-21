@@ -27,7 +27,7 @@ struct IslandCaseConnectedApps: View {
             .buttonStyle(CaseAccessButtonStyle(cornerRadius: 14))
             .foregroundStyle(.white.opacity(0.92))
             .fixedSize()
-            .help("Подключить агента и выбрать права доступа")
+            .help("Connect an agent and choose its access")
             .accessibilityIdentifier("case.access.open")
         }
         .frame(height: 30)
@@ -83,7 +83,7 @@ private struct CaseConnectedAppButton: View {
         .onHover { hovering = $0 }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: active)
         .help(app.displayName)
-        .accessibilityLabel("\(app.displayName), подключено к Case. Настроить доступ")
+        .accessibilityLabel("\(app.displayName), connected to Case. Change access")
         .accessibilityIdentifier("case.access.app.\(app.id)")
     }
 

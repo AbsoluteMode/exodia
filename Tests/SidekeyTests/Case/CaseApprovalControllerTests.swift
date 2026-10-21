@@ -604,9 +604,9 @@ final class CaseApprovalControllerTests: XCTestCase {
 
     func test_view_copy() {
         let r = request("Claude Code", project: "alpha", keys: ["KEY_A", "KEY_B"], minutes: 15)
-        XCTAssertEqual(CaseApprovalView.titleText(r), "Claude Code хочет запустить команду")
+        XCTAssertEqual(CaseApprovalView.titleText(r), "Claude Code wants to run a command")
         XCTAssertEqual(CaseApprovalView.keysText(r), "alpha: KEY_A, KEY_B")
-        XCTAssertEqual(CaseApprovalView.timedTitle(minutes: 15), "Bypass 15 мин")
+        XCTAssertEqual(CaseApprovalView.timedTitle(minutes: 15), "Bypass for 15 min")
         XCTAssertEqual(CaseApprovalView.commandLine("git push\n  --force"), "git push --force",
                        "one line, whitespace collapsed")
     }
