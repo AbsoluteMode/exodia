@@ -28,7 +28,7 @@ final class AgentModeViewTests: XCTestCase {
         XCTAssertTrue(s.contains("Choose a model in API & Models"))
         XCTAssertTrue(s.contains("openAPIAndModels(.agent)"))
         XCTAssertTrue(s.contains("Save & connect"))
-        XCTAssertTrue(s.contains("Allow agent actions"))
+        XCTAssertTrue(s.contains("Bypass mode"))
         for gone in ["Find a model", "Choose model", "shared with Models", "SecureField",
                      "OpenRouterLLMKeyStore().save", "refreshOpenRouterCatalog", "openCodeModel"] {
             XCTAssertFalse(s.contains(gone), gone)
