@@ -892,9 +892,13 @@ are drafts. Guide: docs/customization/README.md. Update the capability map
 when moving its source entry points. Do not publish private monitoring
 configuration, project contents or credentials with the source.
 
-Application control: `plugins/whytap` is a local stdio MCP plugin using
-`Contents/Helpers/whytap app mcp`. It reads live build/activity/route metadata
-and changes allowlisted models, provider pins, Drop mode, languages and idle
+Application control: `plugins/whytap` bundles separate local stdio MCP servers:
+`Contents/Helpers/whytap app mcp` for app controls and `whytap case mcp` for
+authorized Case project/key names and descriptions, never values. Case retains
+its existing registrations, project scope and approvals; secret use stays in
+`whytap case run` through the agent's own terminal. The app-control server reads
+live build/activity/route metadata and changes allowlisted models, provider pins,
+Drop mode, languages and idle
 auto-hide through existing app stores. Every write requires the current value;
 async model checks recheck the route and cancellation before assignment. It
 shares Case's authenticated bundled-helper transport but never loads its vault
