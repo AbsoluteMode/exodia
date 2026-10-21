@@ -112,6 +112,8 @@ asked for the login password once per item after every build.
   certificate in the preflight; an invalid team file stops it; the upload
   rejects a community-certificate archive when the team is committed and passes
   `team:` provenance; the committed team is pinned.
+- Full `swift test` on the branch merged with main (`35fa0298`): 4,190 tests,
+  20 skipped, 0 failures (142.6 s). An independent Codex review found no defects.
 - Not tested here: packaging and installing a team-signed DMG (builder step),
   a Sparkle install from a certificate-signed to a team-signed build, and live
   Keychain/TCC behaviour after the migration (the acceptance check).
@@ -127,4 +129,4 @@ asked for the login password once per item after every build.
   and a migration of every item; the team partition already removes the prompts.
 - Notarization now: separate from the prompts; the legacy path stays available.
 
-2026-10-21, PR (pending).
+2026-10-21, PR https://github.com/AbsoluteMode/whytap/pull/158.
