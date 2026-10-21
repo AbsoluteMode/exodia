@@ -90,7 +90,8 @@ message remains short. This applies to the selected cleanup provider; it does
 not select Sol or change any saved route.
 
 Recognition alone does not force another editor call. A successful clean
-Decision can return raw text, which is valid plain Markdown. Translation and
+Decision can return raw text, which also bypasses the rich Markdown parser:
+literal asterisks and underscores must not acquire formatting. Translation and
 Decision/editor failure behavior remain unchanged. Fast does not use the new
 formatting or rich clipboard path.
 

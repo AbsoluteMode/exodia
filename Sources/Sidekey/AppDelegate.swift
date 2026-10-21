@@ -3125,6 +3125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var contextMs = 0
         var cleanupStartedAt = processStartedAt
         var formatting = SmartFormattingProfile.plain
+        var deliveryFormatting = SmartFormattingProfile.plain
         let targetBundleID = targetPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
         if mode == .smart { AppState.shared.phase = .verifying }
         do {
@@ -3142,12 +3143,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 cleanupStartedAt = ProcessInfo.processInfo.systemUptime
                 contextMs = Int((cleanupStartedAt - processStartedAt) * 1000)
                 let prefs = PrivacyPreferences.shared
-                return try await postProcessor.process(
+                let output = try await postProcessor.processOutput(
                     rawText, targetApp: targetApp, appContext: snapshot?.context,
                     screenshot: nil, language: prefs.selectedLanguage?.code,
                     outputLanguage: outputLanguageCodeForDrop(mode: mode),
                     transcriptionMode: mode.rawValue, formatting: formatting
                 )
+                deliveryFormatting = output.deliveryProfile(formatting)
+                return output.text
             }
             guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }
             os_log(
@@ -3156,7 +3159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Int((ProcessInfo.processInfo.systemUptime - processStartedAt) * 1000), contextMs,
                 mode == .smart ? Int((ProcessInfo.processInfo.systemUptime - cleanupStartedAt) * 1000) : 0
             )
-            await finishDropDelivery(text: final, rawTranscript: rawText, targetApp: targetApp, formatting: formatting)
+            await finishDropDelivery(text: final, rawTranscript: rawText, targetApp: targetApp, formatting: deliveryFormatting)
             return true
         } catch {
             guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }

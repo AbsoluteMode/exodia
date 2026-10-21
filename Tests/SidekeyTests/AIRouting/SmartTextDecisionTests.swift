@@ -188,10 +188,18 @@ final class SmartTextDecisionTests: XCTestCase {
         try env.keys.save("cleanup-key", account: OpenRouterLLMKeyStore.account)
         env.routing.setRoute(FeatureRoute(account: .openRouter, model: "cleanup-model"), for: .dropSmartCleanup)
         let processor = PostProcessor(llmRoute: DirectLLMRouteResolver(feature: .dropSmartCleanup, routing: env.routing, keys: env.keys), openRouterClient: editor, decision: judge)
-        let result = try await processor.process("Спасибо!", targetApp: "Telegram", formatting: .telegram)
-        XCTAssertEqual(result, "Спасибо!")
+        let text = "Проверь a*b*c и __literal__."
+        let result = try await processor.processOutput(text, targetApp: "Telegram", formatting: .telegram)
+        XCTAssertEqual(result.text, text)
+        XCTAssertFalse(result.usedEditor)
+        XCTAssertEqual(result.deliveryProfile(.telegram), .plain)
         XCTAssertEqual(editor.calls, 0)
         XCTAssertEqual(judge.calls, 1)
+        judge.result = .success(false)
+        let edited = try await processor.processOutput("uh hello", targetApp: "Telegram", formatting: .telegram)
+        XCTAssertTrue(edited.usedEditor)
+        XCTAssertEqual(edited.deliveryProfile(.telegram), .telegram)
+        XCTAssertEqual(editor.calls, 1)
     }
 
     func test_cancelling_decision_stops_both_raw_delivery_and_editor() async throws {
