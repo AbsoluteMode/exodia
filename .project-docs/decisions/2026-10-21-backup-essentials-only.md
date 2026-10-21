@@ -66,8 +66,10 @@ meeting text, not audio, and no clipboard history.
 - Clipboard content can be copied again on the Mac; recent dictations and agent
   answers are short-lived feeds. Excluding the whole database is simpler than
   filtering rows and merging the target's clipboard back on restore.
-- A complete archive drops to about 95 MB here (about 27 times smaller), so the
-  10 GB local reserve, hourly captures and GitHub growth all shrink with it.
+- File metadata suggests a complete archive around 95 MB (about 27 times
+  smaller). Each capture and upload is smaller; the fixed 10 GB automatic and
+  2 GB manual reserves and hourly pacing stay unchanged. The actual archive
+  size still needs verification after a user starts a backup.
 
 ## Tested
 
