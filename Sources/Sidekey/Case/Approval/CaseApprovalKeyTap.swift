@@ -3,15 +3,16 @@ import Carbon.HIToolbox
 import CoreGraphics
 import os
 
-/// Fixed digit keys for a Case Approve prompt; shared by the tap, card and Help.
+/// Fixed physical answer keys for a Case Approve prompt; shared by the tap, card and Help.
 enum CaseApprovalKey: Equatable {
-    case yes, no, timed
+    case yes, no, timed, escape
 
     var keycap: String {
         switch self {
-        case .no: "1"
-        case .yes: "2"
-        case .timed: "3"
+        case .no: "N"
+        case .yes: "Y"
+        case .timed: "A"
+        case .escape: "Esc"
         }
     }
 }
@@ -34,7 +35,7 @@ protocol CaseApprovalKeyIntercepting: AnyObject {
 }
 
 /// Pure per-event decision of the approval tap: which events are swallowed and
-/// which press answers the prompt. Only bare 1, 2 and 3 are ever swallowed.
+/// which press answers the prompt. Only Y, N, A and Escape are ever swallowed.
 struct CaseApprovalKeyFilter {
     struct Decision: Equatable {
         var swallow: Bool
@@ -48,11 +49,12 @@ struct CaseApprovalKeyFilter {
     private var held: Set<Int64> = []
 
     static func key(forKeyCode keyCode: Int64) -> CaseApprovalKey? {
-        // WHY: docs/decisions/2026-10-21-case-numeric-approval.md
+        // WHY: docs/decisions/2026-10-21-case-approval-minutes-input.md
         switch keyCode {
-        case Int64(kVK_ANSI_1), Int64(kVK_ANSI_Keypad1): .no
-        case Int64(kVK_ANSI_2), Int64(kVK_ANSI_Keypad2): .yes
-        case Int64(kVK_ANSI_3), Int64(kVK_ANSI_Keypad3): .timed
+        case Int64(kVK_ANSI_N): .no
+        case Int64(kVK_ANSI_Y): .yes
+        case Int64(kVK_ANSI_A): .timed
+        case Int64(kVK_Escape): .escape
         default: nil
         }
     }
@@ -67,8 +69,8 @@ struct CaseApprovalKeyFilter {
             if held.contains(keyCode) { return Decision(swallow: true, key: nil) }
             // A repeat of a key held down before the prompt (or before arming) stays with the app.
             guard !isRepeat, armed else { return Self.pass }
-            // Modified digits belong to the app (including Shift's punctuation).
-            guard flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]).isEmpty else { return Self.pass }
+            // Command/Control/Option shortcuts belong to the active app; Shift still answers.
+            guard flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty else { return Self.pass }
             held.insert(keyCode)
             return Decision(swallow: true, key: key)
         default:

@@ -99,7 +99,7 @@ enum HelpWindowContent {
             ),
             HelpHotkeyRowSpec(
                 title: "Case — deny",
-                detail: "While a Case request is on screen, deny it. Letters and Escape stay with your app.",
+                detail: "While a Case request is on screen, deny it. Escape denies too. Answer keys pause while editing minutes.",
                 iconName: "xmark.octagon",
                 prefix: nil,
                 contents: [.text(CaseApprovalKey.no.keycap)]
