@@ -128,6 +128,7 @@ enum ArtifactBackupTestArchive {
     static func make(at url: URL, key: Data,
                      entries: [(path: String, section: ArtifactBackupSection, data: Data)],
                      sections: [ArtifactBackupSection]? = nil,
+                     schema: Int = ArtifactBackupManifest.currentSchema,
                      warnings: [String] = []) throws -> ArtifactBackupManifest {
         let inline = entries.filter { ArtifactRestoreDestination.isInlinePath($0.path) }
             .sorted { $0.path < $1.path }
@@ -135,7 +136,7 @@ enum ArtifactBackupTestArchive {
             .sorted { $0.path < $1.path }
         let ordered = inline + files
         let manifest = ArtifactBackupManifest(
-            id: UUID(), createdAt: Date(), flavor: BuildConfig.flavor.rawValue,
+            schema: schema, id: UUID(), createdAt: Date(), flavor: BuildConfig.flavor.rawValue,
             appVersion: nil, appBuild: nil,
             sections: (sections ?? Array(Set(entries.map(\.section)))).sorted { $0.rawValue < $1.rawValue },
             entries: ordered.map {

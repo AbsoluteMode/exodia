@@ -57,7 +57,7 @@ needed. The existing fifty-entry cap remains: inserting the fifty-first copy
 evicts the oldest entry and its image file if applicable.
 
 The watcher still ignores the current pasteboard payload at startup and
-suppresses Exodia's own dictation write/restore events. The Clipboard feed shows the newest twenty entries in a scrollable list,
+suppresses Whytap's own dictation write/restore events. The Clipboard feed shows the newest twenty entries in a scrollable list,
 following the user's request. The hover retains its five-row viewport; scroll
 reveals the remaining copies. Agent and Drop keep their ten-card feeds. These
 UI limits do not delete older retained rows. Sleep/wake only stops and starts the watcher.

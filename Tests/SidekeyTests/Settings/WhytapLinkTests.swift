@@ -23,7 +23,10 @@ final class WhytapLinkTests: XCTestCase {
                     XCTFail("\(tool) is an inline panel without a panel effect")
                     continue
                 }
-                XCTAssertEqual(parsed, .hoverPanel(panel), "\(tool)")
+                // Case asks for Touch ID on appear, so its link stops at Toolbox.
+                let expected: WhytapLinkDestination = tool == .caseVault
+                    ? .settings(.tab(.toolbox)) : .hoverPanel(panel)
+                XCTAssertEqual(parsed, expected, "\(tool)")
             case .navigate(let target):
                 XCTAssertEqual(parsed, .settings(target), "\(tool)")
             case .action:
@@ -49,6 +52,60 @@ final class WhytapLinkTests: XCTestCase {
         XCTAssertEqual(destination("whytap://tool/calendar"), .planner(.calendar))
         XCTAssertEqual(destination("whytap://tool/translate"), .translation(.text))
         XCTAssertEqual(destination("whytap://tool/subtitles"), .translation(.subtitles))
+    }
+
+    // MARK: - Show only (Invariant 7)
+
+    /// Every destination kind is reviewed as show-only. A new case does not
+    /// compile here until someone classifies it.
+    private func isShowOnly(_ destination: WhytapLinkDestination) -> Bool {
+        switch destination {
+        case .hoverPanel(let panel):
+            return isShowOnly(panel)
+        case .toolboxTool(let tool):
+            // Toolbox panes whose action is an explicit button. Case's pane
+            // requests Touch ID on appear and is excluded.
+            return [.dropMode, .meetingRecord, .screenshot].contains(tool)
+        case .settings, .planner, .translation, .island:
+            return true
+        }
+    }
+
+    /// Each inline panel is reviewed for what it does when it appears.
+    private func isShowOnly(_ panel: HoverInlinePanel) -> Bool {
+        switch panel {
+        case .history, .tasks, .notifications, .vocabularyEditor, .fillerEditor,
+             .inputLanguagePicker, .outputLanguagePicker, .monitor, .brightness:
+            // Show content; changes need a click or typing.
+            return true
+        case .caseVault:
+            // Requests Touch ID when it appears.
+            return false
+        }
+    }
+
+    func test_no_link_runs_an_action_or_asks_for_authentication() {
+        let destinations = HoverTool.allCases.map(WhytapLink.destination(for:))
+            + SettingsWindowTab.allCases.map(WhytapLink.destination(for:))
+        for destination in destinations {
+            XCTAssertTrue(isShowOnly(destination), "\(destination)")
+        }
+    }
+
+    func test_link_handler_never_calls_an_action() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/Sidekey/AppDelegate.swift"),
+                                encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private func show(_ destination: WhytapLinkDestination)"))
+        let rest = source[start.upperBound...]
+        let end = rest.range(of: "\n    private func ", options: .regularExpression)?.lowerBound ?? rest.endIndex
+        let body = rest[..<end]
+        for forbidden in ["invoke(", "actions.", "toggle", "quit", "Quit", "paste", "Pasteboard", "copy",
+                          "record", "Record", "unlock", "openScreenshot", "start(", "terminate"] {
+            XCTAssertFalse(body.contains(forbidden), "The whytap:// handler must only show places: found \(forbidden)")
+        }
     }
 
     func test_scheme_and_kind_are_case_insensitive_but_ids_are_not() {

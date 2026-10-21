@@ -19,7 +19,7 @@ related: [decisions/2026-10-19-planner.md, decisions/2026-10-20-backup-auto-sync
 
 # Whytap
 
-Whytap (briefly named Exodia) provides native macOS dictation, meeting notes, and integration with
+Whytap provides native macOS dictation, meeting notes, and integration with
 local agent CLIs. Speech and text run only on the user's provider keys (BYOK) or their own
 OpenAI-compatible endpoints; on-device models were
 [removed](decisions/2026-10-18-remove-local-models.md). Architecture and build instructions live in `agent-context.md` and

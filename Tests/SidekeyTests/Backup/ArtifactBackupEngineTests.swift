@@ -370,9 +370,15 @@ final class ArtifactBackupEngineTests: XCTestCase {
         paused.id = UUID()
         paused.identity = .executablePath("/fixture/paused-agent")
         paused.allowedProjectIDs = []
+        var broaderImported = imported
+        broaderImported.id = UUID()
+        broaderImported.identity = .executablePath("/fixture")
+        let localApp = CaseAppRegistration(id: UUID(), displayName: "Local matching app",
+            identity: imported.identity, defaultMode: .approve, projectModes: [:],
+            createdAt: Date(timeIntervalSinceReferenceDate: 100), allowedProjectIDs: [])
         let sourceStore = CaseVaultStore(fileURL: source.profile.locations.caseVault)
         var sourcePayload = try sourceStore.load(using: source.caseKey)
-        sourcePayload.apps = [imported, paused]
+        sourcePayload.apps = [imported, paused, broaderImported]
         try sourceStore.save(sourcePayload, using: source.caseKey)
         let key = ArtifactBackupTestKeys.make()
         let archive = archiveURL(in: source.profile)
@@ -390,7 +396,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
                 secrets: [CaseSecret(id: localID, name: "Local only", projectID: CaseProject.generalID,
                                      description: "", copyCount: 0,
                                      lastCopiedAt: nil, createdAt: stamp, updatedAt: stamp)],
-                values: [CaseSecretValue(secretID: localID, value: "local-secret-value")]),
+                values: [CaseSecretValue(secretID: localID, value: "local-secret-value")], apps: [localApp]),
             using: localKey)
 
         let environment = target.environment()
@@ -402,7 +408,10 @@ final class ArtifactBackupEngineTests: XCTestCase {
         XCTAssertEqual(Set(merged.secrets.map(\.name)), ["Local only", "Netcup root"])
         XCTAssertEqual(merged.value(for: localID), "local-secret-value")
         XCTAssertTrue(merged.values.contains { $0.value == "synthetic-case-secret" })
-        XCTAssertEqual(merged.apps.first { $0.id == imported.id }?.allowedProjectIDs, [CaseProject.generalID])
+        XCTAssertEqual(merged.apps.filter { $0.identity == imported.identity }, [localApp])
+        XCTAssertEqual(merged.apps.first?.id, localApp.id, "The local policy wins over a broader imported path")
+        XCTAssertEqual(merged.apps.first { $0.id == broaderImported.id }?.defaultMode, .bypass)
+        XCTAssertEqual(merged.apps.first { $0.id == broaderImported.id }?.allowedProjectIDs, [CaseProject.generalID])
         XCTAssertEqual(merged.apps.first { $0.id == paused.id }?.allowedProjectIDs, [], "restore must not turn no access into all projects")
         // Still this Mac's own key: the source key must not open it.
         XCTAssertThrowsError(try CaseVaultStore(fileURL: target.locations.caseVault)

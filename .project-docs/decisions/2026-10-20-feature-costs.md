@@ -2,12 +2,18 @@
 id: feature-costs-2026-10-20
 type: decision
 title: Feature costs preserve historical models and separate ElevenLabs credits
-summary: Costs estimates ElevenLabs feature credits from recorded time and reported model rates, with separate workspace debits grouped by API key for the selected period.
+summary: Soniox uses exact request prices when available and duration estimates otherwise; ElevenLabs uses local model credit rates and recorded time.
 status: confirmed
 tags: [settings, costs, models, credits, providers]
 canonical_for: [feature-costs]
 verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 Maxim chose exact Soniox API prices with local estimates when unavailable, and calculated ElevenLabs credits.
+    confirmed_at: 2026-10-21
+  - type: url
+    reference: https://soniox.com/docs/openapi.yaml
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-21 Maxim requested a more convenient Costs calendar, objected to its large blue focus ring and asked how to choose a year.
     confirmed_at: 2026-10-21
@@ -101,33 +107,42 @@ schema. The saved session references did not resolve through the usage table's
 request/trace filters. The previous exact-request reconciliation is therefore
 replaced by the user's approved time calculation.
 
-Costs reads `/v1/workspace/analytics/query/usage-by-product-over-time` for the
-selected date interval, grouped by API key, model and product. It validates the
-explicit `credits` and `min` column units, accepts numeric strings, and combines
-daily rows within each key/model/product. Missing or ambiguous credit columns,
-HTTP failures and unreadable keys produce an explanation with Refresh, not zero.
-A successful empty table means no reported usage. Reads occur when Costs loads
-or refreshes, not after every transcription. Tests and fixtures default to no
-real credential or network access.
+## Current speech accounting — 2026-10-21
 
-For an ElevenLabs STT model, reported credits divided by reported minutes gives
-an effective credit rate. Each feature's recorded audio minutes times that
-model's rate yields an estimate marked ≈. Rates are model-specific and weighted
-by reported minutes; other apps' total credits are never distributed among our
-features. Different rates, rounding, provider billing time and analytics delay
-can affect this estimate. No matching timed model, no usable duration/rate, or
-failed analytics means unavailable. Known per-request amounts are retained.
-Computed estimates never overwrite historical journal rows as reported debits.
+Soniox initially records its supported v5 model's public equivalent hourly
+estimate. Costs reads `GET /v1/usage-logs` and accepts a reported `cost_usd` only
+for the exact request reference and historical model, scoped to API requests.
+Realtime and batch calls send a fresh random `client_reference_id`; new meeting
+jobs persist that reference in their checkpoint so retries retain one charge.
+Legacy `soniox-job:` rows can match the provider UUID; uncorrelated history is
+never matched by time, duration, model alone or a share of account totals.
 
-A separate ElevenLabs Reported usage section shows actual workspace charges,
-grouped by API key and model, for the same period. It explicitly includes other
-apps using this workspace's keys. Authentication does not prove that the response
-is limited to the currently stored key, so the UI labels workspace scope. This
-section is not added to feature Total: that would count some work twice. Provider
-key hashes are transient grouping IDs; credentials, hashes and full responses
-are never stored in the journal or diagnostics.
+Usage-log windows filter by request end time, so a query extends beyond an
+activity day's end for audio and asynchronous completion. Each window is at
+most 31 days, pagination is bounded, and repeated cursors terminate safely.
+Missing, delayed, malformed, ambiguous or inaccessible prices retain estimates
+marked ≈. An explicit reported zero remains zero. Late exact prices replace
+estimates in the existing journal row, preserving its feature, model, currency,
+start date and duration. Repeated responses cannot duplicate or downgrade a
+reported charge. No provider request is sent merely to generate a test charge.
 
-Verification uses synthetic parser/network/multiple-feature fixtures and a
-read-only snapshot of the user's existing journal with the production billing
-client and estimator. No new inference or journal mutation is needed. Installed
-UI acceptance remains separate from this diagnostic and source checks.
+ElevenLabs feature credits are calculated from recorded audio minutes and a
+cached model-specific credit/minute rate. The rate is learned from the STT
+credit/minute usage table over the latest 31 days, weighted by reported minutes;
+it is never derived from USD, credit balance differences or subscription price.
+Only model rates and their update time are cached locally. Key names, hashes,
+workspace totals and full responses are not persisted. Rate refresh is attempted
+when needed or after a day; an unavailable API retains the previous usable rate.
+Recording itself uses the cache without a billing request. A first-use model
+without a usable rate remains unavailable rather than borrowing another model's
+rate. Known per-request amounts remain unchanged, and calculated amounts stay ≈.
+Calculated estimates are saved with their own historical event, so later rate
+updates do not reprice saved usage.
+
+The earlier separate ElevenLabs workspace Reported usage section is superseded
+by this choice. Costs has one feature table and Total, with USD and credits
+kept separate. Refresh retries price lookups; API failure shows a concise
+explanation while known estimates remain visible. Loading prices does not hide
+local history. Tests and fixtures use temporary stores, synthetic keys and stub
+network responses. Installed UI and live billing acceptance remain separate from
+source/parser checks.
