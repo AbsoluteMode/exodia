@@ -119,4 +119,4 @@ reads in XCTest.
   late-marker check narrows but cannot close it.
 - Applications that do not set the markers are still recorded.
 
-2026-10-21, PR: see the pull request that introduced this file.
+2026-10-21, PR: https://github.com/AbsoluteMode/whytap/pull/202
