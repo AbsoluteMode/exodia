@@ -41,7 +41,7 @@ enum ConfigBackupRegistry {
         add(.models, .bool, ["sidekey.translation.original"])
         add(.models, .data, [aiRoutingKey])
         add(.models, .propertyList, [aiRoutingPreservedKey])
-        add(.hotkeys, .propertyList, [HotkeyPreferences.toolShortcutsDefaultsKey])
+        add(.hotkeys, .propertyList, [HotkeyPreferences.toolShortcutsDefaultsKey, HotkeyPreferences.screenshotArrowsDefaultsKey])
         add(.hotkeys, .bool, ["sidekey.preferences.brightnessKeys"])
         add(.hotkeys, .string, ["agentGestureKey", "agentTextKey", "agentVoiceKey", "agentTextShortcut",
             "agentVoiceShortcut", "agentVoiceGesture", "dropVoiceGesture", "dropVoiceTapCombo", "dropVoiceShortcut",

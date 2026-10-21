@@ -20,7 +20,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/AgentDaemon/ClaudeBinaryLocatorTests.swift
     confirmed_at: 2026-10-21
-related: [../../docs/decisions/2026-10-20-case-connect-and-scope.md]
+related: [2026-10-21-case-connect-claude-code.md]
 ---
 
 ## Context
@@ -79,3 +79,5 @@ No live app check: feature sessions must not launch the app.
 
 Extends the desktop-managed lookup added for the agent CLI; resolves the known
 limit recorded by PR #174 (Case Connect: offer Claude Code again).
+
+The builder verified that executable permission alone also accepts a FIFO. The final regular-file check follows symlinks before checking the target type; a real-file fixture rejects an executable FIFO without launching it. [Case access policy](../../docs/decisions/2026-10-20-case-connect-and-scope.md) is unchanged.

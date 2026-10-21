@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import Sidekey
 
@@ -193,5 +194,15 @@ final class ClaudeBinaryLocatorTests: XCTestCase {
                                                 withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: target)
         XCTAssertEqual(homeLocator().locate()?.path, link.path)
+    }
+
+    func testExecutableFIFOIsNotAClientBinary() throws {
+        let fifo = home.appendingPathComponent(desktopBinary("2.1.900", hash: "not-a-binary"))
+        try FileManager.default.createDirectory(at: fifo.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        XCTAssertEqual(mkfifo(fifo.path, 0o755), 0)
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: fifo.path))
+        XCTAssertFalse(ClaudeBinaryLocator.isExecutableFile(fifo.path))
+        XCTAssertNil(homeLocator().locate())
     }
 }

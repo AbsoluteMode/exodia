@@ -116,9 +116,12 @@ struct ClaudeBinaryLocator {
     /// `isExecutableFile` too, so it is ruled out explicitly.
     static func isExecutableFile(_ path: String) -> Bool {
         var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-            && !isDirectory.boolValue
-            && FileManager.default.isExecutableFile(atPath: path)
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              FileManager.default.isExecutableFile(atPath: path) else { return false }
+        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: resolved) else { return false }
+        return attributes[.type] as? FileAttributeType == .typeRegular
     }
 
     static func defaultVersionOf(_ url: URL) -> String? {
