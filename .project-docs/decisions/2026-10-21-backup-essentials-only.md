@@ -104,4 +104,4 @@ still reads it), the recording entry ceiling of the simple GitHub backup
 decision and the retained-recordings clause of the tagged-cache decision.
 Encryption, verification, schema and recovery-code contracts are unchanged.
 
-2026-10-21 · PR AbsoluteMode/whytap#197
+2026-10-21 · PR AbsoluteMode/whytap#199
