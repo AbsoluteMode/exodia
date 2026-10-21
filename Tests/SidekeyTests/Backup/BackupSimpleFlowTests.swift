@@ -57,7 +57,8 @@ final class BackupSimpleFlowTests: XCTestCase {
             changeProbe: changeProbe, idle: idle, providerStore: environment.credentialStore,
             previousRestoreOutcome: { nil }, archivedKeyStore: { _ in MemoryTokenStore() },
             pendingKeyStore: MemoryTokenStore(), githubSession: session, now: now,
-            recoveryAuthentication: recoveryAuthentication)
+            recoveryAuthentication: recoveryAuthentication,
+            cleanupWork: { try await engine.cleanupAbandonedWork() })
     }
 
     func testConnectChecksGitHubWithoutCreatingABackupOrRequestingACode() async throws {
@@ -324,6 +325,95 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(remote.publishCount, 1)
         XCTAssertEqual(model.versions.count, 1)
+    }
+
+    func testHourlyCalendarTokenRotationDoesNotCreateAnArchiveButTheNextRealEditCarriesIt() async throws {
+        var source = try profile(), target = try profile()
+        let account = ConnectedCalendarAccount(id: UUID(), provider: .microsoft, label: "Synthetic calendar")
+        let name = CalendarKeychain.account(account.id)
+        source.defaults.set(try JSONEncoder().encode([account]), forKey: CalendarAccountSettings.accountsKey)
+        var credential = CalendarCredential(provider: .microsoft, clientID: "fixture-client",
+            accessToken: "fixture-access", refreshToken: "fixture-first", expiresAt: .distantFuture)
+        source.addCredential(name, String(decoding: try JSONEncoder().encode(credential), as: UTF8.self))
+        target.addCredential(name, nil)
+        var time = Date()
+        let model = model(source, now: { time })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.poll(); await model.backupEverything()
+        let code = model.recoveryCode
+        credential.refreshToken = "fixture-rotated-with-a-different-length"
+        try source.credentialStores[name]!.save(String(decoding: try JSONEncoder().encode(credential), as: UTF8.self))
+        time.addTimeInterval(3600); await model.poll()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(remote.publishCount, 1)
+        XCTAssertEqual(model.versions.count, 1)
+        source.defaults.set(true, forKey: "sidekey.preferences.hideHelpers")
+        time.addTimeInterval(121); await model.poll()
+        XCTAssertEqual(remote.publishCount, 2)
+        let restore = self.model(target)
+        await restore.connectGitHub(token: "synthetic-token")
+        await restore.restoreEverything(code: code)
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: target.environment())
+        let restored = try JSONDecoder().decode(CalendarCredential.self, from: Data(try XCTUnwrap(target.credentialStores[name]!.read()).utf8))
+        XCTAssertEqual(restored.refreshToken, credential.refreshToken)
+        credential.clientID = "fixture-new-client"
+        try source.credentialStores[name]!.save(String(decoding: try JSONEncoder().encode(credential), as: UTF8.self))
+        time.addTimeInterval(121); await model.poll()
+        XCTAssertEqual(remote.publishCount, 3, "A different calendar client is a real credential change")
+    }
+
+    func testStartupRemovesAbandonedWorkAndOrphansButKeepsIndexedAndResumableCopies() async throws {
+        let source = try profile(), key = ArtifactBackupTestKeys.make()
+        let local = BackupLocalStore(root: source.root.appendingPathComponent("archives"))
+        let file = try await local.archiveURL()
+        let summary = try await ArtifactBackupEngine(environment: source.environment()).createArchive(at: file, key: key)
+        let keptArchive = try await local.record(summary, from: file)
+        let destination = "github:synthetic/Exodia-Backup"
+        try await local.recordPreparation(id: summary.id, preparation: .init(destinationID: destination, depth: 0))
+        let keptUpload = await local.uploadFileURL(id: summary.id, destinationID: destination)
+        try source.write("resumable ciphertext", to: keptUpload)
+        let orphan = local.root.appendingPathComponent(UUID().uuidString + ".exodiabackup")
+        let orphanUpload = local.root.appendingPathComponent(UUID().uuidString + ".0123456789abcdef.upload")
+        try source.write("partial ciphertext", to: orphan); try source.write("partial", to: orphanUpload)
+        let scratch = source.locations.stagingWorkRoot.appendingPathComponent(UUID().uuidString)
+        try source.write("abandoned audio", to: scratch.appendingPathComponent("chunk.wav"))
+        let outside = source.root.appendingPathComponent("outside")
+        try source.write("keep", to: outside.appendingPathComponent("audio.wav"))
+        let link = source.locations.stagingWorkRoot.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: outside.path)
+        let recovery = source.locations.recoveryRoot.appendingPathComponent("keep.txt")
+        let unrelated = local.root.appendingPathComponent("keep.txt")
+        try source.write("recoverable", to: recovery); try source.write("unrelated", to: unrelated)
+        let model = model(source, keyStore: MemoryTokenStore(key.base64EncodedString()))
+        await model.start()?.value
+        XCTAssertNil(model.errorMessage)
+        await model.stopAndWait()
+        XCTAssertFalse(source.exists(orphan)); XCTAssertFalse(source.exists(orphanUpload)); XCTAssertFalse(source.exists(scratch))
+        XCTAssertTrue(source.exists(keptArchive)); XCTAssertTrue(source.exists(keptUpload))
+        XCTAssertEqual(source.contents(of: outside.appendingPathComponent("audio.wav")), "keep")
+        XCTAssertEqual(source.contents(of: recovery), "recoverable")
+        XCTAssertEqual(source.contents(of: unrelated), "unrelated")
+    }
+
+    func testOrphanCleanupRefusesAnUnreadableCatalogAndHonorsParkedCatalogs() async throws {
+        let source = try profile(), local = BackupLocalStore(root: source.root.appendingPathComponent("archives"))
+        let orphan = local.root.appendingPathComponent(UUID().uuidString + ".exodiabackup")
+        try source.write("keep until catalog is known", to: orphan)
+        let catalog = local.root.appendingPathComponent("catalog.json")
+        try source.write("broken", to: catalog)
+        let scratch = source.locations.stagingWorkRoot.appendingPathComponent(UUID().uuidString)
+        try source.write("abandoned plaintext", to: scratch.appendingPathComponent("audio.wav"))
+        let model = model(source)
+        await model.start()?.value
+        XCTAssertNotNil(model.errorMessage)
+        await model.stopAndWait()
+        XCTAssertFalse(source.exists(scratch), "Scratch cleanup does not depend on a readable catalog")
+        do { try await local.cleanupOrphans(); XCTFail("Do not infer orphans from an unreadable catalog") } catch {}
+        XCTAssertTrue(source.exists(orphan))
+        try source.write("[]", to: catalog)
+        try source.write("parked", to: local.root.appendingPathComponent("kept-catalog-\(UUID().uuidString).json"))
+        try await local.cleanupOrphans()
+        XCTAssertTrue(source.exists(orphan), "Explicit abandonment preserved these unknown archives")
     }
 
     func testNewMacCannotAccidentallyReplaceTheRecoveryCodeBeforeRestore() async throws {

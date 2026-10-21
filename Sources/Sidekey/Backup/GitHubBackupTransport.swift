@@ -135,28 +135,10 @@ actor GitHubBackupTransport {
         let release: Release
         if let resumeReleaseID {
             guard resumeReleaseID > 0 else { throw Failure.incomplete }
-            let data = try await json(path: repoPath + "/releases/\(resumeReleaseID)")
-            guard let existing = try? JSONDecoder().decode(Release.self, from: data) else { throw Failure.invalidResponse }
-            release = existing
+            if let saved = try await savedRelease(id: resumeReleaseID) { release = saved }
+            else { release = try await managedRelease(tag: tag) }
         } else {
-            let lookup = try await session.data(for: request(path: repoPath + "/releases/tags/" + tag))
-            if (lookup.1 as? HTTPURLResponse)?.statusCode == 404 {
-                // The tag endpoint returns published releases only. Drafts
-                // are discovered through the authenticated release listing.
-                if let existing = try await findDraft(tag: tag) { release = existing }
-                else {
-                    let data = try await json(path: repoPath + "/releases", method: "POST", body: [
-                        "tag_name": tag, "name": "Encrypted backup", "body": Self.marker,
-                        "draft": true, "prerelease": true, "make_latest": "false"
-                    ])
-                    guard let created = try? JSONDecoder().decode(Release.self, from: data) else { throw Failure.invalidResponse }
-                    release = created
-                }
-            } else {
-                try Self.check(lookup.1)
-                guard let existing = try? JSONDecoder().decode(Release.self, from: lookup.0) else { throw Failure.invalidResponse }
-                release = existing
-            }
+            release = try await managedRelease(tag: tag)
         }
         guard release.tag_name == tag, release.body == Self.marker else { throw Failure.invalidResponse }
         if let onDraft { try await onDraft(release.id) }
@@ -392,6 +374,42 @@ actor GitHubBackupTransport {
         } else { guard release.draft else { throw Failure.incomplete } }
         return try await uploadAsset(data, name: name, releaseID: release.id)
     }
+    /// A saved draft ID is only a resume hint. `upload` has just verified the
+    /// repository as private and writable, so a 404 for this one release means
+    /// the draft no longer exists (for example, deleted on GitHub): the caller
+    /// falls back to the snapshot's own tag instead of treating it as a
+    /// permission failure that reconnecting can never fix. Every other status
+    /// keeps its normal meaning.
+    private func savedRelease(id: Int) async throws -> Release? {
+        try Task.checkCancellation()
+        let (data, response) = try await session.data(for: request(path: repoPath + "/releases/\(id)"))
+        if (response as? HTTPURLResponse)?.statusCode == 404 { return nil }
+        try Self.check(response)
+        guard data.count <= 8_000_000, let existing = try? JSONDecoder().decode(Release.self, from: data) else {
+            throw Failure.invalidResponse
+        }
+        return existing
+    }
+
+    /// The snapshot's published release, its existing draft, or a new draft.
+    private func managedRelease(tag: String) async throws -> Release {
+        let lookup = try await session.data(for: request(path: repoPath + "/releases/tags/" + tag))
+        if (lookup.1 as? HTTPURLResponse)?.statusCode == 404 {
+            // The tag endpoint returns published releases only. Drafts
+            // are discovered through the authenticated release listing.
+            if let existing = try await findDraft(tag: tag) { return existing }
+            let data = try await json(path: repoPath + "/releases", method: "POST", body: [
+                "tag_name": tag, "name": "Encrypted backup", "body": Self.marker,
+                "draft": true, "prerelease": true, "make_latest": "false"
+            ])
+            guard let created = try? JSONDecoder().decode(Release.self, from: data) else { throw Failure.invalidResponse }
+            return created
+        }
+        try Self.check(lookup.1)
+        guard let existing = try? JSONDecoder().decode(Release.self, from: lookup.0) else { throw Failure.invalidResponse }
+        return existing
+    }
+
     private func findDraft(tag: String) async throws -> Release? {
         for page in 1...20 {
             let data = try await json(path: repoPath + "/releases?per_page=100&page=\(page)")

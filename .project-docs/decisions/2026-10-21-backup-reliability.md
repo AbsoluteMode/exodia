@@ -58,15 +58,22 @@ repeating Back up exposed the same code without the existing authentication gate
   even when metadata is unchanged. Settings and key changes still trigger
   earlier checks. Exclude capture IDs, dates, build strings and encryption
   randomness from the content fingerprint. Stable inactive-file aliases prevent
-  unchanged retained originals from looking different on every export.
+  unchanged retained originals from looking different on every export. Calendar
+  refresh-token rotation compares only the durable client identity, matching
+  settings history; actual archives still carry the latest authorization.
 - Capture changed content before contacting a destination. Once its verified
   replacement is durable, coalesce superseded unprepared automatic snapshots;
-  retain resumable transfers, successful copies and recovery checkpoints.
+  retain resumable transfers, successful copies and recovery checkpoints. Clean
+  recognized abandoned scratch generations and unindexed transfer files before
+  runtime work starts. Unreadable catalogs and explicit catalog-abandonment
+  markers preserve unknown archives; restore roots are never scratch cleanup.
   An offline destination cannot block a fresh artifact snapshot. Back off network failures
   from two to fifteen minutes (or a later GitHub rate-limit deadline). Recheck a
   transient connection failure after an offline launch without requiring open
   Settings. Only actual authentication/permission/public-repository failures
-  require reconnecting. Retry an unchanged invalid source at most hourly; a source
+  require reconnecting. A 404 on a saved draft ID falls back to the verified
+  snapshot tag or a new managed draft, while genuine permission failures stay
+  fail-closed. Retry an unchanged invalid source at most hourly; a source
   change or explicit Back up retries it sooner. Validate workspace paths before large
   meeting exports and identify unsupported relative paths in the visible error.
 - Schema 4 carries safe regular recording originals and repair checkpoints,
@@ -117,7 +124,8 @@ clean-profile restore, failed-authentication display, unchanged invalid inputs,
 repeat restore/backup, held originals and repair checkpoints, inactive-file
 coexistence, stable content fingerprints, hourly content checks without metadata
 hints, fresh bounded offline artifact capture, Costs snapshot validation and
-recovery, and Case policy precedence.
+recovery, calendar token-only hourly deduplication, startup orphan cleanup,
+deleted-draft resumption, and Case policy precedence.
 Offscreen native fixtures cover supported widths, appearances and control states.
 No real backup, provider request or user secret is used. Physical input, real
 GitHub connectivity and Mac authentication require the shared installed app.

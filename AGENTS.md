@@ -907,14 +907,19 @@ pauses and maintenance never show Backup synced. Background sync keeps the same
 recovery credential without revealing it. WHY:
 `.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
 At least hourly while running and idle, coherent content is hashed even without
-metadata changes. Only changed content creates a new encrypted archive. Capture
+metadata changes. Only changed content creates a new encrypted archive. Calendar
+refresh-token rotation uses the same client-identity comparison as settings
+history; the next real snapshot still contains the current authorization. Capture
 precedes network transfer: retain the freshest pending automatic generation and
 a resumable upload, coalescing only superseded unprepared automatic snapshots
 after a verified replacement is durable. Network failures back off, including
 a connection check after an offline launch, while
 actual authentication/permission/public-repository failures require reconnecting.
-GitHub rate-limit deadlines are respected. Unchanged unsupported inputs suspend
-automatic export retries.
+GitHub rate-limit deadlines are respected. A missing saved draft falls back to
+the verified snapshot tag or a new managed draft. Unchanged unsupported inputs
+retry at most hourly. Startup removes recognized abandoned scratch generations
+and unindexed transfer files, preserving indexed/resumable/recovery data and
+files protected by unreadable or explicitly parked catalogs.
 Schema 4 preserves opaque retained recording originals and repair checkpoints
 as inert files, excluding active provider jobs. Inactive configurations and
 coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application

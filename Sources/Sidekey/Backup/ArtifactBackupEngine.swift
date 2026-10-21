@@ -119,7 +119,9 @@ final class ArtifactBackupEngine {
                 },
                 contentBytes: generation.contentBytes,
                 warnings: Array((warnings + generation.warnings).prefix(64)))
-            if manifest.contentFingerprint == previousFingerprint {
+            let fingerprint = try Self.contentFingerprint(of: manifest,
+                credentials: secrets.payloads.first { $0.path == "credentials/providers.json" }?.data)
+            if fingerprint == previousFingerprint {
                 await stager.discard(generation.directory)
                 return nil
             }
@@ -128,7 +130,7 @@ final class ArtifactBackupEngine {
             await stager.discard(generation.directory)
             return ArtifactBackupSummary(id: manifest.id, createdAt: manifest.createdAt,
                                          totalBytes: archiveBytes, fileCount: manifest.entries.count,
-                                         sections: present, contentFingerprint: manifest.contentFingerprint)
+                                         sections: present, contentFingerprint: fingerprint)
         } catch {
             await stager.discard(generation.directory)
             throw error
@@ -159,7 +161,8 @@ final class ArtifactBackupEngine {
                                             totalBytes: size,
                                             fileCount: verification.manifest.entries.count,
                                             sections: Set(verification.manifest.sections),
-                                            contentFingerprint: verification.manifest.contentFingerprint)
+                                            contentFingerprint: try Self.contentFingerprint(of: verification.manifest,
+                                                credentials: verification.inline[.credentials]))
         return ArtifactBackupPreview(summary: summary, warnings: Array(warnings.prefix(64)))
     }
 
@@ -332,6 +335,27 @@ final class ArtifactBackupEngine {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
         } catch { throw ArtifactBackupError.writeFailed }
+    }
+
+    private static func contentFingerprint(of manifest: ArtifactBackupManifest, credentials: Data?) throws -> String {
+        guard let credentials else { return manifest.contentFingerprint }
+        var payload = try JSONDecoder.artifactBackup.decode(ArtifactCredentialsPayload.self, from: credentials)
+        payload.accounts = try ConfigBackupRegistry.credentialsForChangeDetection(payload.accounts)
+        let normalized = try JSONEncoder.artifactBackup.encode(payload)
+        var comparable = manifest
+        if let index = comparable.entries.firstIndex(where: { $0.path == "credentials/providers.json" }) {
+            comparable.contentBytes += Int64(normalized.count) - comparable.entries[index].bytes
+            comparable.entries[index].bytes = Int64(normalized.count)
+            comparable.entries[index].sha256 = ArtifactBackupDigest.of(normalized)
+        }
+        return comparable.contentFingerprint
+    }
+
+    /// Called once before runtime backup work starts; only app-owned scratch
+    /// generations are disposable. Pending restore / recovery roots are separate.
+    func cleanupAbandonedWork() async throws {
+        guard !isWorking else { throw ArtifactBackupError.busy }
+        try await stager.cleanupAbandonedWork(at: environment.locations.stagingWorkRoot)
     }
 
     private func meetingsExporter() throws -> ArtifactMeetingsExporting {

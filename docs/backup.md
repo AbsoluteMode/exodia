@@ -27,6 +27,8 @@ before automatic sync was introduced. Settings, keys and artifact metadata are c
 an hour while Whytap is running and idle, a coherent export is hashed by content,
 even if no file metadata changed. A matching hash creates no archive or upload.
 Changed data produces a fresh encrypted local snapshot before any network work.
+Calendar refresh-token rotation alone does not create a version; the next real
+snapshot carries the current authorization, as with local settings history.
 Attempts are spaced at least two minutes apart and wait during recording or
 agent work. Without a connection, the newest pending automatic snapshot replaces
 superseded unprepared snapshots; a resumable upload and verified older copies
@@ -35,13 +37,17 @@ retries back off to at most once every fifteen minutes, or longer if GitHub
 requests it. Starting without a network also retries the connection in the
 background; opening Settings is not required. Account or repository
 permission failures require reconnecting. An unchanged unsupported file or size
-limit stops automatic export retries until the files change; **Back up** also
-retries explicitly. Backup shows **Backup
+limit is retried at most hourly; a source change or **Back up** retries sooner.
+A deleted unfinished GitHub draft is recreated automatically after repository
+access is checked, without a reconnect loop. Backup shows **Backup
 synced** only after verification with no detected changes or copies waiting
 and after the recovery code has been presented,
 and links directly to the repository's GitHub Releases. Pending, syncing, paused
 and error states have their own labels. Existing folder destinations and local
 encrypted settings history are retained internally.
+Startup removes interrupted temporary generations and unindexed transfer files,
+while retaining indexed snapshots, resumable uploads and restore checkpoints.
+An unreadable or explicitly parked catalog preserves its unknown archives.
 A previously interrupted management operation can still be finished or stopped.
 Restored recording jobs and executable connections stay paused until enabled.
 If the first upload finishes after leaving this screen, **Save your recovery

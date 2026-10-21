@@ -258,6 +258,18 @@ actor ArtifactBackupStager {
         try? fileManager.removeItem(at: directory)
     }
 
+    func cleanupAbandonedWork(at root: URL) throws {
+        guard fileManager.fileExists(atPath: root.path) else { return }
+        try validateOwnedRoot(root)
+        for item in try listDirectory(root) where UUID(uuidString: item.lastPathComponent) != nil {
+            let values = try resourceValues(item)
+            guard values.isDirectory == true, values.isSymbolicLink != true else { continue }
+            try Task.checkCancellation()
+            try fileManager.removeItem(at: item)
+        }
+        try ConfigBackupFiles.synchronizeDirectory(root)
+    }
+
     /// Inline entries first, then files; both deterministic. The restore path
     /// validates every inline payload before it moves a single target, and a
     /// stable prefix lets it do that by reading only the head of the archive.

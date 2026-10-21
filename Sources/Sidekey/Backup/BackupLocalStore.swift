@@ -119,6 +119,43 @@ actor BackupLocalStore {
 
     func pendingCopies(destinationID: String) throws -> [Record] { try records().filter { $0.recoveryOnly != true && ($0.copiedAt == nil || $0.destinationID != destinationID) } }
 
+    /// Startup only, before capture/transfer begins. A readable catalog and
+    /// management journal identify every retained archive and resumable upload.
+    /// Explicitly parked damaged catalogs retain their otherwise unknown files.
+    func cleanupOrphans() throws {
+        guard FileManager.default.fileExists(atPath: root.path) else { return }
+        try ConfigBackupFiles.checkDirectory(root)
+        let values = try records(), management = try maintenance()
+        var protectedIDs = Set(values.map { $0.summary.id })
+        if let id = management?.replacement?.id { protectedIDs.insert(id) }
+        let uploads = Set(values.compactMap { record -> String? in
+            guard let preparation = record.preparation else { return nil }
+            return uploadFileURL(id: record.summary.id, destinationID: preparation.destinationID).lastPathComponent.lowercased()
+        })
+        let files = try FileManager.default.contentsOfDirectory(at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        let hasParkedCatalog = files.contains {
+            $0.lastPathComponent.hasPrefix("kept-catalog-") && $0.pathExtension == "json"
+        }
+        if !hasParkedCatalog {
+            for file in files {
+                let name = file.lastPathComponent
+                let archiveID = file.pathExtension == "exodiabackup" ? UUID(uuidString: file.deletingPathExtension().lastPathComponent) : nil
+                let pieces = name.split(separator: ".")
+                let upload = pieces.count == 3 && UUID(uuidString: String(pieces[0])) != nil
+                    && pieces[1].count == 16 && pieces[1].allSatisfy(\.isHexDigit) && pieces[2] == "upload"
+                let partial = name.hasPrefix(".copy-") && UUID(uuidString: String(name.dropFirst(6))) != nil
+                guard archiveID.map({ !protectedIDs.contains($0) }) ?? (upload && !uploads.contains(name.lowercased()) || partial) else { continue }
+                let metadata = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard metadata.isRegularFile == true, metadata.isSymbolicLink != true else { continue }
+                try Task.checkCancellation()
+                try FileManager.default.removeItem(at: file)
+            }
+        }
+        try Self.deleteArchiveFiles(in: root.appendingPathComponent("restore-work"), except: nil)
+        try ConfigBackupFiles.synchronizeDirectory(root)
+    }
+
     /// No plaintext is involved; nevertheless verify the copied ciphertext
     /// before marking the folder destination complete.
     static func copyArchive(_ source: URL, to destination: URL, replaceDamagedCopy: Bool = false) throws {

@@ -6,7 +6,7 @@ import LocalAuthentication
 
 @MainActor
 final class BackupViewModel: ObservableObject {
-    static let shared = BackupViewModel()
+    static let shared = BackupViewModel(cleanupWork: { try await ArtifactBackupEngine.shared.cleanupAbandonedWork() })
     nonisolated static let keyAccount = "backup.archive-key.v1"
     enum GitHubConnectionState { case disconnected, checking, connected, needsAttention }
     @Published var githubConnectionState: GitHubConnectionState = .disconnected
@@ -47,6 +47,7 @@ final class BackupViewModel: ObservableObject {
     private let archivedKeyStore: (String) -> TokenStore
     private let pendingKeyStore: TokenStore
     private let recoveryAuthentication: @MainActor () async throws -> Bool
+    private let cleanupWork: @MainActor () async throws -> Void
     private var github: GitHubBackupTransport?
     private let githubSession: URLSession
     private let delta = BackupDeltaArchive()
@@ -99,7 +100,8 @@ final class BackupViewModel: ObservableObject {
              let context = LAContext()
              return try await context.evaluatePolicy(.deviceOwnerAuthentication,
                  localizedReason: "Show your Whytap backup recovery code")
-         }) {
+         },
+         cleanupWork: @escaping @MainActor () async throws -> Void = {}) {
         self.defaults = defaults; self.keyStore = keyStore
         self.githubTokenStore = githubTokenStore; self.local = local; self.settingsFiles = settingsFiles
         self.engine = engine; self.changeProbe = changeProbe; self.idle = idle; self.providerStore = providerStore; self.previousRestoreOutcome = previousRestoreOutcome; self.archivedKeyStore = archivedKeyStore
@@ -107,6 +109,7 @@ final class BackupViewModel: ObservableObject {
         self.githubSession = githubSession
         self.now = now
         self.recoveryAuthentication = recoveryAuthentication
+        self.cleanupWork = cleanupWork
         hasPresentedRecoveryCode = defaults.bool(forKey: "backup.recovery-code-presented.v1")
     }
 
@@ -161,6 +164,13 @@ final class BackupViewModel: ObservableObject {
 
     private func initialize() async {
         guard !stopped, !Task.isCancelled else { isBusy = false; return }
+        do {
+            try await cleanupWork()
+            try await local.cleanupOrphans()
+        } catch {
+            isBusy = false; fail(error)
+            return
+        }
         do {
             hasPendingMaintenance = try await local.maintenance() != nil
         } catch {
