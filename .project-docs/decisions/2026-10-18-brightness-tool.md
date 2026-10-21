@@ -1,13 +1,16 @@
 ---
 id: brightness-tool-2026-10-18
 type: decision
-title: Brightness is a catalog hover tool with a backlight slider, an Extra switch and battery time
-summary: A short inline strip sets the island display's backlight, offers an Extra switch that scales the display's transfer table into the EDR headroom, as Vivid does, until switched off or the backlight decreases, and shows a battery time left that follows the last half hour's load and the current brightness; optional Brightness keys show the strip instead of the macOS indicator. Saved and default layouts are unchanged.
+title: Brightness is a catalog hover tool with a backlight slider and an Extra switch
+summary: A short inline strip sets the island display's backlight, offers an Extra switch that scales the display's transfer table into the EDR headroom, as Vivid does, until switched off or the backlight decreases, with no battery charge or runtime indicator; optional Brightness keys show the strip instead of the macOS indicator. Saved and default layouts are unchanged.
 status: confirmed
 tags: [hover, brightness, edr, gamma, battery, display, settings]
 canonical_for: [brightness-tool]
-verified_at: 2026-10-20
+verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 the user requested removal of the battery indicator because it repeatedly displayed apparently random values. This supersedes the earlier battery charge and runtime requirements.
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-20 the user refined manual dimming so the first decrease with Extra on only disables Extra without changing the brightness slider. Subsequent manual adjustments lower the backlight normally.
     confirmed_at: 2026-10-20
@@ -32,8 +35,8 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Brightness/BrightnessHeadroomTrigger.swift
     confirmed_at: 2026-10-20
-  - type: repository
-    reference: Sources/Sidekey/Brightness/BatteryRuntime.swift
+  - type: url
+    reference: https://github.com/AbsoluteMode/whytap/blob/4bc5e99899ee6562a7b8b450047148d92ba73fbf/Sources/Sidekey/Brightness/BatteryRuntime.swift (retired battery implementation)
     confirmed_at: 2026-10-20
   - type: repository
     reference: Sources/Sidekey/Brightness/IslandBrightnessStrip.swift
@@ -112,14 +115,16 @@ SDR maximum exists only as EDR headroom that apps fill with their own content.
 
 **Tool.** `HoverTool.brightness` is an `.inlinePanel` resolved to
 `.openPanel(.brightness)`. It is offered from the Toolbox catalog and search
-(brightness, display, vivid, xdr, battery, plus the Russian aliases);
+(brightness, display, vivid, xdr, plus the Russian aliases);
 `HoverLayoutStore.defaultSlots` and saved layouts are unchanged. Its capsule
 title is Display. Hover capsules draw no status captions; its VoiceOver label
 adds NN% or Extra, and nothing for an unreadable display.
 
 **Strip.** 68 points: Back, a white Control Center style capsule slider with the
-sun at its start, the Extra switch and one status line (an orange notice, or
-the battery). The band is 76 points, 126 with music. The mode takes keyboard
+sun at its start and the Extra switch. A status line appears only for an
+orange notice or unavailable brightness. Healthy states have a single
+centered control row. The band remains 76 points, 126 with music, preserving
+room for notices and the existing hover hit zone. The mode takes keyboard
 focus like Monitor, so the slider and switch receive clicks. The switch is
 `MacSwitch` at its compact 30x18-point size, in the accent color when on even
 though the island's window is never the active app's key window. Opened from
@@ -253,7 +258,15 @@ time in a row without an event, or at once without Accessibility. Drop's
 permission repair starts the keys again every second while Drop is not
 installed; the first key handler stays, so the gesture keeps its first press.
 
-**Battery.** IOKit power sources give the percentage, power state and macOS's
+**Battery removal (2026-10-21).** The user rejected the indicator because its
+values appeared random. Remove the whole charge/runtime line, its catalog
+copy and search aliases, the estimator, IOKit battery reader, background
+sampling and display-load helpers. Keep brightness controls, Extra, notices,
+brightness keys and saved layouts. There is no replacement battery indicator
+or retained battery history. This supersedes the earlier battery requirements
+and the battery-specific rationale and checks below.
+
+**Retired battery model (historical).** IOKit power sources gave the percentage, power state and macOS's
 time to empty. AppleSmartBattery gives the remaining charge
 (`AppleRawCurrentCapacity` x `Voltage`) and the load accumulators in
 `PowerTelemetryData`. `BatteryRuntimeMonitor` reads them once a minute from
@@ -394,10 +407,9 @@ Brightness keys need the Accessibility permission the hotkeys use.
   Toolbox area without the window changing height.
 - The backlight is polled while the strip is visible or Extra is on, so an
   outside decrease ends Extra with the strip closed. Otherwise there is no
-  backlight timer. In the background
-  the battery is read once a minute for the history and, with Extra on, the
-  trigger presents five frames a second with a table read after each.
-- The battery line follows the user's request of 2026-10-19: the charge, the
+  backlight timer. With Extra on, the trigger presents five frames a second
+  with a table read after each. Battery sampling was removed on 2026-10-21.
+- Historical battery rationale (superseded on 2026-10-21): the battery line follows the user's request of 2026-10-19: the charge, the
   brightness and the average load of the last half hour, recomputed on every
   change. The display is the one large load the strip controls, so its share
   moves with the slider and Extra.
