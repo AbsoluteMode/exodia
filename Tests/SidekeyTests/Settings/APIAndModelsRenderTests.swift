@@ -7,6 +7,56 @@ import XCTest
 /// `EXODIA_APIMODELS_RENDER_DIR` is set. Every network path is a stub.
 @MainActor
 final class APIAndModelsRenderTests: XCTestCase {
+    func test_render_smart_decisions() async throws {
+        guard let output = ProcessInfo.processInfo.environment["EXODIA_APIMODELS_RENDER_DIR"] else {
+            throw XCTSkip("set EXODIA_APIMODELS_RENDER_DIR to write the pictures")
+        }
+        let directory = URL(fileURLWithPath: output, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let file = directory.appendingPathComponent("decision-catalog.json")
+        try Data("{}".utf8).write(to: file)
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: file) }
+        let routing = AIRoutingStore(defaults: defaults)
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        for account in [ProviderAccount.openRouter, .openAI, .soniox] {
+            try keys.save("synthetic-key", account: XCTUnwrap(account.keychainAccount(in: routing)))
+        }
+        routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropSmart)
+        routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .dropSmartCleanup)
+        routing.initializeSmartDecisionIfNeeded()
+        let stub = NoNetwork(list: [])
+        let vm = APIAndModelsViewModel(routing: routing, keys: keys,
+            catalogs: ModelCatalogStore(fileURL: file, fetcher: stub), checks: ModelCheckStore(defaults: defaults),
+            keyStatuses: KeyStatusStore(defaults: defaults), keyChecker: stub, probe: stub, endpoints: stub)
+        let sections = vm.sections(for: .dropSmartDecision)
+        XCTAssertEqual(Set(sections.flatMap(\.options).map(\.model)), ["typesafe/jev-1.14", "gpt-6-luna"])
+        for dark in [false, true] {
+            for width in [600.0, 900.0] {
+                try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
+                    initiallyExpandedGroup: "Drop Smart"), size: NSSize(width: width, height: 850), dark: dark,
+                    to: directory.appendingPathComponent("decision-smart-\(dark ? "dark" : "light")-\(Int(width)).png"))
+            }
+            try await render(ModelPicker(sections: sections, missingProviderHint: nil,
+                onSelect: { _, _ in }, onRefresh: {}, onAddKey: {}, onClose: {}),
+                size: NSSize(width: 440, height: 400), dark: dark,
+                to: directory.appendingPathComponent("decision-picker-\(dark ? "dark" : "light").png"))
+            try await render(VStack(spacing: 12) {
+                ForEach(0..<5) { state in
+                    MacPopupLabel(title: ["Normal", "Hover", "Pressed", "Focus", "Disabled"][state],
+                                  minWidth: 300, maxWidth: 300)
+                        .overlay(APIModelFeedbackOverlay(cornerRadius: MacPopupMetrics.radius,
+                            hovered: state == 1 || state == 4, pressed: state == 2,
+                            focused: state == 3 || state == 4, enabled: state != 4))
+                        .disabled(state == 4)
+                }
+            }.padding(18), size: NSSize(width: 350, height: 240), dark: dark,
+                to: directory.appendingPathComponent("decision-control-states-\(dark ? "dark" : "light").png"))
+        }
+    }
+
     private struct NoNetwork: ModelCatalogFetching, ProviderKeyChecking, ModelProbing, OpenRouterEndpointsFetching {
         let list: [OpenRouterEndpoint]
         func fetch(account: ProviderAccount, apiKey: String?, server: ServerEndpoint?) async throws -> [CatalogModel] {

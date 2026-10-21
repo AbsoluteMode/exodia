@@ -57,6 +57,17 @@ struct ModelProbe: ModelProbing {
         case .asyncSTT: outcome = await probeAsync(route)
         case .chat: outcome = await probeChat(route, withTools: false, catalog: catalog)
         case .chatWithTools: outcome = await probeChat(route, withTools: true, catalog: catalog)
+        case .decision:
+            do {
+                let probability = try await TextDecisionClient(
+                    session: session, timeout: Self.seconds(timeout), usageSink: { _ in }
+                ).cleanupProbability(route: route, input: "{\"transcript\":\"Hello.\"}")
+                outcome = probability == nil ? .inconclusive(reason: "No decision returned") : .passed
+            } catch let error as OpenRouterLLMError where error.isModelRefusal {
+                outcome = .failed(reason: "The provider refused this decision model")
+            } catch {
+                outcome = .inconclusive(reason: "Couldn't reach the decision API")
+            }
         }
         os_log("model probe provider=%{public}@ use=%{public}@ outcome=%{public}@ ms=%{public}d",
                log: Self.log, type: .info,
