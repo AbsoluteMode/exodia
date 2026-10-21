@@ -70,6 +70,28 @@ final class BackupViewModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 40_000_000)
         XCTAssertEqual(board.string(forType: .string), "a newer ordinary copy")
     }
+    /// The markers alone keep the recovery code out of clipboard history,
+    /// independent of the suppression threshold the copy also raises. With
+    /// no row and no sidecar there is nothing for a backup to carry.
+    func testRecoveryCopyNeverReachesClipboardHistory() throws {
+        let model = model(); model.beginSetup()
+        let board = NSPasteboard.withUniqueName(); defer { board.releaseGlobally() }
+        model.copyRecoveryCode(pasteboard: board, suppression: ClipboardSuppression(), clearAfterNanoseconds: 10_000_000)
+        let store = try SQLiteHistoryStore(path: ":memory:")
+        let assets = root.appendingPathComponent("clipboard-assets")
+        let watcher = ClipboardWatcher(store: store, assetsDirectory: assets, suppression: ClipboardSuppression())
+
+        let snapshot = ClipboardWatcher.readSnapshot(from: board)
+        XCTAssertEqual(snapshot.exclusionMarkers, [.concealed, .transient])
+        XCTAssertNil(snapshot.text)
+        watcher.handleChange(snapshot: snapshot, changeCount: board.changeCount)
+        XCTAssertTrue(try store.latestClipboardEntries(limit: 10).isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: assets.path))
+
+        board.clearContents(); board.setString("an ordinary copy", forType: .string)
+        watcher.handleChange(snapshot: ClipboardWatcher.readSnapshot(from: board), changeCount: board.changeCount)
+        XCTAssertEqual(try store.latestClipboardEntries(limit: 10).count, 1)
+    }
     func testFolderBackupIsMarkedCompleteOnlyAfterCopyAndReadback() async throws {
         let id = UUID(), date = Date()
         let summary = ArtifactBackupSummary(id: id, createdAt: date, totalBytes: 4, fileCount: 1, sections: [.settings])
