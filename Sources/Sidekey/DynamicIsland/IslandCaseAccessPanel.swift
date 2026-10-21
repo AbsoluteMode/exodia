@@ -12,6 +12,7 @@ struct IslandCaseAccessPanel: View {
     @State private var isLoadingClients = true
     @State private var lastError: String?
     @State private var isBusy = false
+    @State private var projectQuery = ""
 
     init(viewModel: CaseViewModel, onBack: @escaping () -> Void,
          appID: UUID? = nil) {
@@ -101,7 +102,7 @@ struct IslandCaseAccessPanel: View {
         VStack(spacing: 7) {
             ScrollView {
                 VStack(spacing: 8) {
-                    CaseAccessSection(title: "Режим доступа") {
+                    CaseAccessSection(title: "Режим доступа", showsDivider: true) {
                         HStack(spacing: 5) {
                             modeButton("Accept", detail: "Спрашивать", mode: .approve)
                             modeButton("Bypass", detail: "Без запроса", mode: .bypass)
@@ -113,20 +114,18 @@ struct IslandCaseAccessPanel: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    CaseAccessSection(title: "Проекты") {
+                    CaseAccessSection(title: "Проекты", showsDivider: true) {
                         HStack(spacing: 5) {
                             scopeButton("Все проекты", all: true)
                             scopeButton("Выбранные", all: false)
                         }
-                        if draft?.allProjects == true {
-                            caption("Текущие и новые проекты")
-                        } else {
+                        if draft?.allProjects == false {
                             if draft?.projectIDs.isEmpty == true {
                                 caption("Выберите проекты для доступа")
                             }
-                            LazyVStack(spacing: 2) {
-                                ForEach(viewModel.accessProjects) { project in projectChoice(project) }
-                            }
+                            CaseAccessProjectPicker(projects: viewModel.accessProjects, query: $projectQuery,
+                                                    selection: Binding(get: { draft?.projectIDs ?? [] },
+                                                                       set: { draft?.projectIDs = $0 }))
                         }
                     }
                     if let draft, !draft.projectModes.isEmpty {
@@ -223,29 +222,7 @@ struct IslandCaseAccessPanel: View {
         .buttonStyle(CaseAccessButtonStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(all ? "case.access.scope.all" : "case.access.scope.selected")
-    }
-
-    private func projectChoice(_ project: CaseProject) -> some View {
-        let selected = draft?.projectIDs.contains(project.id) == true
-        return Button {
-            if selected { draft?.projectIDs.remove(project.id) }
-            else { draft?.projectIDs.insert(project.id) }
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: selected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(selected ? Color.blue : .white.opacity(0.7))
-                Text(project.name).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 0)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.92))
-            .padding(.horizontal, 4)
-            .frame(height: 28)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(CaseAccessButtonStyle())
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier("case.access.scope.project.\(project.id)")
+        .help(all ? "Доступ ко всем текущим и новым проектам" : "Выбрать проекты для доступа")
     }
 
     private func caption(_ text: String) -> some View {
@@ -309,6 +286,7 @@ struct IslandCaseAccessPanel: View {
 /// Sections contain their own explanations; no loose footnotes between controls.
 private struct CaseAccessSection<Content: View>: View {
     let title: String
+    var showsDivider = false
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -316,11 +294,116 @@ private struct CaseAccessSection<Content: View>: View {
             Text(title)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.8))
+            if showsDivider {
+                Rectangle().fill(.white.opacity(0.14)).frame(height: 1)
+                    .accessibilityHidden(true)
+            }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.06)))
+    }
+}
+
+/// Filtering changes only the visible rows, never the saved/draft project scope.
+struct CaseAccessProjectPicker: View {
+    let projects: [CaseProject]
+    @Binding var query: String
+    @Binding var selection: Set<UUID>
+    @FocusState private var searchFocused: Bool
+    @State private var searchHovered = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        let matches = Self.filteredProjects(projects, query: query)
+        VStack(alignment: .leading, spacing: 5) {
+            searchField
+            if matches.isEmpty {
+                Text("Ничего не найдено")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .padding(.vertical, 5)
+            } else {
+                LazyVStack(spacing: 2) {
+                    ForEach(matches) { project in projectChoice(project) }
+                }
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.white.opacity(0.7))
+                .accessibilityHidden(true)
+            TextField("", text: $query, prompt: Text("Поиск проектов").foregroundColor(.white.opacity(0.7)))
+                .textFieldStyle(.plain)
+                .foregroundStyle(.white.opacity(0.92))
+                .focused($searchFocused)
+                .accessibilityLabel("Поиск проектов")
+                .accessibilityIdentifier("case.access.scope.search")
+            Button {
+                query = ""
+                searchFocused = true
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.white.opacity(0.78))
+                    .frame(width: 20, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(CaseAccessButtonStyle())
+            .disabled(query.isEmpty)
+            .opacity(query.isEmpty ? 0 : 1)
+            .accessibilityHidden(query.isEmpty)
+            .accessibilityLabel("Очистить поиск проектов")
+        }
+        .font(.system(size: 10.5, weight: .medium))
+        .padding(.leading, 8)
+        .padding(.trailing, 3)
+        .frame(height: 28)
+        .background(RoundedRectangle(cornerRadius: 7).fill(.white.opacity(isEnabled && searchHovered ? 0.14 : 0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 7)
+            .strokeBorder(.white.opacity(isEnabled && searchFocused ? 0.8 : 0.4), lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { if isEnabled { searchFocused = true } }
+        .onHover { searchHovered = $0 }
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    private func projectChoice(_ project: CaseProject) -> some View {
+        let selected = selection.contains(project.id)
+        return Button {
+            if selected { selection.remove(project.id) }
+            else { selection.insert(project.id) }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: selected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(selected ? Color.blue : .white.opacity(0.7))
+                Text(project.name).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 4)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CaseAccessButtonStyle())
+        .help(project.name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("case.access.scope.project.\(project.id)")
+    }
+
+    static func filteredProjects(_ projects: [CaseProject], query: String) -> [CaseProject] {
+        let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !terms.isEmpty else { return projects }
+        return projects.filter { project in
+            let text = project.name + " " + project.description
+            return terms.allSatisfy {
+                text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) != nil
+            }
+        }
     }
 }
 

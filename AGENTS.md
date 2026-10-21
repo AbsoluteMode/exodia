@@ -309,7 +309,10 @@ Case secrets manager:
   Connect button offers only installed OpenCode and Cursor with bundled logos,
   then grouped project scope and Accept/Bypass before registration. There is no
   arbitrary program picker; existing legacy registrations stay editable. Mode
-  explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
+  and project headings have thin horizontal dividers above their controls.
+  Selected projects has a metadata search that preserves the full draft selection;
+  All projects includes future projects, with its explanation in native help.
+  Mode explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
   on hover/keyboard focus. Search matches project and key names/descriptions,
   including empty projects and General. A matching project shows all its keys;
   key-only matches show only those keys. + Key opens a separate creation field,

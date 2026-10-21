@@ -110,6 +110,79 @@ final class IslandCaseAccessPanelLayoutTests: XCTestCase {
         }
     }
 
+    func test_project_search_matches_metadata_terms_and_preserves_order() {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let projects = [
+            CaseProject.general(now: date),
+            CaseProject(id: serversID, name: "Серверы Café", description: "Production Europe", createdAt: date, updatedAt: date),
+            CaseProject(id: terraID, name: "terra-hiring", description: "Тестовый стенд", createdAt: date, updatedAt: date),
+        ]
+        XCTAssertEqual(CaseAccessProjectPicker.filteredProjects(projects, query: " \n "), projects)
+        XCTAssertEqual(CaseAccessProjectPicker.filteredProjects(projects, query: "CAFE серверы").map(\.id), [serversID])
+        XCTAssertEqual(CaseAccessProjectPicker.filteredProjects(projects, query: "europe prod").map(\.id), [serversID])
+        XCTAssertEqual(CaseAccessProjectPicker.filteredProjects(projects, query: "ТЕСТОВЫЙ").map(\.id), [terraID])
+        XCTAssertEqual(CaseAccessProjectPicker.filteredProjects(projects, query: "general").map(\.id), [CaseProject.generalID])
+        XCTAssertTrue(CaseAccessProjectPicker.filteredProjects(projects, query: "missing").isEmpty)
+        XCTAssertTrue(CaseAccessProjectPicker.filteredProjects(projects, query: "cafe hiring").isEmpty)
+    }
+
+    func test_project_search_results_and_empty_state_fit_the_native_viewport() throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let projects = [
+            CaseProject.general(now: date),
+            CaseProject(id: serversID, name: "Очень длинное название проекта — production Europe", description: "Серверы", createdAt: date, updatedAt: date),
+            CaseProject(id: terraID, name: "terra-hiring", description: "", createdAt: date, updatedAt: date),
+        ]
+        for width in [CGFloat(310), CGFloat(390)] {
+            for (name, query, enabled) in [("all", "", true), ("match", "серверы", true),
+                                            ("empty", "missing", true), ("disabled", "серверы", false)] {
+                try renderPanel(ScrollView {
+                    CaseAccessProjectPicker(projects: projects, query: .constant(query),
+                                            selection: .constant([serversID, terraID]))
+                        .disabled(!enabled).padding(20)
+                }, width: width, name: "case-scope-search-\(name)-\(Int(width))")
+            }
+        }
+    }
+
+    func test_native_search_edit_keeps_the_full_project_selection() async throws {
+        _ = NSApplication.shared
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let projects = [
+            CaseProject(id: serversID, name: "servers", description: "", createdAt: date, updatedAt: date),
+            CaseProject(id: terraID, name: "terra-hiring", description: "", createdAt: date, updatedAt: date),
+        ]
+        var query = ""
+        var selection: Set<UUID> = [serversID, terraID]
+        var scopeWrites = 0
+        let picker = CaseAccessProjectPicker(projects: projects,
+                                             query: Binding(get: { query }, set: { query = $0 }),
+                                             selection: Binding(get: { selection }, set: {
+                                                 selection = $0
+                                                 scopeWrites += 1
+                                             }))
+        let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: 310, height: 320),
+                              styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: picker)
+        window.contentView = host
+        defer { window.contentView = nil; window.close() }
+        try await Task.sleep(for: .milliseconds(40))
+        host.layoutSubtreeIfNeeded()
+        func fields(_ view: NSView) -> [NSTextField] {
+            (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap(fields)
+        }
+        let field = try XCTUnwrap(fields(host).first)
+        for text in ["servers", "missing", ""] {
+            field.stringValue = text
+            field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
+            XCTAssertEqual(query, text)
+            XCTAssertEqual(selection, [serversID, terraID], "Hidden projects must stay selected")
+        }
+        XCTAssertEqual(scopeWrites, 0, "Search must not edit access rights")
+        XCTAssertFalse(window.isVisible || window.isKeyWindow)
+    }
+
     func test_client_highlights_render_in_provider_colors() throws {
         try withBrandAssets {
             let date = Date(timeIntervalSince1970: 1_700_000_000)
