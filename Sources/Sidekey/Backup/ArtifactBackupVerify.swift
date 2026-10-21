@@ -59,6 +59,8 @@ enum ArtifactArchiveVerifier {
                 throw ArtifactBackupError.unsafeContent
             }
         }
+        let destinations = try ArtifactRestoreDestination.resolvedEntries(manifest.entries, archiveID: manifest.id,
+            sections: wanted, locations: .production)
         for section in wanted.sorted(by: { $0.rawValue < $1.rawValue }) {
             for required in requiredPaths(for: section) where !paths.contains(required) {
                 throw ArtifactBackupError.incompleteArchive(required)
@@ -77,7 +79,7 @@ enum ArtifactArchiveVerifier {
             if wanted.contains(entry.section) {
                 // Resolving every wanted path up front refuses unknown roots
                 // and traversal before a single byte is written anywhere.
-                let destination = try ArtifactRestoreDestination.resolve(entry.path, in: .production)
+                guard let destination = destinations[entry.path] else { throw ArtifactBackupError.unsafeContent }
                 if case .inline(let kind) = destination { inlineKind = kind }
             }
             if let kind = inlineKind {

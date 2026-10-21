@@ -50,7 +50,7 @@ Silero VAD lives there and is still needed.
   marker unset, so the next launch retries.
 - The log line carries counts only (`removed`, `failed`), no paths.
 - Release note, in the prose style of the 2.2.7 notes: "On the first launch
-  after the update, Exodia deletes the on-device model files that earlier
+  after the update, Whytap deletes the on-device model files that earlier
   versions downloaded to Application Support/Sidekey, freeing up to a few GB.
   Meeting detection files are kept."
 

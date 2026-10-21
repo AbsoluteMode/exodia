@@ -1,7 +1,7 @@
 ---
 id: one-running-copy-2026-10-19
 type: decision
-title: One running Exodia copy across production, beta and worktrees
+title: One running Whytap copy across production, beta and worktrees
 summary: A common lifetime lease taken before AppDelegate starts lets only one copy run hotkeys, providers and permission flows; build-only dev commands leave other copies alone; Settings shows the app name, version and project links.
 status: confirmed
 tags: [installation, hotkeys, permissions, development]

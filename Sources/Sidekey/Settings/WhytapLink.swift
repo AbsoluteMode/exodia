@@ -1,9 +1,11 @@
 // Sources/Sidekey/Settings/WhytapLink.swift
 import Foundation
 
-/// The place a `whytap://` link shows. A link only shows where a feature
-/// lives: it never records, captures, toggles a mode or quits. Action tools
-/// open their own window or their Toolbox pane, whose button stays explicit.
+/// The place a `whytap://` link shows. Any web page can open a link, so a
+/// link only shows where a feature lives: it never records, captures,
+/// toggles a mode, changes a setting, copies, pastes, authenticates or quits.
+/// Action tools open their own window or their Toolbox pane, whose button
+/// stays explicit. Add a case only if it is show-only (Invariant 7).
 /// WHY: .project-docs/decisions/2026-10-20-whytap-links.md
 enum WhytapLinkDestination: Equatable {
     /// Expand the island and open this inline hover panel.
@@ -57,7 +59,9 @@ enum WhytapLink {
         case .clipboard: return .hoverPanel(.history)
         case .notifs: return .hoverPanel(.notifications)
         case .vocab: return .hoverPanel(.vocabularyEditor)
-        case .caseVault: return .hoverPanel(.caseVault)
+        // Both Case surfaces request Touch ID on appear; a link must not
+        // prompt. Toolbox lists Case in its catalog for the user to click.
+        case .caseVault: return .settings(.tab(.toolbox))
         case .filler: return .hoverPanel(.fillerEditor)
         case .inputLang: return .hoverPanel(.inputLanguagePicker)
         case .outputLang: return .hoverPanel(.outputLanguagePicker)

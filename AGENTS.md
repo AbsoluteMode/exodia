@@ -5,13 +5,21 @@ user's provider keys or their own OpenAI-compatible endpoints, no on-device
 models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
 OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
-no telemetry. The user-facing name is Whytap (briefly named Exodia); the module and most internal
+no telemetry. The project and product name is **Whytap**, reaffirmed by the user
+on 2026-10-21; use it in replies, current documentation and new features.
+The module and most internal
 identifiers are still `Sidekey`. The public source repository is
 `https://github.com/AbsoluteMode/whytap`. Preserve legacy bundle IDs, Keychain
 services and Application Support paths so existing settings and permissions
 survive the rename. Keep the existing community certificate, EXODIA_* release
 variables, build metadata keys and backup formats/destinations as compatibility
 contracts. WHY: .project-docs/decisions/2026-10-19-whytap-name.md
+
+The canonical primary checkout folder is named `whytap`; an older `exodia`
+path can remain a compatibility symlink for existing chats and worktrees.
+It is not the project name. Older checkouts can contain unmerged source and WIP.
+Consult current `origin/main` guidance and the primary build receipt before
+treating an older checkout's naming or feature descriptions as the current app.
 
 ## Parallel development and the shared application
 
@@ -585,9 +593,10 @@ whytap:// links:
   are exhaustive, so a new tile or tab needs a destination to compile. The enums
   are the public registry of linkable places: never rename raw values. A link
   only shows a place: inline tools open their HoverPanelRequest, navigate tools
-  and tabs open Settings with setHighlight, Planner/Translate/Subtitles windows
-  open idle, Drop Mode/Record/Screenshot select their Toolbox pane
-  (SettingsWindowSelection.focus) and Quit highlights the Quit row. Unknown ids
+  and tabs open Settings with setHighlight, Calendar/Translate/Subtitles
+  windows open idle, Drop Mode/Record/Screenshot select their Toolbox pane
+  (SettingsWindowSelection.focus), Case opens Toolbox without selecting its
+  Touch ID pane and Quit highlights the Quit row (Invariant 7). Unknown ids
   or kinds only wake the island; other schemes, credentials, ports, empty or
   extra segments and non-alphanumeric ids are rejected and not logged. WHY:
   .project-docs/decisions/2026-10-20-whytap-links.md
@@ -870,7 +879,10 @@ token. Settings → Backup shows its synchronization status, a GitHub Releases l
 Restore backup. Back up always includes all supported user data and stored keys,
 uploads and verifies ciphertext, then displays the recovery code without a
 paste-back step. Restore takes only that code and stages every included section
-from the newest completed GitHub version without a selection/confirmation wizard.
+from the newest completed matching-key GitHub snapshot by authenticated capture
+date, without a selection/confirmation wizard. A new Mac restores existing
+copies before uploading under another recovery key. Repeat code display requires Mac
+authentication; a never-presented first code keeps a save-code status visible.
 A normal quit and relaunch applies it; the running stores are never replaced.
 There are no normal-page backup settings, management/history disclosures or
 folder picker. Existing automatic schedules, folder destinations, local encrypted
@@ -882,12 +894,27 @@ and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
 pauses and maintenance never show Backup synced. Background sync keeps the same
 recovery credential without revealing it. WHY:
 `.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
+Pending transfers are retried before creating another full archive. Network
+failures back off, including a connection check after an offline launch, while
+actual authentication/permission/public-repository failures require reconnecting.
+GitHub rate-limit deadlines are respected. Unchanged unsupported inputs suspend
+automatic export retries.
+Schema 3 preserves inactive configurations across repeated restores, including
+coexisting older copies; schemas 1 and 2 remain readable. Local Case application
+policies precede imports, including matching identities with different UUIDs.
+WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
 Short recording chunks use the archive entry ceiling rather than a separate
 4096-file limit. WHY:
 `.project-docs/decisions/2026-10-20-simple-github-backup.md`.
+Workspace traversal and change detection honor valid regular `CACHEDIR.TAG`
+markers on nested Monitor/Notify directories. Tagged runtime dependencies are
+excluded with an archive warning; nearby scripts, configuration and working
+data remain included. Names alone never exclude a directory, links are not
+followed and retained recordings never honor cache tags. WHY:
+`.project-docs/decisions/2026-10-21-backup-tagged-caches.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore
@@ -1121,3 +1148,11 @@ input layout, including live recording and previously saved non-English titles.
    deliberate extraction by an approved command. Revalidate current caller
    authority after approval/authentication before granting or releasing
    values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+7. **whytap:// links only show.** Any web page can open a link, so a link
+   never records, captures, toggles, changes settings, copies, pastes,
+   authenticates (no Touch ID: Case links stop at Toolbox) or quits, and
+   reports nothing back. Every `WhytapLinkDestination` is classified
+   show-only in `WhytapLinkTests`; the handler is source-checked for action
+   calls. A link that changes anything needs its own decision first, with
+   in-app confirmation and an allowlist that excludes reading data and
+   network destinations. WHY: .project-docs/decisions/2026-10-20-whytap-links.md
