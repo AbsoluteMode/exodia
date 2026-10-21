@@ -355,6 +355,7 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
             switch command {
             case .copy:
                 export(canvas, download: false)
+            case .copyText: copyText(canvas)
             case .download: export(canvas, download: true)
             case .share:
                 guard let toolbar else { return }
@@ -400,6 +401,40 @@ final class ScreenshotCoordinator: NSObject, NSSharingServicePickerDelegate {
                 canvas.busy = false
                 self.copyWaitReason = nil; self.copyAfterProcessing = false
                 self.report(download ? "Couldn’t download to Downloads. Check folder access and free space, then try again." : error.localizedDescription, canvas: canvas)
+            }
+        }
+    }
+
+    private func copyText(_ canvas: ScreenshotCanvas) {
+        guard let token = generation else { return }
+        let source = canvas.source, size = canvas.documentSize, annotations = canvas.annotations, crop = canvas.selection
+        canvas.busyMessage = "Reading text on this Mac… · Esc: cancel capture"
+        copyWaitReason = nil; copyAfterProcessing = false
+        canvas.busy = true
+        task = Task { [weak self, weak canvas] in
+            do {
+                let worker = Task.detached(priority: .userInitiated) {
+                    try Task.checkCancellation()
+                    // Recognize only the flattened crop, including Blur, never hidden source pixels.
+                    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+                    let image = try ScreenshotRenderer.image(source: source, size: size, annotations: annotations, crop: crop)
+                    return try ScreenshotTextDetector.text(image)
+                }
+                let text = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+                guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
+                canvas.busy = false
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    self.report("No readable text or numbers found. Adjust the selection or copy the image.", canvas: canvas)
+                    return
+                }
+                let board = NSPasteboard.general
+                board.clearContents()
+                guard board.setString(text, forType: .string) else { throw ScreenshotImageError.rendering }
+                self.cancel()
+            } catch {
+                guard let self, let canvas, self.generation == token, !Task.isCancelled else { return }
+                canvas.busy = false
+                self.report("Couldn’t copy text. Try again or copy the image.", canvas: canvas)
             }
         }
     }

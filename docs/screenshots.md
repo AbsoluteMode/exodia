@@ -24,9 +24,9 @@ outside the crop where space permits, flips above a bottom-edge crop and is
 never included in the image.
 
 The main toolbar exposes Arrow, Shape, Pen, Text, **Blur**, Numbered steps,
-Share, Undo, Redo, **Download**, **Copy & exit ↩**, and Cancel. There is no More
+**Copy text**, Share, Undo, Redo, **Download**, **Copy & exit ↩**, and Cancel. There is no More
 menu or separate Select/crop control. Initial region selection is still a drag;
-Highlighter, Spotlight, Copy text, Pin above windows and Output size are removed.
+Highlighter, Spotlight, Pin above windows and Output size are removed.
 Copy & exit shows Return in a separate centered keycap within the same button.
 Blur is text-only; Download is the downward arrow with a tooltip. On narrower
 displays the toolbar wraps onto more rows.
@@ -60,6 +60,16 @@ retry/entire-area message. Editing/export wait for processing; Escape cancels.
 Numbered steps places consecutive numbers. Share uses macOS's picker and sends
 only the edited image to the service the user selects.
 
+**Copy text** (the text viewfinder beside Share) recognizes text and numbers
+from the selected, edited area on this Mac, copies plain text and closes the
+editor. It reads the same flattened pixels as image export, including Blur and
+placed labels; text outside the crop is excluded. Accurate system recognition
+supports English and Russian and keeps language correction off for numbers and
+codes. The first request can take longer while macOS initializes recognition.
+Progress stays visible; Escape cancels without copying a late result. If no
+readable text is found or recognition fails, the editor stays open for retry or
+image copy. No provider key, model download or network request is needed.
+
 Copy writes flattened PNG pixels to the clipboard and finishes. **Return /
 numeric Enter** does the same after selection; during Blur it waits for the
 completed patch before copying. Return during Download likewise waits for the file
@@ -87,6 +97,7 @@ Bare arrows default to ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. Change thes
 Settings → Hotkeys → Screenshot arrows: drag an action onto a dashed slot to
 replace it, drag an existing assignment to another slot, or click a slot for
 the keyboard-accessible menu. Save applies the choices; Revert discards edits.
+Copy text is also available as an arrow action; existing assignments stay as saved.
 Shift-arrows move the crop 10 points; Option-arrows resize it. Move crop can
 also be assigned to a bare arrow for 1-point movement. Screenshot owns arrows
 before Agent; text fields keep native cursor movement. Closing Screenshot

@@ -212,6 +212,27 @@ enum ScreenshotRenderer {
 }
 
 enum ScreenshotTextDetector {
+    /// Accurate system OCR is used only for an explicit Copy text action.
+    /// Keep correction off so numbers and codes are not rewritten.
+    // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+    static func text(_ image: CGImage) throws -> String {
+        try Task.checkCancellation()
+        let recognition = VNRecognizeTextRequest()
+        recognition.recognitionLevel = .accurate
+        recognition.usesLanguageCorrection = false
+        recognition.automaticallyDetectsLanguage = true
+        recognition.minimumTextHeight = 0
+        let supported = try recognition.supportedRecognitionLanguages()
+        let languages = ["en-US", "ru-RU"].filter { supported.contains($0) }
+        if !languages.isEmpty { recognition.recognitionLanguages = languages }
+        try useCPU(recognition)
+        let input = try recognitionImage(image)
+        try Task.checkCancellation()
+        try VNImageRequestHandler(cgImage: input, options: [:]).perform([recognition])
+        try Task.checkCancellation()
+        return (recognition.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+    }
+
     /// Avoid the accurate recognizer's per-build cold start. An isolated-glyph pass
     /// supplements fast text regions without loading that model.
     static func boxes(_ image: CGImage) throws -> [CGRect] {

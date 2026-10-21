@@ -13,7 +13,7 @@ enum ScreenshotArrow: String, CaseIterable, Identifiable {
 
 enum ScreenshotEditorAction: String, CaseIterable, Identifiable {
     case pen, blur, arrow, rectangle, ellipse, text, counter
-    case undo, redo, copy, download, share, cancel, deleteAnnotation, moveCrop
+    case undo, redo, copy, copyText, download, share, cancel, deleteAnnotation, moveCrop
     var id: Self { self }
     var title: String {
         switch self {
@@ -27,6 +27,7 @@ enum ScreenshotEditorAction: String, CaseIterable, Identifiable {
         case .undo: return "Undo"
         case .redo: return "Redo"
         case .copy: return "Copy & exit"
+        case .copyText: return "Copy text"
         case .download: return "Download"
         case .share: return "Share"
         case .cancel: return "Cancel capture"
@@ -46,6 +47,7 @@ enum ScreenshotEditorAction: String, CaseIterable, Identifiable {
         case .undo: return "arrow.uturn.backward"
         case .redo: return "arrow.uturn.forward"
         case .copy: return "doc.on.doc"
+        case .copyText: return "doc.text.viewfinder"
         case .download: return "arrow.down.to.line"
         case .share: return "square.and.arrow.up"
         case .cancel: return "xmark"

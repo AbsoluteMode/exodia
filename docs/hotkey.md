@@ -390,7 +390,9 @@ The removed Select/crop and Highlighter tools have no local shortcuts. ⌘C copi
 arrow slot to replace it, drag a slot assignment to another slot, or click a
 slot to choose from its native menu; Save applies the draft. The source stays
 available. Shift-arrows move the crop 10 points; Option-arrows resize it. Assign
-Move crop to a bare arrow for 1-point movement. Screenshot temporarily releases
+Move crop to a bare arrow for 1-point movement. Copy text is available in the
+same action catalog without a new default shortcut or changed assignments.
+Screenshot temporarily releases
 Agent Useful Links hotkeys so it owns arrows first, including while an annotation
 text field is focused (native cursor movement). Agent registrations return after
 the editor closes, using the latest visible actions. Delete removes a selected
