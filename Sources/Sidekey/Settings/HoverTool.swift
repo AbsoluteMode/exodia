@@ -109,7 +109,7 @@ enum HoverToolRegistry {
             return HoverToolInfo(title: "Subtitles", sfSymbol: "captions.bubble", kind: .action,
                                  description: "Translate system audio into live subtitles")
         case .screenshot:
-            return HoverToolInfo(title: "Screenshot", sfSymbol: "viewfinder", kind: .action,
+            return HoverToolInfo(title: "Shot", sfSymbol: "viewfinder", kind: .action,
                                  description: "Capture an area, annotate it and blur text and numbers")
         case .quit:
             return HoverToolInfo(title: "Quit", sfSymbol: "rectangle.portrait.and.arrow.right",
