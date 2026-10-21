@@ -92,12 +92,13 @@ actor BackupLocalStore {
     }
 
     /// Local archives are a working set; the destination keeps the history.
-    /// Keep unsent snapshots, restore checkpoints and the newest copied
-    /// archive (the next upload's delta parent, and a fast local restore).
-    /// Older copied archives are removed: each is a complete multi-gigabyte
-    /// snapshot that already exists at the destination. Remote copies are
-    /// never deleted here. Catalog entries whose archive was removed outside
-    /// Whytap are forgotten instead of failing every later sync.
+    /// Keep unsent snapshots (including copies still waiting for the current
+    /// destination after a switch), prepared transfers, restore checkpoints
+    /// and the newest copied archive (the next upload's delta parent, and a
+    /// fast local restore). Older copied archives are removed: each is a
+    /// complete multi-gigabyte snapshot that already exists at the destination.
+    /// Remote copies are never deleted here. Catalog entries whose archive was
+    /// removed outside Whytap are forgotten instead of failing every later sync.
     /// WHY: .project-docs/decisions/2026-10-21-backup-capture-pacing.md
     @discardableResult
     func applyRetention(destinationID: String?) throws -> RetentionResult {
@@ -120,7 +121,9 @@ actor BackupLocalStore {
         var parents = Set<UUID>()
         if let newest = copied.first(where: { $0.destinationID == destinationID }) { parents.insert(newest.summary.id) }
         if let newest = copied.first { parents.insert(newest.summary.id) }
-        for record in copied where !parents.contains(record.summary.id) {
+        // Copied elsewhere is still pending here, and a prepared transfer is resumable.
+        let disposable = copied.filter { destinationID == nil || $0.destinationID == destinationID }
+        for record in disposable where !parents.contains(record.summary.id) && record.preparation == nil {
             let url = fileURL(record.summary.id)
             let metadata = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard metadata?.isRegularFile == true, metadata?.isSymbolicLink != true else { continue }

@@ -708,8 +708,9 @@ subsequent Show recovery code uses the same ghost action. Both require Mac
 authentication. Repeating Back up does not reveal the code. These states keep
 recovery possible without claiming that merely showing the code proves it was saved.
 
-Pause and resume (2026-10-21): once a GitHub copy exists, a separate card below
-the status card holds an **Automatic backup** row with the shared MacSwitch. Its
+Pause and resume (2026-10-21): once a copy reached GitHub, a separate card below
+the status card holds an **Automatic backup** row with the shared MacSwitch; it
+stays visible while GitHub is unreachable because local captures continue. Its
 subtitle says the cadence ("At most hourly, only when something changed") with
 the next check time, or "Paused. Back up still saves one copy and keeps this
 off." Why: the pause was previously reachable only through Cancel during a sync

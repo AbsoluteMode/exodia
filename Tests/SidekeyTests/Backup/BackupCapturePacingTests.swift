@@ -229,6 +229,72 @@ final class BackupCapturePacingTests: XCTestCase {
                        "Retention is idempotent")
     }
 
+    func testRetentionKeepsCopiesStillWaitingForANewDestination() async throws {
+        let source = try profile()
+        let root = archives(source)
+        try ConfigBackupFiles.ensurePrivateDirectory(root)
+        let local = BackupLocalStore(root: root)
+        func archive(_ age: TimeInterval) throws -> (ArtifactBackupSummary, URL) {
+            let summary = ArtifactBackupSummary(id: UUID(), createdAt: Date().addingTimeInterval(-age), totalBytes: 3,
+                                                fileCount: 1, sections: [.settings])
+            let file = root.appendingPathComponent("incoming-\(summary.id.uuidString)")
+            try source.write("old", to: file)
+            return (summary, file)
+        }
+        let (old, oldFile) = try archive(300), (new, newFile) = try archive(100)
+        _ = try await local.record(old, from: oldFile, automatic: true)
+        try await local.markCopied(id: old.id, destinationID: "folder:previous")
+        _ = try await local.record(new, from: newFile, automatic: true)
+        // The destination changed; the newer snapshot reaches it first.
+        try await local.markCopied(id: new.id, destinationID: "github:developer/exodia-backup")
+        let waiting = try await local.pendingCopies(destinationID: "github:developer/exodia-backup").map(\.summary.id)
+        XCTAssertEqual(waiting, [old.id], "A copy made for the previous destination stays until it reaches this one")
+        XCTAssertEqual(try files(source, ".exodiabackup").count, 2)
+        try await local.markCopied(id: old.id, destinationID: "github:developer/exodia-backup")
+        let kept = try await local.records().map(\.summary.id)
+        XCTAssertEqual(kept, [new.id], "Once both are uploaded only the newest remains")
+    }
+
+    func testAutomaticBackupCanBePausedWhileGitHubIsUnreachable() async throws {
+        let source = try profile()
+        var time = Date(), captures = 0
+        let model = model(source, now: { time }, beforeCreate: { captures += 1 })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.backupEverything()
+        offline = true
+        await model.checkGitHubConnection()
+        XCTAssertFalse(model.canUseGitHubBackup)
+        XCTAssertTrue(model.showsAutomaticBackup, "Local captures continue offline, so the switch stays visible")
+        XCTAssertTrue(model.canChangeAutomaticBackup)
+        model.setAutomaticBackup(false)
+        XCTAssertFalse(model.isEnabled)
+        try touchStatus(source, 1)
+        time.addTimeInterval(3600)
+        await model.poll()
+        XCTAssertEqual(captures, 1)
+    }
+
+    func testPausingDuringTheDiskCheckStartsNoCapture() async throws {
+        let source = try profile()
+        var time = Date(), captures = 0
+        nonisolated(unsafe) var pauseDuringCheck: (@MainActor () -> Void)?
+        let model = model(source, now: { time }, freeSpace: {
+            if let pause = pauseDuringCheck { pauseDuringCheck = nil; MainActor.assumeIsolated { pause() } }
+            return 500_000_000_000
+        }, beforeCreate: { captures += 1 })
+        await model.connectGitHub(token: "synthetic-token")
+        await model.backupEverything()
+        XCTAssertEqual(captures, 1)
+        pauseDuringCheck = { model.setAutomaticBackup(false) }
+        try touchStatus(source, 1)
+        time.addTimeInterval(3600)
+        await model.poll()
+        XCTAssertNil(pauseDuringCheck, "The pause happened during the scheduled disk check")
+        XCTAssertFalse(model.isEnabled)
+        XCTAssertEqual(captures, 1, "A pause during the check prevents the export")
+        XCTAssertEqual(remote.publishCount, 1)
+    }
+
     func testLaunchAppliesRetentionWhilePaused() async throws {
         let source = try profile()
         let expected = try legacyCatalog(source)

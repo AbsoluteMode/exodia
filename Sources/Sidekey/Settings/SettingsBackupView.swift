@@ -81,7 +81,7 @@ struct SettingsBackupView: View {
                     }
                     .padding(14)
                 }
-                if model.lastRemoteBackupAt != nil && model.canUseGitHubBackup {
+                if model.showsAutomaticBackup {
                     MacCard {
                         MacRow(title: "Automatic backup", subtitle: automaticBackupSubtitle) {
                             MacSwitch(isOn: Binding(get: { model.isEnabled }, set: { model.setAutomaticBackup($0) }),

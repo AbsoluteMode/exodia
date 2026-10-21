@@ -62,8 +62,9 @@ it was a hidden preference read at launch; Back up silently re-enabled sync.
   snapshot) plus a reserve: 10 GB for automatic captures, 2 GB for Back up.
   Otherwise nothing is exported; Backup shows the needed and available space.
   Waiting copies can still upload, which releases their parent.
-- **Local retention.** Keep unsent snapshots (the freshest automatic one and
-  any resumable prepared transfer), restore checkpoints and the newest copied
+- **Local retention.** Keep unsent snapshots (the freshest automatic one, any
+  resumable prepared transfer and copies made for a previous destination that
+  have not reached the current one), restore checkpoints and the newest copied
   archive, which is the next upload's delta parent and a fast local restore.
   Older copied archives are deleted locally after each upload and at launch,
   paused or not. Catalog entries whose archive was removed outside Whytap are
@@ -71,8 +72,9 @@ it was a hidden preference read at launch; Back up silently re-enabled sync.
   removed before any GitHub draft exists is prepared again. Steady state is one
   archive; the bound is about three archives while a transfer is outstanding.
 - **Pause.** Settings → Backup shows an **Automatic backup** switch once a
-  GitHub copy exists. Off persists across restart, cancels a running automatic
-  capture or upload and keeps every copy. Back up then saves one copy and keeps
+  copy reached the destination, also while GitHub is unreachable (captures
+  continue offline). Off persists across restart, cancels a running automatic
+  capture or upload, including one still checking disk space, and keeps every copy. Back up then saves one copy and keeps
   sync paused; only the first created backup turns sync on. A preference change
   made outside the view is read at the next poll, without restarting.
 
@@ -109,7 +111,11 @@ unsent work across offline captures and uploads stay deltas; launch forgets
 archives deleted by hand and releases surplus copies while paused; missing
 archives and a removed prepared delta do not block sync; pause survives restart,
 Back up keeps it, an external preference change applies, and pausing cancels a
-running automatic capture. Existing sync tests now advance the clock by an hour.
+running automatic capture; copies waiting for a new destination survive
+retention; the switch works while GitHub is unreachable; a pause during the
+disk check starts no export. Existing sync tests now advance the clock by an
+hour. An independent Codex review found the last three cases; they were fixed
+before submission.
 
 ## Rejected
 

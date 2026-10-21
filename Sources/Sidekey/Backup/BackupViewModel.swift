@@ -636,9 +636,13 @@ final class BackupViewModel: ObservableObject {
         defaults.set(true, forKey: "backup.github-auto-sync.v1")
     }
 
-    /// The visible Automatic backup switch exists once a GitHub copy does.
+    /// The Automatic backup switch exists once a copy reached the destination,
+    /// and stays usable while that destination is unreachable: local captures
+    /// continue offline, so pausing them must too.
+    var showsAutomaticBackup: Bool { lastRemoteBackupAt != nil && destinationKind != nil }
+
     var canChangeAutomaticBackup: Bool {
-        canUseGitHubBackup && lastRemoteBackupAt != nil && recoverySaved && !needsRestart && !hasPendingMaintenance
+        showsAutomaticBackup && recoverySaved && !needsRestart && !hasPendingMaintenance
     }
 
     /// When the next automatic capture may start; nil while paused or already due.
@@ -841,14 +845,18 @@ final class BackupViewModel: ObservableObject {
         guard !isBusy, !needsRestart, !hasPendingMaintenance else { return false }
         guard recoverySaved, destinationKind != nil else { beginSetup(); return false }
         guard idle() else { errorMessage = ConfigBackupError.busy.localizedDescription; return false }
+        guard !automatic || isEnabled else { return false }
+        // Set before the first suspension so the switch can cancel this run.
+        automaticOperationRunning = automatic
+        defer { automaticOperationRunning = false }
         if let shortage = await diskShortage(automatic: automatic) {
             // Checked before any export: a full disk never gets a partial archive.
             lastAttempt = now(); statusText = "Backup needs attention."; errorMessage = shortage
             return false
         }
+        // A pause during the disk check stops an automatic run before it exports.
+        guard !Task.isCancelled, !isBusy, !automatic || isEnabled else { return false }
         isBusy = true; errorMessage = nil; lastAttempt = now()
-        automaticOperationRunning = automatic
-        defer { automaticOperationRunning = false }
         statusText = "Saving an encrypted copy on this Mac…"
         var unfinished: URL?
         var attemptedStamp: String?
@@ -1368,6 +1376,8 @@ final class BackupViewModel: ObservableObject {
         var shortage: String?
         if captureDue {
             shortage = await diskShortage(automatic: true)
+            // The switch may have paused sync while the disk check awaited.
+            guard !stopped, !isBusy, !needsRestart, !hasPendingMaintenance, isEnabled else { return }
             if shortage == nil {
                 await retainOperation(.backup) { await self.performBackupNow(automatic: true) }
                 return
