@@ -7,7 +7,7 @@ The person comes to assign four quick screenshot actions. First see the current
 Keep this in Settings Hotkeys so the frozen screenshot retains its compact bar.
 
 - Use an inverted-T arrow cluster with dashed rounded contours, the shared
-  HotkeyHintView keycaps, and an always-visible action name/icon. Why: the user
+  HotkeyHintView keycaps, and an always-visible action name. Why: the user
   asked for dashed draggable slots and replacement on drop.
 - Defaults are ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. The palette contains every
   retained tool/command plus Delete annotation and Move crop. A slot is also

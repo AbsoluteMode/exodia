@@ -116,13 +116,15 @@ final class ScreenshotArrowTests: XCTestCase {
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         for (width, scheme, name) in [(360, ColorScheme.light, "light"), (520, .light, "light"), (360, .dark, "dark"), (520, .dark, "dark")] {
             let host = NSHostingView(rootView: ScreenshotArrowSettingsView(bindings: .constant(.defaults)).padding(16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(width: CGFloat(width), height: 800, alignment: .topLeading)
                 .background(MacSettingsTheme.bgContent).environment(\.colorScheme, scheme))
             host.frame = CGRect(x: 0, y: 0, width: width, height: 800)
             let window = NSWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: width, height: 800),
                 styleMask: [.borderless], backing: .buffered, defer: true)
             window.isReleasedWhenClosed = false; window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua); window.contentView = host
             defer { window.contentView = nil; window.close() }
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
             host.layoutSubtreeIfNeeded()
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
