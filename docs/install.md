@@ -14,16 +14,18 @@ That is the same application; use the name shown in that disk image.
 2. Open it and drag **Whytap** into **Applications**.
 3. Open Whytap from Applications, then eject the disk image.
 
-Community builds are signed with Whytap's own self-signed certificate and are not
-notarized by Apple. macOS may warn that it cannot verify the developer. For the
-specific download you trust, follow **System Settings → Privacy & Security →
-Open Anyway** if offered;
+Community builds are signed with the Developer ID certificate of Whytap's Apple
+team and are not notarized by Apple. macOS may warn that it cannot verify the
+developer. For the specific download you trust, follow **System Settings →
+Privacy & Security → Open Anyway** if offered;
 [Apple explains this per-app approval](https://support.apple.com/102445).
-You never install or trust the certificate yourself. Because every community
-build carries the same certificate, macOS keeps privacy permissions such as
-Microphone and System Audio Recording across updates. Earlier builds were signed
-ad hoc, so the first update from one of them asks for these permissions one last
-time. Sparkle update signatures verify Whytap's archives separately from Apple's
+You never install or trust a certificate yourself. Because every community
+build carries the same team identity, macOS keeps privacy permissions such as
+Microphone and System Audio Recording and access to Whytap's Keychain items
+across updates. Earlier builds were signed with Whytap's self-signed
+certificate or ad hoc, so the first team-signed update asks for these
+permissions one last time and asks once for each Keychain item; choose
+**Always Allow** there. Sparkle update signatures verify Whytap's archives separately from Apple's
 launch checks.
 
 Requirements: macOS 14.2 or newer, on Apple Silicon or Intel.

@@ -672,13 +672,15 @@ Update flow (download-on-action):
   activity before an app-initiated relaunch. Feed = GitHub Releases
   (`BuildConfig.appcastURL`).
   Community archives use our independent Sparkle Ed25519 signature, without
-  Apple Developer/notarization. The app is signed with Whytap's self-signed
-  community certificate when Resources/community-signing-certificate.pem is
-  committed (stable designated requirement, so TCC grants survive updates),
-  otherwise ad hoc. Source dev builds (9999 / -dev) do not start the binary
-  updater. WHY:
+  notarization. The app is signed with the Developer ID certificate of the
+  team in Resources/developer-id-team.txt (team designated requirement and
+  keychain partition, so TCC grants and Keychain access survive updates);
+  without that file with Whytap's self-signed community certificate when
+  Resources/community-signing-certificate.pem is committed, otherwise ad hoc.
+  Source dev builds (9999 / -dev) do not start the binary updater. WHY:
   .project-docs/decisions/2026-10-17-community-updates.md,
   .project-docs/decisions/2026-10-19-community-signing-identity.md,
+  .project-docs/decisions/2026-10-21-developer-id-team-signing.md,
   docs/decisions/2026-06-17-update-download-on-action.md,
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
@@ -1064,29 +1066,32 @@ python3 scripts/customize.py doctor --json
 # Explicit ad-hoc local build if no local certificate is desired
 SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 
-# Community binary: local universal build, no Apple Developer
+# Community binary: local universal build, Developer ID team signing, no notarization
 FLAVOR=prod ./scripts/user-release.sh --preflight-only
 # Commit relevant build inputs before the build; retain the adjacent DMG manifest.
-# Doppler supplies the community certificate's private key.
-doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh --build-only
+# The team's Developer ID certificate comes from the login keychain.
+FLAVOR=prod ./scripts/user-release.sh --build-only
 # Publishing also needs the project's Sparkle signing key and GitHub access
 FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
 
 Whytap stays open source and uses ready-made community builds for normal installs
-and updates. The default DMG/Sparkle pipeline builds/signs locally without Apple
-Developer membership, Developer ID or notarization; publishing requires our
-independent Sparkle Ed25519 signing key and GitHub access. Keep archive signature
-verification and app integrity checks. The former Apple-signed mode remains
-optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
-other OS protections. First downloads may require user approval. The community
-certificate is public; its private key lives only in Doppler
+and updates. The default DMG/Sparkle pipeline builds and signs locally with the
+Developer ID certificate of the team committed in `Resources/developer-id-team.txt`
+(UVBKCN5PPV), without notarization; publishing requires our independent Sparkle
+Ed25519 signing key and GitHub access. Keep archive signature verification and
+app integrity checks. The former notarized mode remains optional behind
+`EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or other OS
+protections. First downloads may require user approval. Never change the team:
+it is in every build's designated requirement and keychain partition, so another
+team makes every install regrant macOS permissions and approve each Keychain
+item. Without the team file the build signs with the public community
+certificate, whose private key lives only in Doppler
 (`EXODIA_COMMUNITY_SIGNING_KEY`, `sidekey/dev`) and is never committed or
-printed. Never replace the certificate except for a leaked key: its SHA-1 is in
-every build's designated requirement, so a new one makes every install regrant
-macOS permissions. WHY:
+printed. WHY:
 `.project-docs/decisions/2026-10-17-community-updates.md`,
-`.project-docs/decisions/2026-10-19-community-signing-identity.md`.
+`.project-docs/decisions/2026-10-19-community-signing-identity.md`,
+`.project-docs/decisions/2026-10-21-developer-id-team-signing.md`.
 
 Release provenance is required: commit and clean Sources, Resources, Package.swift,
 Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
