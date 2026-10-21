@@ -305,4 +305,3 @@ final class ArtifactUsageBackupTests: XCTestCase {
         XCTAssertNoThrow(try ArtifactBackupPath.validate(ArtifactUsageBackup.archivePath))
     }
 }
-
