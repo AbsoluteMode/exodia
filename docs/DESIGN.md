@@ -687,14 +687,66 @@ surface; a new light-theme system is outside this change.
 
 ## Planner: tasks and calendar — 2026-10-20
 
+### Feature connections — 2026-10-21
+
+The user comes to connect a calendar capability. First they see the provider's
+calendar feature, its current state and permissions. Then they can connect that
+feature, add an account or disconnect an existing one.
+
+- Integrations keeps its GitHub section and adds Google Calendar, Outlook Calendar,
+  Apple Calendar and Zoom Calendar. Each provider has one grouped card with a
+  13pt title, 11pt status, 12pt permission copy and account actions. Why: separate
+  capabilities must not imply access to unrelated email, recordings or transcripts.
+- Connect opens a sheet fixed to the chosen provider; ordinary Settings users
+  see no client IDs or provider selector. Planner retains Advanced setup for
+  independent source-user clients. Why: a feature connection is a user task;
+  app registration is an owner task.
+- Pending Google verification and Zoom publication are visible before interaction.
+  Their shared-client action is disabled; existing accounts retain Disconnect.
+  Why: the user explicitly rejected sending public users through Google's warning.
+- While browser sign-in is active, all additional connect actions are disabled
+  and its provider shows progress. Cancel closes the browser receiver; failures
+  stay with the sheet. Sign-in completion/cancellation releases restart/restore
+  deferral. Why: Settings and Planner must share one connection flow.
+- A backup operation, staged restore or pending backup maintenance also blocks
+  new calendar connection changes, with a reason above the cards and in the sheet.
+  Why: restored account metadata must not overwrite a newly connected account.
+- Disconnect uses a native confirmation alert and keeps original provider events.
+  Corrupt connection metadata stays preserved with a visible error. Long labels
+  and permission/error text wrap. Why: recovery must not silently discard accounts.
+- Scoped Integrations and connect-sheet buttons/links share full-area hover,
+  pressed and 2pt keyboard focus feedback. Disabled controls dim and ignore hover
+  and press. Only color transitions animate (80–100ms), with no animation under
+  Reduce Motion. Why: the user requires visible interaction feedback consistently.
+
+Offscreen synthetic fixtures cover 500/739/1059pt, both appearances, scoped
+provider sheets, pending states, busy/long account labels, malformed metadata
+and forced normal/hover/press/focus/disabled surfaces. Reduced Motion is injected
+into the same control rendering used by the native environment. These fixtures
+do not prove physical keyboard navigation, live browser consent or system alerts.
+Static Reduce Motion images check layout only; the native preference and temporal
+behavior remain live acceptance. Code review verifies animations become nil.
+Calculated contrast: white primary labels 5.59:1 normal, 7.08:1 hover, 8.40:1 pressed;
+secondary text 6.62:1 light / 6.84:1 dark; warning copy 6.54:1 light / 8.69:1 dark.
+Focus blue against secondary control fills is 4.79:1 light / 3.22:1 dark.
+Provider approval and installed-app acceptance remain separate.
+The independent Claude Opus 5.5 review led to the reverse restore gate, a single
+metadata error, truthful unavailable accessibility labels and clearing an old
+desktop secret when the client ID changes. Zoom's missing shared registration
+deliberately retains the known public publication status; independent source-user
+setup remains available through Planner.
+WHY: `.project-docs/decisions/2026-10-21-calendar-integrations.md`.
+
+### Existing Planner and To-do decisions
+
 The person comes to write down a task or find the next appointment. First they
 see the task list or selected day, then they can add/edit local content or join
 a connected meeting. Calendar retains its native sidebar and detail pane.
 The user subsequently selected a compact inline To-do list; that supersedes
 the original window entry for the To-do catalog action (details below).
 
-- Calendar opens a 980×680 window, minimum 820×560, with extended task management
-  still available in its sidebar. To-do opens in hover. Why: the month grid needs
+- The earlier Calendar window design below is superseded by the 2026-10-21
+  inline Calendar decision. To-do opens in Hover. Historical rationale: the month grid needed
   desktop space; quick task capture needs a small surface. Saved slots stay intact.
 - Use the system font, native controls and semantic surfaces. Titles are 28pt
   bold, object names 13pt, metadata 11–13pt. MacSettingsTheme.text2 keeps metadata
@@ -1037,3 +1089,49 @@ appearances, plus the two-provider decision picker. Physical pointer/keyboard
 interaction and live provider inference remain acceptance on the installed app.
 The 0.05 cutoff is conservative policy; its quality on real dictation is an
 unvalidated assumption, not a measured classifier accuracy guarantee.
+
+## Calendar inside Hover — 2026-10-21
+
+The user comes here to see today’s schedule without opening a separate app window.
+The first items are the current day, events, and a persistent Connect action.
+The user can inspect an event or connect another provider without losing Hover.
+
+- One 350pt surface, 12pt insets, 8pt spacing. Agenda, event details, feed selection,
+  provider choice and connection use the existing dark glass drawer. Why: the
+  user explicitly asked to stay within Hover, including setup entry points.
+- Calendar opens on today through the tile, search, hotkey and deep link. Day
+  arrows and Today navigate in place; each reopening starts on today again.
+- Event rows use a 45pt time column, a 12pt medium title (up to two lines), 10pt
+  source and a disclosure chevron. Full title/notes/location are in inline
+  scrollable details. Why: longer content must be readable without a window.
+- Connect stays in the header. Google, Outlook, Apple and Zoom lead to the same
+  CalendarConnectView authorization used by Integrations. Advanced registration
+  fields are collapsed in Hover and hidden from normal Integrations sheets.
+- Pending Google/Zoom approval stays visible and prevents real authorization.
+  Empty, loading, disconnected, stale/error and busy states retain a path back.
+- All rows and header actions use a full-target rounded highlight (6% normal,
+  15% hover, 23% pressed white), 1.5pt focus outline and 42% disabled opacity.
+  Disabled controls suppress active hover/press. Foreground is 96% white, secondary
+  text at least 76%. Reduce Motion removes the short hover color animation and
+  disables panel transactions; geometry never changes during hover/press.
+  On the 12% gray fixture backdrop, secondary label contrast is 8.72:1 normal,
+  6.78:1 on hover and 5.33:1 pressed. Actual glass contrast remains native acceptance.
+- A provider browser/macOS prompt is an explicit setup handoff; the Calendar
+  panel remains open during its serialized connection. Settings connections
+  do not pin Hover. Permission work lives in CalendarConnectionFlow outside the
+  view, so temporary meeting/agent priority and repeat opens do not cancel it.
+  Success returns to the agenda without stealing focus from a priority surface;
+  errors retain a retry path. Explicit Cancel/Back cancels it.
+  Source events and local archive data keep their current formats.
+
+Verification: synthetic NSHostingView fixtures at 310/360/500pt cover the agenda,
+long event list, details, providers, pending Google, Outlook/Apple connections,
+feed selection and a busy connection. A separate fixture disables animations.
+These fixtures use temporary stores, fake credentials and no network. Physical
+hover/keyboard/VoiceOver, system Reduce Motion and live provider consent remain
+separate native acceptance; no second app or worker package is launched.
+
+Assumptions: daily browsing is sufficient for the compact entry; event editing
+and a month grid are not added to Hover. The explicit current-day requirement
+supersedes the former window presentation. See
+`.project-docs/decisions/2026-10-21-calendar-hover.md`.

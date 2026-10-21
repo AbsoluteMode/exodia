@@ -104,6 +104,7 @@ final class CaseBroker {
     private let approvals: CaseApprovalPresenting
     private let authenticator: CaseAuthenticating
     private let now: () -> Date
+    private let appControl: ((AppControlRequest) async -> AppControlResponse)?
     private(set) var grants = CaseTimedGrants()
     private var accessSubscription: AnyCancellable?
 
@@ -112,13 +113,15 @@ final class CaseBroker {
         resolver: CaseCallerResolving,
         approvals: CaseApprovalPresenting,
         authenticator: CaseAuthenticating,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        appControl: ((AppControlRequest) async -> AppControlResponse)? = nil
     ) {
         self.service = service
         self.resolver = resolver
         self.approvals = approvals
         self.authenticator = authenticator
         self.now = now
+        self.appControl = appControl
         accessSubscription = service.$payload.dropFirst().sink { [weak self, weak service] incoming in
             // willSet: compare the old access configuration to the incoming one.
             // A narrowed scope or changed mode revokes existing temporary grants.
@@ -131,6 +134,15 @@ final class CaseBroker {
     }
 
     func handle(_ request: CaseBrokerRequest, peerPID: pid_t) async -> CaseBrokerResponse {
+        // The server has authenticated the bundled helper. App controls expose
+        // only their own allowlist and neither load nor authorize the Case vault.
+        // WHY: .project-docs/decisions/2026-10-21-app-control-plugin.md
+        if case .appControl(let command) = request {
+            guard let appControl else {
+                return .appControl(.failure("unavailable", "Application controls are unavailable in this build."))
+            }
+            return .appControl(await appControl(command))
+        }
         // The cached payload is reused; never re-read the vault per request.
         guard let payload = try? service.loadIfNeeded() else {
             return .denied(reason: .vaultUnavailable)
@@ -138,6 +150,8 @@ final class CaseBroker {
         let caller = resolver.resolve(peerPID: peerPID, registrations: payload.apps)
 
         switch request {
+        case .appControl:
+            return .appControl(.failure("unavailable", "Application controls are unavailable."))
         case .listProjects:
             if let denial = await authorizeListing(caller) { return denial }
             if let denial = currentAuthorityDenial(for: caller, peerPID: peerPID) { return denial }

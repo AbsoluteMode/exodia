@@ -197,4 +197,19 @@ final class PlannerBackupTests: XCTestCase {
         XCTAssertTrue(model.errorMessage?.contains("To-do") == true)
         await model.stopAndWait()
     }
+
+    func testCalendarHoverBlocksRestoreWithoutBlockingOrdinaryBackup() async throws {
+        let target = try ArtifactBackupTestProfile()
+        defer { target.tearDown(); AppState.shared.calendarHoverActive = false }
+        let model = BackupViewModel(defaults: target.defaults, keyStore: MemoryTokenStore(),
+            githubTokenStore: MemoryTokenStore(), local: BackupLocalStore(root: target.root),
+            settingsFiles: ConfigBackupFiles(root: target.root.appendingPathComponent("settings")),
+            previousRestoreOutcome: { nil }, pendingKeyStore: MemoryTokenStore())
+        AppState.shared.calendarHoverActive = true
+        XCTAssertTrue(BackupViewModel.isIdle)
+        await model.restoreSettingsDefaults(.other)
+        XCTAssertFalse(model.needsRestart)
+        XCTAssertTrue(model.errorMessage?.contains("Close Calendar") == true)
+        await model.stopAndWait()
+    }
 }

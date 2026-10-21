@@ -203,6 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nowPlayingCoordinator: NowPlayingCoordinator?
     /// Case broker socket for the bundled `whytap` helper; running app only.
     private var caseBrokerServer: CaseBrokerServer?
+    private var appControlController: AppControlController?
     /// Case Approve prompts in the island (Y / N / A keys) and their panel.
     private var caseApprovalController: CaseApprovalController?
     private var caseApprovalPanel: CaseApprovalPanel?
@@ -751,6 +752,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             copyHistoryCard: actions.copyHistoryCard,
             toggleMeetingRecord: actions.toggleMeetingRecord,
             openScreenshot: actions.openScreenshot,
+            openHoverPanel: { [weak self] panel in self?.show(.hoverPanel(panel)) },
             quitApplication: actions.quitApplication,
             translationController: { [weak self] in self?.ensureTranslationController() },
             endToolSessions: { [weak self] in _ = self?.translationWindowController?.endEmbedding() },
@@ -1169,8 +1171,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             },
             openCalendar: { [weak self] in
-                self?.registerIslandHotkeyActivity()
-                PlannerWindowController.shared.show(.calendar)
+                guard let self else { return }
+                self.registerIslandHotkeyActivity()
+                AppState.shared.programmaticHoverExpansion = true
+                self.hoverPanelRequestToken += 1
+                AppState.shared.programmaticHoverPanelRequest = HoverPanelRequest(
+                    panel: .calendar, token: self.hoverPanelRequestToken
+                )
             },
             openTranslate: { [weak self] in self?.openTranslation(.text) },
             openSubtitles: { [weak self] in self?.openTranslation(.subtitles) },
@@ -1799,8 +1806,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.show(tab: .toolbox)
             controller.selection.focus(tool)
             controller.selection.setHighlight(.tab(.toolbox))
-        case .planner(let section):
-            PlannerWindowController.shared.show(section)
         case .translation(let mode):
             openTranslation(mode)
         case .island:
@@ -3773,6 +3778,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let bundleID = Bundle.main.bundleIdentifier
         else { return }
         let inspector = CaseSystemProcessInspector()
+        let controls = AppControlController()
+        appControlController = controls
         let approvals = CaseApprovalController()
         caseApprovalController = approvals
         caseApprovalPanel = CaseApprovalPanel(controller: approvals)
@@ -3786,7 +3793,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 inspector: inspector,
                 builtInOpenCodePIDs: { CaseBuiltInAgentProcesses.shared.pids }),
             approvals: approvals,
-            authenticator: LocalCaseAuthenticator())
+            authenticator: LocalCaseAuthenticator(),
+            appControl: { [controls] request in await controls.handle(request) })
         let server = CaseBrokerServer(
             socketURL: CaseBrokerPaths.socketURL(bundleID: bundleID),
             broker: broker,

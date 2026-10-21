@@ -135,16 +135,22 @@ final class CalendarBrowserSignIn {
     private var connections: [UUID: NWConnection] = [:]
     private let openBrowser: (URL) -> Bool
     private let timeoutSeconds: Double
+    private let configurationInfo: [String: Any]?
     private var expectedRedirect: String?
 
-    init(timeoutSeconds: Double = 180, openBrowser: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
+    init(timeoutSeconds: Double = 180, configurationInfo: [String: Any]? = Bundle.main.infoDictionary,
+         openBrowser: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
         self.timeoutSeconds = timeoutSeconds
+        self.configurationInfo = configurationInfo
         self.openBrowser = openBrowser
     }
 
     func authorize(provider: CalendarProvider, clientID: String, state: String,
         verifier: String) async throws -> (code: String, redirect: String) {
         try Task.checkCancellation()
+        guard CalendarConnectionReadiness.authorization(provider, clientID: clientID, info: configurationInfo) == .available else {
+            throw CalendarConnectionError.publicReviewPending
+        }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 self.continuation = continuation

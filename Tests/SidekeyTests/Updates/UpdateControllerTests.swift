@@ -37,6 +37,8 @@ final class UpdateControllerTests: XCTestCase {
         AppState.shared.screenshotActive = false
         AppState.shared.plannerActive = false
         AppState.shared.todoActive = false
+        AppState.shared.calendarHoverActive = false
+        AppState.shared.calendarConnectionActive = false
         AppState.shared.clearMeetingRecordingState()
     }
 
@@ -49,6 +51,8 @@ final class UpdateControllerTests: XCTestCase {
         AppState.shared.screenshotActive = false
         AppState.shared.plannerActive = false
         AppState.shared.todoActive = false
+        AppState.shared.calendarHoverActive = false
+        AppState.shared.calendarConnectionActive = false
         AppState.shared.clearMeetingRecordingState()
         super.tearDown()
     }
@@ -285,6 +289,23 @@ final class UpdateControllerTests: XCTestCase {
         XCTAssertEqual(installs, 1)
     }
 
+    func test_calendarSignInDefersRestartAfterSettingsCloses() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        AppState.shared.updateAvailable?.startDownload()
+        AppState.shared.calendarConnectionActive = true
+        controller.applyDriverStage(.readyToInstall)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 0)
+        XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
+        XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("calendar sign-in") == true)
+        AppState.shared.calendarConnectionActive = false
+        XCTAssertEqual(installs, 0)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 1)
+    }
+
     func test_todoDefersUpdateAndIdleStillRequiresExplicitRestart() {
         var installs = 0
         let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
@@ -297,6 +318,24 @@ final class UpdateControllerTests: XCTestCase {
         XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
         XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("To-do") == true)
         AppState.shared.todoActive = false
+        XCTAssertEqual(installs, 0)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 1)
+    }
+
+    func test_calendarHoverDefersUpdateUntilClosedAndExplicitRestart() {
+        var installs = 0
+        let controller = UpdateController(appState: .shared, updatesEnabled: false, installAction: { installs += 1 })
+        controller.handleDiscovered(version: "2.2", build: "2200")
+        AppState.shared.updateAvailable?.startDownload()
+        AppState.shared.calendarHoverActive = true
+        defer { AppState.shared.calendarHoverActive = false }
+        controller.applyDriverStage(.readyToInstall)
+        AppState.shared.updateAvailable?.install()
+        XCTAssertEqual(installs, 0)
+        XCTAssertFalse(controller.updaterShouldRelaunchApplication(controller.updater))
+        XCTAssertTrue(AppState.shared.updateAvailable?.restartDeferralReason?.contains("Calendar") == true)
+        AppState.shared.calendarHoverActive = false
         XCTAssertEqual(installs, 0)
         AppState.shared.updateAvailable?.install()
         XCTAssertEqual(installs, 1)

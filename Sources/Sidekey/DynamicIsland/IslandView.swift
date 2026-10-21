@@ -306,6 +306,8 @@ struct IslandView: View {
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .tasks:
             base = IslandDropModeControl.detachedPanelGap + TodoHoverView.contentHeight
+        case .calendar:
+            base = IslandDropModeControl.detachedPanelGap + CalendarHoverView.contentHeight
         case .history:
             base = IslandDropModeControl.historyHoverPanelHeight
         case .caseVault:
@@ -478,6 +480,8 @@ struct IslandView: View {
         mode: TranscriptionMode
     ) -> IslandHoverPanelMode {
         switch panel {
+        case .calendar:
+            return .calendar
         case .tasks:
             return .tasks
         case .history:
@@ -577,6 +581,7 @@ struct IslandView: View {
     private func dismissHoverMenu() {
         guard !appState.screenshotPreparing else { return }
         guard hoverPanelMode != .caseVault || !caseViewModel.isSystemInteractionActive else { return }
+        guard hoverPanelMode != .calendar || !appState.calendarHoverConnectionActive else { return }
         hoverPanelMode = .controls
         hoverSearchFocused = false
         hoverVocabularyFocused = false
@@ -1264,7 +1269,8 @@ struct IslandView: View {
                         )
                         .frame(width: compactWidth, height: hoverDrawerHeight)
                         .background(IslandHoverMenuDismissObserver(
-                            enabled: holdsHoverMenu && !(hoverPanelMode == .caseVault && caseViewModel.isSystemInteractionActive),
+                            enabled: holdsHoverMenu && !(hoverPanelMode == .caseVault && caseViewModel.isSystemInteractionActive)
+                                && !(hoverPanelMode == .calendar && appState.calendarHoverConnectionActive),
                             onDismiss: dismissHoverMenu
                         ))
                         .islandHoverGlassSurface(
@@ -1394,6 +1400,11 @@ struct IslandView: View {
                 requestPanelKeyboardFocus(.caseVault, glance: false)
             }
         }
+        .onChange(of: appState.calendarHoverConnectionActive) { _, active in
+            if !active && hoverPanelMode == .calendar && isHoverExpanded {
+                requestPanelKeyboardFocus(.calendar, glance: false)
+            }
+        }
         .onChange(of: hoverStore.slots.count) { _, _ in
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
@@ -1401,6 +1412,8 @@ struct IslandView: View {
             // A logical opening ends immediately, independently of exit animation.
             if oldValue == .tasks { TodoHoverModel.shared.end() }
             if newValue == .tasks { TodoHoverModel.shared.begin() }
+            if oldValue == .calendar { CalendarHoverModel.shared.end() }
+            if newValue == .calendar { CalendarHoverModel.shared.begin() }
             recomputeMouseExpanded()
             if newValue != .vocabularyEditor { hoverVocabularyFocused = false }
             hoverHitBridge.setEnabled(isHoverExpanded && newValue == .controls)
@@ -1491,6 +1504,7 @@ struct IslandView: View {
             // mode may not change (⌥N on a glance, a key on the open strip), so ask here too.
             let glance = request.isGlance && !isHovering
             let mode = Self.panelMode(for: request.panel, mode: dropMode)
+            if request.panel == .calendar { CalendarHoverModel.shared.openToday() }
             hoverPanelGlance = glance
             hoverPanelMode = mode
             requestPanelKeyboardFocus(mode, glance: glance)
@@ -1524,6 +1538,11 @@ struct IslandView: View {
         // monotonic token makes repeated toggles to the same mode re-fire.
         .onReceive(NotificationCenter.default.publisher(for: .sidekeyDropModeChanged)) { _ in
             dropMode = actions.currentDropMode()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: RunLoop.main)) { _ in
+            // The local agent plugin can change languages while a picker is open.
+            selectedLanguage = actions.currentLanguage()
+            targetLanguage = actions.currentTargetLanguage()
         }
         .onChange(of: appState.dropModeHotkeyToggle) { _, toggle in
             guard let toggle else { return }
@@ -2482,6 +2501,7 @@ enum IslandHoverPanelMode: Equatable, CaseIterable {
     case outputLanguagePicker
     case history
     case tasks
+    case calendar
     case monitor
     case notifications
     case vocabularyEditor
@@ -2493,7 +2513,7 @@ enum IslandHoverPanelMode: Equatable, CaseIterable {
         switch self {
         // Brightness takes key status like Monitor so its slider and switch get clicks.
         case .languagePicker, .outputLanguagePicker, .history, .monitor, .notifications, .vocabularyEditor, .fillerEditor,
-             .caseVault, .brightness, .tasks:
+             .caseVault, .brightness, .tasks, .calendar:
             return true
         case .controls:
             return false
@@ -2609,6 +2629,9 @@ private struct IslandDropModeHoverPanel: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if panelMode == .tasks {
                 TodoHoverView(model: .shared, onBack: { panelMode = .controls })
+                    .transition(.opacity)
+            } else if panelMode == .calendar {
+                CalendarHoverView(model: .shared, onBack: { panelMode = .controls })
                     .transition(.opacity)
             } else if panelMode == .brightness {
                 IslandBrightnessStrip(onBack: { panelMode = .controls })
@@ -2884,6 +2907,7 @@ private struct IslandDropModeHoverPanel: View {
         case .quit: onQuit()
         case .openPanel(let panel):
             switch panel {
+            case .calendar: panelMode = .calendar
             case .tasks: panelMode = .tasks
             case .history: panelMode = .history
             case .notifications: panelMode = .notifications

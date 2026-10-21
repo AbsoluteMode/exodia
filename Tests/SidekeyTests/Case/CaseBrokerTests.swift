@@ -147,6 +147,59 @@ final class CaseBrokerTests: XCTestCase {
         await broker.handle(.resolveRun(project: project, only: only, command: command, cwd: "/tmp"), peerPID: 900)
     }
 
+    func test_app_controls_do_not_load_case_vault_resolve_case_caller_or_authorize_secrets() async {
+        makeBroker(caller: .registered(registration(.approve)))
+        let controls = CaseBroker(service: service, resolver: resolver, approvals: approvals, authenticator: auth,
+                                  appControl: { request in .success(.string(request.operation)) })
+        let response = await controls.handle(.appControl(AppControlRequest("get_state")), peerPID: 900)
+        XCTAssertEqual(response, .appControl(.success(.string("get_state"))))
+        XCTAssertEqual(store.loadCount, 0)
+        XCTAssertNil(service.payload)
+        XCTAssertEqual(resolver.calls, 0)
+        XCTAssertTrue(auth.reasons.isEmpty)
+        XCTAssertTrue(approvals.requests.isEmpty)
+    }
+
+    func test_app_control_client_exchanges_through_the_authenticated_socket() async throws {
+        makeBroker(caller: .registered(registration(.approve)))
+        broker = CaseBroker(service: service, resolver: resolver, approvals: approvals, authenticator: auth,
+                            appControl: { request in .success(.string(request.operation)) })
+        let dir = try tempSocketDir()
+        let server = makeServer(dir: dir, inspector: ServerInspector())
+        try server.start()
+        defer { server.stop() }
+        let reply = try await Self.call(dir.appendingPathComponent("b.sock"), .appControl(AppControlRequest("get_state")))
+        XCTAssertEqual(reply, .appControl(.success(.string("get_state"))))
+        XCTAssertEqual(store.loadCount, 0)
+    }
+
+    func test_cancelling_control_socket_cancels_the_pending_app_task() async throws {
+        makeBroker(caller: .registered(registration(.approve)))
+        let began = expectation(description: "control reached app")
+        let cancelled = expectation(description: "app task cancelled")
+        broker = CaseBroker(service: service, resolver: resolver, approvals: approvals, authenticator: auth,
+                            appControl: { _ in
+            began.fulfill()
+            do {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                XCTFail("the pending task should have been cancelled")
+            } catch { cancelled.fulfill() }
+            return .failure("cancelled", "test")
+        })
+        let dir = try tempSocketDir()
+        let server = makeServer(dir: dir, inspector: ServerInspector())
+        try server.start()
+        defer { server.stop() }
+        let cancellation = AppControlCancellation()
+        let client = UnixSocketBrokerClient(socketURL: dir.appendingPathComponent("b.sock"))
+        let task = Task.detached { try client.send(.appControl(AppControlRequest("get_state")), cancellation: cancellation) }
+        await fulfillment(of: [began], timeout: 2)
+        cancellation.cancel()
+        await fulfillment(of: [cancelled], timeout: 2)
+        do { _ = try await task.value; XCTFail("cancelled connection should fail") } catch {}
+        XCTAssertEqual(store.loadCount, 0)
+    }
+
     func test_scope_limits_listing_lookup_and_bypass_even_with_a_timed_grant() async throws {
         var app = registration(.bypass)
         app.allowedProjectIDs = [alphaID]
@@ -734,6 +787,10 @@ final class CaseBrokerTests: XCTestCase {
             project: "alpha", only: nil, command: "true", cwd: "/tmp"))
         XCTAssertEqual(response, .denied(reason: .untrustedHelper))
         XCTAssertEqual(resolver.calls, 0)
+
+        let controls = try await Self.call(socketURL, .appControl(AppControlRequest("get_state")))
+        XCTAssertEqual(controls, .denied(reason: .untrustedHelper))
+        XCTAssertEqual(store.loadCount, 0, "untrusted app controls must never reach the broker")
 
         // A peer that sends nothing still gets the answer at once: the
         // request body is never read for an untrusted peer.
