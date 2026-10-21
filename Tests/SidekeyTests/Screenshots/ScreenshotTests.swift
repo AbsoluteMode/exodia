@@ -82,6 +82,42 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(try ScreenshotTextDetector.boxes(fixture(text: false)).isEmpty)
     }
 
+    func testCopyTextRecognizesEnglishCyrillicAndCodesOnLightAndDarkRetinaImages() throws {
+        for dark in [false, true] {
+            let context = try XCTUnwrap(CGContext(data: nil, width: 1000, height: 400, bitsPerComponent: 8,
+                bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.scaleBy(x: 2, y: 2)
+            context.setFillColor((dark ? NSColor.black : .white).cgColor)
+            context.fill(CGRect(x: 0, y: 0, width: 500, height: 200))
+            let previous = NSGraphicsContext.current
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 26),
+                .foregroundColor: dark ? NSColor.white : NSColor.black]
+            ("Invoice 401" as NSString).draw(at: CGPoint(x: 30, y: 130), withAttributes: attributes)
+            ("Привет мир 123456" as NSString).draw(at: CGPoint(x: 30, y: 50), withAttributes: attributes)
+            NSGraphicsContext.current = previous
+            let text = try ScreenshotTextDetector.text(XCTUnwrap(context.makeImage()))
+            for expected in ["Invoice", "401", "Привет", "мир", "123456"] {
+                XCTAssertTrue(text.contains(expected), "Missing \(expected), dark=\(dark)")
+            }
+        }
+    }
+
+    func testCopyTextUsesOnlyFlattenedCropAndCannotReadCoveredPixels() throws {
+        let source = try fixture(), size = CGSize(width: 800, height: 400)
+        let crop = CGRect(x: 0, y: 0, width: 400, height: 160)
+        let selected = try ScreenshotRenderer.image(source: source, size: size, annotations: [], crop: crop)
+        let text = try ScreenshotTextDetector.text(selected)
+        XCTAssertTrue(text.contains("123456")); XCTAssertFalse(text.contains("Invoice")); XCTAssertFalse(text.contains("401"))
+        let cover = ScreenshotAnnotation(tool: .blur, points: [crop.origin, CGPoint(x: crop.maxX, y: crop.maxY)],
+                                         patch: try fixture(width: 400, height: 160, text: false))
+        let covered = try ScreenshotRenderer.image(source: source, size: size, annotations: [cover], crop: crop)
+        XCTAssertTrue(try ScreenshotTextDetector.text(covered).isEmpty)
+        let placed = ScreenshotAnnotation(tool: .text, points: [CGPoint(x: 40, y: 60)], color: .black, width: 5, text: "PLACED 902")
+        let edited = try ScreenshotRenderer.image(source: source, size: size, annotations: [cover, placed], crop: crop)
+        XCTAssertTrue(try ScreenshotTextDetector.text(edited).contains("PLACED 902"))
+    }
+
     func testBlurDetectionIncludesSmallDigitsAndCyrillicInBothAppearances() throws {
         for scale in [1, 2] {
             for dark in [false, true] {
@@ -348,14 +384,14 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(buttons.contains { $0.title == "Blur" && $0.state == .on && $0.image == nil })
         XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix("Download to Downloads") == true && $0.title.isEmpty && $0.image != nil })
         XCTAssertFalse(buttons.contains { $0.toolTip == "More tools" })
-        XCTAssertEqual(buttons.count, 12, "Six annotation tools and six finish/edit actions remain")
-        for removed in ["Select & crop", "Highlighter", "Spotlight", "Copy text", "Pin above windows", "Output size"] {
+        XCTAssertEqual(buttons.count, 13, "Six annotation tools and seven finish/edit actions remain")
+        for removed in ["Select & crop", "Highlighter", "Spotlight", "Pin above windows", "Output size"] {
             XCTAssertFalse(buttons.contains { $0.toolTip?.hasPrefix(removed) == true }, removed)
         }
         for tool in [ScreenshotTool.arrow, .rectangle, .pen, .text, .blur, .counter] {
             XCTAssertTrue(buttons.contains { $0.identifier?.rawValue == tool.rawValue })
         }
-        for label in ["Share", "Undo", "Redo", "Cancel capture"] {
+        for label in ["Copy text", "Share", "Undo", "Redo", "Cancel capture"] {
             XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix(label) == true }, label)
         }
         let arrow = try XCTUnwrap(buttons.first { $0.identifier?.rawValue == "arrow" })
@@ -377,8 +413,15 @@ final class ScreenshotTests: XCTestCase {
         let copy = try XCTUnwrap(buttons.first { $0.title == "Copy & exit" })
         XCTAssertEqual(copy.accessibilityLabel(), "Copy screenshot and exit")
         let download = try XCTUnwrap(buttons.first { $0.toolTip?.hasPrefix("Download to Downloads") == true })
-        var copyRequests = 0
-        toolbar.onCommand = { if case .copy = $0 { copyRequests += 1 } }
+        let copyText = try XCTUnwrap(buttons.first { $0.identifier?.rawValue == "command.copyText" })
+        var textRequests = 0, copyRequests = 0
+        toolbar.onCommand = {
+            if case .copyText = $0 { textRequests += 1 }
+            if case .copy = $0 { copyRequests += 1 }
+        }
+        copyText.performClick(nil)
+        XCTAssertEqual(textRequests, 1)
+        XCTAssertTrue(toolbar.focusableControls.contains(copyText))
         let label = try XCTUnwrap(settings.compactMap { $0 as? NSTextField }.first { $0.placeholderString == "Label · click to place" })
         label.stringValue = "Test label"
         _ = label.sendAction(label.action, to: label.target)
@@ -402,7 +445,7 @@ final class ScreenshotTests: XCTestCase {
                     let frame = toolbar.convert(button.bounds, from: button)
                     XCTAssertTrue(toolbar.bounds.contains(frame), "Clipped control \(button.toolTip ?? button.title), width \(availableWidth), frame \(frame), bounds \(toolbar.bounds)")
                 }
-                XCTAssertTrue(copy.isEnabled); XCTAssertTrue(download.isEnabled)
+                XCTAssertTrue(copy.isEnabled); XCTAssertTrue(download.isEnabled); XCTAssertTrue(copyText.isEnabled)
                 if let directory, tool == .select || availableWidth == 1024 {
                     for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
                         window.appearance = NSAppearance(named: appearance)
@@ -416,7 +459,8 @@ final class ScreenshotTests: XCTestCase {
             }
         }
         canvas.busy = true; toolbar.refresh()
-        XCTAssertFalse(copy.isEnabled); XCTAssertFalse(download.isEnabled)
+        XCTAssertFalse(copy.isEnabled); XCTAssertFalse(download.isEnabled); XCTAssertFalse(copyText.isEnabled)
+        copyText.performClick(nil); XCTAssertEqual(textRequests, 1, "Busy text extraction cannot start a second request")
         XCTAssertTrue(buttons.contains { $0.toolTip?.hasPrefix("Cancel capture") == true && $0.isEnabled })
         XCTAssertFalse(window.isVisible); XCTAssertFalse(settingsWindow.isVisible)
     }
@@ -429,7 +473,7 @@ final class ScreenshotTests: XCTestCase {
     }
 }
 
-// Accurate OCR is a blur-test oracle; the editor ships only fast region detection.
+// Independent accurate-OCR oracle for Blur regressions.
 private struct ScreenshotTextAnalysis {
     let boxes: [CGRect]
     let text: String

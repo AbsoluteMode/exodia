@@ -9,6 +9,9 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user requested restoring screenshot text extraction after finding a use for it, superseding only Copy text removal in the earlier tool reduction.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user reported Cmd-Z still failed after a curved stroke and requested four assignable arrow actions, Screenshot before Agent priority, chosen defaults, replacement on drop and dashed draggable slots.
     confirmed_at: 2026-10-21
   - type: repository
@@ -197,6 +200,29 @@ fast local text/number detection for Blur. Accurate OCR remains only in tests
 as an independent oracle for blur/orientation regressions; its copying action
 and runtime recognition path are removed. This supersedes the earlier expanded
 tool catalog and the copying/pinning/resizing behavior in this record.
+
+# Copy text restored — 2026-10-21
+
+The user found a use for screenshot text extraction and asked to restore it.
+This supersedes only Copy text removal in the tool-reduction revision above.
+Restore its main-bar text-viewfinder action beside Share and make it available
+in the existing arrow action catalog, preserving every saved assignment.
+
+Use accurate on-device Vision recognition with English/Russian support and
+language correction off for codes/numbers. Render the selected crop with its
+annotations and Blur before recognition; never analyze hidden original pixels.
+Rendering and OCR run off the UI thread. Show local progress and allow Escape;
+cancelled/old generations cannot write a late result to the clipboard. Success
+copies plain text and exits. Empty/error results retain the editor for retry
+or image export, leaving the clipboard untouched until readable text exists.
+The bounded ScreenshotTextCopy helper owns the asynchronous commit boundary.
+Before clearing the clipboard it snapshots all items/types; incomplete snapshots
+abort without mutation. A failed write restores the snapshot only while the
+pasteboard is still owned by this operation, preserving a newer owner's data.
+Named-pasteboard tests inject late recognition and write failures to exercise
+cancelled/stale generations, empty/error results and rich multi-item recovery.
+Keep Blur's fast region path unchanged; no warmup, network or app-managed model
+download is introduced. Accurate recognition can have a slow first call.
 
 # Capture-test isolation
 

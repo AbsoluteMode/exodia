@@ -39,10 +39,18 @@ with the visible **Copy & exit ↩** action or Enter.
   Download, Copy & exit and Cancel. Remove More and the Select/crop control;
   keep the initial area drag. Clicking the active tool again stops drawing
   and restores direct selection/annotation adjustment without another button.
-  Highlighter, Spotlight, Copy text, Pin above
+  Highlighter, Spotlight, Pin above
   windows and Output size are removed, including their hidden commands and
   shortcuts. Why: the user chose a smaller annotation-focused tool set after
   reviewing every action; full pixel resolution remains automatic.
+- Restore Copy text beside Share, using the text viewfinder symbol and the same
+  native button, whole-area hover, pressed, focus and disabled behavior. It is
+  also assignable to the four arrow slots without changing saved assignments.
+  Why: on 21 October the user found a use for extracting screenshot text and
+  reversed the earlier removal of this action. Recognize only the edited crop,
+  show local progress, allow Escape and keep the editor on empty/error results;
+  success copies plain text and exits. Why: the user can recover without losing
+  edits, and text extraction follows visible Blur/annotation output.
 - Blur uses text alone; Download uses its downward arrow alone with a tooltip.
   Why: the user explicitly removed Blur’s icon and Download’s label.
 - Keep color, width, shape, blur mode and label input in `ScreenshotToolSettings`,

@@ -1055,12 +1055,17 @@ without selection does nothing, double-click does not select a full display,
 and the passive instruction strip is removed. Return copies the selected area
 and closes, waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
-Shape, Pen, Text, Blur, Numbered steps and system sharing remain on the main
+Shape, Pen, Text, Blur, Numbered steps, Copy text and system sharing remain on the main
 toolbar. There is no Select/crop button or V shortcut; initial area selection
 remains a drag. Clicking the active tool again stops drawing and permits
 selection/annotation adjustment without an extra selector. Highlighter,
-Spotlight, Copy text, Pin above windows and
-Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
+Spotlight, Pin above windows and
+Output size are removed, including their commands/shortcuts. Copy text uses accurate
+on-device Vision recognition on the flattened, edited crop, including Blur,
+then copies plain text and closes. Empty/error results keep the editor open;
+Escape cancels and generation checks reject late results. Rendering and OCR
+run off the UI thread. Copy text can also be assigned to an arrow without
+changing existing bindings. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
 from every screenshot panel through both key-equivalent and direct window dispatch,
 using physical Z so Russian input works; focused text fields retain native text undo.
 Settings -> Hotkeys has four draggable, dashed arrow slots: Up Pen, Down Blur,

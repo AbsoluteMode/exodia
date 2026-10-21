@@ -43,7 +43,8 @@ final class ScreenshotToolbar: NSView {
         }
         controls.append(separator())
         for (command, symbol, help) in [
-            (ScreenshotCommand.share, "square.and.arrow.up", "Share — send the edited screenshot using macOS")
+            (ScreenshotCommand.copyText, "doc.text.viewfinder", "Copy text — recognize text and numbers on this Mac, copy and exit"),
+            (.share, "square.and.arrow.up", "Share — send the edited screenshot using macOS")
         ] {
             let button = makeButton(symbol: symbol, help: help, action: #selector(command(_:)))
             button.identifier = NSUserInterfaceItemIdentifier("command.\(command)")
