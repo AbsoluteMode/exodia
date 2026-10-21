@@ -943,20 +943,42 @@ Guide: `docs/backup.md`. WHY:
 
 Screenshot is an action tool in hover search/Toolbox with an optional named
 hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
-then shows a frozen selection canvas and one horizontal native toolbar with
-inline contextual settings, Copy and Download. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
+then shows a frozen selection canvas and a wrapping native toolbar exposing all
+commands, Copy & exit with a centered Return keycap, and Download. The keycap
+uses HotkeyHintView through a click-through hosting view inside the same native
+button; its label and keycap group are centered together. Color/width and other contextual controls
+live in a separate adjacent ScreenshotToolSettings panel. Capture requests the
+filter's full Retina pixel dimensions with best resolution; PNG export keeps
+those pixels without resizing. Repeated activation
+preserves the editor; unchanged display notifications are ignored. Capture has
+its own 10-second deadline with retry, cancelled before editing. Unknown keys
+are consumed locally to avoid recursion through ScreenshotCapturePanel; Tab
+traverses both bars. Generated-fixture capture tests inject private notification
+centers and no foreground app through ScreenshotCaptureEnvironment, isolating
+real Space/display changes and focus. Production uses the system environment.
+Both bars avoid the display's top safe area. PNG stores
+Retina point scale as well as full-resolution pixels. The visible Hover state
+is held until capture freezes its pixels; Whytap surfaces are included, and no
+island wake or dismissal happens first. Only a dragged area is exported: Enter
+without selection does nothing, double-click does not select a full display,
+and the passive instruction strip is removed. Return copies the selected area
+and closes, waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
-Shape,
-Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
-system sharing live in More. Blur defaults to Text and numbers, including
+Shape, Pen, Text, Blur, Numbered steps and system sharing remain on the main
+toolbar. There is no Select/crop button or V shortcut; initial area selection
+remains a drag. Clicking the active tool again stops drawing and permits
+selection/annotation adjustment without an extra selector. Highlighter,
+Spotlight, Copy text, Pin above windows and
+Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
+from either panel; focused text fields retain native text undo. Blur defaults to Text and numbers, including
 standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
-without language correction; accurate OCR belongs to Copy text. Dark crops are
+without language correction. Dark crops are
 normalized only for detection; output keeps original colors. Each text region
 gets its own blur strength, with stronger masks applied last. Crop-first compositing, Blur and PNG export run off the UI
 thread; a shared hardware Core Image context avoids per-gesture setup.
 Entire area is the alternative. Detection is
 best-effort and the visible result must be checked. Exports flatten edited
-pixels; Copy text analyzes those pixels too. No capture is persisted before an
+pixels. No capture is persisted before an
 explicit export. Active editing/processing/dialogs block app-initiated update
 restarts; screen/Space changes and sleep cancel stale captures. This system OCR
 is separate from the removed app-managed speech/LLM models. Guide:

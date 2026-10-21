@@ -2,8 +2,10 @@ import AppKit
 import Darwin
 
 enum ScreenshotDownload {
-    static func png(_ image: CGImage) throws -> Data {
-        guard let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+    static func png(_ image: CGImage, scale: CGFloat = 1) throws -> Data {
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        bitmap.size = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
+        guard let data = bitmap.representation(using: .png, properties: [:]) else {
             throw ScreenshotImageError.rendering
         }
         return data

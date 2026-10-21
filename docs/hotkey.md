@@ -377,12 +377,12 @@ This keeps a rebound shortcut in sync across every surface.
 
 Screenshot uses the existing optional named tool shortcut in Settings →
 Hotkeys → Tools; no new default global key is reserved. Local editor keys
-come from `ScreenshotEditorKeys.tools` and are included in Help. V selects
-and crops; A/R/O/P/T/B/M/N choose Arrow/Rectangle/Oval/Pen/Text/Blur/Highlighter/
-Numbered steps. ⌘C copies, ⌘S downloads PNG directly into Downloads, ⌘Z undoes and ⇧⌘Z redoes. Arrows move
+come from `ScreenshotEditorKeys.tools` and are included in Help.
+A/R/O/P/T/B/N choose Arrow/Rectangle/Oval/Pen/Text/Blur/Numbered steps.
+The removed Select/crop and Highlighter tools have no local shortcuts. ⌘C copies, ⌘S downloads PNG directly into Downloads, ⌘Z undoes and ⇧⌘Z redoes. Arrows move
 the crop (Shift: 10 points, Option: resize); Delete removes a selected
-annotation. Without a crop, Return copies the full display and closes; after selection
-it copies and closes, waiting for active Blur or Download to finish. Escape cancels
+annotation. Tab and Shift-Tab move between enabled toolbar/settings controls.
+Return requires an explicitly selected area, then copies it and closes, waiting for active Blur or Download to finish. Escape cancels
 the current stroke, then the capture. Native text
 entry keeps ordinary clipboard editing commands; Return commits the field and
 copies/closes the editor. See [screenshots](screenshots.md).
