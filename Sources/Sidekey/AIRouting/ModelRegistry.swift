@@ -29,6 +29,27 @@ struct RegistryModel: Equatable, Sendable {
 }
 
 extension ModelRegistry {
+    /// Speech catalogs without release timestamps use only exact model IDs
+    /// whose launch dates were checked against the provider's announcement.
+    /// New/unknown IDs never inherit a date from a name, alias or model family.
+    static func documentedReleaseDate(for id: String, kind: AIProviderKind) -> Date? {
+        let day: String
+        switch (kind, id) {
+        // https://soniox.com/docs/stt/models#june-16-2026
+        case (.soniox, "stt-rt-v5"): day = "2026-06-16"
+        // https://soniox.com/docs/stt/models#june-11-2026
+        case (.soniox, "stt-async-v5"): day = "2026-06-11"
+        // https://elevenlabs.io/blog/introducing-scribe-v2-realtime
+        case (.elevenLabs, "scribe_v2_realtime"): day = "2025-11-11"
+        // https://elevenlabs.io/blog/introducing-scribe-v2
+        case (.elevenLabs, "scribe_v2"): day = "2026-01-09"
+        default: return nil
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        return formatter.date(from: day)
+    }
+
     static let models: [RegistryModel] = [
         RegistryModel(kind: .openRouter, id: smartDecisionModel, uses: [.decision], diarization: false),
         RegistryModel(kind: .openAI, id: openAIDecisionModel, uses: [.decision], diarization: false),

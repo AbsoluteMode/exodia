@@ -743,7 +743,10 @@ Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
 MacPopupLabel. Name/size terms match in any order (`qwen 27`, `qwen27`), ignoring
 case/separators. Search never changes routes; explicit picks retain verification.
 Known catalog dates appear under model IDs: Anthropic Released, OpenAI Created,
-OpenRouter Added to OpenRouter. Unknown/epoch dates stay hidden. Nonempty search
+OpenRouter Added to OpenRouter. Unknown/epoch dates stay hidden.
+Speech models: Deepgram Updated uses cached newest version dates;
+Soniox/ElevenLabs Released uses exact stable IDs with verified official launch
+dates in ModelRegistry. Unknown models/aliases inherit no release date. Nonempty search
 breaks equal-relevance ties by newest date, unknown last, within provider groups;
 equal dates and empty queries keep catalog order. Older caches refresh once for dates.
 Up/Down and Return choose enabled results; Escape clears then closes. Opening

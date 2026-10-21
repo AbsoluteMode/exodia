@@ -76,7 +76,43 @@ final class ModelStatusResolverTests: XCTestCase {
             XCTAssertNil(options.first { $0.model == unknown.id }?.dateLabel)
             XCTAssertNil(ModelStatusResolver.catalogDateLabel(Date(timeIntervalSince1970: 0), account: account))
         }
-        XCTAssertNil(ModelStatusResolver.catalogDateLabel(date, account: .soniox))
+        XCTAssertNil(ModelStatusResolver.catalogDateLabel(date, account: .server(UUID())))
+    }
+
+    func test_speech_picker_uses_documented_releases_and_live_deepgram_updates() throws {
+        let json = #"""
+        {"stt":[
+          {"canonical_name":"nova-3-general","streaming":true,"batch":true,"version":"2026-10-20.1"},
+          {"canonical_name":"nova-3-general","streaming":true,"batch":true,"version":"2026-10-15.0"},
+          {"canonical_name":"nova-3-medical","streaming":true,"batch":true,"version":"2026-10-06.0"},
+          {"canonical_name":"nova-undated","streaming":true,"batch":true,"version":"latest"}
+        ]}
+        """#
+        let models = try ModelCatalogFetcher.parseDeepgram(Data(json.utf8))
+        let env = try makeEnv(snapshots: [.deepgram: fresh(models)], keyed: [.soniox, .deepgram, .elevenLabs])
+        let sections = env.resolver.sections(for: .meetings)
+        for (account, model, day) in [(ProviderAccount.soniox, "stt-async-v5", "2026-06-11"),
+                                      (.elevenLabs, "scribe_v2_realtime", "2025-11-11")] {
+            let option = try XCTUnwrap(sections.first { $0.account == account }?.options.first { $0.model == model })
+            XCTAssertTrue(try XCTUnwrap(option.dateLabel).hasPrefix("Released "))
+            XCTAssertEqual(option.catalogDate, ModelCatalogFetcher.deepgramVersionDate(day))
+        }
+        let speechOptions = try XCTUnwrap(env.resolver.sections(for: .dropFast).first { $0.account == .soniox }?.options)
+        XCTAssertEqual(speechOptions.first { $0.model == "stt-rt-v5" }?.catalogDate,
+                       ModelCatalogFetcher.deepgramVersionDate("2026-06-16"))
+        XCTAssertEqual(ModelRegistry.documentedReleaseDate(for: "scribe_v2", kind: .elevenLabs),
+                       ModelCatalogFetcher.deepgramVersionDate("2026-01-09"))
+        XCTAssertNil(ModelRegistry.documentedReleaseDate(for: "stt-rt-v6", kind: .soniox))
+        XCTAssertNil(ModelRegistry.documentedReleaseDate(for: "scribe_v3_realtime", kind: .elevenLabs))
+        XCTAssertNil(ModelRegistry.documentedReleaseDate(for: "stt-rt-v5", kind: .openAICompatible))
+
+        let deepgram = try XCTUnwrap(sections.first { $0.account == .deepgram })
+        XCTAssertTrue(try XCTUnwrap(deepgram.options.first { $0.model == "nova-3" }?.dateLabel).hasPrefix("Updated "))
+        XCTAssertEqual(deepgram.options.first { $0.model == "nova-3" }?.catalogDate,
+                       ModelCatalogFetcher.deepgramVersionDate("2026-10-20"))
+        XCTAssertNil(deepgram.options.first { $0.model == "nova-undated" }?.dateLabel)
+        let sorted = ModelPickerSearch.results(in: [deepgram], query: "nova")
+        XCTAssertEqual(sorted.map(\.option.model), ["nova-3", "nova-3-general", "nova-3-medical", "nova-undated"])
     }
 
     func test_prod_after_migration_shows_one_switch_for_four_features() throws {
