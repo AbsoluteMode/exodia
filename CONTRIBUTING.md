@@ -67,10 +67,10 @@ rebuild with the same script.
 Builds and tests run locally. GitHub Actions is disabled to avoid hosted-runner
 costs. Include the local validation result in the PR. Ready-made community
 builds and in-app updates are the main distribution path; source customization
-remains supported. The default release pipeline signs with Whytap's self-signed
-community certificate, whose private key only maintainers hold, and Whytap's
-Sparkle archive signatures, without an Apple Developer account
-(see `docs/build-and-release.md`).
+remains supported. The default release pipeline signs with the Developer ID
+certificate of Whytap's Apple team, which only maintainers hold, and Whytap's
+Sparkle archive signatures, without notarization. Contributors do not need an
+Apple Developer account (see `docs/build-and-release.md`).
 
 By contributing you agree that your contribution is licensed under the MIT
 License of this repository. No CLA is required.

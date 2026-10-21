@@ -29,7 +29,7 @@ sources:
   - type: url
     reference: https://sparkle-project.org/documentation/
     confirmed_at: 2026-10-17
-related: [2026-10-19-community-signing-identity.md, ../project.md, 2026-10-17-source-first-distribution.md]
+related: [2026-10-19-community-signing-identity.md, ../project.md, 2026-10-17-source-first-distribution.md, 2026-10-21-developer-id-team-signing.md]
 ---
 
 # Community updates

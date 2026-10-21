@@ -24,10 +24,10 @@ published package may still be `Exodia-latest.dmg` and contain **Exodia**; it is
 the same application. Use the app name shown in that disk image. Existing
 Exodia release links continue to redirect to this repository.
 
-Community builds are signed with Whytap's own self-signed certificate and are not
-notarized by Apple. macOS may warn on the first download; see
-[installation and permissions](docs/install.md). The stable signature lets macOS
-keep permissions such as Microphone across updates.
+Community builds are signed with the Developer ID certificate of Whytap's Apple
+team and are not notarized by Apple. macOS may warn on the first download; see
+[installation and permissions](docs/install.md). The stable team identity lets
+macOS keep permissions such as Microphone and Keychain access across updates.
 Updates use the existing island **Update** button and verify the archive with
 Whytap's Sparkle Ed25519 key, which is independent of Apple signing. An update
 will not force a restart during a meeting recording, dictation or agent task.
@@ -138,8 +138,8 @@ rebuild may require granting permissions again in macOS Settings.
 
 See [build details](docs/build-and-release.md). Builds and tests run locally;
 GitHub Actions is disabled. Ready-made releases
-use the community DMG and signed Sparkle archive pipeline; no Apple Developer
-account is required. Development builds use version `0.0.0-dev` / build `9999`
+use the community DMG and signed Sparkle archive pipeline; building from source
+needs no Apple Developer account. Development builds use version `0.0.0-dev` / build `9999`
 and do not accept binary-feed updates over your custom build. Update the source
 with your agent, preserve your changes and rebuild instead.
 
