@@ -4,6 +4,8 @@ import Foundation
 /// broker: newline-delimited JSON over a Unix socket, one request per
 /// connection. Secret values only ever appear in `runEnvironment` responses.
 public enum CaseBrokerRequest: Codable, Equatable {
+    /// Non-secret, allowlisted application controls. Separate from Case authority.
+    case appControl(AppControlRequest)
     case listProjects
     case listKeys(project: String?)
     case resolveRun(project: String?, only: [String]?, command: String, cwd: String)
@@ -39,6 +41,7 @@ public enum CaseDenyReason: String, Codable, Equatable {
 }
 
 public enum CaseBrokerResponse: Codable, Equatable {
+    case appControl(AppControlResponse)
     case projects([CaseProjectInfo])
     case keys([CaseKeyInfo])
     /// Only for `resolveRun`.

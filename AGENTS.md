@@ -112,8 +112,16 @@ Voice flow (Drop / dictation):
             OpenRouter, OpenAI or Anthropic with the user's key / a custom OpenAI-compatible
             server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
             The mode is captured at take start:
-            Fast bypasses the LLM; Smart requires processed text and never
-            silently pastes raw speech after a cleanup error or empty result.
+            Fast bypasses AI text processing. Smart first uses dropSmartDecision
+            (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
+            default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
+            A valid needs-cleanup probability <= 0.05 skips editing and uses
+            Fast's verbatim output/filter path without changing the take's mode
+            or speech route. Translation always edits. Missing decision setup,
+            uncertainty, refusal or the 2s deadline keeps the selected cleanup
+            route. Cleanup errors/empty results never silently paste raw speech.
+            Decision models are excluded from LLM/agent pickers. WHY:
+            .project-docs/decisions/2026-10-21-smart-decisions.md
             Smart failures retain the transcript in memory and show Retry with
             the original mode and target; configuration errors open API & Models on
             the Drop Smart cleanup row.
@@ -889,6 +897,18 @@ Build/run use the canonical dev bundle script; hover and dashboard scaffolds
 are drafts. Guide: docs/customization/README.md. Update the capability map
 when moving its source entry points. Do not publish private monitoring
 configuration, project contents or credentials with the source.
+
+Application control: `plugins/whytap` is a local stdio MCP plugin using
+`Contents/Helpers/whytap app mcp`. It reads live build/activity/route metadata
+and changes allowlisted models, provider pins, Drop mode, languages and idle
+auto-hide through existing app stores. Every write requires the current value;
+async model checks recheck the route and cancellation before assignment. It
+shares Case's authenticated bundled-helper transport but never loads its vault
+or uses its registrations/grants. Any local process running that helper as the
+user can access these non-secret settings; no arbitrary defaults, keys,
+security controls, user content, recording, shell execution or quit are exposed.
+Guide: docs/customization/app-control.md. WHY:
+.project-docs/decisions/2026-10-21-app-control-plugin.md
 
 Clipboard history retains the newest 50 local entries across launch, quit and
 sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only

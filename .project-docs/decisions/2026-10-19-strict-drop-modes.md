@@ -20,10 +20,12 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/DropOutputPolicyTests.swift
     confirmed_at: 2026-10-19
-related: [2026-10-19-api-and-models.md, ../project.md, 2026-10-18-remove-local-models.md]
+related: [2026-10-21-smart-decisions.md, 2026-10-19-api-and-models.md, ../project.md, 2026-10-18-remove-local-models.md]
 ---
 
 # Strict Drop modes
+
+The successful Smart output rule is extended by [Smart Decision routing](2026-10-21-smart-decisions.md): a confident clean verdict may skip editing. Failure and Retry rules below remain in force.
 
 ## Context
 

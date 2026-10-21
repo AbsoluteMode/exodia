@@ -70,6 +70,18 @@
       ],
       "focused_test_filter": "ScreenshotTests|UpdateControllerTests",
       "contract": "Explicit ScreenCaptureKit capture; on-device Vision blur of text and numbers; no automatic file or provider request; flattened export and active-editor restart guard."
+    },
+    "app_control": {
+      "guide": "docs/customization/app-control.md",
+      "entry_points": [
+        "Sources/Sidekey/AppControl/AppControlController.swift",
+        "Sources/WhytapCaseKit/AppControlMCPServer.swift",
+        "Sources/WhytapCaseKit/AppControlCommand.swift",
+        "plugins/whytap/plugin.json",
+        "plugins/whytap/mcp.json"
+      ],
+      "focused_test_filter": "AppControl|CaseBroker|CaseLoggingGuardTests|APIAndModelsViewModelTests",
+      "contract": "Local bundled-helper transport; live metadata and allowlisted settings only; expected-value checks and Settings model validation; no raw defaults, secrets, user content or recording."
     }
   }
 }

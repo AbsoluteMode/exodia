@@ -47,6 +47,22 @@ final class ModelCatalogStoreTests: XCTestCase {
 
     private let models = [CatalogModel(id: "stt-rt-v5", uses: [.realtimeSTT])]
 
+    func test_fresh_v2_cache_gains_decision_capabilities_offline_and_refreshes_without_waiting() async throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var jev = CatalogSnapshot(models: [CatalogModel(id: "typesafe/jev-1.14", uses: [.chat])], fetchedAt: clock)
+        var openAI = CatalogSnapshot(models: [CatalogModel(id: "gpt-6-luna", uses: [.chat, .chatWithTools])], fetchedAt: clock)
+        jev.metadataVersion = 2; openAI.metadataVersion = 2
+        try JSONEncoder().encode(["openRouter": jev, "openAI": openAI]).write(to: fileURL)
+        let offline = FakeCatalogFetcher([.failure(.offline)])
+        let store = makeStore(offline)
+        XCTAssertEqual(store.snapshot(for: .openRouter)?.models.first?.uses, [.decision])
+        XCTAssertEqual(store.snapshot(for: .openAI)?.models.first?.uses, [.chat, .chatWithTools, .decision])
+        await store.refreshIfStale(.openRouter, apiKey: "synthetic", server: nil)
+        await store.refreshIfStale(.openAI, apiKey: "synthetic", server: nil)
+        XCTAssertEqual(offline.fetchCount, 2)
+        XCTAssertEqual(store.snapshot(for: .openRouter)?.models.first?.uses, [.decision])
+    }
+
     func test_offline_refresh_keeps_models_and_marks_couldnt_refresh() async {
         let fetcher = FakeCatalogFetcher([.success(models), .failure(.offline)])
         let store = makeStore(fetcher)

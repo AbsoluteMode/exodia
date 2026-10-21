@@ -14,7 +14,7 @@ public enum CaseBrokerClientError: Error, Equatable {
 
 /// Blocking client for the broker's Unix socket: one request per connection,
 /// newline-delimited JSON.
-public final class UnixSocketBrokerClient: CaseBrokerCalling {
+public final class UnixSocketBrokerClient: CancellableCaseBrokerCalling {
     private let socketURL: URL
     private let timeout: TimeInterval
 
@@ -25,9 +25,15 @@ public final class UnixSocketBrokerClient: CaseBrokerCalling {
     }
 
     public func send(_ request: CaseBrokerRequest) throws -> CaseBrokerResponse {
+        try send(request, cancellation: nil)
+    }
+
+    public func send(_ request: CaseBrokerRequest, cancellation: AppControlCancellation?) throws -> CaseBrokerResponse {
+        guard cancellation?.isCancelled != true else { throw CaseBrokerClientError.protocolFailure }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw CaseBrokerClientError.unavailable }
-        defer { close(fd) }
+        cancellation?.attach(fd)
+        defer { cancellation?.detach(); close(fd) }
         var noSigPipe: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
         var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
@@ -49,6 +55,9 @@ public final class UnixSocketBrokerClient: CaseBrokerCalling {
             }
         }
         guard connected == 0 else { throw CaseBrokerClientError.unavailable }
+        // A cancellation before connect cannot shut down an unconnected socket.
+        // Recheck before writing; after connect cancellation interrupts I/O.
+        guard cancellation?.isCancelled != true else { throw CaseBrokerClientError.protocolFailure }
 
         let line = try CaseBrokerCodec.encodeLine(request)
         var sent = 0
@@ -77,7 +86,7 @@ public final class UnixSocketBrokerClient: CaseBrokerCalling {
 
 /// Wraps a client: on `.unavailable` it asks the app to start (`launch`) once
 /// and retries until `timeout` passes.
-public final class LaunchingBrokerClient: CaseBrokerCalling {
+public final class LaunchingBrokerClient: CancellableCaseBrokerCalling {
     private let inner: CaseBrokerCalling
     private let launch: () -> Void
     private let timeout: TimeInterval
@@ -102,12 +111,22 @@ public final class LaunchingBrokerClient: CaseBrokerCalling {
     }
 
     public func send(_ request: CaseBrokerRequest) throws -> CaseBrokerResponse {
-        do { return try inner.send(request) } catch CaseBrokerClientError.unavailable {}
+        try send(request, cancellation: nil)
+    }
+
+    public func send(_ request: CaseBrokerRequest, cancellation: AppControlCancellation?) throws -> CaseBrokerResponse {
+        func attempt() throws -> CaseBrokerResponse {
+            guard cancellation?.isCancelled != true else { throw CaseBrokerClientError.protocolFailure }
+            if let inner = inner as? CancellableCaseBrokerCalling { return try inner.send(request, cancellation: cancellation) }
+            return try inner.send(request)
+        }
+        do { return try attempt() } catch CaseBrokerClientError.unavailable {}
+        guard cancellation?.isCancelled != true else { throw CaseBrokerClientError.protocolFailure }
         launch()
         let deadline = now().addingTimeInterval(timeout)
         while now() < deadline {
             sleep(pollInterval)
-            do { return try inner.send(request) } catch CaseBrokerClientError.unavailable {}
+            do { return try attempt() } catch CaseBrokerClientError.unavailable {}
         }
         throw CaseBrokerClientError.unavailable
     }

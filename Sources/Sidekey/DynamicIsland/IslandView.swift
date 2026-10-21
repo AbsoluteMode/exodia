@@ -1539,6 +1539,11 @@ struct IslandView: View {
         .onReceive(NotificationCenter.default.publisher(for: .sidekeyDropModeChanged)) { _ in
             dropMode = actions.currentDropMode()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: RunLoop.main)) { _ in
+            // The local agent plugin can change languages while a picker is open.
+            selectedLanguage = actions.currentLanguage()
+            targetLanguage = actions.currentTargetLanguage()
+        }
         .onChange(of: appState.dropModeHotkeyToggle) { _, toggle in
             guard let toggle else { return }
             dropMode = toggle.mode

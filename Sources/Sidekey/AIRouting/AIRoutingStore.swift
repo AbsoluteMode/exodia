@@ -20,7 +20,8 @@ struct AIRoutingState: Codable, Equatable {
     var migratedRoutes: [String: FeatureRoute]
     var servers: [ServerEndpoint]
     /// 0 — legacy migration pending; 1 — legacy routes carried over;
-    /// 2 — subtitle translation detached from text Translation.
+    /// 2 — subtitle translation detached from text Translation;
+    /// 3 — default Smart decision route added once.
     var migrationVersion: Int
 }
 
@@ -178,6 +179,21 @@ final class AIRoutingStore: ObservableObject {
         }
         updated.migrationVersion = 2
         return updated
+    }
+
+    /// New decision work uses Jev by default. Existing feature routes and an
+    /// explicit decision choice survive. Removing its key never re-adds it.
+    // WHY: .project-docs/decisions/2026-10-21-smart-decisions.md
+    func initializeSmartDecisionIfNeeded() {
+        guard pendingBackup == nil, state.migrationVersion < 3 else { return }
+        var updated = stateWithSubtitleSeparation
+        if updated.routes[AIFeature.dropSmartDecision.rawValue] == nil {
+            updated.routes[AIFeature.dropSmartDecision.rawValue] = FeatureRoute(
+                account: .openRouter, model: ModelRegistry.smartDecisionModel
+            )
+        }
+        updated.migrationVersion = 3
+        commit(updated)
     }
 
     // MARK: - Persistence

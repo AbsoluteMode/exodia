@@ -344,14 +344,16 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
             let id = model.id
             // `:batch` variants and `~…-latest` aliases are not models to pick.
             if id.contains(":batch") || id.contains("~") { return nil }
+            let isDecision = model.architecture?.outputModalities?.contains("decision") == true
+                || (id.hasPrefix("typesafe/jev-") && id != "typesafe/jev-router")
             // Text must be an output (a missing list is read as text, as the LLM client does).
-            if let outputs = model.architecture?.outputModalities, !outputs.contains("text") { return nil }
+            if let outputs = model.architecture?.outputModalities, !outputs.contains("text"), !isDecision { return nil }
             // Routers priced at -1 are not models, except the one the app has always offered.
             if model.pricing?.prompt == "-1", id != "openrouter/auto" { return nil }
             let parameters = model.supportedParameters
             let tools = parameters?.contains("tools")
-            var uses: Set<ModelUse> = [.chat]
-            if tools == true { uses.insert(.chatWithTools) }
+            var uses: Set<ModelUse> = isDecision ? [.decision] : [.chat]
+            if tools == true && !isDecision { uses.insert(.chatWithTools) }
             return CatalogModel(
                 id: id,
                 uses: uses,
@@ -450,7 +452,9 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
             guard base.hasPrefix("gpt-") || ["o1", "o3", "o4"].contains(where: { base == $0 || base.hasPrefix($0 + "-") }),
                   !["audio", "realtime", "transcribe", "tts", "image", "search", "codex", "deep-research", "-pro", "instruct"].contains(where: base.contains)
             else { return nil }
-            return CatalogModel(id: id, uses: [.chat, .chatWithTools], catalogDate: model.created?.date)
+            var uses: Set<ModelUse> = [.chat, .chatWithTools]
+            if id == ModelRegistry.openAIDecisionModel { uses.insert(.decision) }
+            return CatalogModel(id: id, uses: uses, catalogDate: model.created?.date)
         }.sorted { $0.id < $1.id }
     }
 
