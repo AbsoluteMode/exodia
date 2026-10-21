@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Case/Clients/CaseClientConnector.swift
     confirmed_at: 2026-10-21
-related: [../../docs/decisions/2026-10-20-case-connect-and-scope.md, ../../docs/decisions/2026-10-19-case-secrets-broker.md, ../../docs/DESIGN.md, ../../docs/SPEC.md]
+related: []
 ---
 
 # Case Connect offers Claude Code again
@@ -84,3 +84,5 @@ agent setup checklist share it.
 Amends the Connect catalog of PR #119 and
 [Case Connect and scope](../../docs/decisions/2026-10-20-case-connect-and-scope.md);
 scope, modes and broker checks are unchanged.
+
+Implementation references: [Case broker](../../docs/decisions/2026-10-19-case-secrets-broker.md), [design](../../docs/DESIGN.md) and [product spec](../../docs/SPEC.md).
