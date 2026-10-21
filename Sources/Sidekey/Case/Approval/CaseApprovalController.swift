@@ -101,7 +101,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         selectedTimedMinutes = minutes
     }
 
-    /// Editing the duration must never consume typed digits as approval answers.
+    /// Editing the duration must never consume Y/N/A/Escape as approval answers.
     func setEditingMinutes(_ editing: Bool) {
         guard active != nil, offersTimed else { return }
         isEditingMinutes = editing
@@ -175,7 +175,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         guard !isEditingMinutes else { return }
         switch key {
         case .yes: choose(.allow)
-        case .no: choose(.deny)
+        case .no, .escape: choose(.deny)
         case .timed: choose(.allowTimed(minutes: selectedTimedMinutes))
         }
     }
