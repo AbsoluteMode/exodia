@@ -41,7 +41,10 @@ enum ConfigBackupRegistry {
         add(.models, .bool, ["sidekey.translation.original"])
         add(.models, .data, [aiRoutingKey])
         add(.models, .propertyList, [aiRoutingPreservedKey])
-        add(.hotkeys, .propertyList, [HotkeyPreferences.toolShortcutsDefaultsKey, HotkeyPreferences.screenshotArrowsDefaultsKey])
+        // Keep migration completion with the map so restore preserves deliberate old-stock assignments.
+        // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
+        add(.hotkeys, .propertyList, [HotkeyPreferences.toolShortcutsDefaultsKey,
+            HotkeyPreferences.screenshotArrowsDefaultsKey, HotkeyPreferences.screenshotArrowDefaultsVersionKey])
         add(.hotkeys, .bool, ["sidekey.preferences.brightnessKeys"])
         add(.hotkeys, .string, ["agentGestureKey", "agentTextKey", "agentVoiceKey", "agentTextShortcut",
             "agentVoiceShortcut", "agentVoiceGesture", "dropVoiceGesture", "dropVoiceTapCombo", "dropVoiceShortcut",

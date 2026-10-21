@@ -1440,6 +1440,7 @@ final class HotkeyPreferences: ObservableObject {
     }
 
     static let screenshotArrowsDefaultsKey = "hotkeys.screenshotArrows"
+    static let screenshotArrowDefaultsVersionKey = "hotkeys.screenshotArrowDefaultsVersion"
     @Published var screenshotArrowBindings: ScreenshotArrowBindings {
         didSet { defaults.set(screenshotArrowBindings.saved, forKey: Self.screenshotArrowsDefaultsKey) }
     }
@@ -1656,15 +1657,14 @@ final class HotkeyPreferences: ObservableObject {
     }
 
     private static func loadScreenshotArrows(_ defaults: UserDefaults) -> ScreenshotArrowBindings {
-        let versionKey = "hotkeys.screenshotArrowDefaultsVersion"
         var saved = defaults.dictionary(forKey: screenshotArrowsDefaultsKey) as? [String: String]
-        if defaults.integer(forKey: versionKey) < 2 {
+        if defaults.integer(forKey: screenshotArrowDefaultsVersionKey) < 2 {
             let previousDefaults = ["up": "pen", "down": "blur", "left": "undo", "right": "copy"]
             if saved == previousDefaults {
                 saved = ScreenshotArrowBindings.defaults.saved
                 defaults.set(saved, forKey: screenshotArrowsDefaultsKey)
             }
-            defaults.set(2, forKey: versionKey)
+            defaults.set(2, forKey: screenshotArrowDefaultsVersionKey)
         }
         return ScreenshotArrowBindings(saved: saved)
     }

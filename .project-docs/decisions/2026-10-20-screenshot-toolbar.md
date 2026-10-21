@@ -294,6 +294,13 @@ immediate saving, source-preserving replacement, menu reset, defaults and the
 one-time migration are unchanged. This supersedes the arrow-contour geometry
 and its directional drawing, not the toolbar placement or keyboard contract.
 
+The defaults-migration version travels with the arrow map in the backup
+registry's existing property-list format. Otherwise restoring onto a fresh
+profile would mistake a deliberately reassigned previous stock map for an
+unmigrated map and reset it. A synthetic encrypted settings backup/restore
+regression checks version 2, the exact arrow map, other hotkeys and provider
+selection without accessing real data or credentials.
+
 # Consequences
 
 Screen Recording is requested on invocation. Content stays in memory until

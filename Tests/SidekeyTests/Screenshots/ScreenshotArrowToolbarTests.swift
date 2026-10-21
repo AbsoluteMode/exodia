@@ -50,13 +50,13 @@ final class ScreenshotArrowToolbarTests: XCTestCase {
     func testOnlyOldStockDefaultsMigrateAndCustomOrLaterAssignmentsSurvive() throws {
         let (_, _, _, defaults) = try fixture()
         let oldStock = ["up": "pen", "down": "blur", "left": "undo", "right": "copy"]
-        defaults.removeObject(forKey: "hotkeys.screenshotArrowDefaultsVersion")
+        defaults.removeObject(forKey: HotkeyPreferences.screenshotArrowDefaultsVersionKey)
         defaults.set(oldStock, forKey: HotkeyPreferences.screenshotArrowsDefaultsKey)
         XCTAssertEqual(HotkeyPreferences(defaults: defaults).screenshotArrowBindings, .defaults)
         defaults.set(oldStock, forKey: HotkeyPreferences.screenshotArrowsDefaultsKey)
         XCTAssertEqual(HotkeyPreferences(defaults: defaults).screenshotArrowBindings.saved, oldStock,
                        "The one-time migration must not undo a later deliberate assignment")
-        defaults.removeObject(forKey: "hotkeys.screenshotArrowDefaultsVersion")
+        defaults.removeObject(forKey: HotkeyPreferences.screenshotArrowDefaultsVersionKey)
         var custom = oldStock; custom["up"] = "text"
         defaults.set(custom, forKey: HotkeyPreferences.screenshotArrowsDefaultsKey)
         XCTAssertEqual(HotkeyPreferences(defaults: defaults).screenshotArrowBindings.saved, custom)
