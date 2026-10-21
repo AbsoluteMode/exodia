@@ -165,7 +165,7 @@ enum HelpWindowContent {
                 prefix: nil,
                 contents: configuration.usefulLinksPreviousShortcut.contents
             )
-        ] + toolHotkeyRows(for: configuration) + screenshotEditorRows
+        ] + toolHotkeyRows(for: configuration) + screenshotEditorRows(for: configuration)
         guard !includeAgent else { return rows }
         return rows.filter { !$0.title.hasPrefix("Agent") }
     }
@@ -179,8 +179,12 @@ enum HelpWindowContent {
         }
     }
 
-    private static var screenshotEditorRows: [HelpHotkeyRowSpec] {
-        ScreenshotEditorKeys.tools.map { entry in
+    private static func screenshotEditorRows(for configuration: HotkeyConfiguration) -> [HelpHotkeyRowSpec] {
+        ScreenshotArrow.allCases.map { arrow in
+            let action = configuration.screenshotArrowBindings[arrow]
+            return HelpHotkeyRowSpec(title: "Screenshot — \(arrow.glyph)", detail: "\(action.title). Screenshot takes priority over Agent; text fields keep cursor navigation.",
+                                     iconName: action.symbol, prefix: nil, contents: [.text(arrow.glyph)])
+        } + ScreenshotEditorKeys.tools.map { entry in
             HelpHotkeyRowSpec(title: "Screenshot — \(entry.title)", detail: "While the screenshot editor is open.",
                               iconName: "viewfinder", prefix: nil, contents: [.text(entry.key.uppercased())])
         } + [
@@ -191,7 +195,7 @@ enum HelpWindowContent {
             HelpHotkeyRowSpec(title: "Screenshot — redo", detail: "Redo the last undone change.", iconName: "arrow.uturn.forward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text(HotkeyGlyph.shift), .text("Z")]),
             HelpHotkeyRowSpec(title: "Screenshot — next control", detail: "Move focus to the next enabled toolbar or tool-settings control.", iconName: "arrow.right", prefix: nil, contents: [.text("Tab")]),
             HelpHotkeyRowSpec(title: "Screenshot — previous control", detail: "Move focus to the previous enabled toolbar or tool-settings control.", iconName: "arrow.left", prefix: nil, contents: [.text(HotkeyGlyph.shift), .text("Tab")]),
-            HelpHotkeyRowSpec(title: "Screenshot — move crop", detail: "Arrow keys move the crop; Shift moves 10 points; Option resizes.", iconName: "arrow.up.left.and.arrow.down.right", prefix: nil, contents: [.text("←"), .text("↑"), .text("↓"), .text("→")]),
+            HelpHotkeyRowSpec(title: "Screenshot — move crop", detail: "Shift-arrows move the crop 10 points; Option-arrows resize. A bare arrow can be assigned Move crop in Hotkeys.", iconName: "arrow.up.left.and.arrow.down.right", prefix: nil, contents: [.text(HotkeyGlyph.shift), .text("←"), .text("↑"), .text("↓"), .text("→")]),
             HelpHotkeyRowSpec(title: "Screenshot — cancel", detail: "Cancel the current drawing, then cancel capture.", iconName: "escape", prefix: nil, contents: [.text("Esc")]),
             HelpHotkeyRowSpec(title: "Screenshot — delete annotation", detail: "Remove the selected annotation.", iconName: "delete.left", prefix: nil, contents: [.text("Delete")])
         ]

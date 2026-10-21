@@ -1,10 +1,48 @@
 import Carbon.HIToolbox
 import Foundation
+import Combine
 import XCTest
 @testable import Sidekey
 
 @MainActor
 final class UsefulLinksHotkeyControllerTests: XCTestCase {
+    func testScreenshotReleasesAgentRegistrationsAndRestoresLatestSelectionAfterClosing() {
+        let activity = CurrentValueSubject<Bool, Never>(false)
+        let factory = FakeMonitorFactory()
+        let controller = UsefulLinksHotkeyController(monitorFactory: factory.make, screenshotActivity: activity.eraseToAnyPublisher())
+        var inserts = 0
+        controller.onInsert = { inserts += 1 }
+        controller.start(itemCount: 2, openAvailable: true)
+        let oldMonitors = factory.created
+        XCTAssertEqual(oldMonitors.count, 4)
+        activity.send(true)
+        XCTAssertTrue(oldMonitors.allSatisfy { $0.stopCount == 1 }, "Carbon must release the keys before the editor receives them")
+        oldMonitors.forEach { $0.fire() }
+        XCTAssertEqual(inserts, 0, "A queued callback cannot paste behind the screenshot editor")
+        controller.start(itemCount: 1, openAvailable: false)
+        XCTAssertEqual(factory.created.count, 4, "Block/preference updates cannot re-register while Screenshot is open")
+        activity.send(false)
+        XCTAssertEqual(factory.created.count, 5, "Restore only the latest supported action, not all four stale bindings")
+        oldMonitors.forEach { $0.fire() }
+        XCTAssertEqual(inserts, 0, "A stale callback stays invalid after Screenshot closes")
+        factory.created.last?.fire()
+        XCTAssertEqual(inserts, 1)
+        controller.stop()
+        activity.send(true); activity.send(false)
+        XCTAssertEqual(factory.created.count, 5, "Closing the answer while Screenshot is open must not resurrect agent bindings")
+    }
+
+    func testAgentOpenedDuringScreenshotWaitsUntilScreenshotCloses() {
+        let activity = CurrentValueSubject<Bool, Never>(true)
+        let factory = FakeMonitorFactory()
+        let controller = UsefulLinksHotkeyController(monitorFactory: factory.make, screenshotActivity: activity.eraseToAnyPublisher())
+        controller.start(itemCount: 2, openAvailable: true)
+        XCTAssertTrue(factory.created.isEmpty)
+        activity.send(false)
+        XCTAssertEqual(factory.created.count, 4)
+        controller.stop()
+    }
+
     // MARK: - Activation policy
 
     func testStartWithZeroLinksRegistersNothing() {

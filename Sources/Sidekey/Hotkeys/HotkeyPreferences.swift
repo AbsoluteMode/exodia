@@ -965,6 +965,7 @@ struct HotkeyShortcutRecorder {
 }
 
 struct HotkeyConfiguration: Equatable {
+    var screenshotArrowBindings: ScreenshotArrowBindings = .defaults
     var agentTextShortcut: HotkeyShortcut
     var agentVoiceShortcut: HotkeyShortcut
     var agentVoiceGesture: HotkeyGesture
@@ -1003,8 +1004,10 @@ struct HotkeyConfiguration: Equatable {
         googleSearchTextShortcut: HotkeyShortcut = .modifier(.rightOption),
         googleSearchVoiceShortcut: HotkeyShortcut = .modifier(.rightOption),
         googleSearchVoiceGesture: HotkeyGesture = .hold,
-        meetingRecordShortcut: HotkeyShortcut = .combo(.optionM)
+        meetingRecordShortcut: HotkeyShortcut = .combo(.optionM),
+        screenshotArrowBindings: ScreenshotArrowBindings = .defaults
     ) {
+        self.screenshotArrowBindings = screenshotArrowBindings
         self.agentTextShortcut = agentTextShortcut
         self.agentVoiceShortcut = agentVoiceShortcut
         self.agentVoiceGesture = agentVoiceGesture
@@ -1436,6 +1439,11 @@ final class HotkeyPreferences: ObservableObject {
         didSet { save(usefulLinksPreviousShortcut.rawValue, forKey: Self.usefulLinksPreviousShortcutDefaultsKey) }
     }
 
+    static let screenshotArrowsDefaultsKey = "hotkeys.screenshotArrows"
+    @Published var screenshotArrowBindings: ScreenshotArrowBindings {
+        didSet { defaults.set(screenshotArrowBindings.saved, forKey: Self.screenshotArrowsDefaultsKey) }
+    }
+
     @Published var unavailableToolShortcuts: Set<HoverTool> = []
 
     @Published var toolShortcuts: [HoverTool: HotkeyShortcut] {
@@ -1462,7 +1470,8 @@ final class HotkeyPreferences: ObservableObject {
             usefulLinksNextShortcut: usefulLinksNextShortcut,
             usefulLinksPreviousShortcut: usefulLinksPreviousShortcut,
             toolShortcuts: toolShortcuts,
-            meetingRecordShortcut: meetingRecordShortcut
+            meetingRecordShortcut: meetingRecordShortcut,
+            screenshotArrowBindings: screenshotArrowBindings
         )
     }
 
@@ -1638,6 +1647,7 @@ final class HotkeyPreferences: ObservableObject {
             self.usefulLinksPreviousShortcut = HotkeyConfiguration.defaults.usefulLinksPreviousShortcut
         }
 
+        self.screenshotArrowBindings = ScreenshotArrowBindings(saved: defaults.dictionary(forKey: Self.screenshotArrowsDefaultsKey) as? [String: String])
         self.toolShortcuts = Self.loadToolShortcuts(defaults)
         self.meetingRecordShortcut = Self.loadShortcut(
             defaults, Self.meetingRecordShortcutDefaultsKey,
@@ -1719,6 +1729,7 @@ final class HotkeyPreferences: ObservableObject {
         usefulLinksOpenShortcut = configuration.usefulLinksOpenShortcut
         usefulLinksNextShortcut = configuration.usefulLinksNextShortcut
         usefulLinksPreviousShortcut = configuration.usefulLinksPreviousShortcut
+        screenshotArrowBindings = configuration.screenshotArrowBindings
         meetingRecordShortcut = configuration.meetingRecordShortcut
         toolShortcuts = configuration.toolShortcuts
     }
@@ -1735,6 +1746,7 @@ final class HotkeyPreferences: ObservableObject {
         usefulLinksOpenShortcut = HotkeyConfiguration.defaults.usefulLinksOpenShortcut
         usefulLinksNextShortcut = HotkeyConfiguration.defaults.usefulLinksNextShortcut
         usefulLinksPreviousShortcut = HotkeyConfiguration.defaults.usefulLinksPreviousShortcut
+        screenshotArrowBindings = .defaults
         meetingRecordShortcut = HotkeyConfiguration.defaults.meetingRecordShortcut
     }
 
