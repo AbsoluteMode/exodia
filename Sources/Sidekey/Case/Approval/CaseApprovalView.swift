@@ -272,10 +272,45 @@ struct CaseApprovalMinutesField: NSViewRepresentable {
     }
 }
 
+/// Reject non-digits during typing and paste, before they appear in the editor.
+/// Empty/out-of-range digit drafts remain editable; the coordinator validates 1...240.
+final class CaseApprovalMinutesFormatter: Formatter {
+    override func string(for obj: Any?) -> String? {
+        (obj as? String) ?? (obj as? NSNumber)?.stringValue
+    }
+
+    override func getObjectValue(_ obj: AutoreleasingUnsafeMutablePointer<AnyObject?>?, for string: String,
+                                 errorDescription error: AutoreleasingUnsafeMutablePointer<NSString?>?) -> Bool {
+        guard Self.accepts(string) else { return false }
+        obj?.pointee = string as NSString
+        return true
+    }
+
+    override func isPartialStringValid(_ partialString: String,
+                                       newEditingString newString: AutoreleasingUnsafeMutablePointer<NSString?>?,
+                                       errorDescription error: AutoreleasingUnsafeMutablePointer<NSString?>?) -> Bool {
+        Self.accepts(partialString)
+    }
+
+    private static func accepts(_ text: String) -> Bool {
+        text.utf8.allSatisfy { (48...57).contains($0) }
+    }
+}
+
 @MainActor
 final class CaseApprovalMinutesTextField: NSTextField {
     var onEditingChange: (Bool) -> Void = { _ in }
     private var resignKeyObserver: NSObjectProtocol?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        formatter = CaseApprovalMinutesFormatter()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        formatter = CaseApprovalMinutesFormatter()
+    }
     override var needsPanelToBecomeKey: Bool { true }
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -422,6 +457,9 @@ final class CaseApprovalPanel: NSPanel {
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
         contentView = host
+        // A request must not select its only text field when the panel gets key status.
+        // WHY: docs/decisions/2026-10-21-case-approval-minutes-input.md
+        initialFirstResponder = host
 
         // Release the old field editor synchronously before a queued prompt
         // replaces its view. Visibility can stay true across that transition.
@@ -479,6 +517,7 @@ final class CaseApprovalPanel: NSPanel {
         if visible {
             sharingType = PrivacyPreferences.shared.screenshotProtectionEnabled ? .none : .readOnly
             refreshFrame()
+            finishMinutesEditing()
             present(self)
         } else {
             finishMinutesEditing()
@@ -487,8 +526,9 @@ final class CaseApprovalPanel: NSPanel {
     }
 
     private func finishMinutesEditing() {
-        makeFirstResponder(nil)
+        makeFirstResponder(host)
         if isKeyWindow { resignKey() }
+        controller.setEditingMinutes(false)
     }
 
     private func refreshFrameIfVisible() {
@@ -511,6 +551,7 @@ final class CaseApprovalPanel: NSPanel {
 /// Buttons work on first click without acquiring keyboard focus. The native
 /// minutes field explicitly requests key status when the person edits it.
 private final class CaseApprovalHostingView: NSHostingView<AnyView> {
+    override var acceptsFirstResponder: Bool { true }
     override var needsPanelToBecomeKey: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
