@@ -198,6 +198,22 @@ final class ArtifactBackupFormatTests: XCTestCase {
         XCTAssertThrowsError(try manifest.validate())
     }
 
+    func testManifestBindsEveryEntryToItsDeclaredSection() throws {
+        for section in ArtifactBackupSection.allCases {
+            let root = section == .caseVault ? "case" : section.rawValue
+            let entry = ArtifactBackupManifest.Entry(path: root + "/entry", section: section, bytes: 0,
+                                                     sha256: ArtifactBackupDigest.of(Data()))
+            var manifest = ArtifactBackupManifest(id: UUID(), createdAt: Date(), flavor: "prod",
+                sections: [section], entries: [entry], contentBytes: 0, warnings: [])
+            XCTAssertNoThrow(try manifest.validate())
+            let wrong = section == .history ? ArtifactBackupSection.workspace : .history
+            manifest.entries[0].section = wrong; manifest.sections = [wrong]
+            XCTAssertThrowsError(try manifest.validate()) { error in
+                XCTAssertEqual(error as? ArtifactBackupError, .unsafeContent)
+            }
+        }
+    }
+
     func testEntryPathsRejectTraversalAndUnknownRoots() {
         for path in ["../settings/preferences.json", "settings/../../etc/passwd", "/settings/x.json",
                      "secrets/key.json", "settings", "settings//x.json", "settings/.hidden",

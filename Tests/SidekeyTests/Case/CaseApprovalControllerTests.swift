@@ -116,14 +116,13 @@ final class CaseApprovalControllerTests: XCTestCase {
         XCTAssertFalse(controller.isArmed)
         XCTAssertFalse(tap.isArmed, "the tap must let every key through while unarmed")
 
-        // A person typing "y" in their editor as the prompt appears.
+        // A person typing digits in their editor as the prompt appears.
         tap.press(.yes)
         clock.advance(by: 0.1)
         tap.press(.timed)
         controller.choose(.allow)          // a stray click is ignored too
         clock.advance(by: 0.199)
         tap.press(.no)
-        tap.press(.escape)
         XCTAssertEqual(controller.current, request(), "nothing answered while typing")
 
         // Every press restarted the quiet period: armed 300 ms after the last one.
@@ -255,14 +254,14 @@ final class CaseApprovalControllerTests: XCTestCase {
         clock.advance(by: 0.3)
         tap.press(.yes)
         _ = await first.value
-        XCTAssertEqual(controller.current, r, "a one-time Y still asks again")
+        XCTAssertEqual(controller.current, r, "a one-time allow still asks again")
         controller.resolve(.deny)
         _ = await second.value
     }
 
-    func test_y_allows_n_denies_a_timed_escape_denies() async {
+    func test_answer_keys_allow_deny_and_grant_timed_access() async {
         let cases: [(CaseApprovalKey, CaseApprovalOutcome)] = [
-            (.yes, .allow), (.no, .deny), (.timed, .allowTimed(minutes: 15)), (.escape, .deny),
+            (.yes, .allow), (.no, .deny), (.timed, .allowTimed(minutes: 15)),
         ]
         for (key, expected) in cases {
             let task = await ask(request())
@@ -388,7 +387,7 @@ final class CaseApprovalControllerTests: XCTestCase {
         clock.advance(by: 0.3)
         XCTAssertTrue(controller.isArmed, "click answers remain available")
         XCTAssertFalse(tap.isArmed, "typing in the field must not answer the prompt")
-        for key in [CaseApprovalKey.yes, .no, .timed, .escape] { tap.press(key) }
+        for key in [CaseApprovalKey.yes, .no, .timed] { tap.press(key) }
         XCTAssertNotNil(controller.current)
         controller.setTimedMinutes(37)
         controller.setEditingMinutes(false)
@@ -521,51 +520,59 @@ final class CaseApprovalControllerTests: XCTestCase {
     }
 
     func test_filter_maps_physical_keys_on_any_layout() {
-        XCTAssertEqual(CaseApprovalKeyFilter.key(forKeyCode: Int64(kVK_ANSI_Y)), .yes)
-        XCTAssertEqual(CaseApprovalKeyFilter.key(forKeyCode: Int64(kVK_ANSI_N)), .no)
-        XCTAssertEqual(CaseApprovalKeyFilter.key(forKeyCode: Int64(kVK_ANSI_A)), .timed)
-        XCTAssertEqual(CaseApprovalKeyFilter.key(forKeyCode: Int64(kVK_Escape)), .escape)
-        // Neighbours and Return are not approval keys.
-        for code in [kVK_ANSI_T, kVK_ANSI_U, kVK_ANSI_B, kVK_ANSI_M, kVK_ANSI_S, kVK_Return, kVK_Space] {
-            XCTAssertNil(CaseApprovalKeyFilter.key(forKeyCode: Int64(code)))
+        for (code, answer) in [(kVK_ANSI_1, CaseApprovalKey.no), (kVK_ANSI_2, .yes), (kVK_ANSI_3, .timed),
+                               (kVK_ANSI_Keypad1, .no), (kVK_ANSI_Keypad2, .yes), (kVK_ANSI_Keypad3, .timed)] {
+            XCTAssertEqual(CaseApprovalKeyFilter.key(forKeyCode: Int64(code)), answer)
         }
     }
 
-    func test_filter_swallows_only_the_four_keys_when_armed() {
+    func test_filter_passes_all_other_keys_including_letters_escape_and_navigation() {
+        let digits = Set([kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3])
         var filter = CaseApprovalKeyFilter()
-        XCTAssertEqual(down(kVK_ANSI_Y, &filter), .init(swallow: true, key: .yes))
-        XCTAssertEqual(up(kVK_ANSI_Y, &filter), .init(swallow: true, key: nil), "its key-up goes with it")
-        XCTAssertEqual(down(kVK_ANSI_T, &filter), .init(swallow: false, key: nil))
-        XCTAssertEqual(up(kVK_ANSI_T, &filter), .init(swallow: false, key: nil))
-        XCTAssertEqual(down(kVK_Return, &filter), .init(swallow: false, key: nil))
-        XCTAssertEqual(down(kVK_Escape, &filter), .init(swallow: true, key: .escape))
+        for code in 0...127 where !digits.contains(code) {
+            XCTAssertNil(CaseApprovalKeyFilter.key(forKeyCode: Int64(code)))
+            XCTAssertEqual(down(code, &filter), .init(swallow: false, key: nil), "key \(code)")
+            XCTAssertEqual(down(code, isRepeat: true, &filter), .init(swallow: false, key: nil))
+            XCTAssertEqual(up(code, &filter), .init(swallow: false, key: nil))
+        }
+    }
+
+    func test_filter_swallows_only_digit_presses_and_their_releases_when_armed() {
+        var filter = CaseApprovalKeyFilter()
+        for (code, answer) in [(kVK_ANSI_1, CaseApprovalKey.no), (kVK_ANSI_2, .yes), (kVK_ANSI_3, .timed),
+                               (kVK_ANSI_Keypad1, .no), (kVK_ANSI_Keypad2, .yes), (kVK_ANSI_Keypad3, .timed)] {
+            XCTAssertEqual(down(code, &filter), .init(swallow: true, key: answer))
+            XCTAssertEqual(up(code, &filter), .init(swallow: true, key: nil), "its key-up goes with it")
+        }
     }
 
     func test_filter_passes_everything_while_unarmed() {
         var filter = CaseApprovalKeyFilter()
-        for code in [kVK_ANSI_Y, kVK_ANSI_N, kVK_ANSI_A, kVK_Escape] {
+        for code in 0...127 {
             XCTAssertEqual(down(code, armed: false, &filter), .init(swallow: false, key: nil))
         }
         // The key-up of a press that went through is not swallowed after arming either.
-        XCTAssertEqual(up(kVK_ANSI_Y, armed: true, &filter), .init(swallow: false, key: nil))
+        XCTAssertEqual(up(kVK_ANSI_2, armed: true, &filter), .init(swallow: false, key: nil))
     }
 
-    func test_filter_leaves_shortcuts_with_command_control_option() {
+    func test_filter_leaves_modified_digits_with_the_active_app() {
         var filter = CaseApprovalKeyFilter()
-        XCTAssertEqual(down(kVK_ANSI_A, flags: .maskCommand, &filter), .init(swallow: false, key: nil), "⌘A select all")
-        XCTAssertEqual(down(kVK_ANSI_N, flags: .maskControl, &filter), .init(swallow: false, key: nil))
-        XCTAssertEqual(down(kVK_ANSI_Y, flags: .maskAlternate, &filter), .init(swallow: false, key: nil))
-        XCTAssertEqual(down(kVK_ANSI_Y, flags: .maskShift, &filter), .init(swallow: true, key: .yes))
+        for code in [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3] {
+            for flags in [CGEventFlags.maskCommand, .maskControl, .maskAlternate, .maskShift] {
+                XCTAssertEqual(down(code, flags: flags, &filter), .init(swallow: false, key: nil))
+                XCTAssertEqual(up(code, &filter), .init(swallow: false, key: nil))
+            }
+        }
     }
 
     func test_filter_autorepeat_of_a_key_held_before_the_prompt_passes() {
         var filter = CaseApprovalKeyFilter()
-        XCTAssertEqual(down(kVK_ANSI_Y, isRepeat: true, &filter), .init(swallow: false, key: nil))
+        XCTAssertEqual(down(kVK_ANSI_2, isRepeat: true, &filter), .init(swallow: false, key: nil))
         // A repeat of a press we took is swallowed without answering again.
-        XCTAssertEqual(down(kVK_ANSI_N, &filter), .init(swallow: true, key: .no))
-        XCTAssertEqual(down(kVK_ANSI_N, isRepeat: true, &filter), .init(swallow: true, key: nil))
-        XCTAssertEqual(up(kVK_ANSI_N, &filter), .init(swallow: true, key: nil))
-        XCTAssertEqual(up(kVK_ANSI_N, &filter), .init(swallow: false, key: nil))
+        XCTAssertEqual(down(kVK_ANSI_1, &filter), .init(swallow: true, key: .no))
+        XCTAssertEqual(down(kVK_ANSI_1, isRepeat: true, &filter), .init(swallow: true, key: nil))
+        XCTAssertEqual(up(kVK_ANSI_1, &filter), .init(swallow: true, key: nil))
+        XCTAssertEqual(up(kVK_ANSI_1, &filter), .init(swallow: false, key: nil))
     }
 
     // MARK: - Island integration
@@ -590,17 +597,16 @@ final class CaseApprovalControllerTests: XCTestCase {
     func test_help_lists_the_approval_keys() {
         let rows = HelpWindowContent.hotkeyRows(for: .defaults)
         func caps(_ title: String) -> [KeycapContent]? { rows.first { $0.title == title }?.contents }
-        XCTAssertEqual(caps("Case — allow"), [.text("Y")])
-        XCTAssertEqual(caps("Case — deny"), [.text("N")])
-        XCTAssertEqual(caps("Case — allow for minutes"), [.text("A")])
-        XCTAssertTrue(rows.first { $0.title == "Case — deny" }?.detail.contains("Escape") ?? false)
+        XCTAssertEqual(caps("Case — allow"), [.text("2")])
+        XCTAssertEqual(caps("Case — deny"), [.text("1")])
+        XCTAssertEqual(caps("Case — allow for minutes"), [.text("3")])
     }
 
     func test_view_copy() {
         let r = request("Claude Code", project: "alpha", keys: ["KEY_A", "KEY_B"], minutes: 15)
-        XCTAssertEqual(CaseApprovalView.titleText(r), "Claude Code хочет запустить команду")
+        XCTAssertEqual(CaseApprovalView.titleText(r), "Claude Code wants to run a command")
         XCTAssertEqual(CaseApprovalView.keysText(r), "alpha: KEY_A, KEY_B")
-        XCTAssertEqual(CaseApprovalView.timedTitle(minutes: 15), "Bypass 15 мин")
+        XCTAssertEqual(CaseApprovalView.timedTitle(minutes: 15), "Bypass for 15 min")
         XCTAssertEqual(CaseApprovalView.commandLine("git push\n  --force"), "git push --force",
                        "one line, whitespace collapsed")
     }

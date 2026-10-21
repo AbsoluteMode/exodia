@@ -21,6 +21,7 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
     case truncated
     case tooLarge
     case unsafeContent
+    case unsupportedFile(String)
     case readFailed
     case writeFailed
     case busy
@@ -52,7 +53,9 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
         case .tooLarge:
             return "This backup is larger than Whytap can process."
         case .unsafeContent:
-            return "This backup contains a file path Whytap will not write. Nothing has been restored."
+            return "A file path did not pass Whytap's safety checks. Your current data and previous backups are kept."
+        case .unsupportedFile(let path):
+            return "The file “\(path)” uses a name or link this backup format cannot restore. Your current data and previous backups are kept."
         case .readFailed:
             return "Whytap could not read all the files it needs. Check the disk and try again."
         case .writeFailed:
@@ -92,7 +95,9 @@ enum ArtifactBackupError: Error, LocalizedError, Equatable {
 /// Logical, section-scoped entry paths. The restore side maps every path
 /// explicitly; anything it does not recognise is refused rather than written.
 struct ArtifactBackupManifest: Codable, Equatable, Sendable {
-    static let currentSchema = 2
+    // Schema 4 includes opaque retained recording files. Older applications must
+    // request an update instead of rejecting a backup as an unsafe path.
+    static let currentSchema = 4
     static let maxBytes = 16 * 1024 * 1024
     static let maxEntries = 200_000
     static let maxEntryBytes: Int64 = 8 * 1024 * 1024 * 1024
@@ -151,7 +156,8 @@ struct ArtifactBackupManifest: Codable, Equatable, Sendable {
         var total: Int64 = 0
         var seen = Set<String>()
         for entry in entries {
-            guard (entry.section == .planner) == entry.path.hasPrefix("planner/") else {
+            let root = entry.section == .caseVault ? "case" : entry.section.rawValue
+            guard entry.path.hasPrefix(root + "/") else {
                 throw ArtifactBackupError.unsafeContent
             }
             try ArtifactBackupPath.validate(entry.path)
@@ -173,6 +179,26 @@ struct ArtifactBackupManifest: Codable, Equatable, Sendable {
     var summary: ArtifactBackupSummary {
         ArtifactBackupSummary(id: id, createdAt: createdAt, totalBytes: contentBytes,
                               fileCount: entries.count, sections: Set(sections))
+    }
+
+    /// Hash the coherent plaintext generation, never its random archive ID,
+    /// timestamp, encryption salt or application build. This value stays in
+    /// the private local catalog / encrypted archive, not GitHub metadata.
+    var contentFingerprint: String {
+        var hash = SHA256()
+        func append(_ value: String) {
+            let bytes = Data(value.utf8)
+            hash.update(data: Data(ArtifactArchiveHeader.bigEndian64(UInt64(bytes.count))))
+            hash.update(data: bytes)
+        }
+        append("whytap.artifact-content.v1")
+        for section in sections.sorted(by: { $0.rawValue < $1.rawValue }) { append(section.rawValue) }
+        append("entries")
+        for entry in entries.sorted(by: { $0.path < $1.path }) {
+            append(entry.path); append(entry.section.rawValue)
+            append(String(entry.bytes)); append(entry.sha256)
+        }
+        return ArtifactBackupDigest.hex(hash.finalize())
     }
 }
 

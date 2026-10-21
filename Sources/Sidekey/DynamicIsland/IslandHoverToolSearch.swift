@@ -49,7 +49,7 @@ enum IslandHoverToolSearch {
         case .dropMode: return "fast smart dictation transcription режим диктовка"
         case .clipboard: return "clipboard copy paste history буфер история"
         case .vocab: return "vocabulary dictionary словарь"
-        case .caseVault: return "snippets vault фразы кейс"
+        case .caseVault: return "secrets keys api tokens credentials snippets vault фразы кейс"
         case .filler: return "phrases snippets филлер"
         case .inputLang: return "input language source язык ввода"
         case .outputLang: return "output language translation translate target язык вывода перевод"

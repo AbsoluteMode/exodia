@@ -128,8 +128,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `@Published` events the island's `onChange` can both observe.
     private var hoverPanelRequestToken = 0
     /// A `whytap://` link that arrived before launch finished (cold start).
-    private var pendingLinkDestination: WhytapLinkDestination?
-    private var acceptsLinkDestinations = false
+    private var pendingLinkRequest: WhytapLinkRequest?
+    private var acceptsLinkRequests = false
+    /// One link confirmation at a time; links arriving meanwhile are dropped.
+    private var isConfirmingLinkChange = false
     private var helpWindowController: HelpWindowController?
     private var panel: FloatingDotPanel?
     private var keybindingsHintPanel: KeybindingsHintPanel?
@@ -353,10 +355,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Runs after this method returns, once the island and its actions exist.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.acceptsLinkDestinations = true
-            if let destination = self.pendingLinkDestination {
-                self.pendingLinkDestination = nil
-                self.show(destination)
+            self.acceptsLinkRequests = true
+            if let request = self.pendingLinkRequest {
+                self.pendingLinkRequest = nil
+                self.handle(request)
             }
         }
         LocalNotificationHub.shared.openMeeting = { [weak self] id in
@@ -489,7 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         BatteryRuntimeMonitor.shared.startHistory()
 
         startReady()
-        ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore)
+        ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore, usage: AIUsageStore.shared)
         BackupViewModel.shared.start()
     }
 
@@ -1686,7 +1688,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Shares the tile's effect, independent of visibility and layout order.
     private func onToolHotkeyActivated(_ tool: HoverTool) {
-        registerIslandHotkeyActivity()
+        if tool != .screenshot { registerIslandHotkeyActivity() }
         let effect = HoverSlotRouter.effect(for: tool)
 
         switch effect {
@@ -1723,16 +1725,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                          withReplyEvent reply: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: string),
-              let destination = WhytapLink.destination(for: url)
+              let request = WhytapLink.request(for: url)
         else {
             os_log("whytap_link rejected", log: Self.log, type: .info)
             return
         }
-        if acceptsLinkDestinations {
-            show(destination)
+        if acceptsLinkRequests {
+            handle(request)
         } else {
-            pendingLinkDestination = destination
+            pendingLinkRequest = request
         }
+    }
+
+    private func handle(_ request: WhytapLinkRequest) {
+        guard !isConfirmingLinkChange else { return }
+        switch request {
+        case .show(let destination):
+            show(destination)
+        case .propose(let change):
+            propose(change)
+        }
+    }
+
+    /// The only path from a link to a change: Whytap's own confirmation,
+    /// then the same validated `HotkeyPreferences.apply` as Settings Save.
+    /// WHY: .project-docs/decisions/2026-10-21-whytap-link-hotkeys.md
+    private func propose(_ change: WhytapLinkChange) {
+        guard !isConfirmingLinkChange else { return }
+        registerIslandHotkeyActivity()
+        let preferences = HotkeyPreferences.shared
+        isConfirmingLinkChange = true
+        defer { isConfirmingLinkChange = false }
+        switch change.plan(for: preferences.configuration) {
+        case .unchanged:
+            break
+        case .conflict(let owners):
+            WhytapLinkConfirmation.showConflict(change, owners: owners)
+        case .confirm(let current):
+            guard WhytapLinkConfirmation.confirm(change, replacing: current),
+                  // Settings may have changed while the dialog was open.
+                  change.plan(for: preferences.configuration) == .confirm(current: current)
+            else { break }
+            do {
+                try preferences.apply(change.applied(to: preferences.configuration))
+            } catch {
+                os_log("whytap_link change not applied", log: Self.log, type: .error)
+            }
+        }
+        show(.settings(.tab(.hotkeys)))
     }
 
     /// Shows the link's place. Never runs a tool's action.
@@ -1785,15 +1825,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openScreenshot() {
-        registerIslandHotkeyActivity()
-        AppState.shared.programmaticHoverExpansion = false
         if screenshotCoordinator == nil {
             screenshotCoordinator = ScreenshotCoordinator(
                 activityChanged: { AppState.shared.screenshotActive = $0 },
-                excludedWindowIDs: {
-                    Set([IslandPanel.shared.windowNumber, IslandNotificationPanel.shared.windowNumber].compactMap {
-                        $0 > 0 ? CGWindowID($0) : nil
-                    })
+                preparationChanged: { [weak self] preparing in
+                    AppState.shared.screenshotPreparing = preparing
+                    if !preparing { self?.registerIslandHotkeyActivity() }
                 }
             )
         }

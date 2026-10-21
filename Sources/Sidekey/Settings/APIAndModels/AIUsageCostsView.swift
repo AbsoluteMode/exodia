@@ -83,7 +83,17 @@ struct AIUsageModelRow: Identifiable {
     var model: String { events[0].context.model }
     var provider: String { events[0].context.account.kind.displayName }
     var currency: AIUsageCurrency { events[0].currency }
-    var total: String { AIUsageTotal(events: events, currency: currency).text + (currency == .elevenLabsCredits ? " credits" : "") }
+    var total: String { AIUsagePrice(events: events).text }
+    var recordedMinutes: Double { events.reduce(0) { $0 + $1.audioSeconds } / 60 }
+    var pricingExplanation: String? {
+        guard currency == .elevenLabsCredits, events.contains(where: { $0.amount == nil }) else { return nil }
+        // A failed batch attempt has no measured duration in the journal.
+        // Do not imply a broken credit lookup or borrow the realtime model's rate.
+        if events.contains(where: { $0.amount == nil && $0.audioSeconds <= 0 }) {
+            return "Some audio durations were not recorded; those credits cannot be estimated."
+        }
+        return "Credit rate unavailable for this model."
+    }
 }
 
 @MainActor
@@ -95,38 +105,40 @@ final class AIUsageCostsViewModel: ObservableObject {
     @Published private(set) var loading = true
     @Published private(set) var failed = false
     @Published private(set) var loadedInterval: DateInterval?
-    @Published private(set) var billing: ElevenLabsBillingUsage?
-    @Published private(set) var billingLoading = false
-    @Published private(set) var billingError: String?
+    @Published private(set) var pricingLoading = false
+    @Published private(set) var pricingMessage: String?
     let store: AIUsageStore
-    private let loadBilling: (DateInterval) async throws -> ElevenLabsBillingUsage?
+    private let loadPrices: ([AIUsageEvent]) async -> AIUsageRecorder.Prices
     private var generation = UUID()
+    private var pricingTask: Task<AIUsageRecorder.Prices, Never>?
     init(store: AIUsageStore,
-         loadBilling: @escaping (DateInterval) async throws -> ElevenLabsBillingUsage? = AIUsageRecorder.billingUsage) {
-        self.store = store; self.loadBilling = loadBilling
+         loadPrices: @escaping ([AIUsageEvent]) async -> AIUsageRecorder.Prices = AIUsageRecorder.speechPrices) {
+        self.store = store; self.loadPrices = loadPrices
     }
-    var pricedEvents: [AIUsageEvent] { events.map { billing?.estimating($0) ?? $0 } }
+    var pricedEvents: [AIUsageEvent] { events }
     func beginVisit() { period = .month }
     func load(_ interval: DateInterval) async {
         let token = UUID(); generation = token
-        if loadedInterval != interval { billing = nil }
-        loading = true; billingError = nil; billingLoading = true
+        pricingTask?.cancel()
+        loading = true; pricingMessage = nil; pricingLoading = false
         do {
             let result = try await store.events(from: interval.start, to: interval.end)
             guard generation == token, !Task.isCancelled else { return }
             events = result; loadedInterval = interval; failed = false; loading = false
+            pricingLoading = true
+            let task = Task { await loadPrices(result) }; pricingTask = task
+            let prices = await task.value
+            guard generation == token, !Task.isCancelled else { return }
+            for event in prices.events where event.amount != nil { try await store.insert(event) }
+            guard generation == token, !Task.isCancelled else { return }
+            events = prices.events; pricingLoading = false
+            if prices.sonioxUnavailable { pricingMessage = "Soniox API prices unavailable. Showing estimates where available." }
+            if prices.elevenLabsRateUnavailable {
+                pricingMessage = [pricingMessage, "ElevenLabs credit rate unavailable for some models."].compactMap { $0 }.joined(separator: " ")
+            }
         } catch {
             guard generation == token, !Task.isCancelled else { return }
-            failed = true; loading = false
-        }
-        do {
-            let result = try await loadBilling(interval)
-            guard generation == token, !Task.isCancelled else { return }
-            billing = result; billingLoading = false
-        } catch {
-            guard generation == token, !Task.isCancelled else { return }
-            billingError = (error as? ElevenLabsBillingError)?.message ?? "Couldn’t reach ElevenLabs. Try again."
-            billingLoading = false
+            failed = true; loading = false; pricingLoading = false
         }
     }
 }
@@ -166,7 +178,8 @@ struct AIUsageCostsView: View {
                             .accessibilityLabel("Cost period")
                             .accessibilityValue(model.period.title)
                         Spacer(minLength: 0)
-                        AIUsageRefreshButton(isEnabled: !model.loading && !model.billingLoading) {
+                        if model.pricingLoading { ProgressView().controlSize(.small).accessibilityLabel("Checking prices") }
+                        AIUsageRefreshButton(isEnabled: !model.loading && !model.pricingLoading) {
                             Task { await refresh() }
                         }
                     }
@@ -182,12 +195,15 @@ struct AIUsageCostsView: View {
                     if interval == nil {
                         Text("Choose an end date on or after the start date.").foregroundStyle(MacSettingsTheme.red)
                     }
+                    if let message = model.pricingMessage {
+                        Text(message).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
+                    }
                 }.padding(18)
 
                 if model.failed {
                     VStack(alignment: .leading, spacing: 9) {
                         Text("Couldn’t load cost history.")
-                        AIUsageRefreshButton(title: "Retry", isEnabled: !model.loading && !model.billingLoading) {
+                        AIUsageRefreshButton(title: "Retry", isEnabled: !model.loading && !model.pricingLoading) {
                             Task { await refresh() }
                         }
                     }.padding(18)
@@ -204,7 +220,6 @@ struct AIUsageCostsView: View {
                         table
                     }
                 }
-                if interval != nil { billingSection }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -236,41 +251,6 @@ struct AIUsageCostsView: View {
                 AIUsagePriceLabel(events: model.pricedEvents)
             }.font(.system(size: 13, weight: .semibold)).monospacedDigit().padding(18)
         }
-    }
-    private var billingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if model.billingLoading {
-                ProgressView("Checking ElevenLabs usage…").controlSize(.small)
-            } else if let error = model.billingError {
-                Text("ElevenLabs usage").font(.system(size: 13, weight: .semibold))
-                Text(error).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-            } else if let billing = model.billing {
-                divider
-                Text("ElevenLabs · Reported usage").font(.system(size: 13, weight: .semibold))
-                Text("Workspace usage by API key for this period. Includes other apps; separate from feature estimates.")
-                    .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-                if billing.rows.isEmpty {
-                    Text("No reported usage in this period.").font(.system(size: 12))
-                } else {
-                    ForEach(billing.rows) { row in
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(row.keyName).font(.system(size: 12, weight: .medium))
-                                Text(row.model).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-                                    .textSelection(.enabled)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                            Text(row.credits.formatted(.number.precision(.fractionLength(0...1))) + " credits")
-                                .font(.system(size: 13)).monospacedDigit()
-                        }.padding(.vertical, 4)
-                    }
-                    HStack {
-                        Text("ElevenLabs total")
-                        Spacer()
-                        Text(billing.credits.formatted(.number.precision(.fractionLength(0...1))) + " credits")
-                    }.font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                }
-            }
-        }.padding(18)
     }
     private var divider: some View { Rectangle().fill(MacSettingsTheme.rowSeparator).frame(height: 0.5) }
     private func refresh() async { if let interval { await model.load(interval) } }
@@ -425,24 +405,6 @@ struct AIUsageDateControl: View {
 }
 
 @MainActor
-struct AIUsageDateCalendar: View {
-    let title: String
-    @Binding var date: Date
-    let latest: Date
-    let close: () -> Void
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            DatePicker(title, selection: $date, in: ...latest, displayedComponents: .date)
-                .datePickerStyle(.graphical).labelsHidden()
-            AIUsageRefreshButton(title: "Done", isEnabled: true, action: close).keyboardShortcut(.defaultAction)
-        }
-        .padding(12)
-        .onChange(of: date) { _, _ in close() }
-        .onExitCommand(perform: close)
-    }
-}
-
-@MainActor
 struct AIUsageModelsPopover: View {
     let row: AIUsageCostRow
     var body: some View {
@@ -455,9 +417,14 @@ struct AIUsageModelsPopover: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(item.model).font(.system(size: 12, weight: .medium)).textSelection(.enabled)
                                 Text(item.provider).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-                                if item.events.contains(where: { $0.audioSeconds > 0 }) {
-                                    Text((item.events.reduce(0) { $0 + $1.audioSeconds } / 60).formatted(.number.precision(.fractionLength(0...2))) + " min recorded")
+                                if item.recordedMinutes > 0 {
+                                    Text(item.recordedMinutes.formatted(.number.precision(.fractionLength(0...2))) + " min recorded")
                                         .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
+                                }
+                                if let explanation = item.pricingExplanation {
+                                    Text(explanation)
+                                        .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Text(item.total).font(.system(size: 12)).monospacedDigit().multilineTextAlignment(.trailing)
@@ -465,9 +432,9 @@ struct AIUsageModelsPopover: View {
                         if item.id != row.models.last?.id { Divider() }
                     }
                 }
-            }.frame(height: min(320, CGFloat(row.models.count) * 76))
+            }.frame(height: min(320, row.models.reduce(CGFloat(0)) { $0 + ($1.pricingExplanation == nil ? 76 : 112) }))
             if row.events.contains(where: { $0.amount == nil }) {
-                Text("The provider did not report a usable price. These calls are excluded from the numeric total.")
+                Text("Calls without a usable price are excluded from the numeric total.")
                     .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2).padding(.top, 9)
             }
         }.padding(16).frame(width: 390).foregroundStyle(MacSettingsTheme.text)

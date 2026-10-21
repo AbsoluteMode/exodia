@@ -63,8 +63,8 @@ without ever receiving its value.
   person at a terminal: Touch ID. A known but unregistered AI is refused with a
   hint; the built-in OpenCode agent is refused unless registered.
 - **Modes.** Each registered app is Approve or Bypass, with optional per-project
-  override. Approve shows a prompt under the island: Y allow once, N/Escape
-  deny, A allow this app and project for N minutes (default 15, memory only,
+  override. Approve shows a prompt under the island: 1 denies, 2 allows once,
+  3 allows this app and project for N minutes (default 15, memory only,
   cleared on restart, not on the panel's idle lock because the broker keeps
   serving then). Keys are matched by physical key code so they work on any
   layout. **Arming:** a prompt accepts nothing until the keyboard has been
@@ -72,12 +72,14 @@ without ever receiving its value.
   the wait again, so someone typing in another app can never answer it.
   60 s denies (typing does not extend it), requests queue. A prompt whose
   client disconnects (Ctrl-C, a killed agent) is withdrawn and denied, and
-  no timed grant is made for it. After an A answer, prompts already waiting
+  no timed grant is made for it. After a temporary Bypass answer, prompts already waiting
   for the same app and project are allowed by that grant instead of shown.
   The prompt sits under the agent answer card when both are visible (the
   built-in agent running `whytap case run`). `CaseApprovalKeyTap` exists only
-  while a prompt is queued and swallows only those four keys (see
-  docs/hotkey.md).
+  while a prompt is queued and swallows only bare 1/2/3 (top row or keypad).
+  Letters, Escape and modified digits pass through. This supersedes the original
+  Y/N/A/Escape mapping at the user's request; see
+  [numeric approval keys](2026-10-21-case-numeric-approval.md) and docs/hotkey.md.
 - **Revocation while waiting.** After Touch ID or an approval answer, the
   broker resolves the peer again and requires the same principal and current
   registration UUID/identity before releasing values. Removing a registration,
@@ -87,10 +89,11 @@ without ever receiving its value.
   created only after these checks and successful value resolution, with no
   suspension between validation, grant creation and release on the main actor.
 - **Touch ID text** for a person's `whytap case run` names the nearest app in
-  the helper's parent chain (Terminal, iTerm2…) or "неизвестный процесс" when
+  the helper's parent chain (Terminal, iTerm2…) or "an unknown process" when
   the walk reaches pid 1 without one (ssh, cron, a launchd job), and the
   command on one line, whitespace collapsed, at most 80 characters with the
-  middle cut. It never contains a value.
+  middle cut. It never contains a value. Reasons are lowercase verb phrases
+  because macOS shows them as "Whytap is trying to <reason>."
 - **Names are unique.** The broker refuses (never picks) when a project
   holds two keys with one name or two projects share a name. A backup merge
   renames a clashing incoming project to `name (2)` and key to `NAME_2`, the
@@ -115,8 +118,8 @@ without ever receiving its value.
   that is the beginning of some variant is held back; everything else is
   written at once, so a dev server's "listening" line or a `[y/N]` prompt
   appears immediately (holding a fixed longest-variant tail hid them). Values
-  shorter than 4 bytes are not masked and their row says «не скрываются в
-  выводе». MCP output is never masked-wrapped.
+  shorter than 4 bytes are not masked and their row says "Not masked in
+  output". MCP output is never masked-wrapped.
 - **CLI options** `-p` and `--only` are read only before the command:
   `whytap case run grep --only x f` passes `--only x` to grep.
 

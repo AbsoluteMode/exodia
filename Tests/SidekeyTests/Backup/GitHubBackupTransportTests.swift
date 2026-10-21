@@ -18,6 +18,26 @@ final class GitHubBackupTransportTests: XCTestCase {
         json(["name": "Exodia-Backup", "private": isPrivate, "permissions": ["push": true]])
     }
 
+    func testRateLimitedForbiddenResponsesCarryTheirRetryDeadline() async throws {
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        let deadline = Date().addingTimeInterval(3_600)
+        for headers in [["Retry-After": "3600"],
+                        ["X-RateLimit-Remaining": "0", "X-RateLimit-Reset": String(deadline.timeIntervalSince1970)]] {
+            StubURLProtocol.handler = { _ in (403, headers, Data()) }
+            do { try await transport.checkConnection(); XCTFail("Expected rate limit") }
+            catch {
+                guard case .rateLimited(let until) = error as? GitHubBackupTransport.Failure else {
+                    XCTFail("Unexpected failure: \(error)"); continue
+                }
+                XCTAssertGreaterThanOrEqual(until.timeIntervalSince(deadline), -1)
+                XCTAssertFalse((error as? GitHubBackupTransport.Failure)!.requiresReconnect)
+            }
+        }
+        StubURLProtocol.handler = { _ in (403, [:], Data()) }
+        do { try await transport.checkConnection(); XCTFail("Expected permission failure") }
+        catch { XCTAssertEqual(error as? GitHubBackupTransport.Failure, .permission) }
+    }
+
     func testExplicitDeletionWorksForPublicRepositoryAndIncludesDraftsButKeepsUnrelatedReleases() async throws {
         let kept = UUID(), old = UUID(), draft = UUID()
         func release(_ id: Int, _ tag: String, _ marker: String, draft: Bool = false) -> [String: Any] {
@@ -199,6 +219,100 @@ final class GitHubBackupTransportTests: XCTestCase {
         XCTAssertEqual(fixture.publishCount, 1)
     }
 
+    func testDeletedSavedDraftFallsBackToTheSnapshotTagAndRecordsTheNewDraft() async throws {
+        let fixture = RemoteFixture(json: json)
+        StubURLProtocol.handler = { request in
+            // The draft whose ID the Mac saved was deleted on GitHub.
+            if request.url!.path.hasSuffix("/releases/999") { return (404, [:], Data()) }
+            return try fixture.handle(request)
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data(repeating: 5, count: 1000).write(to: file)
+        let summary = ArtifactBackupSummary(id: UUID(), createdAt: Date(), totalBytes: 1000, fileCount: 1, sections: [.settings])
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        let drafts = DraftIDRecorder()
+        let releaseID = try await transport.upload(file: file, summary: summary, key: ConfigBackupArchive.makeKey(),
+                                                   resumeReleaseID: 999, onDraft: { await drafts.append($0) })
+        XCTAssertEqual(releaseID, 7)
+        let recorded = await drafts.ids
+        XCTAssertEqual(recorded, [7], "The replacement draft ID is persisted for the next resume")
+        XCTAssertFalse(fixture.draft)
+        XCTAssertEqual(fixture.publishCount, 1)
+        XCTAssertEqual(fixture.uploadNames, ["part-00000.bin", "complete.exodia-index"])
+        XCTAssertEqual(StubURLProtocol.capturedRequests.filter { $0.url!.path.hasSuffix("/releases/999") }.count, 1)
+        XCTAssertEqual(StubURLProtocol.capturedRequests.filter { $0.httpMethod == "POST" && $0.url!.host == "api.github.com" }.count, 1)
+        XCTAssertFalse(StubURLProtocol.capturedRequests.contains { $0.url!.absoluteString.contains("synthetic-token") })
+    }
+
+    func testStaleSavedDraftIDReusesTheSnapshotsExistingDraftWithoutADuplicate() async throws {
+        let fixture = RemoteFixture(json: json); fixture.failOneReadback = true
+        StubURLProtocol.handler = { request in
+            if request.url!.path.hasSuffix("/releases/999") { return (404, [:], Data()) }
+            return try fixture.handle(request)
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data(repeating: 6, count: 1000).write(to: file)
+        let summary = ArtifactBackupSummary(id: UUID(), createdAt: Date(), totalBytes: 1000, fileCount: 1, sections: [.settings])
+        let key = ConfigBackupArchive.makeKey()
+        let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+        do { _ = try await transport.upload(file: file, summary: summary, key: key); XCTFail() } catch { }
+        XCTAssertTrue(fixture.draft)
+        let drafts = DraftIDRecorder()
+        let releaseID = try await transport.upload(file: file, summary: summary, key: key,
+                                                   resumeReleaseID: 999, onDraft: { await drafts.append($0) })
+        XCTAssertEqual(releaseID, 7)
+        let recorded = await drafts.ids
+        XCTAssertEqual(recorded, [7])
+        XCTAssertEqual(StubURLProtocol.capturedRequests.filter { $0.httpMethod == "POST" && $0.url!.host == "api.github.com" }.count, 1,
+                       "The snapshot's existing draft is found by its tag, not recreated")
+        XCTAssertEqual(fixture.uploadNames, ["part-00000.bin", "complete.exodia-index"])
+        XCTAssertEqual(fixture.publishCount, 1)
+    }
+
+    func testSavedDraftFallbackKeepsRealAccessFailures() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data(repeating: 9, count: 100).write(to: file)
+        let summary = ArtifactBackupSummary(id: UUID(), createdAt: Date(), totalBytes: 100, fileCount: 1, sections: [.settings])
+        enum Scenario { case releaseForbidden, releaseUnauthorized, repositoryMissing, accessLostAfterRelease }
+        let cases: [(Scenario, GitHubBackupTransport.Failure)] = [
+            (.releaseForbidden, .permission), (.releaseUnauthorized, .authentication),
+            (.repositoryMissing, .permission), (.accessLostAfterRelease, .permission)
+        ]
+        for (scenario, expected) in cases {
+            StubURLProtocol.reset()
+            let fixture = RemoteFixture(json: json)
+            StubURLProtocol.handler = { request in
+                let path = request.url!.path
+                switch scenario {
+                case .releaseForbidden where path.hasSuffix("/releases/999"): return (403, [:], Data())
+                case .releaseUnauthorized where path.hasSuffix("/releases/999"): return (401, [:], Data())
+                case .repositoryMissing where path.hasSuffix("/Exodia-Backup"): return (404, [:], Data())
+                // The repository check passed, then every release endpoint is gone.
+                case .accessLostAfterRelease where path.contains("/releases"): return (404, [:], Data())
+                default: return try fixture.handle(request)
+                }
+            }
+            let transport = try GitHubBackupTransport(token: "synthetic-token", owner: "developer", session: session)
+            let drafts = DraftIDRecorder()
+            do {
+                _ = try await transport.upload(file: file, summary: summary, key: ConfigBackupArchive.makeKey(),
+                                               resumeReleaseID: 999, onDraft: { await drafts.append($0) })
+                XCTFail("\(scenario) must not upload")
+            } catch { XCTAssertEqual(error as? GitHubBackupTransport.Failure, expected, "\(scenario)") }
+            let recorded = await drafts.ids
+            XCTAssertTrue(recorded.isEmpty, "\(scenario)")
+            XCTAssertFalse(StubURLProtocol.capturedRequests.contains { $0.httpMethod == "POST" || $0.url!.host == "uploads.github.com" },
+                           "\(scenario) must not create a draft or upload parts")
+            if scenario == .repositoryMissing {
+                XCTAssertFalse(StubURLProtocol.capturedRequests.contains { $0.url!.path.contains("/releases") },
+                               "The private-repository gate runs before any release request")
+            }
+        }
+    }
+
     func testPartSizingRespectsTheReleaseAssetLimitWithoutAllocatingLargeFiles() throws {
         for bytes: Int64 in [1, 16_777_217, 8 * 1024 * 1024 * 1024, 64 * 1024 * 1024 * 1024 + 2_000_000] {
             let part = try GitHubBackupTransport.partSize(for: bytes)
@@ -209,4 +323,9 @@ final class GitHubBackupTransportTests: XCTestCase {
     }
 
     private typealias RemoteFixture = BackupGitHubFixture
+}
+
+private actor DraftIDRecorder {
+    private(set) var ids: [Int] = []
+    func append(_ id: Int) { ids.append(id) }
 }

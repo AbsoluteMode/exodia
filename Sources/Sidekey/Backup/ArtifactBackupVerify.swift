@@ -59,6 +59,8 @@ enum ArtifactArchiveVerifier {
                 throw ArtifactBackupError.unsafeContent
             }
         }
+        let destinations = try ArtifactRestoreDestination.resolvedEntries(manifest.entries, archiveID: manifest.id,
+            sections: wanted, locations: .production)
         for section in wanted.sorted(by: { $0.rawValue < $1.rawValue }) {
             for required in requiredPaths(for: section) where !paths.contains(required) {
                 throw ArtifactBackupError.incompleteArchive(required)
@@ -72,12 +74,12 @@ enum ArtifactArchiveVerifier {
         var databases: [String: URL] = [:]
         var planner: URL?
         for entry in manifest.entries {
-            let isDatabase = entry.path == meetingsDatabasePath || entry.path == historyDatabasePath
+            let isDatabase = entry.path == meetingsDatabasePath || entry.path == historyDatabasePath || entry.path == ArtifactUsageBackup.archivePath
             var inlineKind: ArtifactRestoreDestination.Inline?
             if wanted.contains(entry.section) {
                 // Resolving every wanted path up front refuses unknown roots
                 // and traversal before a single byte is written anywhere.
-                let destination = try ArtifactRestoreDestination.resolve(entry.path, in: .production)
+                guard let destination = destinations[entry.path] else { throw ArtifactBackupError.unsafeContent }
                 if case .inline(let kind) = destination { inlineKind = kind }
             }
             if let kind = inlineKind {
@@ -101,8 +103,7 @@ enum ArtifactArchiveVerifier {
                 continue
             }
             if isDatabase, wanted.contains(entry.section) {
-                let file = scratch.appendingPathComponent(
-                    entry.path == meetingsDatabasePath ? "meetings.sqlite" : "history.sqlite")
+                let file = scratch.appendingPathComponent(URL(fileURLWithPath: entry.path).lastPathComponent)
                 try write(entry: entry, from: reader, to: file)
                 databases[entry.path] = file
                 continue
@@ -136,6 +137,9 @@ enum ArtifactArchiveVerifier {
         }
         if wanted.contains(.history), let database = databases[historyDatabasePath] {
             try validateHistory(database, paths: paths)
+        }
+        if wanted.contains(.history), let database = databases[ArtifactUsageBackup.archivePath] {
+            try ArtifactUsageBackup.validate(database: database)
         }
         if wanted.contains(.planner), let planner {
             do { _ = try PlannerStore.decodeArchive(Data(contentsOf: planner)) }

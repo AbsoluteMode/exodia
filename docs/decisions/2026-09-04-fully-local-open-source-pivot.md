@@ -2,7 +2,7 @@
 
 > Update 2026-10-18: on-device speech and text models were
 > [removed](../../.project-docs/decisions/2026-10-18-remove-local-models.md). The app stays free and MIT,
-> without an account, Exodia servers or telemetry, and processes speech and
+> without an account, Whytap servers or telemetry, and processes speech and
 > text only with the user's providers or endpoints.
 
 ## Context

@@ -39,6 +39,8 @@ final class AppState: ObservableObject {
     @Published var translationActive = false
     /// A screenshot selection/editor, including in-flight local OCR and unsaved edits.
     @Published var screenshotActive = false
+    /// Hold the existing hover state only until explicit capture has frozen its pixels.
+    @Published var screenshotPreparing = false
     /// Visible Planner work or a retained unsent task draft.
     @Published var plannerActive = false
     /// Inline To-do visibility or a retained unsent draft.

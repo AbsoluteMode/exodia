@@ -13,29 +13,39 @@ this access; opening Settings or launching Whytap never requests it. It is
 optional for other features. Follow macOS's reopen instruction after finishing
 current work.
 
-Drag an area on a frozen display, or double-click to edit the whole display.
-Return copies/closes immediately, using the full display if there is no crop.
+The visible screen freezes before the editor opens, including Whytap's current
+Hover. Hover keeps its current open/closed state during capture; capture does not
+wake, close or exclude the island first. Only the area you drag is exported.
+There is no full-display shortcut or initial instruction strip. **Copy & exit ↩**
+or Enter copies that selected area and closes; Enter without a selection does
+nothing, and double-click does not select the display.
 Selection belongs to the display where it starts. The floating toolbar stays
 outside the crop where space permits, flips above a bottom-edge crop and is
 never included in the image.
 
-One horizontal row offers Arrow, Shape, Pen, Text, **Blur**, contextual settings,
-Undo, **Download** and **Copy**. There is no second settings row.
-Color, width, shape and text controls appear for the current tool; color/width
-are remembered per tool. Typing a label only prepares it: click the screenshot
-to place it before finishing. Return copies only placed annotations and discards
-an unplaced label; the field placeholder and help make that ordering explicit. Select & crop (More or V) moves annotations, deletes a selected annotation,
-moves the crop and resizes its corners. Blur patches can be deleted or undone,
-but cannot be moved because moving them would expose original information.
-Selecting or dragging an existing Blur keeps both its pixels and the crop in
-place. Delete removes only that blur; undo/redo preserves the crop.
+The main toolbar exposes Arrow, Shape, Pen, Text, **Blur**, Numbered steps,
+Share, Undo, Redo, **Download**, **Copy & exit ↩**, and Cancel. There is no More
+menu or separate Select/crop control. Initial region selection is still a drag;
+Highlighter, Spotlight, Copy text, Pin above windows and Output size are removed.
+Copy & exit shows Return in a separate centered keycap within the same button.
+Blur is text-only; Download is the downward arrow with a tooltip. On narrower
+displays the toolbar wraps onto more rows.
+Color, width, shape, blur mode and text controls appear in a **separate adjacent
+settings panel** for the current tool; color/width are remembered per tool.
+Typing a label only prepares it: click the screenshot to place it before
+finishing. Return copies only placed annotations and discards an unplaced
+label; the field placeholder and help make that ordering explicit. Click the
+active tool again to stop drawing, then move annotations or move/resize the
+selection by its corners. Arrow keys also move it; Option plus arrows resizes it. Blur patches
+can be deleted or undone; they cannot be moved because moving them would
+expose original information. Undo/redo preserves the selected region.
 
 **Blur → Text and numbers** is the default. Select a zone; on-device Vision
 finds text regions, numbers, dates, amounts and codes using fast recognition
 and language-independent detection. A bounded extra pass checks uncovered
 glyphs for isolated letters/digits: a temporary repeated-glyph atlas helps the fast
 recognizer identify single numbers. Its pixels never enter the screenshot.
-Accurate OCR is reserved for Copy text, avoiding its long cold start in Blur.
+The editor uses fast detection, avoiding the accurate recognizer’s long cold start.
 Dark-background crops are inverted only for detection, preserving output colors. Only detected text
 rectangles are blurred, with small rounded masks and strength
 matched separately to each text region’s height, so large text is not weakened
@@ -47,11 +57,8 @@ small or unusual text, and blur does not promise irreversible anonymization.
 No detections or an analysis error leaves the image unchanged and offers a
 retry/entire-area message. Editing/export wait for processing; Escape cancels.
 
-More offers Highlighter, Numbered steps, Spotlight, Copy text, Pin above
-windows, Output size, Share, Redo and Cancel. Copy text recognizes the edited
-pixels, including blur, rather than the original capture. Pin creates a local
-floating reference. Share uses macOS's picker and sends only the edited image
-to the service the user selects.
+Numbered steps places consecutive numbers. Share uses macOS's picker and sends
+only the edited image to the service the user selects.
 
 Copy writes flattened PNG pixels to the clipboard and finishes. **Return /
 numeric Enter** does the same after selection; during Blur it waits for the
@@ -64,20 +71,30 @@ overwritten; a fully written temporary file is published by an exclusive atomic
 rename, with staging removed on success or failure. A collision adds `(2)`, `(3)`, and so on. The editor stays open and
 shows “Downloaded to Downloads as …” with the actual filename, also announced to
 accessibility. Folder/write failures leave the editor open for retry.
-Output size preserves aspect ratio. Captures/history stay in memory until an
+Capture uses the full pixel resolution supplied by ScreenCaptureKit, including
+Retina scale. Copy and Download preserve those pixels without resizing. PNG encoding itself is lossless. Retina PNG stores its logical point size as
+well as its pixel dimensions, so apps respecting PNG resolution do not paste it
+at double size. Captures/history stay in memory until an
 explicit
 export; no screenshot files are written automatically. Copies may enter the
 ordinary clipboard history. Exports carry no editable original layers.
 There is no provider setup, account, app-managed model download or API request.
 
-Editor shortcuts, also listed in Help: V Select/crop, A Arrow, R Rectangle,
-O Oval, P Pen, T Text, B Blur, M Highlighter, N Numbered steps, ⌘C Copy,
+Editor shortcuts, also listed in Help: A Arrow, R Rectangle,
+O Oval, P Pen, T Text, B Blur, N Numbered steps, ⌘C Copy,
 ⌘S Download, ⌘Z Undo, ⇧⌘Z Redo. Arrow keys move the crop, Shift moves 10 points,
 Option resizes. Delete removes the selected annotation. Escape cancels the
-current drawing first, then capture. Without a crop, Return copies the full display and closes; with a crop it
-copies that area and closes. These are local editor commands.
+current drawing first, then capture. Return requires a selected area, then copies that area and closes. These are local editor commands.
 
-Display/Space changes and sleep cancel stale captures. App-initiated update
+Opening Screenshot again while capturing or editing keeps the current editor
+and edits instead of toggling it closed. A stalled capture times out after ten
+seconds with a retry message, releases its activity flag and permits a new
+shortcut attempt. This deadline does not apply while editing. An unchanged screen-parameters notification
+is ignored; actual display-layout or Space changes cancel stale captures.
+Unassigned keys are consumed locally, preventing responder recursion. Tab and
+Shift-Tab traverse enabled toolbar/accessory controls; both bars avoid a notch's
+top safe area. Local
+lifecycle diagnostics contain only static events and cancellation reasons. App-initiated update
 restarts wait for the editor, local processing, dialogs and unsaved edits to
 finish. Returning to idle alone never restarts Whytap.
 

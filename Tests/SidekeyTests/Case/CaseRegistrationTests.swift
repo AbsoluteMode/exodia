@@ -15,7 +15,7 @@ final class CaseRegistrationTests: XCTestCase {
 
         let report = try await fx.vm.registerApp(claude, name: "Claude Code")
 
-        XCTAssertEqual(fx.auth.reasons, ["Зарегистрировать Claude Code в Case"])
+        XCTAssertEqual(fx.auth.reasons, ["connect Claude Code to Case"])
         XCTAssertTrue(report.problems.isEmpty)
         let app = try XCTUnwrap(fx.service.payload?.apps.first)
         XCTAssertEqual(app.displayName, "Claude Code")
@@ -43,18 +43,18 @@ final class CaseRegistrationTests: XCTestCase {
 
     func test_client_config_failure_does_not_block_registration() async throws {
         let fx = try await Fixture(payload: payload())
-        fx.clients.connectProblems = ["Claude Code: программа не найдена"]
+        fx.clients.connectProblems = ["Claude Code: app not found"]
 
         let report = try await fx.vm.registerApp(claude, name: "Claude Code")
 
-        XCTAssertEqual(report.problems, ["Claude Code: программа не найдена"])
+        XCTAssertEqual(report.problems, ["Claude Code: app not found"])
         XCTAssertEqual(fx.service.payload?.apps.count, 1, "registered in Case anyway")
-        XCTAssertEqual(fx.vm.clientSetupProblems, ["Claude Code: программа не найдена"], "shown in the UI")
+        XCTAssertEqual(fx.vm.clientSetupProblems, ["Claude Code: app not found"], "shown in the UI")
     }
 
     func test_partial_connector_setup_can_retry_without_changing_rights_or_registering_again() async throws {
         let fx = try await Fixture(payload: payload())
-        fx.clients.connectProblems = ["Codex: настройка не удалась"]
+        fx.clients.connectProblems = ["Codex: setup failed"]
         let id = try await fx.vm.registerApp(claude, name: "Claude Code", projects: [serversID]).appID
         fx.clients.connectProblems = []
         fx.auth.reasons.removeAll()
@@ -116,7 +116,7 @@ final class CaseRegistrationTests: XCTestCase {
         fx.auth.reasons.removeAll()
 
         try await fx.vm.setMode(.bypass, for: appID, project: nil)
-        XCTAssertEqual(fx.auth.reasons, ["Включить Bypass для Claude Code"])
+        XCTAssertEqual(fx.auth.reasons, ["turn on Bypass for Claude Code"])
         XCTAssertEqual(fx.app(appID)?.defaultMode, .bypass)
 
         fx.auth.reasons.removeAll()
@@ -126,7 +126,7 @@ final class CaseRegistrationTests: XCTestCase {
 
         // Bypass for one project only.
         try await fx.vm.setMode(.bypass, for: appID, project: serversID)
-        XCTAssertEqual(fx.auth.reasons, ["Включить Bypass для Claude Code"])
+        XCTAssertEqual(fx.auth.reasons, ["turn on Bypass for Claude Code"])
         XCTAssertEqual(fx.app(appID)?.projectModes[serversID], .bypass)
         XCTAssertEqual(fx.app(appID)?.defaultMode, .approve)
 
@@ -137,7 +137,7 @@ final class CaseRegistrationTests: XCTestCase {
         XCTAssertEqual(fx.app(appID)?.defaultMode, .approve)
         fx.auth.fail = false
 
-        // «как у приложения» removes the override, no Touch ID while the app is in Approve.
+        // "Default" removes the override, no Touch ID while the app is in Approve.
         fx.auth.reasons.removeAll()
         try await fx.vm.setMode(nil, for: appID, project: serversID)
         XCTAssertNil(fx.app(appID)?.projectModes[serversID])
@@ -151,9 +151,9 @@ final class CaseRegistrationTests: XCTestCase {
         try await fx.vm.setMode(.approve, for: appID, project: serversID)
         fx.auth.reasons.removeAll()
 
-        // servers: Approve → «как у приложения» (= Bypass) opens access.
+        // servers: Approve → "Default" (= Bypass) opens access.
         try await fx.vm.setMode(nil, for: appID, project: serversID)
-        XCTAssertEqual(fx.auth.reasons, ["Включить Bypass для Claude Code"])
+        XCTAssertEqual(fx.auth.reasons, ["turn on Bypass for Claude Code"])
         XCTAssertNil(fx.app(appID)?.projectModes[serversID])
 
         await assertThrows(.missingProject) { try await fx.vm.setMode(.bypass, for: appID, project: UUID()) }
@@ -188,11 +188,11 @@ final class CaseRegistrationTests: XCTestCase {
     func test_unregister_reports_client_cleanup_failure_but_still_closes_access() async throws {
         let fx = try await Fixture(payload: payload())
         let appID = try await fx.vm.registerApp(claude, name: "Claude Code").appID
-        fx.clients.disconnectProblems = ["Claude Code: команда завершилась с ошибкой (1)"]
+        fx.clients.disconnectProblems = ["Claude Code: command failed (1)"]
 
         let report = try await fx.vm.unregisterApp(appID)
 
-        XCTAssertEqual(report.problems, ["Claude Code: команда завершилась с ошибкой (1)"])
+        XCTAssertEqual(report.problems, ["Claude Code: command failed (1)"])
         XCTAssertEqual(fx.service.payload?.apps, [])
     }
 

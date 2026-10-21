@@ -111,7 +111,9 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(source.contains("${TEAM_ID}.${BUNDLE_ID}"))
     }
 
-    func test_communityPreflightDoesNotRequireAppleCredentials() throws {
+    /// The offline preflight reports the committed team without touching the
+    /// keychain, so it also runs on Macs without the Developer ID certificate.
+    func test_communityPreflightNeedsNoCredentialsOrNotarization() throws {
         for script in ["scripts/build-dmg.sh", "scripts/user-release.sh"] {
             let result = try runScript(try projectRoot().appendingPathComponent(script),
                 arguments: ["--preflight-only"],
@@ -121,7 +123,8 @@ final class PackagingRebrandTests: XCTestCase {
             let data = Data(lastLine.utf8)
             let plan = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
             XCTAssertEqual(plan["distribution"] as? String, "community")
-            XCTAssertEqual(plan["requires_apple_developer"] as? Bool, false)
+            XCTAssertEqual(plan["code_signing"] as? String, "team:UVBKCN5PPV")
+            XCTAssertEqual(plan["requires_apple_developer"] as? Bool, true)
             XCTAssertEqual(plan["requires_notarization"] as? Bool, false)
             XCTAssertEqual(plan["architectures"] as? [String], ["arm64", "x86_64"])
             XCTAssertEqual(plan["bundle_id"] as? String, "com.rootwise.sidekey")
@@ -181,6 +184,84 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertEqual(plan["signing_certificate_sha1"] as? String, identity.sha1)
         XCTAssertEqual(plan["signing_key_configured"] as? Bool, false)
         XCTAssertEqual(plan["requires_apple_developer"] as? Bool, false)
+    }
+
+    // WHY: .project-docs/decisions/2026-10-21-developer-id-team-signing.md
+    func test_teamBuildFindsItsDeveloperIDBeforeCompiling() throws {
+        let team = "TEAMID1234"
+        let identity = "0123456789ABCDEF0123456789ABCDEF01234567"
+        let renewal = "FEDCBA9876543210FEDCBA9876543210FEDCBA98"
+        func listing(_ identities: [(hash: String, team: String)]) -> String {
+            identities.enumerated().map { index, item in
+                "  \(index + 1)) \(item.hash) \"Developer ID Application: Test Person (\(item.team))\""
+            }.joined(separator: "\n") + "\n     \(identities.count) valid identities found\n"
+        }
+
+        let otherTeam = try runBuildFixture(teamID: team, securityOutput: listing([(renewal, "OTHERTEAM1")]))
+        XCTAssertEqual(otherTeam.result.status, 1, otherTeam.result.output)
+        XCTAssertTrue(otherTeam.result.output.contains("no valid Developer ID Application certificate of team " + team),
+                      otherTeam.result.output)
+        XCTAssertEqual(otherTeam.calls, "identity-lookup\n")
+
+        let found = try runBuildFixture(teamID: team, securityOutput: listing([(identity, team)]))
+        XCTAssertEqual(found.result.status, 64, found.result.output)
+        XCTAssertEqual(found.calls, "identity-lookup\ncompiler\n")
+        XCTAssertTrue(found.result.output.contains("Code signing: team:" + team), found.result.output)
+        XCTAssertTrue(found.result.output.contains("Developer ID identity: " + identity), found.result.output)
+
+        // After a renewal both certificates stay valid until the old one expires.
+        let renewed = listing([(identity, team), (renewal, team)])
+        let ambiguous = try runBuildFixture(teamID: team, securityOutput: renewed)
+        XCTAssertEqual(ambiguous.result.status, 1, ambiguous.result.output)
+        XCTAssertTrue(ambiguous.result.output.contains("EXODIA_DEVELOPER_ID_IDENTITY"), ambiguous.result.output)
+        XCTAssertEqual(ambiguous.calls, "identity-lookup\n")
+
+        let chosen = try runBuildFixture(teamID: team, securityOutput: renewed,
+            environment: ["EXODIA_DEVELOPER_ID_IDENTITY": renewal.lowercased()])
+        XCTAssertEqual(chosen.result.status, 64, chosen.result.output)
+        XCTAssertTrue(chosen.result.output.contains("Developer ID identity: " + renewal), chosen.result.output)
+
+        let unknown = try runBuildFixture(teamID: team, securityOutput: renewed,
+            environment: ["EXODIA_DEVELOPER_ID_IDENTITY": String(repeating: "A", count: 40)])
+        XCTAssertEqual(unknown.result.status, 1, unknown.result.output)
+        XCTAssertNil(unknown.calls?.range(of: "compiler"), unknown.result.output)
+
+        let optedOut = try runBuildFixture(teamID: team, environment: ["EXODIA_COMMUNITY_SIGNING": "adhoc"])
+        XCTAssertEqual(optedOut.result.status, 64, optedOut.result.output)
+        XCTAssertEqual(optedOut.calls, "compiler\n")
+        XCTAssertTrue(optedOut.result.output.contains("Code signing: adhoc"), optedOut.result.output)
+    }
+
+    /// The committed team takes precedence over the community certificate, and
+    /// its build needs neither the community key nor any keychain access to plan.
+    func test_teamPreflightReportsTheCommittedTeam() throws {
+        let identities = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: identities) }
+        let identity = try makeSigningIdentity(in: identities, name: "release")
+        let run = try runBuildFixture(certificate: identity.certificate, teamID: "TEAMID1234",
+                                      arguments: ["--preflight-only"])
+        XCTAssertEqual(run.result.status, 0, run.result.output)
+        XCTAssertNil(run.calls, run.result.output)
+        let lastLine = try XCTUnwrap(run.result.output.split(separator: "\n").last)
+        let plan = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lastLine.utf8)) as? [String: Any])
+        XCTAssertEqual(plan["code_signing"] as? String, "team:TEAMID1234")
+        XCTAssertEqual(plan["signing_team_id"] as? String, "TEAMID1234")
+        XCTAssertNil(plan["signing_certificate_sha1"] as? String)
+        XCTAssertEqual(plan["requires_apple_developer"] as? Bool, true)
+        XCTAssertEqual(plan["requires_notarization"] as? Bool, false)
+
+        let invalid = try runBuildFixture(teamID: "not-a-team", arguments: ["--preflight-only"])
+        XCTAssertEqual(invalid.result.status, 1, invalid.result.output)
+        XCTAssertTrue(invalid.result.output.contains("10-character Apple team ID"), invalid.result.output)
+    }
+
+    /// Keychain items and macOS privacy grants follow the team's designated
+    /// requirement and keychain partition. Another team makes every install
+    /// approve each stored key and grant its permissions again.
+    func test_developerIDTeamIsPinned() throws {
+        let team = try readProjectFile("Resources/developer-id-team.txt")
+        XCTAssertEqual(team, "UVBKCN5PPV\n",
+                       "A new team makes every install approve its keychain items and macOS permissions again")
     }
 
     /// Every community build's designated requirement pins this certificate's
@@ -326,6 +407,56 @@ final class PackagingRebrandTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), signed.output)
     }
 
+    func test_publicationRequiresTheCommittedTeam() throws {
+        let identities = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: identities) }
+        let identity = try makeSigningIdentity(in: identities, name: "release")
+        let temporary = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        for directory in ["scripts", "Resources", "build", "bin"] {
+            try FileManager.default.createDirectory(at: temporary.appendingPathComponent(directory),
+                withIntermediateDirectories: true)
+        }
+        let root = try projectRoot()
+        for relative in ["scripts/upload-release.sh", "Resources/Info.plist.template"] {
+            try FileManager.default.copyItem(at: root.appendingPathComponent(relative),
+                to: temporary.appendingPathComponent(relative))
+        }
+        try FileManager.default.copyItem(at: identity.certificate,
+            to: temporary.appendingPathComponent("Resources/community-signing-certificate.pem"))
+        try "TEAMID1234\n".write(to: temporary.appendingPathComponent("Resources/developer-id-team.txt"),
+                                 atomically: true, encoding: .utf8)
+        try Data("test".utf8).write(to: temporary.appendingPathComponent("build/Whytap-9.9.9-build42.dmg"))
+        let marker = temporary.appendingPathComponent("publication-attempt.txt")
+        try executable(at: temporary.appendingPathComponent("bin/gh"), contents: #"""
+        #!/bin/bash
+        if [ "$1 $2" = "auth status" ] || [ "$1 $2" = "release view" ]; then exit 0; fi
+        echo unexpected-upload > "$PROBE_MARKER"
+        exit 74
+        """#)
+        try prepareProvenanceFixture(temporary)
+        let environment = ["PATH": temporary.appendingPathComponent("bin").path + ":/usr/bin:/bin",
+                           "FLAVOR": "prod", "APP_BUNDLE_NAME": "Whytap", "SHORT_VERSION": "9.9.9",
+                           "BUILD_VERSION": "42", "PROBE_MARKER": marker.path]
+
+        XCTAssertNotEqual(try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg",
+                                          codeSigning: "team:short", expectSuccess: false), 0)
+        // An archive signed with the community certificate no longer matches.
+        try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg",
+                        codeSigning: "certificate:" + identity.sha1)
+        let community = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+                                      environment: environment)
+        XCTAssertNotEqual(community.status, 0)
+        XCTAssertTrue(community.output.contains("archive code signing does not match"), community.output)
+
+        try sealFixture(temporary, archiveName: "Whytap-9.9.9-build42.dmg", codeSigning: "team:TEAMID1234")
+        let signed = try runScript(temporary.appendingPathComponent("scripts/upload-release.sh"),
+                                   environment: environment)
+        XCTAssertNotEqual(signed.status, 0)
+        XCTAssertTrue(signed.output.contains("already exists; refusing to overwrite"), signed.output)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), signed.output)
+    }
+
     func test_publicationRefusesExistingVersionBeforeKeysOrUpload() throws {
         let temporary = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporary) }
@@ -390,7 +521,9 @@ final class PackagingRebrandTests: XCTestCase {
 
     /// Runs build-dmg.sh in a minimal committed checkout whose compiler stub exits 64.
     /// `calls` lists the stubbed compiler and Apple tools that ran, nil when none did.
-    private func runBuildFixture(certificate: URL? = nil, arguments: [String] = [],
+    /// With `securityOutput` the `security` stub prints it as the identity listing.
+    private func runBuildFixture(certificate: URL? = nil, teamID: String? = nil,
+                                 securityOutput: String? = nil, arguments: [String] = [],
                                  environment: [String: String] = [:]) throws
         -> (result: (status: Int32, output: String), calls: String?) {
         let temporary = try temporaryDirectory()
@@ -411,16 +544,34 @@ final class PackagingRebrandTests: XCTestCase {
             try FileManager.default.copyItem(at: certificate,
                 to: temporary.appendingPathComponent("Resources/community-signing-certificate.pem"))
         }
+        if let teamID {
+            try (teamID + "\n").write(to: temporary.appendingPathComponent("Resources/developer-id-team.txt"),
+                                      atomically: true, encoding: .utf8)
+        }
         try executable(at: tools.appendingPathComponent("swift"), contents: #"""
         #!/bin/bash
         echo compiler >> "$PROBE_MARKER"
         exit 64
         """#)
-        try executable(at: tools.appendingPathComponent("security"), contents: #"""
-        #!/bin/bash
-        echo unexpected-apple >> "$PROBE_MARKER"
-        exit 71
-        """#)
+        if let securityOutput {
+            let listing = temporary.appendingPathComponent("identities.txt")
+            try securityOutput.write(to: listing, atomically: true, encoding: .utf8)
+            try executable(at: tools.appendingPathComponent("security"), contents: """
+            #!/bin/bash
+            if [ "$*" != "find-identity -v -p codesigning" ]; then
+                echo unexpected-apple >> "$PROBE_MARKER"
+                exit 71
+            fi
+            echo identity-lookup >> "$PROBE_MARKER"
+            cat '\(listing.path)'
+            """)
+        } else {
+            try executable(at: tools.appendingPathComponent("security"), contents: #"""
+            #!/bin/bash
+            echo unexpected-apple >> "$PROBE_MARKER"
+            exit 71
+            """#)
+        }
         try executable(at: tools.appendingPathComponent("xcrun"), contents: #"""
         #!/bin/bash
         if [ "$*" = "--sdk macosx --show-sdk-version" ]; then

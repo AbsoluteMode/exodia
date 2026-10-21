@@ -93,6 +93,13 @@ final class APIAndModelsRenderTests: XCTestCase {
                 }
             }
         }
+        for dark in [false, true] {
+            for accepted in [false, true] {
+                try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
+                    initialSection: .keys, initialKeyResult: accepted), size: NSSize(width: 600, height: 700), dark: dark,
+                    to: directory.appendingPathComponent("key-notice-\(accepted ? "accepted" : "rejected")-\(dark ? "dark" : "light").png"))
+            }
+        }
         // Costs use a temporary journal and synthetic provider metadata only.
         let usageURL = directory.appendingPathComponent("fixture-usage.sqlite")
         try? FileManager.default.removeItem(at: usageURL)
@@ -101,7 +108,9 @@ final class APIAndModelsRenderTests: XCTestCase {
         let billing = ElevenLabsBillingUsage(rows: [
             .init(id: "fixture", keyName: "Whytap key", model: "scribe_v2_realtime", product: "STT", credits: 180, minutes: 10)
         ])
-        let usageModel = AIUsageCostsViewModel(store: usageStore, loadBilling: { _ in billing })
+        let usageModel = AIUsageCostsViewModel(store: usageStore, loadPrices: { events in
+            AIUsageRecorder.Prices(events: events.map { billing.estimating($0) })
+        })
         let usageEvents: [AIUsageEvent] = [
             .speech(.init(feature: .dropSmart, account: .soniox, model: "stt-rt-v5"), seconds: 300, at: fixtureNow),
             .init(createdAt: fixtureNow, context: .init(feature: .dropSmartCleanup, account: .openRouter, model: "google/gemini-3.8-flash"), currency: .usd, amount: 0.02, basis: .reported),
@@ -124,6 +133,14 @@ final class APIAndModelsRenderTests: XCTestCase {
         customModel.start = fixtureNow.addingTimeInterval(-86400 * 5)
         customModel.end = fixtureNow
         await customModel.load(AIUsagePeriod.custom.interval(now: fixtureNow, start: customModel.start, end: customModel.end)!)
+        let fallbackModel = AIUsageCostsViewModel(store: usageStore, loadPrices: { events in
+            .init(events: events, sonioxUnavailable: true)
+        })
+        await fallbackModel.load(interval)
+        let checkingModel = AIUsageCostsViewModel(store: usageStore, loadPrices: { events in
+            try? await Task.sleep(for: .seconds(2))
+            return .init(events: events)
+        })
         for dark in [false, true] {
             for width in [600.0, 900.0] {
                 for section in APIAndModelsSection.allCases {
@@ -132,7 +149,8 @@ final class APIAndModelsRenderTests: XCTestCase {
                         to: directory.appendingPathComponent("sections-\(section)-\(dark ? "dark" : "light")-\(Int(width)).png"))
                 }
             }
-            for (name, stateModel) in [("empty", emptyModel), ("error", errorModel), ("custom", customModel)] {
+            for (name, stateModel) in [("empty", emptyModel), ("error", errorModel), ("custom", customModel),
+                                       ("api-fallback", fallbackModel), ("checking-prices", checkingModel)] {
                 try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
                     initialSection: .costs, usageModel: stateModel), size: NSSize(width: 600, height: 700), dark: dark,
                     to: directory.appendingPathComponent("costs-\(name)-\(dark ? "dark" : "light").png"))
@@ -145,8 +163,17 @@ final class APIAndModelsRenderTests: XCTestCase {
             try await render(AIUsageModelsPopover(row: .init(title: "Agent", events: manyModels)),
                 size: NSSize(width: 390, height: 390), dark: dark,
                 to: directory.appendingPathComponent("cost-models-many-\(dark ? "dark" : "light").png"))
+            let creditDetails = [
+                AIUsageEvent(context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2"),
+                             currency: .elevenLabsCredits, amount: nil, basis: .unavailable),
+                AIUsageEvent(context: .init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2_realtime"),
+                             currency: .elevenLabsCredits, amount: 360, basis: .estimated, audioSeconds: 1200)
+            ]
+            try await render(AIUsageModelsPopover(row: .init(title: "Drop Fast", events: creditDetails)),
+                size: NSSize(width: 390, height: 300), dark: dark,
+                to: directory.appendingPathComponent("cost-models-missing-duration-\(dark ? "dark" : "light").png"))
             try await render(AIUsageDateCalendar(title: "From", date: .constant(fixtureNow), latest: fixtureNow, close: {}),
-                size: NSSize(width: 300, height: 310), dark: dark,
+                size: NSSize(width: 310, height: 318), dark: dark,
                 to: directory.appendingPathComponent("cost-date-calendar-\(dark ? "dark" : "light").png"))
             try await render(HStack(spacing: 12) {
                 Button("Normal") {}.buttonStyle(AIUsageControlStyle(hovered: false, focused: false, compactLabel: true))

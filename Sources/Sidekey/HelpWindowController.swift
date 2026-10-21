@@ -95,21 +95,21 @@ enum HelpWindowContent {
                 detail: "While a Case request is on screen, allow the command once. Works on any keyboard layout.",
                 iconName: "checkmark.circle",
                 prefix: nil,
-                contents: [.text("Y")]
+                contents: [.text(CaseApprovalKey.yes.keycap)]
             ),
             HelpHotkeyRowSpec(
                 title: "Case — deny",
-                detail: "While a Case request is on screen, deny it. Escape denies too.",
+                detail: "While a Case request is on screen, deny it. Letters and Escape stay with your app.",
                 iconName: "xmark.octagon",
                 prefix: nil,
-                contents: [.text("N")]
+                contents: [.text(CaseApprovalKey.no.keycap)]
             ),
             HelpHotkeyRowSpec(
                 title: "Case — allow for minutes",
                 detail: "While a Case request is on screen, let this app use this project without asking for the set minutes.",
                 iconName: "timer",
                 prefix: nil,
-                contents: [.text("A")]
+                contents: [.text(CaseApprovalKey.timed.keycap)]
             ),
             // ROO-208: the three per-mode rows (`⌥1` Agent / `⌥2` Drop /
             // `⌥3` Clipboard) collapse into a single unified-strip row.
@@ -189,9 +189,10 @@ enum HelpWindowContent {
             HelpHotkeyRowSpec(title: "Screenshot — copy and close", detail: "After selecting an area, copy the edited image and close the editor. Waits for pending Blur or Download.", iconName: "return", prefix: nil, contents: [.text("Return")]),
             HelpHotkeyRowSpec(title: "Screenshot — undo", detail: "Undo a crop or annotation.", iconName: "arrow.uturn.backward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text("Z")]),
             HelpHotkeyRowSpec(title: "Screenshot — redo", detail: "Redo the last undone change.", iconName: "arrow.uturn.forward", prefix: nil, contents: [.text(HotkeyGlyph.command), .text(HotkeyGlyph.shift), .text("Z")]),
+            HelpHotkeyRowSpec(title: "Screenshot — next control", detail: "Move focus to the next enabled toolbar or tool-settings control.", iconName: "arrow.right", prefix: nil, contents: [.text("Tab")]),
+            HelpHotkeyRowSpec(title: "Screenshot — previous control", detail: "Move focus to the previous enabled toolbar or tool-settings control.", iconName: "arrow.left", prefix: nil, contents: [.text(HotkeyGlyph.shift), .text("Tab")]),
             HelpHotkeyRowSpec(title: "Screenshot — move crop", detail: "Arrow keys move the crop; Shift moves 10 points; Option resizes.", iconName: "arrow.up.left.and.arrow.down.right", prefix: nil, contents: [.text("←"), .text("↑"), .text("↓"), .text("→")]),
             HelpHotkeyRowSpec(title: "Screenshot — cancel", detail: "Cancel the current drawing, then cancel capture.", iconName: "escape", prefix: nil, contents: [.text("Esc")]),
-            HelpHotkeyRowSpec(title: "Screenshot — full display", detail: "Without a crop, copy the full display and close. Double-click instead to keep editing it.", iconName: "viewfinder", prefix: nil, contents: [.text("Return")]),
             HelpHotkeyRowSpec(title: "Screenshot — delete annotation", detail: "Remove the selected annotation.", iconName: "delete.left", prefix: nil, contents: [.text("Delete")])
         ]
     }

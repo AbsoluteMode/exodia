@@ -17,6 +17,8 @@ actor BackupLocalStore {
         var preparation: UploadPreparation?
         var purpose: String?
         var recoveryOnly: Bool?
+        var automatic: Bool?
+        var archiveKeyID: String?
     }
     nonisolated let root: URL
     init(root: URL = BackupLocalStore.defaultRoot) { self.root = root }
@@ -44,15 +46,35 @@ actor BackupLocalStore {
         }.filter { FileManager.default.fileExists(atPath: $0.localURL!.path) }
     }
     func fileURL(_ id: UUID) -> URL { root.appendingPathComponent(id.uuidString.lowercased() + ".exodiabackup") }
-    func record(_ summary: ArtifactBackupSummary, from file: URL, purpose: String? = nil, recoveryOnly: Bool = false) throws -> URL {
+    func record(_ summary: ArtifactBackupSummary, from file: URL, purpose: String? = nil, recoveryOnly: Bool = false,
+                automatic: Bool = false, archiveKeyID: String? = nil) throws -> URL {
         var records = try records()
         let destination = fileURL(summary.id)
         guard !FileManager.default.fileExists(atPath: destination.path) else { throw ConfigBackupError.saveFailed }
         try FileManager.default.moveItem(at: file, to: destination)
-        records.insert(Record(summary: summary, purpose: purpose, recoveryOnly: recoveryOnly), at: 0)
+        records.insert(Record(summary: summary, purpose: purpose, recoveryOnly: recoveryOnly,
+                              automatic: automatic, archiveKeyID: archiveKeyID), at: 0)
         do { try ConfigBackupFiles.write(JSONEncoder().encode(records), to: catalog) }
         catch { try? FileManager.default.moveItem(at: destination, to: file); throw error }
         return destination
+    }
+
+    /// A verified replacement is durable before superseded unsent automatic
+    /// snapshots are removed. Keep any resumable upload, recovery point and
+    /// successful remote generation; never delete a remote release here.
+    func coalescePending(keeping id: UUID) throws {
+        var values = try records()
+        guard values.contains(where: { $0.summary.id == id }) else { throw ConfigBackupError.invalidArchive }
+        let expired = values.filter { $0.summary.id != id && $0.automatic == true && $0.recoveryOnly != true
+            && $0.purpose == nil && $0.copiedAt == nil && $0.preparation == nil }
+        for record in expired {
+            let file = fileURL(record.summary.id)
+            let metadata = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            if metadata?.isRegularFile == true && metadata?.isSymbolicLink != true { try FileManager.default.removeItem(at: file) }
+        }
+        let expiredIDs = Set(expired.map { $0.summary.id })
+        values.removeAll { expiredIDs.contains($0.summary.id) && !FileManager.default.fileExists(atPath: fileURL($0.summary.id).path) }
+        try ConfigBackupFiles.write(JSONEncoder().encode(values), to: catalog)
     }
     func markCopied(id: UUID, destinationID: String, remoteID: Int? = nil, depth: Int = 0, date: Date = Date()) throws {
         var records = try records()
@@ -96,6 +118,43 @@ actor BackupLocalStore {
     }
 
     func pendingCopies(destinationID: String) throws -> [Record] { try records().filter { $0.recoveryOnly != true && ($0.copiedAt == nil || $0.destinationID != destinationID) } }
+
+    /// Startup only, before capture/transfer begins. A readable catalog and
+    /// management journal identify every retained archive and resumable upload.
+    /// Explicitly parked damaged catalogs retain their otherwise unknown files.
+    func cleanupOrphans() throws {
+        guard FileManager.default.fileExists(atPath: root.path) else { return }
+        try ConfigBackupFiles.checkDirectory(root)
+        let values = try records(), management = try maintenance()
+        var protectedIDs = Set(values.map { $0.summary.id })
+        if let id = management?.replacement?.id { protectedIDs.insert(id) }
+        let uploads = Set(values.compactMap { record -> String? in
+            guard let preparation = record.preparation else { return nil }
+            return uploadFileURL(id: record.summary.id, destinationID: preparation.destinationID).lastPathComponent.lowercased()
+        })
+        let files = try FileManager.default.contentsOfDirectory(at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        let hasParkedCatalog = files.contains {
+            $0.lastPathComponent.hasPrefix("kept-catalog-") && $0.pathExtension == "json"
+        }
+        if !hasParkedCatalog {
+            for file in files {
+                let name = file.lastPathComponent
+                let archiveID = file.pathExtension == "exodiabackup" ? UUID(uuidString: file.deletingPathExtension().lastPathComponent) : nil
+                let pieces = name.split(separator: ".")
+                let upload = pieces.count == 3 && UUID(uuidString: String(pieces[0])) != nil
+                    && pieces[1].count == 16 && pieces[1].allSatisfy(\.isHexDigit) && pieces[2] == "upload"
+                let partial = name.hasPrefix(".copy-") && UUID(uuidString: String(name.dropFirst(6))) != nil
+                guard archiveID.map({ !protectedIDs.contains($0) }) ?? (upload && !uploads.contains(name.lowercased()) || partial) else { continue }
+                let metadata = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard metadata.isRegularFile == true, metadata.isSymbolicLink != true else { continue }
+                try Task.checkCancellation()
+                try FileManager.default.removeItem(at: file)
+            }
+        }
+        try Self.deleteArchiveFiles(in: root.appendingPathComponent("restore-work"), except: nil)
+        try ConfigBackupFiles.synchronizeDirectory(root)
+    }
 
     /// No plaintext is involved; nevertheless verify the copied ciphertext
     /// before marking the folder destination complete.

@@ -101,12 +101,16 @@ case "${EXODIA_LEGACY_SIGNED_RELEASE:-0}" in
     *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 1 ;;
 esac
 # A community archive must carry the identity committed with its source: the
-# community certificate when present, otherwise ad-hoc. Test certificate
-# overrides and ad-hoc opt-outs therefore cannot be published.
-# WHY: .project-docs/decisions/2026-10-19-community-signing-identity.md
+# Developer ID team when present, then the community certificate, otherwise
+# ad-hoc. Test certificate overrides and ad-hoc opt-outs therefore cannot be
+# published.
+# WHY: .project-docs/decisions/2026-10-21-developer-id-team-signing.md
 COMMUNITY_SIGNING_CERTIFICATE="${PROJECT_DIR}/Resources/community-signing-certificate.pem"
+DEVELOPER_ID_TEAM_FILE="${PROJECT_DIR}/Resources/developer-id-team.txt"
 if [ "${DISTRIBUTION_MODE}" = "developer-id" ]; then
     EXPECTED_CODE_SIGNING="developer-id"
+elif [ -f "${DEVELOPER_ID_TEAM_FILE}" ]; then
+    EXPECTED_CODE_SIGNING="team:$(tr -d '\n\r ' < "${DEVELOPER_ID_TEAM_FILE}")"
 elif [ -f "${COMMUNITY_SIGNING_CERTIFICATE}" ]; then
     EXPECTED_CODE_SIGNING="certificate:$(/usr/bin/openssl x509 -in "${COMMUNITY_SIGNING_CERTIFICATE}" \
         -noout -fingerprint -sha1 | sed 's/^.*=//; s/://g' | tr 'A-F' 'a-f')"

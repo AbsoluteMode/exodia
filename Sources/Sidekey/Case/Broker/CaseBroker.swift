@@ -77,13 +77,14 @@ struct CaseSystemCallerResolver: CaseCallerResolving {
 @MainActor
 final class CaseBroker {
     static let commandSummaryLimit = 80
-    static let unknownOrigin = "неизвестный процесс"
+    static let unknownOrigin = "an unknown process"
 
     /// The Touch ID text for a person's `whytap case run`: which terminal app
-    /// asks, for which command and project. Never contains a value.
+    /// asks, for which command and project. Never contains a value. macOS
+    /// shows it as "Whytap is trying to <reason>.", hence the lowercase verb.
     static func touchIDRunReason(projectName: String, command: String, origin: String?) -> String {
-        let who = origin ?? unknownOrigin.prefix(1).uppercased() + unknownOrigin.dropFirst()
-        return "\(who) хочет запустить «\(commandSummary(command))» с ключами проекта \(projectName)"
+        let who = origin ?? unknownOrigin
+        return "let \(who) run “\(commandSummary(command))” with keys from project \(projectName)"
     }
 
     /// The command on one line with whitespace collapsed, at most 80
@@ -96,7 +97,7 @@ final class CaseBroker {
         return String(line.prefix(head)) + "…" + String(line.suffix(tail))
     }
 
-    static let touchIDListReason = "Терминал хочет посмотреть ключи Case"
+    static let touchIDListReason = "let a terminal list Case keys"
 
     private let service: CaseVaultService
     private let resolver: CaseCallerResolving

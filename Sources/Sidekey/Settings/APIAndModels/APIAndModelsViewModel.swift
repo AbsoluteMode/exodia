@@ -216,7 +216,7 @@ final class APIAndModelsViewModel: ObservableObject {
 
     /// Adds a user's own OpenAI-compatible server. A blank key means the server
     /// runs without one.
-    func addServer(name: String, baseURL: String, key: String?) async -> String? {
+    func addServer(name: String, baseURL: String, key: String?, proposeModels: Bool = true) async -> String? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return "Enter a name" }
@@ -247,13 +247,13 @@ final class APIAndModelsViewModel: ObservableObject {
         }
         keyStatuses.set(status, for: account, at: now())
         await catalogs.refresh(account, apiKey: apiKey, server: server)
-        proposeSetup(for: account)
+        if proposeModels { proposeSetup(for: account) }
         recompute()
         return nil
     }
 
-    /// Like `addKey`, but a key the provider turns down leaves the previous one
-    /// in place, and no proposal opens.
+    /// Saves an inline-form key without opening a model proposal, including the
+    /// first key. A rejected replacement leaves the previous saved key in place.
     func replaceKey(_ key: String, for account: ProviderAccount) async -> String? {
         await store(key, for: account, proposing: false)
     }

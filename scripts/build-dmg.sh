@@ -1,9 +1,11 @@
 #!/bin/bash
 #
 # build-dmg.sh — Build a universal community Whytap DMG.
-# Default: Whytap's self-signed community certificate when
-# Resources/community-signing-certificate.pem is committed, otherwise ad-hoc;
-# no Apple Developer account or notarization.
+# Default: the Developer ID certificate of the Apple team committed in
+# Resources/developer-id-team.txt, from the login keychain, without
+# notarization. Without that file: Whytap's self-signed community certificate
+# when Resources/community-signing-certificate.pem is committed, otherwise
+# ad-hoc; neither needs an Apple Developer account.
 # Developer-ID/notarization is available only with EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
 # Usage:
@@ -18,13 +20,17 @@
 #   BUILD_VERSION  monotonic    (default: 1; user-release picks next live build)
 #                  integer
 #   EXODIA_DMG_HEADLESS  1 skips optional Finder layout (default: 0)
-#   EXODIA_COMMUNITY_SIGNING  auto|adhoc (default: auto = committed certificate)
+#   EXODIA_COMMUNITY_SIGNING  auto|adhoc (default: auto = committed identity)
+#   EXODIA_DEVELOPER_ID_IDENTITY  SHA-1 of the team's Developer ID Application
+#                  identity; needed only when the keychain holds several
 #   EXODIA_COMMUNITY_SIGNING_KEY or EXODIA_COMMUNITY_SIGNING_KEY_FILE
-#                  PEM private key of that certificate (Doppler, never printed)
+#                  PEM private key of the community certificate (Doppler, never printed)
 #   EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE  test-only certificate override;
 #                  its archives cannot be published
 #
-# Community requirements: local Swift/Xcode macOS 26 SDK and build resources.
+# Community requirements: local Swift/Xcode macOS 26 SDK and build resources;
+# team signing also needs the Developer ID certificate and network access for
+# Apple's signing timestamp.
 # Optional legacy mode additionally needs TEAM_ID and ASC_API_KEY_* credentials.
 # --preflight-only validates the selected build path without building or publishing.
 #
@@ -126,15 +132,23 @@ MENU_BAR_ICON="${PROJECT_DIR}/Resources/MenuBarIconTemplate.pdf"
 # as a new app and Microphone/System Audio must be granted again. A committed
 # self-signed certificate keeps it at identifier + certificate leaf hash
 # across builds; its private key lives in Doppler like the Sparkle key.
+# WHY: .project-docs/decisions/2026-10-21-developer-id-team-signing.md
+# Without an Apple team ID the keychain still partitions every item by the
+# build's cdhash, so each update asked for every stored key again. The team
+# committed in Resources/developer-id-team.txt takes precedence: its Developer
+# ID certificate gives every build the team's requirement and keychain partition.
 COMMUNITY_SIGNING="${EXODIA_COMMUNITY_SIGNING:-auto}"
 case "${COMMUNITY_SIGNING}" in
     auto|adhoc) ;;
     *) echo "ERROR: EXODIA_COMMUNITY_SIGNING must be auto or adhoc" >&2; exit 2 ;;
 esac
 CODE_SIGNING="adhoc"
+SIGNING_TEAM_ID=""
 SIGNING_CERTIFICATE_FILE=""
 SIGNING_CERTIFICATE_SHA1=""
 EXPECTED_DESIGNATED_REQUIREMENT=""
+# Requirement for the nested code and the DMG; empty when signing ad hoc.
+SIGNER_REQUIREMENT=""
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     CODE_SIGNING="developer-id"
 elif [ "${COMMUNITY_SIGNING}" = "auto" ]; then
@@ -142,6 +156,12 @@ elif [ "${COMMUNITY_SIGNING}" = "auto" ]; then
         SIGNING_CERTIFICATE_FILE="${EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE}"
         if [ ! -f "${SIGNING_CERTIFICATE_FILE}" ]; then
             echo "ERROR: EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE is not a file: ${SIGNING_CERTIFICATE_FILE}" >&2
+            exit 1
+        fi
+    elif [ -f "${PROJECT_DIR}/Resources/developer-id-team.txt" ]; then
+        SIGNING_TEAM_ID="$(tr -d '\n\r ' < "${PROJECT_DIR}/Resources/developer-id-team.txt")"
+        if ! [[ "${SIGNING_TEAM_ID}" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "ERROR: Resources/developer-id-team.txt must hold a 10-character Apple team ID." >&2
             exit 1
         fi
     elif [ -f "${PROJECT_DIR}/Resources/community-signing-certificate.pem" ]; then
@@ -179,7 +199,7 @@ require_signature() {
 
 # The designated requirement TCC stores with each grant must be exactly the
 # pinned identity, in every architecture, for the app and its nested code.
-verify_community_signature() {
+verify_release_signature() {
     local bundle="$1"
     local actual
     actual="$(codesign -d -r- "${bundle}" 2>/dev/null | sed -n 's/^#* *designated => //p')"
@@ -200,7 +220,7 @@ verify_community_signature() {
         "Contents/Frameworks/MediaRemoteAdapter.framework" \
         "Contents/Helpers/whytap"; do
         if [ -e "${bundle}/${nested}" ]; then
-            require_signature "${bundle}/${nested}" "certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
+            require_signature "${bundle}/${nested}" "${SIGNER_REQUIREMENT}"
         fi
     done
 }
@@ -323,6 +343,16 @@ if [ -n "${SIGNING_CERTIFICATE_FILE}" ]; then
     fi
     CODE_SIGNING="certificate:${SIGNING_CERTIFICATE_SHA1}"
     EXPECTED_DESIGNATED_REQUIREMENT="identifier \"${BUNDLE_ID}\" and certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
+    SIGNER_REQUIREMENT="certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
+fi
+if [ -n "${SIGNING_TEAM_ID}" ]; then
+    # The default requirement codesign records for a Developer ID Application
+    # certificate: any certificate the team holds now or after renewal matches.
+    CODE_SIGNING="team:${SIGNING_TEAM_ID}"
+    EXPECTED_DESIGNATED_REQUIREMENT="identifier \"${BUNDLE_ID}\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ${SIGNING_TEAM_ID}"
+    SIGNER_REQUIREMENT="anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = \"${SIGNING_TEAM_ID}\""
+    # A secure timestamp keeps these signatures valid after the certificate expires.
+    SIGNING_TIMESTAMP_ARGS=(--timestamp)
 fi
 echo "▶ Code signing: ${CODE_SIGNING}"
 
@@ -336,14 +366,47 @@ if [ "${PREFLIGHT_ONLY}" -eq 1 ]; then
 import json, sys
 mode, bundle_id, version, build, code_signing, key_configured = sys.argv[1:]
 certificate = code_signing.split(":", 1)[1] if code_signing.startswith("certificate:") else None
+team = code_signing.split(":", 1)[1] if code_signing.startswith("team:") else None
 print(json.dumps({"distribution": mode, "bundle_id": bundle_id,
     "version": version, "build": int(build), "architectures": ["arm64", "x86_64"],
     "code_signing": code_signing, "signing_certificate_sha1": certificate,
+    "signing_team_id": team,
     "signing_key_configured": key_configured == "1",
-    "requires_apple_developer": mode == "developer-id",
+    "requires_apple_developer": mode == "developer-id" or team is not None,
     "requires_notarization": mode == "developer-id"}))
 PYJSON
     exit 0
+fi
+
+# Team mode signs with the team's Developer ID certificate from the login
+# keychain; find it before compiling so a missing certificate fails fast.
+if [ -n "${SIGNING_TEAM_ID}" ]; then
+    DEVELOPER_ID_IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n "s/^ *[0-9]*) \([0-9A-F]\{40\}\) \"Developer ID Application: .* (${SIGNING_TEAM_ID})\"\$/\1/p" \
+        | sort -u || true)"
+    if [ -n "${EXODIA_DEVELOPER_ID_IDENTITY:-}" ]; then
+        SIGNING_IDENTITY="$(printf '%s' "${EXODIA_DEVELOPER_ID_IDENTITY}" | tr 'a-f' 'A-F')"
+        if ! printf '%s\n' "${DEVELOPER_ID_IDENTITIES}" | grep -qx "${SIGNING_IDENTITY}"; then
+            echo "ERROR: EXODIA_DEVELOPER_ID_IDENTITY is not a valid Developer ID Application identity of team ${SIGNING_TEAM_ID}." >&2
+            exit 1
+        fi
+    else
+        case "$(printf '%s' "${DEVELOPER_ID_IDENTITIES}" | grep -c . || true)" in
+            1) SIGNING_IDENTITY="${DEVELOPER_ID_IDENTITIES}" ;;
+            0)
+                echo "ERROR: no valid Developer ID Application certificate of team ${SIGNING_TEAM_ID} in the keychain." >&2
+                echo "Install it via Xcode -> Settings -> Accounts -> Manage Certificates, or set" >&2
+                echo "EXODIA_COMMUNITY_SIGNING=adhoc for a local ad-hoc build that cannot be published." >&2
+                exit 1
+                ;;
+            *)
+                echo "ERROR: several Developer ID Application certificates of team ${SIGNING_TEAM_ID};" >&2
+                echo "choose one with EXODIA_DEVELOPER_ID_IDENTITY=<SHA-1>." >&2
+                exit 1
+                ;;
+        esac
+    fi
+    echo "▶ Developer ID identity: ${SIGNING_IDENTITY}"
 fi
 
 # Certificate mode needs the matching private key; check it before compiling.
@@ -864,8 +927,8 @@ codesign \
 
 echo "▶ Verifying signature..."
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
-if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
-    verify_community_signature "${APP_BUNDLE}"
+if [ -n "${SIGNER_REQUIREMENT}" ]; then
+    verify_release_signature "${APP_BUNDLE}"
     echo "  ok: designated requirement ${EXPECTED_DESIGNATED_REQUIREMENT}"
 fi
 otool -L "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" | grep -i sparkle || {
@@ -1171,8 +1234,8 @@ BACKGROUND_OK=0
 if [ -f "${DMG_MOUNT_POINT}/.background/background.png" ]; then
     BACKGROUND_OK=1
 fi
-if [ -n "${SIGNING_CERTIFICATE_SHA1}" ] && [ "${APP_PRESENT}" -eq 1 ]; then
-    if ! (verify_community_signature "${DMG_MOUNT_POINT}/${APP_BUNDLE_NAME}.app"); then
+if [ -n "${SIGNER_REQUIREMENT}" ] && [ "${APP_PRESENT}" -eq 1 ]; then
+    if ! (verify_release_signature "${DMG_MOUNT_POINT}/${APP_BUNDLE_NAME}.app"); then
         detach_dmg_mount "${DMG_MOUNT_POINT}" 3 >/dev/null 2>&1 || true
         exit 1
     fi
@@ -1213,9 +1276,8 @@ codesign \
     "${SIGNING_TIMESTAMP_ARGS[@]}" \
     --identifier "${BUNDLE_ID}.dmg" \
     "${DMG_PATH}"
-if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
-    require_signature "${DMG_PATH}" \
-        "identifier \"${BUNDLE_ID}.dmg\" and certificate leaf = H\"${SIGNING_CERTIFICATE_SHA1}\""
+if [ -n "${SIGNER_REQUIREMENT}" ]; then
+    require_signature "${DMG_PATH}" "identifier \"${BUNDLE_ID}.dmg\" and ${SIGNER_REQUIREMENT}"
 fi
 
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
@@ -1255,6 +1317,8 @@ fi
 echo ""
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "✓ Developer-ID signed + notarized DMG: ${DMG_PATH}"
+elif [ -n "${SIGNING_TEAM_ID}" ]; then
+    echo "✓ Community DMG (Developer ID team ${SIGNING_TEAM_ID}, not Apple-notarized): ${DMG_PATH}"
 elif [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
     echo "✓ Community DMG (Whytap certificate ${SIGNING_CERTIFICATE_SHA1}, not Apple-notarized): ${DMG_PATH}"
 else

@@ -1,9 +1,11 @@
 # Local builds and community releases
 
 Most users install a ready-made Whytap DMG and update through the island's
-**Update** button. Source builds remain available for customization. Both the
-development build and default community release pipeline work without an Apple
-Developer account, Developer ID certificate, notarization or App Store Connect key.
+**Update** button. Source builds remain available for customization. The
+development build works without an Apple Developer account. The default
+community release pipeline signs with the Developer ID certificate of Whytap's
+Apple team, without notarization or an App Store Connect key; a checkout without
+`Resources/developer-id-team.txt` signs with the community certificate or ad hoc.
 
 In [Releases](https://github.com/AbsoluteMode/whytap/releases), Whytap community
 builds use Whytap-named assets. Existing Exodia packages remain downloadable
@@ -84,8 +86,9 @@ doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-rel
 doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh
 ```
 
-Doppler supplies the community code-signing key for the build and the Sparkle key
-for publication; see below.
+The build signs with the team's Developer ID certificate from the login keychain.
+Doppler supplies the Sparkle key for publication, and the community code-signing
+key only for a build without the team file; see below.
 
 `--dry-run` reads the live feed and installed build to calculate versions, but
 does not build or upload. It is not the offline preflight. `--build-only` creates
@@ -105,8 +108,8 @@ state, then seal the completed DMG's SHA-256 and size together with its version,
 build, flavor, distribution mode, code-signing identity, bundle ID and
 architectures. Its subcommands are `capture`, `seal` and `verify`; the build and
 upload scripts call them. The upload derives the expected code-signing identity
-from the committed certificate (see below), so a local ad-hoc or test-certificate
-build cannot be published.
+from the committed team or certificate (see below), so a local ad-hoc or
+test-certificate build cannot be published.
 Keep the adjacent `<DMG>.manifest.json` with the archive;
 `--upload-only` requires both files from the same build.
 
@@ -134,14 +137,46 @@ are independent of Apple code signing and do not make a community download
 Apple-notarized. First-download Gatekeeper warnings remain; see
 [installation](install.md).
 
+### Developer ID team identity
+
+`Resources/developer-id-team.txt` commits Whytap's Apple team, `UVBKCN5PPV`.
+With that file `build-dmg.sh` signs the app, its nested code and the DMG with the
+team's Developer ID Application certificate from the login keychain, using the
+hardened runtime and Apple's secure timestamp (the build needs network access
+for it). It does not notarize: the distribution stays `community`, and the
+manifest seals `code_signing: team:UVBKCN5PPV`.
+
+Before compiling, the build looks for exactly one valid Developer ID Application
+identity of that team and stops if there is none. While a renewed certificate
+and the old one are both valid, choose one with
+`EXODIA_DEVELOPER_ID_IDENTITY=<SHA-1>`. The current certificate expires on
+2027-02-01; the account holder renews it in the same team, which changes nothing
+for installed apps.
+
+Every build gets the team's designated requirement:
+`identifier "com.rootwise.sidekey" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = UVBKCN5PPV`
+(`com.rootwise.sidekey.beta` for beta). The build checks it on the app and the
+copy in the DMG, and checks that the nested code and the DMG carry the team's
+Developer ID certificate. macOS privacy grants follow that requirement, and the
+keychain partitions items by the Apple team instead of the build's code hash, so
+neither Keychain access nor permissions are requested again after an update.
+
+The first team-signed build replaces the community certificate's requirement.
+Every install then asks once more for Microphone, System Audio Recording and the
+other granted permissions, and once for each Keychain item; choose **Always
+Allow** there. After that, updates within the team ask for nothing.
+`PackagingRebrandTests` pins the team, so another team fails the tests until the
+pin is changed on purpose. WHY:
+[Developer ID team signing](../.project-docs/decisions/2026-10-21-developer-id-team-signing.md).
+
 ### Community code-signing identity
 
-`build-dmg.sh` signs the app, its nested code and the DMG with Whytap's
-self-signed code-signing certificate, committed as
+Without the team file, `build-dmg.sh` signs the app, its nested code and the DMG
+with Whytap's self-signed code-signing certificate, committed as
 `Resources/community-signing-certificate.pem` (CN "Exodia Community Code
 Signing", SHA-1 `39da363652f6df4b52ac950998e16c98fd39bc6b`, valid until
-2056-10-11). Without that file, for example in a fork that removed it, the build
-signs ad hoc.
+2056-10-11). Without either file, for example in a fork that removed them, the
+build signs ad hoc.
 
 The certificate gives every build the same designated requirement:
 `identifier "com.rootwise.sidekey" and certificate leaf = H"<certificate SHA-1>"`
@@ -180,13 +215,13 @@ The first certificate-signed release changes the requirement of installs that
 came from an ad-hoc build, so they grant Microphone and System Audio Recording
 one last time. Sparkle accepts the change: it checks the archive's EdDSA
 signature and the new app's code signature, not its identity. Keychain prompts
-after an update are expected to stay as before, because without an Apple team
-ID the keychain ties its access to the code hash.
+after an update stayed, because without an Apple team ID the keychain ties its
+access to the code hash; the Developer ID team identity above removes them.
 
 For local experiments, `EXODIA_COMMUNITY_SIGNING=adhoc` forces ad-hoc signing
 and `EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE` signs with another certificate.
 Neither can be published: `user-release.sh` refuses them in a full run, and the
-upload rejects any archive whose identity differs from the committed
+upload rejects any archive whose identity differs from the committed team or
 certificate.
 
 `EXODIA_LEGACY_SIGNED_RELEASE=1` explicitly selects the optional Developer ID and
@@ -220,8 +255,9 @@ The package is named Whytap, while Swift targets, bundle IDs, Keychain services,
 UserDefaults keys and data directories retain compatibility names. Keep these
 stable to preserve user data. A separate fork must choose its own identities,
 Sparkle key pair, code-signing certificate and update feed; see
-[trademarks](../TRADEMARK.md). Whytap's certificate cannot sign without
-Whytap's key: delete `Resources/community-signing-certificate.pem`, then run
+[trademarks](../TRADEMARK.md). Whytap's team and certificate cannot sign without
+Whytap's keys: delete `Resources/developer-id-team.txt` (or commit the fork's own
+team) and `Resources/community-signing-certificate.pem`, then run
 `community-signing-bootstrap.sh` with the fork's own Doppler project or
 `--key-file`, or publish ad hoc.
 

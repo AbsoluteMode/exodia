@@ -124,6 +124,19 @@ final class NativeSettingsRenderTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
         host.layoutSubtreeIfNeeded()
+        if view is SettingsWindowView {
+            XCTAssertEqual(host.bounds.height, size.height, "Settings must not silently grow beyond the requested window size")
+            func scrollViews(in view: NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews(in: $0) }
+            }
+            let sidebar = try XCTUnwrap(scrollViews(in: host).first {
+                let rect = $0.convert($0.bounds, to: host)
+                return rect.minX < SettingsSidebarStyle.width && rect.width <= SettingsSidebarStyle.width
+            })
+            let document = try XCTUnwrap(sidebar.documentView)
+            XCTAssertLessThanOrEqual(document.frame.height, sidebar.contentView.bounds.height + 1,
+                                     "Every Settings section must fit without scrolling, including at minimum height")
+        }
         let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)

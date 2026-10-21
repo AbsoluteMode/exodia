@@ -20,6 +20,9 @@ struct CatalogModel: Codable, Equatable, Sendable {
     /// Deepgram: the date of the model's newest version (`version` is
     /// `YYYY-MM-DD.N`). Pickers hide a model not updated for a year.
     var updatedAt: Date?
+    /// Anthropic: released; OpenAI: created; OpenRouter: added to its catalog.
+    /// These meanings are deliberately kept distinct in the picker label.
+    var catalogDate: Date?
 
     init(
         id: String,
@@ -31,7 +34,8 @@ struct CatalogModel: Codable, Equatable, Sendable {
         supportsReasoning: Bool? = nil,
         reasoning: OpenRouterReasoningCapabilities? = nil,
         expiresAt: Date? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        catalogDate: Date? = nil
     ) {
         self.id = id
         self.uses = uses
@@ -43,6 +47,7 @@ struct CatalogModel: Codable, Equatable, Sendable {
         self.reasoning = reasoning
         self.expiresAt = expiresAt
         self.updatedAt = updatedAt
+        self.catalogDate = catalogDate
     }
 }
 
@@ -311,6 +316,7 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
             }
 
             let id: String
+            let created: ModelDateTimestamp?
             let contextLength: Int?
             let expirationDate: String?
             let supportedParameters: [String]?
@@ -320,7 +326,7 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
             let reasoning: OpenRouterReasoningCapabilities?
 
             enum CodingKeys: String, CodingKey {
-                case id
+                case id, created
                 case contextLength = "context_length"
                 case expirationDate = "expiration_date"
                 case supportedParameters = "supported_parameters"
@@ -354,7 +360,8 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
                 supportsTools: tools,
                 supportsReasoning: parameters?.contains("reasoning"),
                 reasoning: model.reasoning,
-                expiresAt: model.expirationDate.flatMap(parseDate)
+                expiresAt: model.expirationDate.flatMap(parseDate),
+                catalogDate: model.created?.date
             )
         }
     }
@@ -365,12 +372,14 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
             let maxInputTokens: Int?
             let maxTokens: Int?
             let thinking: Bool?
+            let createdAt: String?
 
             enum CodingKeys: String, CodingKey {
                 case id
                 case maxInputTokens = "max_input_tokens"
                 case maxTokens = "max_tokens"
                 case capabilities
+                case createdAt = "created_at"
             }
 
             private struct Capabilities: Decodable {
@@ -381,6 +390,7 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
             init(from decoder: Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 id = try container.decode(String.self, forKey: .id)
+                createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
                 maxInputTokens = try? container.decodeIfPresent(Int.self, forKey: .maxInputTokens)
                 maxTokens = try? container.decodeIfPresent(Int.self, forKey: .maxTokens)
                 // A capabilities object of another shape costs only the flag.
@@ -408,7 +418,8 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
                 contextLength: model.maxInputTokens,
                 maxOutputTokens: model.maxTokens,
                 supportsTools: true,
-                supportsReasoning: model.thinking
+                supportsReasoning: model.thinking,
+                catalogDate: knownModelDate(model.createdAt.flatMap(parseDate))
             )
         }
         return (models, page.hasMore ?? false, page.lastID)
@@ -426,14 +437,40 @@ struct ModelCatalogFetcher: ModelCatalogFetching {
     /// OpenAI's list has IDs, not endpoint capabilities. Offer text families;
     /// each unverified ID still passes the existing synthetic model check.
     static func parseOpenAI(_ data: Data) throws -> [CatalogModel] {
-        try decode(ServerResponse.self, from: data).data.compactMap { model in
+        struct Response: Decodable {
+            struct Model: Decodable {
+                let id: String
+                let created: ModelDateTimestamp?
+            }
+            let data: [Model]
+        }
+        return try decode(Response.self, from: data).data.compactMap { model in
             let id = model.id
             let base = id.hasPrefix("ft:") ? String(id.dropFirst(3).split(separator: ":").first ?? "") : id
             guard base.hasPrefix("gpt-") || ["o1", "o3", "o4"].contains(where: { base == $0 || base.hasPrefix($0 + "-") }),
                   !["audio", "realtime", "transcribe", "tts", "image", "search", "codex", "deep-research", "-pro", "instruct"].contains(where: base.contains)
             else { return nil }
-            return CatalogModel(id: id, uses: [.chat, .chatWithTools])
+            return CatalogModel(id: id, uses: [.chat, .chatWithTools], catalogDate: model.created?.date)
         }.sorted { $0.id < $1.id }
+    }
+
+    /// Optional metadata must never make an otherwise usable catalog fail.
+    private struct ModelDateTimestamp: Decodable {
+        let date: Date?
+
+        init(from decoder: Decoder) throws {
+            let seconds = try? decoder.singleValueContainer().decode(Double.self)
+            date = seconds.flatMap { value in
+                guard value.isFinite else { return nil }
+                return knownModelDate(Date(timeIntervalSince1970: value))
+            }
+        }
+    }
+
+    private static func knownModelDate(_ date: Date?) -> Date? {
+        // Anthropic explicitly uses the Unix epoch for an unknown release.
+        guard let date, date.timeIntervalSince1970 > 0, date < .distantFuture else { return nil }
+        return date
     }
 
     private static func parseDate(_ text: String) -> Date? {

@@ -242,7 +242,20 @@ saved once; an intentionally empty dictionary prevents old slots from returning
 after a clear, reset or backup restore. Existing legacy keys remain untouched
 for compatibility. Configuration backups include the new dictionary.
 
-WHY: [Feature hotkeys](decisions/2026-10-19-feature-hotkeys.md).
+### Assigning from a link
+
+`whytap://hotkey/<HoverTool rawValue>?keys=<modifiers>+<key>` (for example
+`option+shift+s`) proposes one tool hotkey. Modifiers are `ctrl`/`control`,
+`opt`/`option`/`alt`, `shift` and `cmd`/`command`; ⌃ or ⌥ is required so a link
+cannot take app shortcuts or typed capitals. Keys are A–Z, 0–9, US punctuation
+and F1–F20. Quit cannot be assigned. Whytap shows its own dialog with Cancel as
+the default and Assign enabled after one second; Assign saves through
+`HotkeyPreferences.apply`, like Settings Save, then shows Settings → Hotkeys.
+Keys owned by another action show a conflict and change nothing. An open
+Hotkeys pane without unsaved edits picks up the new binding.
+
+WHY: [Feature hotkeys](decisions/2026-10-19-feature-hotkeys.md),
+[Hotkeys from links](../.project-docs/decisions/2026-10-21-whytap-link-hotkeys.md).
 
 ## Meeting-record hotkey
 
@@ -299,16 +312,16 @@ Whytap take them from macOS (`BrightnessKeys`, `BrightnessKeyEventTap`).
 
 A Case Approve prompt (an AI app asks to run a command with keys of a
 project) is a card attached under the island at the island's width. Its
-answers are fixed, not rebindable, and matched by **physical key**
-(`kVK_ANSI_Y` / `kVK_ANSI_N` / `kVK_ANSI_A` / `kVK_Escape`), so they work on
-any layout (Russian «н», «т», «ф» are the same keys):
+answers are fixed, not rebindable, and matched by **physical digit key**
+(`kVK_ANSI_1` / `kVK_ANSI_2` / `kVK_ANSI_3`, or numeric keypad 1/2/3):
 
-- **Y** — allow once; **N** or **Escape** — deny; **A** — allow this app
-  this project for N minutes (the button reads «На N мин», N default 15).
+- **1** — deny; **2** — allow once; **3** — temporary Bypass for this app
+  and project for the displayed minutes (default 15).
 - `CaseApprovalKeyTap`, an active head-insert session tap for key down/up
-  (needs Accessibility), exists only while a prompt is queued. Only those
-  four keys are swallowed (with their repeats and key-up); every other key,
-  and the four with ⌘, ⌃ or ⌥, go to the app underneath.
+  (needs Accessibility), exists only while a prompt is queued. Only those bare
+  digits are swallowed (with their repeats and key-up); letters, Escape,
+  navigation, other digits and digits with ⌘, ⌃, ⌥ or ⇧ go to the app underneath.
+  This preserves normal typing and app shortcuts while a request is visible.
 - Nothing is swallowed or answered (keys and clicks) until the keyboard has
   been quiet for 300 ms: every key press while the prompt is unarmed starts
   the wait again, so ongoing typing in another app cannot answer it.
@@ -319,6 +332,8 @@ any layout (Russian «н», «т», «ф» are the same keys):
   by clicking. Key contents are never logged or stored (invariant #2).
 - The buttons show the keys with `HotkeyHintView` (`.keycaps`), and the Help
   window has one row per answer (Case — allow / deny / allow for minutes).
+  The card and Help read the same `CaseApprovalKey.keycap` values as the filter's
+  actions. WHY: [numeric approval keys](decisions/2026-10-21-case-numeric-approval.md).
 
 ## Canonical reference
 
@@ -364,12 +379,12 @@ This keeps a rebound shortcut in sync across every surface.
 
 Screenshot uses the existing optional named tool shortcut in Settings →
 Hotkeys → Tools; no new default global key is reserved. Local editor keys
-come from `ScreenshotEditorKeys.tools` and are included in Help. V selects
-and crops; A/R/O/P/T/B/M/N choose Arrow/Rectangle/Oval/Pen/Text/Blur/Highlighter/
-Numbered steps. ⌘C copies, ⌘S downloads PNG directly into Downloads, ⌘Z undoes and ⇧⌘Z redoes. Arrows move
+come from `ScreenshotEditorKeys.tools` and are included in Help.
+A/R/O/P/T/B/N choose Arrow/Rectangle/Oval/Pen/Text/Blur/Numbered steps.
+The removed Select/crop and Highlighter tools have no local shortcuts. ⌘C copies, ⌘S downloads PNG directly into Downloads, ⌘Z undoes and ⇧⌘Z redoes. Arrows move
 the crop (Shift: 10 points, Option: resize); Delete removes a selected
-annotation. Without a crop, Return copies the full display and closes; after selection
-it copies and closes, waiting for active Blur or Download to finish. Escape cancels
+annotation. Tab and Shift-Tab move between enabled toolbar/settings controls.
+Return requires an explicitly selected area, then copies it and closes, waiting for active Blur or Download to finish. Escape cancels
 the current stroke, then the capture. Native text
 entry keeps ordinary clipboard editing commands; Return commits the field and
 copies/closes the editor. See [screenshots](screenshots.md).

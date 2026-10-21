@@ -8,6 +8,7 @@ struct SettingsBackupView: View {
     @State private var showRestore: Bool
     @State private var restoreCode = ""
     @FocusState private var isRestoreCodeFocused: Bool
+    @FocusState private var isGitHubFocused: Bool
 
     init(model: BackupViewModel = .shared, showRestore: Bool = false,
          openIntegrations: @escaping () -> Void = {}) {
@@ -33,6 +34,10 @@ struct SettingsBackupView: View {
                         }
                     }
                 }
+                Text("Restore your keys, passwords and settings. Backups are encrypted on your Mac and saved in your private GitHub repository, so GitHub cannot read your secrets. Changes sync automatically after your first backup. Keep your recovery code to restore.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(MacSettingsTheme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
                 MacCard {
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(spacing: 8) {
@@ -41,9 +46,15 @@ struct SettingsBackupView: View {
                                 .foregroundStyle(model.syncState == .synced ? MacSettingsTheme.green : MacSettingsTheme.text)
                             Spacer()
                             if let url = model.githubBackupURL {
-                                IntegrationLink(title: "GitHub ↗", destination: url)
+                                Link(destination: url) {
+                                    Text("GitHub ↗").underline()
+                                        .padding(.horizontal, 6).padding(.vertical, 5)
+                                }
+                                    .buttonStyle(MacButtonInteractionStyle(focused: isGitHubFocused))
+                                    .focused($isGitHubFocused)
                                     .font(.system(size: 12))
                                     .foregroundStyle(MacSettingsTheme.text)
+                                    .help("Open your private backup repository on GitHub")
                                     .accessibilityLabel("Open backup on GitHub")
                             }
                             if !model.canUseGitHubBackup {
@@ -60,6 +71,16 @@ struct SettingsBackupView: View {
                             MacButton(title: "Restore backup", style: .default, isEnabled: actionsEnabled) {
                                 model.hideRecoveryCode(); model.clearError(); showRestore = true
                             }
+                            if model.lastBackupAt != nil {
+                                MacButton(title: model.hasPresentedRecoveryCode ? "Show recovery code" : "Save recovery code",
+                                          style: .ghost, isEnabled: !model.isBusy && !model.isRevealingRecoveryCode) {
+                                    Task { await model.showRecoveryCode() }
+                                }
+                            }
+                        }
+                        if model.syncState == .paused {
+                            Text("Automatic sync is paused. Choose Back up to resume.")
+                                .font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
                         }
                     }
                     .padding(14)

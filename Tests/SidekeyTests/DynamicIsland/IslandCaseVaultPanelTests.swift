@@ -44,20 +44,19 @@ final class IslandCaseVaultPanelTests: XCTestCase {
 
         XCTAssertTrue(source.contains("unlockIfNeededOnOpen()"))
         XCTAssertTrue(source.contains("hasTriggeredInitialUnlock"))
-        XCTAssertTrue(source.contains("Открыть ещё раз"))
-        XCTAssertTrue(source.contains("Открываю…"))
+        XCTAssertTrue(source.contains("Try again"))
+        XCTAssertTrue(source.contains("Opening…"))
         XCTAssertTrue(source.contains("Touch ID"))
         XCTAssertFalse(source.contains("openSettings"))
         XCTAssertFalse(source.contains("Settings"))
     }
 
-    func test_caseVaultPanelArmedResetWarnsAboutPermanentDeletion() throws {
+    func test_caseVaultPanelArmedResetOffersExplicitConfirmation() throws {
         let source = try caseVaultPanelSource()
 
         // Two-step confirm: armed state must flip the button label AND swap the
-        // supporting copy to spell out that the second press is irreversible.
-        XCTAssertTrue(source.contains("Подтвердить сброс"))
-        XCTAssertTrue(source.contains("Case будет удалён навсегда. Нажмите ещё раз для подтверждения."))
+        // supporting copy. CaseVaultStoreTests covers retention of the old encrypted file.
+        XCTAssertTrue(source.contains("Confirm reset"))
     }
 
     private func caseVaultPanelSource() throws -> String {

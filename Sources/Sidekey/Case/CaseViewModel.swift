@@ -135,7 +135,7 @@ enum CaseViewModelError: Error, Equatable {
     case alreadyRegistered
     case invalidAppName
     case missingApp
-    /// The app-wide mode cannot be «как у приложения».
+    /// The app-wide mode cannot be "Default".
     case invalidAppOperation
     /// Timed approval outside 1...240 minutes.
     case invalidMinutes
@@ -149,10 +149,11 @@ final class CaseViewModel: ObservableObject {
     private static let maxValueBytes = 16 * 1024
     private static let maxDescriptionCharacters = 200
     private static let maxProjectNameCharacters = CaseProject.maxNameCharacters
-    private static let sanitizedUnlockFailureMessage = "Не удалось открыть Case"
-    private static let needsResetMessage = "Не удалось открыть этот Case. Сброс создаст новый, старый файл сохранится."
-    private static let needsNewerAppMessage = "Обновите приложение, чтобы открыть этот Case."
-    private static let unlockReason = "Открыть Case"
+    private static let sanitizedUnlockFailureMessage = "Couldn’t open Case"
+    private static let needsResetMessage = "Couldn’t open this Case. Reset creates a new one and keeps the old file."
+    private static let needsNewerAppMessage = "Update Whytap to open this Case."
+    /// Touch ID reasons complete macOS's "Whytap is trying to <reason>.".
+    private static let unlockReason = "open Case"
 
     @Published private(set) var unlockState: CaseUnlockState = .locked
     @Published private(set) var rows: [CaseDisplayRow] = []
@@ -166,7 +167,7 @@ final class CaseViewModel: ObservableObject {
     @Published private(set) var isSystemInteractionActive = false
     /// Whether the first "arm" step of the two-step reset confirm has been
     /// taken. The UI calls armResetVault() on first press; resetVault() on
-    /// second. Published because the panel keys its "Подтвердить сброс" label and
+    /// second. Published because the panel keys its "Confirm reset" label and
     /// warning copy off this — arming must trigger a SwiftUI re-render.
     @Published private(set) var isResetArmed = false
     /// What the last registration change could not set up in the client
@@ -444,7 +445,7 @@ final class CaseViewModel: ObservableObject {
         guard !current.apps.contains(where: { $0.identity == identity }) else {
             throw CaseViewModelError.alreadyRegistered
         }
-        try await authenticateAccessChange(reason: "Зарегистрировать \(trimmed) в Case")
+        try await authenticateAccessChange(reason: "connect \(trimmed) to Case")
         _ = try unlockedPayload()
 
         let appID = UUID()
@@ -484,7 +485,7 @@ final class CaseViewModel: ObservableObject {
             || projectModes.contains { app.projectModes[$0.key] != .bypass && $0.value == .bypass }
             || app.projectModes.contains { $0.value == .approve && projectModes[$0.key] == nil && mode == .bypass }
         if expandsScope || opensBypass {
-            try await authenticateAccessChange(reason: "Изменить доступ \(app.displayName) к Case")
+            try await authenticateAccessChange(reason: "change Case access for \(app.displayName)")
         }
         _ = try unlockedPayload()
         try service.mutate { payload in
@@ -509,7 +510,7 @@ final class CaseViewModel: ObservableObject {
     }
 
     /// `project == nil` sets the app's mode; for a project, `mode == nil` is
-    /// «как у приложения». Touch ID only when the change opens Bypass.
+    /// "Default". Touch ID only when the change opens Bypass.
     func setMode(_ mode: CaseAccessMode?, for appID: UUID, project projectID: UUID?) async throws {
         let current = try unlockedPayload()
         guard let app = current.apps.first(where: { $0.id == appID }) else {
@@ -521,7 +522,7 @@ final class CaseViewModel: ObservableObject {
             throw CaseViewModelError.invalidAppOperation
         }
         if Self.opensBypass(app: app, mode: mode, projectID: projectID) {
-            try await authenticateAccessChange(reason: "Включить Bypass для \(app.displayName)")
+            try await authenticateAccessChange(reason: "turn on Bypass for \(app.displayName)")
             _ = try unlockedPayload()
         }
         try service.mutate { payload in
@@ -596,7 +597,7 @@ final class CaseViewModel: ObservableObject {
     }
 
     /// Only a change that can let an app run commands without asking needs
-    /// Touch ID: explicit Bypass, or «как у приложения» over an app in Bypass.
+    /// Touch ID: explicit Bypass, or "Default" over an app in Bypass.
     private static func opensBypass(app: CaseAppRegistration, mode: CaseAccessMode?, projectID: UUID?) -> Bool {
         guard let projectID else {
             return mode == .bypass && app.defaultMode != .bypass

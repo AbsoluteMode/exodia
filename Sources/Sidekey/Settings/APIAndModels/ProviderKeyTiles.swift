@@ -10,12 +10,14 @@ struct ProviderKeyTiles: View {
     }
 
     @ObservedObject var viewModel: APIAndModelsViewModel
+    let onSaveResult: (Bool) -> Void
     @State private var expanded: Target?
     @State private var busy = false
     @FocusState private var focused: Target?
 
-    init(viewModel: APIAndModelsViewModel, initiallyExpanded: Target? = nil) {
+    init(viewModel: APIAndModelsViewModel, initiallyExpanded: Target? = nil, onSaveResult: @escaping (Bool) -> Void = { _ in }) {
         self.viewModel = viewModel
+        self.onSaveResult = onSaveResult
         _expanded = State(initialValue: initiallyExpanded)
     }
 
@@ -33,7 +35,7 @@ struct ProviderKeyTiles: View {
             ForEach(items, id: \.self) { target in tile(target) }
             if let expanded {
                 ProviderKeyForm(viewModel: viewModel, kind: kind(expanded), account: account(expanded),
-                                onBusyChanged: { busy = $0 }, onClose: close)
+                                onBusyChanged: { busy = $0 }, onSaveResult: onSaveResult, onClose: close)
                     .id(expanded)
             }
         }
@@ -168,20 +170,19 @@ struct ProviderKeyForm: View {
     let kind: AIProviderKind
     let account: ProviderAccount?
     var onBusyChanged: (Bool) -> Void = { _ in }
+    var onSaveResult: (Bool) -> Void = { _ in }
     let onClose: () -> Void
 
     @State private var key = ""
     @State private var name = ""
     @State private var baseURL = ""
-    @State private var error: String?
     @State private var saving = false
-    @State private var checking = false
-    @State private var confirmingRemoval = false
     @FocusState private var keyFocused: Bool
+    @State private var keyHovered = false
 
     private var chip: KeyChip? { viewModel.chips.first { $0.account == account } }
     private var newServer: Bool { kind == .openAICompatible && account == nil }
-    private var busy: Bool { saving || checking }
+    private var busy: Bool { saving }
     private var canSave: Bool {
         !busy && (newServer ? !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                   && !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -190,61 +191,25 @@ struct ProviderKeyForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(chip?.title ?? kind.displayName)
-                .font(.system(size: 13, weight: .semibold))
-            if let chip {
-                Text(chip.statusText).font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
-            }
             if newServer {
                 MacField(placeholder: "Name", text: $name)
                 MacField(placeholder: "Base URL", text: $baseURL, monospaced: true)
-                Text("For example http://localhost:8000/v1")
-                    .font(.caption).foregroundStyle(MacSettingsTheme.text2)
             }
             SecureField(chip == nil ? (newServer ? "API key (optional)" : "API key") : "New API key", text: $key)
                 .textFieldStyle(.roundedBorder)
                 .focused($keyFocused)
+                .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(keyHovered && !busy ? MacSettingsTheme.accent.opacity(0.6) : .clear, lineWidth: 1).allowsHitTesting(false) }
+                .onHover { keyHovered = $0 }
                 .onSubmit(save)
-            Text("Checked with the provider before saving to your Mac Keychain.")
-                .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-            if let error {
-                Text(error).font(.system(size: 12)).foregroundStyle(MacSettingsTheme.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             HStack(spacing: 10) {
-                if let account, chip != nil {
-                    APIModelAction(title: "Check now", style: .default) {
-                        checking = true
-                        onBusyChanged(true)
-                        Task {
-                            await viewModel.checkKey(account)
-                            checking = false
-                            onBusyChanged(false)
-                        }
-                    }
-                    APIModelAction(title: "Remove", style: .danger) { confirmingRemoval = true }
+                APIModelAction(title: "Remove", style: .danger, isEnabled: chip != nil && account != nil) {
+                    guard let account else { return }
+                    viewModel.remove(account)
+                    onClose()
                 }
                 Spacer(minLength: 0)
-                if busy {
-                    ProgressView().controlSize(.small)
-                    Text("Checking…").font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
-                }
-                APIModelAction(title: "Cancel", style: .default, action: onClose)
-                APIModelAction(title: "Check & save", style: .primary, isEnabled: canSave, action: save)
-            }
-            if confirmingRemoval, let account {
-                let features = viewModel.featuresUsing(account)
-                Text(features.isEmpty ? "No features use this key."
-                     : "\(features.map(\.title).joined(separator: ", ")) will have no model.")
-                    .font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
-                HStack {
-                    Spacer()
-                    APIModelAction(title: "Keep key", style: .default) { confirmingRemoval = false }
-                    APIModelAction(title: "Remove key", style: .danger) {
-                        viewModel.remove(account)
-                        onClose()
-                    }
-                }
+                if busy { ProgressView().controlSize(.small).accessibilityLabel("Saving key") }
+                APIModelAction(title: "Save", style: .primary, isEnabled: canSave, action: save)
             }
         }
         .foregroundStyle(MacSettingsTheme.text)
@@ -259,23 +224,43 @@ struct ProviderKeyForm: View {
         guard canSave else { return }
         saving = true
         onBusyChanged(true)
-        error = nil
         let candidate = key
         Task {
             let failure: String?
             if newServer {
-                failure = await viewModel.addServer(name: name, baseURL: baseURL, key: candidate)
-            } else if let account, chip != nil {
+                failure = await viewModel.addServer(name: name, baseURL: baseURL, key: candidate, proposeModels: false)
+            } else if let account {
                 failure = await viewModel.replaceKey(candidate, for: account)
             } else {
                 failure = await viewModel.addKey(candidate, kind: kind)
             }
             saving = false
             onBusyChanged(false)
-            if let failure { error = failure } else {
+            onSaveResult(failure == nil)
+            if failure == nil {
                 key = ""
                 if newServer { onClose() }
             }
         }
+    }
+}
+
+struct ProviderKeySaveNotice: View {
+    let accepted: Bool
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: accepted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(accepted ? MacSettingsTheme.green : MacSettingsTheme.red)
+                .accessibilityHidden(true)
+            Text(accepted ? "Key accepted" : "Key not accepted")
+                .foregroundStyle(MacSettingsTheme.text)
+        }
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(MacSettingsTheme.bgCard, in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5) }
+        .shadow(color: .black.opacity(0.14), radius: 6, y: 2)
+        .accessibilityElement(children: .combine)
+        .allowsHitTesting(false)
     }
 }

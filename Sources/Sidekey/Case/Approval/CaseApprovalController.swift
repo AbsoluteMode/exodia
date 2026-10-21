@@ -62,7 +62,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
     /// Visible plus waiting prompts.
     var queuedCount: Int { (active == nil ? 0 : 1) + queue.count }
 
-    /// The «На N мин» answer exists only for a positive N.
+    /// The temporary Bypass answer exists only for a positive N.
     var offersTimed: Bool { (current?.timedMinutes ?? 0) > 0 }
 
     func requestApproval(_ r: CaseApprovalRequest) async -> CaseApprovalOutcome {
@@ -101,7 +101,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         selectedTimedMinutes = minutes
     }
 
-    /// Editing the duration must never consume typing as Y/N/A/Escape answers.
+    /// Editing the duration must never consume typed digits as approval answers.
     func setEditingMinutes(_ editing: Bool) {
         guard active != nil, offersTimed else { return }
         isEditingMinutes = editing
@@ -175,7 +175,7 @@ final class CaseApprovalController: ObservableObject, CaseApprovalPresenting {
         guard !isEditingMinutes else { return }
         switch key {
         case .yes: choose(.allow)
-        case .no, .escape: choose(.deny)
+        case .no: choose(.deny)
         case .timed: choose(.allowTimed(minutes: selectedTimedMinutes))
         }
     }

@@ -5,13 +5,21 @@ user's provider keys or their own OpenAI-compatible endpoints, no on-device
 models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
 OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
-no telemetry. The user-facing name is Whytap (briefly named Exodia); the module and most internal
+no telemetry. The project and product name is **Whytap**, reaffirmed by the user
+on 2026-10-21; use it in replies, current documentation and new features.
+The module and most internal
 identifiers are still `Sidekey`. The public source repository is
 `https://github.com/AbsoluteMode/whytap`. Preserve legacy bundle IDs, Keychain
 services and Application Support paths so existing settings and permissions
 survive the rename. Keep the existing community certificate, EXODIA_* release
 variables, build metadata keys and backup formats/destinations as compatibility
 contracts. WHY: .project-docs/decisions/2026-10-19-whytap-name.md
+
+The canonical primary checkout folder is named `whytap`; an older `exodia`
+path can remain a compatibility symlink for existing chats and worktrees.
+It is not the project name. Older checkouts can contain unmerged source and WIP.
+Consult current `origin/main` guidance and the primary build receipt before
+treating an older checkout's naming or feature descriptions as the current app.
 
 ## Parallel development and the shared application
 
@@ -152,13 +160,16 @@ Voice flow (Drop / dictation):
 Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop, route of agentVoice
-       -> OpenCodeProvider -> opencode run --format json --model
-          <openrouter|openai|anthropic>/<selected-model> --dir <local workspace>,
+       -> OpenCodeProvider -> opencode run --standalone --format json --model
+          <openrouter|openai|anthropic>/<selected-model>, Process cwd = local workspace,
           prompt on stdin; provider and model come from the agent feature's
           route in AIRoutingStore
        -> complete text/tool events rendered progressively in the island
-  Settings -> Agents installs an app-managed OpenCode binary from its official
-  GitHub release after SHA-256 digest verification, or locates an existing CLI.
+  Settings -> Agents installs the current stable OpenCode 2 native binary from
+  the official @opencode npm channel after SHA-512 integrity and staged version
+  verification, or locates an existing CLI. V2 uses a private standalone server;
+  supported V1 remains usable during promotion. No global tools or install scripts
+  are modified/run. WHY: .project-docs/decisions/2026-10-21-opencode-v2.md
   The agent's key and model are chosen in Settings -> API & Models (the
   Agent row: OpenRouter, OpenAI or Anthropic from their live catalogs); the Agents tab shows "Model: <provider> · <id>"
   with Change in API & Models, and Save & connect only checks the local
@@ -174,8 +185,11 @@ Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   environment variables. OpenAI uses OpenCode's own model metadata when its
   /models list omits limits. Both direct APIs serve every LLM mode. WHY:
   .project-docs/decisions/2026-10-21-provider-key-tiles.md
-  Actions are allowed by default so the agent can edit and run tests; the user
-  can turn them off in Settings. This is an action policy, not a filesystem
+  Settings -> Agents -> Bypass mode (on by default) runs file edits and
+  commands without approval through OpenCode's --auto and allow rules.
+  Off blocks file edits and commands; it does not enable approval prompts.
+  Changes apply to the next request and preserve the existing
+  agent.opencode.allowActions preference. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
   AgentDaemonWorkingDirectory uses agent/ under Application Support/whytap
   with AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
@@ -298,7 +312,10 @@ Case secrets manager:
   Connect button offers only installed OpenCode and Cursor with bundled logos,
   then grouped project scope and Accept/Bypass before registration. There is no
   arbitrary program picker; existing legacy registrations stay editable. Mode
-  explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
+  and project headings have thin horizontal dividers above their controls.
+  Selected projects has a metadata search that preserves the full draft selection;
+  All projects includes future projects, with its explanation in native help.
+  Mode explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
   on hover/keyboard focus. Search matches project and key names/descriptions,
   including empty projects and General. A matching project shows all its keys;
   key-only matches show only those keys. + Key opens a separate creation field,
@@ -329,7 +346,10 @@ Case secrets manager:
   grant after authentication/approval, the broker revalidates the current
   caller, registration and project. Revoking or rebinding a registration
   invalidates its pending requests, including queued approvals.
-  Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
+  Approve uses a non-activating island panel with bare physical digit keys
+  1 (deny), 2 (allow once), 3 (temporary Bypass), including the numeric keypad.
+  Letters, Escape, navigation and modified digits pass to the active app. WHY:
+  docs/decisions/2026-10-21-case-numeric-approval.md. It keeps
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
   grants. Temporary Bypass is a separate button beside a native editable
   1–240 minute field (default 15), without stepper arrows; the bottom row has
@@ -585,12 +605,18 @@ whytap:// links:
   are exhaustive, so a new tile or tab needs a destination to compile. The enums
   are the public registry of linkable places: never rename raw values. A link
   only shows a place: inline tools open their HoverPanelRequest, navigate tools
-  and tabs open Settings with setHighlight, Planner/Translate/Subtitles windows
-  open idle, Drop Mode/Record/Screenshot select their Toolbox pane
-  (SettingsWindowSelection.focus) and Quit highlights the Quit row. Unknown ids
+  and tabs open Settings with setHighlight, Calendar/Translate/Subtitles
+  windows open idle, Drop Mode/Record/Screenshot select their Toolbox pane
+  (SettingsWindowSelection.focus), Case opens Toolbox without selecting its
+  Touch ID pane and Quit highlights the Quit row (Invariant 7). Unknown ids
   or kinds only wake the island; other schemes, credentials, ports, empty or
-  extra segments and non-alphanumeric ids are rejected and not logged. WHY:
-  .project-docs/decisions/2026-10-20-whytap-links.md
+  extra segments and non-alphanumeric ids are rejected and not logged.
+  whytap://hotkey/<HoverTool>?keys=option+shift+s proposes a tool hotkey: the
+  key needs ⌃ or ⌥ (A-Z, 0-9, US punctuation, F1-F20), Quit is excluded and an
+  unsafe or malformed request only opens Settings -> Hotkeys. Whytap's own
+  dialog asks first; taken keys show a conflict and change nothing. WHY:
+  .project-docs/decisions/2026-10-20-whytap-links.md,
+  .project-docs/decisions/2026-10-21-whytap-link-hotkeys.md
 
 Island display selection (multi-monitor):
   IslandScreenResolver.selectDescriptor is a pure function: user preference
@@ -646,13 +672,15 @@ Update flow (download-on-action):
   activity before an app-initiated relaunch. Feed = GitHub Releases
   (`BuildConfig.appcastURL`).
   Community archives use our independent Sparkle Ed25519 signature, without
-  Apple Developer/notarization. The app is signed with Whytap's self-signed
-  community certificate when Resources/community-signing-certificate.pem is
-  committed (stable designated requirement, so TCC grants survive updates),
-  otherwise ad hoc. Source dev builds (9999 / -dev) do not start the binary
-  updater. WHY:
+  notarization. The app is signed with the Developer ID certificate of the
+  team in Resources/developer-id-team.txt (team designated requirement and
+  keychain partition, so TCC grants and Keychain access survive updates);
+  without that file with Whytap's self-signed community certificate when
+  Resources/community-signing-certificate.pem is committed, otherwise ad hoc.
+  Source dev builds (9999 / -dev) do not start the binary updater. WHY:
   .project-docs/decisions/2026-10-17-community-updates.md,
   .project-docs/decisions/2026-10-19-community-signing-identity.md,
+  .project-docs/decisions/2026-10-21-developer-id-team-signing.md,
   docs/decisions/2026-06-17-update-download-on-action.md,
   docs/decisions/2026-07-08-update-download-spinner-and-post-relaunch-updated-indicator.md
 ```
@@ -682,15 +710,17 @@ period; hover/click/keyboard focus reveals their models. One Price column
 retains explicit USD and ElevenLabs credit units, both when mixed. Each visit
 starts at This month; matching neutral From/To controls open a dismissing native
 calendar. No permanent bottom explanation or sticky text-segment highlight.
-OpenRouter response costs are reported; Soniox public hourly equivalents and
-OpenCode's computed step prices are estimates. ElevenLabs feature estimates use
-recorded audio minutes times the matching STT model's reported credits/minute,
-marked ≈ without rewriting journal amounts. A separate Reported usage section
-reads the workspace usage API for the same dates, grouped by API key/model;
-it explicitly includes other apps and is never added to feature Total. The live
-request log has no credit column; do not restore speculative request-ID billing.
-Missing rates or billing failures stay unavailable with a retryable explanation,
-never zero. Partial totals show +. No balance deltas or USD-to-credit conversion.
+OpenRouter response costs are reported. Soniox reads exact request cost_usd from
+usage logs by random client reference and historical model; missing/delayed API
+prices retain public hourly estimates marked ≈. New meeting checkpoints retain
+the same reference across retries. Exact prices upgrade estimated journal rows
+once, never duplicate or downgrade reported costs. ElevenLabs feature estimates
+use recorded audio minutes times a cached STT model credit/minute rate, marked ≈.
+Only model rates/update time are cached; rate refresh failures retain usable
+rates. First-use models without a rate stay unavailable. Recording never makes
+a billing read. No workspace Reported usage block, balance deltas, account-total
+allocation or USD-to-credit conversion. Missing prices are never zero; partial
+totals show +. OpenCode's computed step prices remain estimates.
 Tracking starts with this update; synthetic model checks are excluded. WHY:
 .project-docs/decisions/2026-10-20-feature-costs.md
 
@@ -703,11 +733,16 @@ form. Opening hints never checks balances or changes routes. WHY:
 Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
 MacPopupLabel. Name/size terms match in any order (`qwen 27`, `qwen27`), ignoring
 case/separators. Search never changes routes; explicit picks retain verification.
+Known catalog dates appear under model IDs: Anthropic Released, OpenAI Created,
+OpenRouter Added to OpenRouter. Unknown/epoch dates stay hidden. Nonempty search
+breaks equal-relevance ties by newest date, unknown last, within provider groups;
+equal dates and empty queries keep catalog order. Older caches refresh once for dates.
 Up/Down and Return choose enabled results; Escape clears then closes. Opening
 the picker refreshes stale/failed catalogs automatically; the footer has no
 Refresh models or Other model ID actions. Custom servers without /models offer
 a contextual model-name field. API keys uses square provider tiles opening an
-inline Check & save form; failed checks keep the previous key. WHY:
+inline Save/Remove form with no extra helper/status copy; a short Key accepted
+or Key not accepted notice reports the result. Failed checks keep the previous key. WHY:
 .project-docs/decisions/2026-10-21-provider-key-tiles.md;
 .project-docs/decisions/2026-10-20-model-search.md
 
@@ -878,7 +913,10 @@ token. Settings → Backup shows its synchronization status, a GitHub Releases l
 Restore backup. Back up always includes all supported user data and stored keys,
 uploads and verifies ciphertext, then displays the recovery code without a
 paste-back step. Restore takes only that code and stages every included section
-from the newest completed GitHub version without a selection/confirmation wizard.
+from the newest completed matching-key GitHub snapshot by authenticated capture
+date, without a selection/confirmation wizard. A new Mac restores existing
+copies before uploading under another recovery key. Repeat code display requires Mac
+authentication; a never-presented first code keeps a save-code status visible.
 A normal quit and relaunch applies it; the running stores are never replaced.
 There are no normal-page backup settings, management/history disclosures or
 folder picker. Existing automatic schedules, folder destinations, local encrypted
@@ -890,12 +928,40 @@ and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
 pauses and maintenance never show Backup synced. Background sync keeps the same
 recovery credential without revealing it. WHY:
 `.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
+At least hourly while running and idle, coherent content is hashed even without
+metadata changes. Only changed content creates a new encrypted archive. Calendar
+refresh-token rotation uses the same client-identity comparison as settings
+history; the next real snapshot still contains the current authorization. Capture
+precedes network transfer: retain the freshest pending automatic generation and
+a resumable upload, coalescing only superseded unprepared automatic snapshots
+after a verified replacement is durable. Network failures back off, including
+a connection check after an offline launch, while
+actual authentication/permission/public-repository failures require reconnecting.
+GitHub rate-limit deadlines are respected. A missing saved draft falls back to
+the verified snapshot tag or a new managed draft. Unchanged unsupported inputs
+retry at most hourly. Startup removes recognized abandoned scratch generations
+and unindexed transfer files, preserving indexed/resumable/recovery data and
+files protected by unreadable or explicitly parked catalogs.
+Schema 4 preserves opaque retained recording originals and repair checkpoints
+as inert files, excluding active provider jobs. Inactive configurations and
+coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application
+policies precede imports, including matching identities with different UUIDs.
+WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.
+Costs history is exported by the live AIUsageStore actor and verified with a
+strict schema/row validator. Restore retains target-only spending and the best
+known price per request ID; older archives without Costs leave it untouched.
 Short recording chunks use the archive entry ceiling rather than a separate
 4096-file limit. WHY:
 `.project-docs/decisions/2026-10-20-simple-github-backup.md`.
+Workspace traversal and change detection honor valid regular `CACHEDIR.TAG`
+markers on nested Monitor/Notify directories. Tagged runtime dependencies are
+excluded with an archive warning; nearby scripts, configuration and working
+data remain included. Names alone never exclude a directory, links are not
+followed and retained recordings never honor cache tags. WHY:
+`.project-docs/decisions/2026-10-21-backup-tagged-caches.md`.
 
 ArtifactBackupEngine receives the actual live MeetingsStore/SQLiteHistoryStore
 instances, whose export methods freeze database/sidecar generations. Restore
@@ -915,20 +981,42 @@ Guide: `docs/backup.md`. WHY:
 
 Screenshot is an action tool in hover search/Toolbox with an optional named
 hotkey. ScreenshotCoordinator explicitly captures displays with ScreenCaptureKit,
-then shows a frozen selection canvas and one horizontal native toolbar with
-inline contextual settings, Copy and Download. Return copies and closes (the full display if there is no crop), waiting for pending Blur. Download writes collision-safe timestamped
+then shows a frozen selection canvas and a wrapping native toolbar exposing all
+commands, Copy & exit with a centered Return keycap, and Download. The keycap
+uses HotkeyHintView through a click-through hosting view inside the same native
+button; its label and keycap group are centered together. Color/width and other contextual controls
+live in a separate adjacent ScreenshotToolSettings panel. Capture requests the
+filter's full Retina pixel dimensions with best resolution; PNG export keeps
+those pixels without resizing. Repeated activation
+preserves the editor; unchanged display notifications are ignored. Capture has
+its own 10-second deadline with retry, cancelled before editing. Unknown keys
+are consumed locally to avoid recursion through ScreenshotCapturePanel; Tab
+traverses both bars. Generated-fixture capture tests inject private notification
+centers and no foreground app through ScreenshotCaptureEnvironment, isolating
+real Space/display changes and focus. Production uses the system environment.
+Both bars avoid the display's top safe area. PNG stores
+Retina point scale as well as full-resolution pixels. The visible Hover state
+is held until capture freezes its pixels; Whytap surfaces are included, and no
+island wake or dismissal happens first. Only a dragged area is exported: Enter
+without selection does nothing, double-click does not select a full display,
+and the passive instruction strip is removed. Return copies the selected area
+and closes, waiting for pending Blur. Download writes collision-safe timestamped
 PNG files into Downloads and shows the actual filename without closing. Arrow,
-Shape,
-Pen, Text and Blur are immediate; secondary tools, OCR, pin, output size and
-system sharing live in More. Blur defaults to Text and numbers, including
+Shape, Pen, Text, Blur, Numbered steps and system sharing remain on the main
+toolbar. There is no Select/crop button or V shortcut; initial area selection
+remains a drag. Clicking the active tool again stops drawing and permits
+selection/annotation adjustment without an extra selector. Highlighter,
+Spotlight, Copy text, Pin above windows and
+Output size are removed, including their commands/shortcuts. Cmd-Z / Shift-Cmd-Z undo/redo screenshot edits
+from either panel; focused text fields retain native text undo. Blur defaults to Text and numbers, including
 standalone digits, using fast Vision regions plus a bounded isolated-glyph atlas
-without language correction; accurate OCR belongs to Copy text. Dark crops are
+without language correction. Dark crops are
 normalized only for detection; output keeps original colors. Each text region
 gets its own blur strength, with stronger masks applied last. Crop-first compositing, Blur and PNG export run off the UI
 thread; a shared hardware Core Image context avoids per-gesture setup.
 Entire area is the alternative. Detection is
 best-effort and the visible result must be checked. Exports flatten edited
-pixels; Copy text analyzes those pixels too. No capture is persisted before an
+pixels. No capture is persisted before an
 explicit export. Active editing/processing/dialogs block app-initiated update
 restarts; screen/Space changes and sleep cancel stale captures. This system OCR
 is separate from the removed app-managed speech/LLM models. Guide:
@@ -992,29 +1080,32 @@ python3 scripts/customize.py doctor --json
 # Explicit ad-hoc local build if no local certificate is desired
 SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 
-# Community binary: local universal build, no Apple Developer
+# Community binary: local universal build, Developer ID team signing, no notarization
 FLAVOR=prod ./scripts/user-release.sh --preflight-only
 # Commit relevant build inputs before the build; retain the adjacent DMG manifest.
-# Doppler supplies the community certificate's private key.
-doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-release.sh --build-only
+# The team's Developer ID certificate comes from the login keychain.
+FLAVOR=prod ./scripts/user-release.sh --build-only
 # Publishing also needs the project's Sparkle signing key and GitHub access
 FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
 
 Whytap stays open source and uses ready-made community builds for normal installs
-and updates. The default DMG/Sparkle pipeline builds/signs locally without Apple
-Developer membership, Developer ID or notarization; publishing requires our
-independent Sparkle Ed25519 signing key and GitHub access. Keep archive signature
-verification and app integrity checks. The former Apple-signed mode remains
-optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or
-other OS protections. First downloads may require user approval. The community
-certificate is public; its private key lives only in Doppler
+and updates. The default DMG/Sparkle pipeline builds and signs locally with the
+Developer ID certificate of the team committed in `Resources/developer-id-team.txt`
+(UVBKCN5PPV), without notarization; publishing requires our independent Sparkle
+Ed25519 signing key and GitHub access. Keep archive signature verification and
+app integrity checks. The former notarized mode remains optional behind
+`EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or other OS
+protections. First downloads may require user approval. Never change the team:
+it is in every build's designated requirement and keychain partition, so another
+team makes every install regrant macOS permissions and approve each Keychain
+item. Without the team file the build signs with the public community
+certificate, whose private key lives only in Doppler
 (`EXODIA_COMMUNITY_SIGNING_KEY`, `sidekey/dev`) and is never committed or
-printed. Never replace the certificate except for a leaked key: its SHA-1 is in
-every build's designated requirement, so a new one makes every install regrant
-macOS permissions. WHY:
+printed. WHY:
 `.project-docs/decisions/2026-10-17-community-updates.md`,
-`.project-docs/decisions/2026-10-19-community-signing-identity.md`.
+`.project-docs/decisions/2026-10-19-community-signing-identity.md`,
+`.project-docs/decisions/2026-10-21-developer-id-team-signing.md`.
 
 Release provenance is required: commit and clean Sources, Resources, Package.swift,
 Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
@@ -1075,7 +1166,7 @@ input layout, including live recording and previously saved non-English titles.
    a key for, OpenRouter's provider list (latency, throughput) for a model
    selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
-   Check now, its official GitHub release download, `google.com` opened in the
+   Check now, its official OpenCode native package downloads from the npm registry, `google.com` opened in the
    browser, the Sparkle feed on GitHub Releases, and optional encrypted backups
    to the user's own GitHub repository or selected sync folder.
    `Tests/SidekeyTests/CloudRemovalTests.swift` fails the build on any
@@ -1129,3 +1220,16 @@ input layout, including live recording and previously saved non-English titles.
    deliberate extraction by an approved command. Revalidate current caller
    authority after approval/authentication before granting or releasing
    values. WHY: docs/decisions/2026-10-19-case-secrets-broker.md
+7. **whytap:// links show, or propose an allowlisted change.** Any web page
+   can open a link, so a link never records, captures, toggles, copies,
+   pastes, authenticates (no Touch ID: Case links stop at Toolbox) or quits,
+   and reports nothing back. Every `WhytapLinkDestination` is classified
+   show-only in `WhytapLinkTests`; the handler is source-checked for action
+   calls. A change is a `WhytapLinkChange` case, applied only after the
+   user's Assign in `WhytapLinkConfirmation` (Cancel default, Assign armed
+   after 1 s) through the same validated path as Settings. Today only tool
+   hotkeys with ⌃ or ⌥ (not Quit). Never allow a change that reads or
+   exports data (keys, Case, meetings, clipboard, backups) or changes where
+   data goes (provider routes/endpoints, notification scripts, Monitor,
+   backup destination). WHY: .project-docs/decisions/2026-10-20-whytap-links.md,
+   .project-docs/decisions/2026-10-21-whytap-link-hotkeys.md

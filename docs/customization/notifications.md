@@ -150,3 +150,18 @@ notification history. Unreadable existing history is preserved rather than reset
 Notify workers receive `WHYTAP_NOTIFY_SOURCE` and `WHYTAP_NOTIFY_DIRECTORY`.
 The original `EXODIA_NOTIFY_SOURCE` and `EXODIA_NOTIFY_DIRECTORY` aliases remain
 available to existing local scripts.
+
+## Portable backup
+
+Keep worker files inside the owned notification directory as regular files.
+Portable backup accepts printable ASCII names up to 120 bytes, without spaces,
+colons, separators or a leading dot, and up to five nested directory levels.
+Unsupported files fail the backup with their relative path; they are not
+silently omitted. Keep secrets in the credential store rather than `.env` files.
+
+Rebuildable dependency directories may contain a regular `CACHEDIR.TAG` whose
+first 43 bytes are `Signature: 8a477f597d28d172789f06886806bc55`.
+Backup excludes that directory in full and records a warning. Keep scripts,
+dependency descriptors and persistent data outside it. A name such as `venv`
+does not exclude anything by itself. Recreate dependencies and review executable
+permissions and machine-specific paths before enabling the restored source.

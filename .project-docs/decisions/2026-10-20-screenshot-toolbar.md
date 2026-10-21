@@ -6,8 +6,26 @@ summary: Explicit local capture opens a native toolbar with Blur defaulting to t
 status: confirmed
 tags: [screenshots, capture, blur, numbers, vision, toolbar, privacy]
 canonical_for: [screenshot-editor, screenshot-text-number-blur]
-verified_at: 2026-10-20
+verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 the user requested highlighting Enter within Copy and exit, suggesting a square keycap or vertical separator, and centering it.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 the user removed Select/crop, Highlighter, Spotlight, Copy text, Pin above windows and Output size, retaining initial area selection, Arrow, Shape, Pen, Text, Blur, Numbered steps, Share and the existing finish/edit actions.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 the user requested preserving Whytap Hover in the frozen capture, area-only output without full-display Enter/double-click actions, and removal of the initial instruction strip.
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
+    reference: On 2026-10-21 the user requested visible Copy and exit with Enter, every tool on the main toolbar without More, separate tool settings, Cmd-Z editing undo, and reported intermittent Screenshot activation and spontaneous editor dismissal.
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Sources/Sidekey/Screenshots/ScreenshotCoordinator.swift
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Tests/SidekeyTests/Screenshots/ScreenshotReliabilityTests.swift
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-20 the user requested a single toolbar row, faster and cleaner Blur, Copy plus direct Download with filename confirmation, and Enter to copy and close.
     confirmed_at: 2026-10-20
@@ -110,10 +128,91 @@ strength follows text height, with padded, subtly rounded text edges; Entire are
 covers its full rectangle. Geometry and pixel regressions preserve Retina/crop
 alignment and background pixels. See [interface decisions](../../docs/DESIGN.md).
 
+# 2026-10-21 revision
+
+The user replaced inline settings and More with an always-visible tool/action
+bar and a separate settings accessory. Copy is visibly named Copy & exit with
+its Return glyph; Enter is explained in the canvas hint. Cmd-Z and Shift-Cmd-Z
+route edits from either floating panel while text fields retain native editing.
+Narrow screens wrap the controls without hiding commands. Native focus and
+pressed behavior remain, with explicit enabled-only hover feedback.
+
+Capture now requests filter content points multiplied by its pixel scale and
+best capture resolution. Legacy display-width functions returned 1728×1117 on
+the affected 2× Retina display rather than its 3456×2234 source pixels. PNG is
+lossless, but could not recover that lost capture detail. Export preserves the
+captured size; the subsequent tool-reduction revision removes resizing.
+
+Repeated activation no longer toggles an in-flight or edited capture off.
+Display-parameter notifications cancel only after a real display layout/scale
+change. Space changes retain the stale-capture guard. Static lifecycle/reason
+logs aid follow-up without screen pixels, text, paths or keys. An existing responder recursion is independently confirmed in a local crash
+report: unknown keys cycled from canvas to its forwarding panel and back until
+stack overflow. Unknown editor keys now terminate locally; Tab explicitly
+advances keyboard focus across both bars. A regression sends Space, Tab and
+unassigned letters/numbers through all three panels. A capture-only ten-second
+deadline releases activity and permits retry even when the capture provider
+ignores cancellation; it never times out an editor. Both bars observe the
+screen's notch safe area. Retina PNG records its logical point size alongside
+full pixel dimensions. The primary action draws its accent independently of
+which screenshot panel is key. Other spontaneous-dismissal causes and physical
+hotkey reliability remain installed-app acceptance.
+
+# Visible-state freeze and area-only revision
+
+Freeze the visible screen, including Whytap Hover, before presenting editor
+windows. A capture-preparation signal holds the existing mouse-expansion latch
+and defers its expiry/dismissal. Screenshot activation does not wake the island,
+release search focus or clear a query first. Release the hold after all source
+frames have been captured, or on cancellation/failure/timeout. No continuous
+screen stream or background capture is introduced.
+
+Export requires a region the user dragged. Remove full-display Enter and
+double-click selection, its accessibility command and Help row, and the passive
+instruction strip. Enter with no crop is inert. Keep transient processing,
+error and download confirmation states. This supersedes the earlier full-display
+and pre-capture island-exclusion behavior.
+
+# Tool-reduction revision — 2026-10-21
+
+After reviewing each action, the user chose Arrow, Shape, Pen, Text, Blur,
+Numbered steps and Share, plus Undo/Redo, Download, Copy & exit and Cancel.
+Remove the Select/crop button and V shortcut, Highlighter and M shortcut,
+Spotlight, Copy text, Pin above windows and Output size. Initial area selection
+still uses a drag, with the existing selection geometry and keyboard adjustment.
+Clicking the active annotation tool again stops drawing, restoring direct
+selection/annotation adjustment without a Select control. No replacement menu or hidden invocation retains the removed actions.
+
+The reduced editor exports the original Retina pixels without resizing. Keep
+fast local text/number detection for Blur. Accurate OCR remains only in tests
+as an independent oracle for blur/orientation regressions; its copying action
+and runtime recognition path are removed. This supersedes the earlier expanded
+tool catalog and the copying/pinning/resizing behavior in this record.
+
+# Capture-test isolation
+
+A 21 October focused run received a real `space_changed` cancellation before
+its fake provider began; static lifecycle diagnostics confirmed the source.
+The deadline/retry assertions consequently failed despite unchanged tool code.
+Tests now inject private application/workspace notification centers and no
+foreground application through ScreenshotCaptureEnvironment. They still post
+unchanged-display and Space-change events explicitly, verifying the real
+cancellation handlers while avoiding interference with the user's desktop.
+Production defaults retain the system centers and previous-app focus behavior.
+
+# Return-key presentation revision
+
+Copy & exit keeps one native button and one click/focus target. Its Return
+symbol uses the shared HotkeyHintView keycap style in a click-through hosting
+view, separated from the label by an 8-point gap. Center the label/keycap group
+horizontally and both elements vertically; disabled state dims the hint with
+the button. This distinguishes the finish shortcut without adding a second
+action or changing Return behavior.
+
 # Consequences
 
 Screen Recording is requested on invocation. Content stays in memory until
-explicit copy/download/pin/system share. System OCR adds no app-managed speech/LLM
+explicit copy/download/system share. System OCR adds no app-managed speech/LLM
 weights or provider traffic. The editor blocks update restarts. Screen/Space
 changes and sleep cancel stale captures. Real permission/capture/dialog flows
 remain installed-app acceptance checks.

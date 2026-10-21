@@ -19,7 +19,7 @@ related: [decisions/2026-10-19-planner.md, decisions/2026-10-20-backup-auto-sync
 
 # Whytap
 
-Whytap (briefly named Exodia) provides native macOS dictation, meeting notes, and integration with
+Whytap provides native macOS dictation, meeting notes, and integration with
 local agent CLIs. Speech and text run only on the user's provider keys (BYOK) or their own
 OpenAI-compatible endpoints; on-device models were
 [removed](decisions/2026-10-18-remove-local-models.md). Architecture and build instructions live in `agent-context.md` and
@@ -40,7 +40,7 @@ its neutral workspace and sessions.
 
 Coding harnesses share the [source customization workflow](../docs/customization/README.md).
 
-Distribution: [community binaries and updates without Apple Developer](decisions/2026-10-17-community-updates.md), with source builds retained for customizations.
+Distribution: [community binaries and updates](decisions/2026-10-17-community-updates.md), signed with the Developer ID team and not notarized, with source builds retained for customizations.
 The earlier [Apple-notarized DMG policy](decisions/2026-09-10-public-installation.md)
 is historical; runtime installation and resource checks remain current.
 
@@ -68,7 +68,7 @@ Rationale: [one working app](decisions/2026-10-19-shared-working-app.md).
 Permission and hotkey reliability: [audit and implementation acceptance](bugs/2026-10-19-permission-stability-audit.md).
 Input language: [provider transport audit and Deepgram corrections](bugs/2026-10-19-input-language-audit.md).
 
-Community signing: [one self-signed community certificate](decisions/2026-10-19-community-signing-identity.md).
+Release signing: [the Developer ID team certificate](decisions/2026-10-21-developer-id-team-signing.md), with [the self-signed community certificate](decisions/2026-10-19-community-signing-identity.md) as the fallback without the team file.
 Application ownership: [one running copy](decisions/2026-10-19-one-running-copy.md).
 
 [Notify](decisions/2026-10-19-script-notifications.md) restores left-side pills and agent-configured local script sources.

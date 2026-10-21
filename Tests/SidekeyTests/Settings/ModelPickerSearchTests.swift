@@ -76,6 +76,33 @@ final class ModelPickerSearchTests: XCTestCase {
         XCTAssertEqual(ModelPickerSearch.results(in: sections, query: "server qwen 27").map(\.account), [server])
     }
 
+    func testSearchUsesNewestDateOnlyForEqualRelevanceWithUnknownDatesLast() {
+        func dated(_ id: String, _ seconds: TimeInterval?) -> PickerOption {
+            PickerOption(model: id, state: .new, isSelected: false, hint: nil,
+                         catalogDate: seconds.map { Date(timeIntervalSince1970: $0) })
+        }
+        let options = [
+            dated("qwen/qwen3-27b-unknown-a", nil),
+            dated("qwen/qwen3-27b-old", 1_700_000_000),
+            dated("qwen/qwen3-27b-new-a", 1_790_000_000),
+            dated("qwen/qwen3-27b-new-b", 1_790_000_000),
+            dated("qwen/qwen-27b", 1_600_000_000),
+            dated("qwen/qwen3-27b-unknown-b", nil),
+        ]
+        let section = PickerSection(account: .openRouter, title: "OpenRouter", options: options, refreshFailed: false)
+        XCTAssertEqual(ModelPickerSearch.results(in: [section], query: "qwen 27").map(\.option.model), [
+            "qwen/qwen-27b", // Better phrase match wins despite its older date.
+            "qwen/qwen3-27b-new-a", "qwen/qwen3-27b-new-b", "qwen/qwen3-27b-old",
+            "qwen/qwen3-27b-unknown-a", "qwen/qwen3-27b-unknown-b",
+        ])
+        XCTAssertEqual(ModelPickerSearch.results(in: [section], query: " ").map(\.option.model), options.map(\.model))
+        let otherProvider = PickerSection(account: .anthropic, title: "Anthropic", options: [
+            dated("qwen/qwen3-27b-newest", 1_800_000_000),
+        ], refreshFailed: false)
+        XCTAssertEqual(ModelPickerSearch.results(in: [section, otherProvider], query: "qwen 27").last?.account,
+                       .anthropic, "Provider grouping stays unchanged")
+    }
+
     func testNavigationSkipsUnsupportedRowsAndHandlesFilterChangesAndBounds() {
         let matches = ModelPickerSearch.results(in: sections, query: "qwen 27")
         let first = matches[0].id

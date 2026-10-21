@@ -12,6 +12,7 @@ struct IslandCaseAccessPanel: View {
     @State private var isLoadingClients = true
     @State private var lastError: String?
     @State private var isBusy = false
+    @State private var projectQuery = ""
 
     init(viewModel: CaseViewModel, onBack: @escaping () -> Void,
          appID: UUID? = nil) {
@@ -22,8 +23,8 @@ struct IslandCaseAccessPanel: View {
         })
     }
 
-    static let sharedTerminalHint = "Bypass действует и для ваших команд в этом терминале."
-    static let inheritLabel = "По умолчанию"
+    static let sharedTerminalHint = "Bypass also applies to your own commands in this terminal."
+    static let inheritLabel = "Default"
 
     var body: some View {
         VStack(spacing: 7) {
@@ -31,7 +32,7 @@ struct IslandCaseAccessPanel: View {
             if let lastError { messageLine(lastError) }
             ForEach(viewModel.clientSetupProblems, id: \.self) { messageLine($0) }
             if !viewModel.clientSetupProblems.isEmpty, let id = draft?.appID {
-                Button("Повторить настройку агента") {
+                Button("Retry agent setup") {
                     perform { _ = try await viewModel.retryClientSetup(for: id) }
                 }
                 .buttonStyle(CaseAccessButtonStyle())
@@ -73,7 +74,7 @@ struct IslandCaseAccessPanel: View {
             }
             .buttonStyle(CaseAccessButtonStyle())
             .disabled(isBusy)
-            .accessibilityLabel(draft?.appID == nil && draft != nil ? "Назад к агентам" : "Назад к ключам")
+            .accessibilityLabel(draft?.appID == nil && draft != nil ? "Back to agents" : "Back to keys")
             .accessibilityIdentifier("case.access.back")
             if let draft {
                 CaseAppBrandIcon(identity: draft.identity, size: 17, color: .white.opacity(0.92))
@@ -101,10 +102,10 @@ struct IslandCaseAccessPanel: View {
         VStack(spacing: 7) {
             ScrollView {
                 VStack(spacing: 8) {
-                    CaseAccessSection(title: "Режим доступа") {
+                    CaseAccessSection(title: "Access mode", showsDivider: true) {
                         HStack(spacing: 5) {
-                            modeButton("Accept", detail: "Спрашивать", mode: .approve)
-                            modeButton("Bypass", detail: "Без запроса", mode: .bypass)
+                            modeButton("Accept", detail: "Ask first", mode: .approve)
+                            modeButton("Bypass", detail: "No prompt", mode: .bypass)
                         }
                         if let draft, Self.showsSharedTerminalHint(app: draft.registration, known: CaseKnownClient(identity: draft.identity)) {
                             Label(Self.sharedTerminalHint, systemImage: "exclamationmark.shield")
@@ -113,24 +114,22 @@ struct IslandCaseAccessPanel: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    CaseAccessSection(title: "Проекты") {
+                    CaseAccessSection(title: "Projects", showsDivider: true) {
                         HStack(spacing: 5) {
-                            scopeButton("Все проекты", all: true)
-                            scopeButton("Выбранные", all: false)
+                            scopeButton("All projects", all: true)
+                            scopeButton("Selected projects", all: false)
                         }
-                        if draft?.allProjects == true {
-                            caption("Текущие и новые проекты")
-                        } else {
+                        if draft?.allProjects == false {
                             if draft?.projectIDs.isEmpty == true {
-                                caption("Выберите проекты для доступа")
+                                caption("Choose the projects this agent can use")
                             }
-                            LazyVStack(spacing: 2) {
-                                ForEach(viewModel.accessProjects) { project in projectChoice(project) }
-                            }
+                            CaseAccessProjectPicker(projects: viewModel.accessProjects, query: $projectQuery,
+                                                    selection: Binding(get: { draft?.projectIDs ?? [] },
+                                                                       set: { draft?.projectIDs = $0 }))
                         }
                     }
                     if let draft, !draft.projectModes.isEmpty {
-                        CaseAccessSection(title: "Отдельные режимы") {
+                        CaseAccessSection(title: "Per-project modes") {
                             ForEach(viewModel.accessProjects.filter { draft.projectModes[$0.id] != nil }) { project in
                                 HStack {
                                     Text(project.name).lineLimit(1).truncationMode(.middle)
@@ -156,7 +155,7 @@ struct IslandCaseAccessPanel: View {
             .disabled(isBusy)
             HStack(spacing: 8) {
                 if let appID = draft?.appID {
-                    Button("Отключить") {
+                    Button("Disconnect") {
                         perform {
                             _ = try await viewModel.unregisterApp(appID)
                             onBack()
@@ -170,7 +169,7 @@ struct IslandCaseAccessPanel: View {
                 Button(action: save) {
                     HStack(spacing: 5) {
                         Image(systemName: "touchid").accessibilityHidden(true)
-                        Text(draft?.appID == nil ? "Connect" : "Сохранить")
+                        Text(draft?.appID == nil ? "Connect" : "Save")
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -179,8 +178,8 @@ struct IslandCaseAccessPanel: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(CaseAccessButtonStyle(cornerRadius: 14))
-                .help("Подключение, расширение доступа и Bypass подтверждаются через Touch ID")
-                .accessibilityHint("Подключение, расширение доступа и Bypass подтверждаются через Touch ID")
+                .help("Connecting, wider access and Bypass need Touch ID")
+                .accessibilityHint("Connecting, wider access and Bypass need Touch ID")
                 .accessibilityIdentifier("case.access.save")
             }
             .font(.system(size: 11, weight: .medium))
@@ -223,29 +222,7 @@ struct IslandCaseAccessPanel: View {
         .buttonStyle(CaseAccessButtonStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(all ? "case.access.scope.all" : "case.access.scope.selected")
-    }
-
-    private func projectChoice(_ project: CaseProject) -> some View {
-        let selected = draft?.projectIDs.contains(project.id) == true
-        return Button {
-            if selected { draft?.projectIDs.remove(project.id) }
-            else { draft?.projectIDs.insert(project.id) }
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: selected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(selected ? Color.blue : .white.opacity(0.7))
-                Text(project.name).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 0)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.92))
-            .padding(.horizontal, 4)
-            .frame(height: 28)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(CaseAccessButtonStyle())
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier("case.access.scope.project.\(project.id)")
+        .help(all ? "Access to all current and future projects" : "Choose which projects to allow")
     }
 
     private func caption(_ text: String) -> some View {
@@ -295,13 +272,13 @@ struct IslandCaseAccessPanel: View {
 
     static func message(for error: Error) -> String {
         switch error as? CaseViewModelError {
-        case .authenticationFailed: return "Touch ID не подтверждён — ничего не изменено"
-        case .alreadyRegistered: return "Это приложение уже зарегистрировано"
-        case .invalidAppName: return "Эту программу нельзя зарегистрировать"
-        case .invalidMinutes: return "Разрешение: от 1 до 240 минут"
-        case .locked: return "Case заблокирован"
-        case .missingApp, .missingProject: return "Уже удалено"
-        default: return "Не удалось сохранить"
+        case .authenticationFailed: return "Touch ID not confirmed — nothing changed"
+        case .alreadyRegistered: return "This app is already connected"
+        case .invalidAppName: return "This app can’t be connected"
+        case .invalidMinutes: return "Use 1 to 240 minutes"
+        case .locked: return "Case is locked"
+        case .missingApp, .missingProject: return "Already removed"
+        default: return "Couldn’t save"
         }
     }
 }
@@ -309,6 +286,7 @@ struct IslandCaseAccessPanel: View {
 /// Sections contain their own explanations; no loose footnotes between controls.
 private struct CaseAccessSection<Content: View>: View {
     let title: String
+    var showsDivider = false
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -316,11 +294,116 @@ private struct CaseAccessSection<Content: View>: View {
             Text(title)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.8))
+            if showsDivider {
+                Rectangle().fill(.white.opacity(0.14)).frame(height: 1)
+                    .accessibilityHidden(true)
+            }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.06)))
+    }
+}
+
+/// Filtering changes only the visible rows, never the saved/draft project scope.
+struct CaseAccessProjectPicker: View {
+    let projects: [CaseProject]
+    @Binding var query: String
+    @Binding var selection: Set<UUID>
+    @FocusState private var searchFocused: Bool
+    @State private var searchHovered = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        let matches = Self.filteredProjects(projects, query: query)
+        VStack(alignment: .leading, spacing: 5) {
+            searchField
+            if matches.isEmpty {
+                Text("No matching projects")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .padding(.vertical, 5)
+            } else {
+                LazyVStack(spacing: 2) {
+                    ForEach(matches) { project in projectChoice(project) }
+                }
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.white.opacity(0.7))
+                .accessibilityHidden(true)
+            TextField("", text: $query, prompt: Text("Search projects").foregroundColor(.white.opacity(0.7)))
+                .textFieldStyle(.plain)
+                .foregroundStyle(.white.opacity(0.92))
+                .focused($searchFocused)
+                .accessibilityLabel("Search projects")
+                .accessibilityIdentifier("case.access.scope.search")
+            Button {
+                query = ""
+                searchFocused = true
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.white.opacity(0.78))
+                    .frame(width: 20, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(CaseAccessButtonStyle())
+            .disabled(query.isEmpty)
+            .opacity(query.isEmpty ? 0 : 1)
+            .accessibilityHidden(query.isEmpty)
+            .accessibilityLabel("Clear project search")
+        }
+        .font(.system(size: 10.5, weight: .medium))
+        .padding(.leading, 8)
+        .padding(.trailing, 3)
+        .frame(height: 28)
+        .background(RoundedRectangle(cornerRadius: 7).fill(.white.opacity(isEnabled && searchHovered ? 0.14 : 0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 7)
+            .strokeBorder(.white.opacity(isEnabled && searchFocused ? 0.8 : 0.4), lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { if isEnabled { searchFocused = true } }
+        .onHover { searchHovered = $0 }
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    private func projectChoice(_ project: CaseProject) -> some View {
+        let selected = selection.contains(project.id)
+        return Button {
+            if selected { selection.remove(project.id) }
+            else { selection.insert(project.id) }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: selected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(selected ? Color.blue : .white.opacity(0.7))
+                Text(project.name).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 4)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CaseAccessButtonStyle())
+        .help(project.name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("case.access.scope.project.\(project.id)")
+    }
+
+    static func filteredProjects(_ projects: [CaseProject], query: String) -> [CaseProject] {
+        let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !terms.isEmpty else { return projects }
+        return projects.filter { project in
+            let text = project.name + " " + project.description
+            return terms.allSatisfy {
+                text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) != nil
+            }
+        }
     }
 }
 
@@ -336,16 +419,16 @@ struct IslandCaseClientPicker: View {
                 if isLoading {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("Ищу агентов…").font(.system(size: 11))
+                        Text("Looking for agents…").font(.system(size: 11))
                         Spacer(minLength: 0)
                     }
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.06)))
                 } else if clients.isEmpty {
-                    CaseAccessSection(title: hasConnectedClients ? "Агенты уже подключены" : "Агенты не найдены") {
+                    CaseAccessSection(title: hasConnectedClients ? "Agents already connected" : "No agents found") {
                         Text(hasConnectedClients
-                             ? "Нажмите логотип агента в Case, чтобы изменить его права."
-                             : "Установите OpenCode или Cursor, затем откройте Connect снова.")
+                             ? "Click an agent’s logo in Case to change its access."
+                             : "Install OpenCode or Cursor, then open Connect again.")
                             .font(.system(size: 11))
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -384,8 +467,8 @@ private struct CaseClientChoice: View {
         }
         .buttonStyle(CaseAccessButtonStyle())
         .focused($focused)
-        .help("Выбрать проекты и режим доступа для \(client.displayName)")
-        .accessibilityLabel("\(client.displayName), настроить доступ к ключам")
+        .help("Choose projects and access mode for \(client.displayName)")
+        .accessibilityLabel("\(client.displayName), set up key access")
         .accessibilityIdentifier("case.connect.\(client.rawValue)")
     }
 }

@@ -1,7 +1,7 @@
 ---
 id: exodia-shared-working-app-2026-10-19
 type: decision
-title: Parallel feature sessions feed one identifiable working Exodia
+title: Parallel feature sessions feed one identifiable working Whytap
 summary: Keep the installed production identity, integrate checked features through main under one writer and report the actual running build and its acceptance checklist.
 status: confirmed
 tags: [development, agents, integration, main, identity, worktrees]
@@ -23,7 +23,7 @@ sources:
   - type: trace
     reference: Claude Code consultation f5197223-847c-4567-8918-e8b07c33ab93 and reconciliation 72df1dc1-548c-4438-90ff-97b4192103e2; Gemini conversation 2cc05a31-563b-4135-96b7-3705be1e405e, explicit agreement recovered despite interrupted-stream job status.
     confirmed_at: 2026-10-19
-related: [2026-10-19-one-running-copy.md, ../project.md, ../processes/shared-app-development.md, 2026-10-19-build-queue.md, 2026-10-20-meeting-aware-builder-refresh.md]
+related: [2026-10-19-whytap-name.md, 2026-10-19-one-running-copy.md, ../project.md, ../processes/shared-app-development.md, 2026-10-19-build-queue.md, 2026-10-20-meeting-aware-builder-refresh.md]
 ---
 
 # One shared working application
@@ -49,7 +49,7 @@ Switching the user's working app to beta would introduce another identity.
 
 ## Decision and rationale
 
-Use the third alternative. Keep `/Applications/Exodia.app` with its production
+Use the third alternative. Keep `/Applications/Whytap.app` with its production
 identity and existing storage/signing identity. Ready features enter main
 through reviewed, locally validated PRs. Any session can become integrator,
 but shared refs, receipts and app replacement have one repository-wide writer.
@@ -104,6 +104,9 @@ release provenance/signature/acceptance gates keep their existing contracts.
 The later [build queue decision](2026-10-19-build-queue.md) replaces permission
 for every feature session to become integrator with one designated builder and
 automatic FIFO submissions. The remaining shared-app safeguards still apply.
+
+The [Whytap naming decision](2026-10-19-whytap-name.md) establishes the current
+product name and installed app path while retaining technical compatibility.
 
 The [2026-10-20 meeting-aware refresh decision](2026-10-20-meeting-aware-builder-refresh.md)
 replaces per-build saved/idle confirmation with standing permission for normal

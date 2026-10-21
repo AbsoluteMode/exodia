@@ -55,11 +55,28 @@ enum AIUsageRecorder {
     static func enable() { lock.withLock { enabled = true } }
     static func record(_ event: AIUsageEvent) {
         guard lock.withLock({ enabled }) else { return }
-        Task { await AIUsageStore.shared.record(event) }
+        Task {
+            let priced = await ElevenLabsCreditUsage.shared.estimates(for: [event], refresh: false)
+            await AIUsageStore.shared.record(priced[0])
+        }
     }
-    static func billingUsage(in interval: DateInterval) async throws -> ElevenLabsBillingUsage? {
-        guard lock.withLock({ enabled }) else { return nil }
-        return try await ElevenLabsCreditUsage.shared.usage(in: interval)
+    struct Prices {
+        var events: [AIUsageEvent]
+        var sonioxUnavailable = false
+        var elevenLabsRateUnavailable = false
+    }
+    static func speechPrices(_ events: [AIUsageEvent]) async -> Prices {
+        guard lock.withLock({ enabled }) else { return Prices(events: events) }
+        var result = Prices(events: await ElevenLabsCreditUsage.shared.estimates(for: events))
+        result.elevenLabsRateUnavailable = result.events.contains {
+            $0.context.account == .elevenLabs && $0.amount == nil && $0.audioSeconds > 0
+        }
+        do {
+            let reported = try await SonioxUsagePrices.shared.prices(for: result.events)
+            let byID = Dictionary(uniqueKeysWithValues: reported.map { ($0.id, $0) })
+            result.events = result.events.map { byID[$0.id] ?? $0 }
+        } catch { result.sonioxUnavailable = true }
+        return result
     }
 }
 
@@ -104,6 +121,50 @@ actor AIUsageStore {
         return handle
     }
 
+    /// One rule for every writer, including a restore merging this Mac's
+    /// earlier rows: the same ID never duplicates, and a known price only
+    /// replaces a missing one, a reported price only an estimate.
+    static let upsertSQL = """
+        INSERT INTO usage_events VALUES (?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, basis=excluded.basis
+        WHERE ((usage_events.amount IS NULL AND excluded.amount IS NOT NULL)
+               OR (usage_events.basis='estimated' AND excluded.basis='reported'))
+          AND usage_events.feature=excluded.feature AND usage_events.account=excluded.account
+          AND usage_events.model=excluded.model AND usage_events.currency=excluded.currency
+        """
+
+    /// Coherent backup snapshot taken on this actor's own connection, so it
+    /// is serialized with every insert and price upgrade; the live file and
+    /// its rollback journal are never copied. Returns nil when no journal
+    /// exists and creates none. Retry pending rows before the snapshot; a
+    /// failure keeps them pending and refuses an incomplete backup.
+    /// WHY: .project-docs/decisions/2026-10-21-backup-reliability.md
+    func exportArtifactGeneration(into directory: URL) throws -> URL? {
+        while let event = pending.first {
+            try insert(event)
+            pending.removeFirst()
+        }
+        guard database != nil || FileManager.default.fileExists(atPath: url.path) else { return nil }
+        try ConfigBackupFiles.checkDirectory(url.deletingLastPathComponent())
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else {
+            throw ArtifactBackupError.invalidContent(ArtifactUsageBackup.label)
+        }
+        let db = try open()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let snapshot = directory.appendingPathComponent(ArtifactUsageBackup.fileName, isDirectory: false)
+        if FileManager.default.fileExists(atPath: snapshot.path) { try FileManager.default.removeItem(at: snapshot) }
+        let quoted = snapshot.path.replacingOccurrences(of: "'", with: "''")
+        guard sqlite3_exec(db, "VACUUM INTO '\(quoted)'", nil, nil, nil) == SQLITE_OK else {
+            try? FileManager.default.removeItem(at: snapshot)
+            throw AIUsageStoreError.unavailable
+        }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: snapshot.path)
+        _ = try ArtifactUsageBackup.validate(database: snapshot)
+        return snapshot
+    }
+
     func record(_ event: AIUsageEvent) async {
         do { try insert(event) }
         catch { if !pending.contains(where: { $0.id == event.id }) { pending.append(event) } }
@@ -122,13 +183,7 @@ actor AIUsageStore {
         }
         let db = try open()
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, """
-            INSERT INTO usage_events VALUES (?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, basis=excluded.basis
-            WHERE usage_events.amount IS NULL AND excluded.amount IS NOT NULL
-              AND usage_events.feature=excluded.feature AND usage_events.account=excluded.account
-              AND usage_events.model=excluded.model AND usage_events.currency=excluded.currency
-            """, -1, &statement, nil) == SQLITE_OK else {
+        guard sqlite3_prepare_v2(db, Self.upsertSQL, -1, &statement, nil) == SQLITE_OK else {
             throw AIUsageStoreError.unavailable
         }
         defer { sqlite3_finalize(statement) }

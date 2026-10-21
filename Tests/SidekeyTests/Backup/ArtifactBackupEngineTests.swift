@@ -150,6 +150,81 @@ final class ArtifactBackupEngineTests: XCTestCase {
 
     // MARK: - Legacy paths
 
+    func testPopulatedLiveDatabaseExportsHaveStableContentHashesUntilAWrite() async throws {
+        let source = try await makeSource()
+        let engine = ArtifactBackupEngine(environment: source.environment), key = ArtifactBackupTestKeys.make()
+        let first = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
+        let second = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
+        XCTAssertEqual(first.contentFingerprint, second.contentFingerprint,
+                       "VACUUM INTO must be deterministic for unchanged populated Meetings/History stores and sidecars")
+        _ = try source.history.insertClipboardTextEntry(createdAt: Date(), text: "new synthetic entry")
+        let changed = try await engine.createArchive(at: archiveURL(in: source.profile), key: key)
+        XCTAssertNotEqual(changed.contentFingerprint, first.contentFingerprint)
+    }
+
+    func testCostsHistoryRoundTripsAndKeepsTheTargetMacsUniqueSpending() async throws {
+        let source = try await makeSource(), target = try makeTarget()
+        let context = AIUsageContext(feature: .agent, account: .openRouter, model: "synthetic/model")
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let sourceEvent = AIUsageEvent(id: "source-request", createdAt: date, context: context,
+            currency: .usd, amount: 0.05, basis: .reported)
+        let targetEvent = AIUsageEvent(id: "target-request", createdAt: date, context: context,
+            currency: .usd, amount: 0.02, basis: .estimated)
+        let usage = AIUsageStore(url: source.profile.locations.usageDatabase)
+        try await usage.insert(sourceEvent)
+        var targetUsage: AIUsageStore? = AIUsageStore(url: target.locations.usageDatabase)
+        try await targetUsage!.insert(targetEvent)
+        targetUsage = nil // Restore runs before stores open, as at app startup.
+        var environment = source.environment
+        environment.usage = usage
+        let file = archiveURL(in: source.profile), key = ArtifactBackupTestKeys.make()
+        let engine = ArtifactBackupEngine(environment: environment)
+        _ = try await engine.createArchive(at: file, key: key)
+        _ = try await engine.inspectArchive(at: file, key: key)
+        let targetEnvironment = target.environment()
+        try await ArtifactBackupEngine(environment: targetEnvironment).stageRestore(from: file, key: key, sections: [.history])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
+        let restored = try await AIUsageStore(url: target.locations.usageDatabase).events(from: .distantPast, to: .distantFuture)
+        XCTAssertEqual(restored.sorted { $0.id < $1.id }, [sourceEvent, targetEvent])
+    }
+
+    func testArchiveWithoutCostsLeavesExistingCostsUntouched() async throws {
+        let source = try await makeSource(), target = try makeTarget()
+        let event = AIUsageEvent(context: .init(feature: .agent, account: .openRouter, model: "synthetic/model"),
+                                 currency: .usd, amount: 0.03, basis: .reported)
+        var targetUsage: AIUsageStore? = AIUsageStore(url: target.locations.usageDatabase)
+        try await targetUsage!.insert(event)
+        targetUsage = nil
+        let original = try ArtifactBackupDigest.ofFile(target.locations.usageDatabase)
+        let file = archiveURL(in: source.profile), key = ArtifactBackupTestKeys.make()
+        _ = try await ArtifactBackupEngine(environment: source.environment).createArchive(at: file, key: key, sections: [.history])
+        let targetEnvironment = target.environment()
+        try await ArtifactBackupEngine(environment: targetEnvironment).stageRestore(from: file, key: key, sections: [.history])
+        _ = try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment)
+        XCTAssertEqual(try ArtifactBackupDigest.ofFile(target.locations.usageDatabase).digest, original.digest)
+    }
+
+    func testFailedRestoreRollsBackTheCostsJournalAlongWithOtherHistory() async throws {
+        let source = try await makeSource(), target = try makeTarget()
+        let context = AIUsageContext(feature: .agent, account: .openRouter, model: "synthetic/model")
+        let usage = AIUsageStore(url: source.profile.locations.usageDatabase)
+        try await usage.insert(AIUsageEvent(id: "source", context: context, currency: .usd, amount: 0.01, basis: .reported))
+        var targetUsage: AIUsageStore? = AIUsageStore(url: target.locations.usageDatabase)
+        try await targetUsage!.insert(AIUsageEvent(id: "target", context: context, currency: .usd, amount: 0.02, basis: .reported))
+        targetUsage = nil
+        let before = try ArtifactBackupDigest.ofFile(target.locations.usageDatabase).digest
+        var environment = source.environment
+        environment.usage = usage
+        let file = archiveURL(in: source.profile), key = ArtifactBackupTestKeys.make()
+        _ = try await ArtifactBackupEngine(environment: environment).createArchive(at: file, key: key, sections: [.history])
+        var faults = ArtifactBackupFaults()
+        faults.beforeCommit = { throw ArtifactBackupError.restoreFailed }
+        let targetEnvironment = target.environment(faults: faults)
+        try await ArtifactBackupEngine(environment: targetEnvironment).stageRestore(from: file, key: key, sections: [.history])
+        XCTAssertThrowsError(try ArtifactBackupEngine.applyPendingRestore(environment: targetEnvironment))
+        XCTAssertEqual(try ArtifactBackupDigest.ofFile(target.locations.usageDatabase).digest, before)
+    }
+
     /// The backup must read and write exactly where the stores do. These are
     /// the legacy locations the rename preserved; deriving any of them from
     /// the current bundle id would point a beta build at files the app never
@@ -370,9 +445,15 @@ final class ArtifactBackupEngineTests: XCTestCase {
         paused.id = UUID()
         paused.identity = .executablePath("/fixture/paused-agent")
         paused.allowedProjectIDs = []
+        var broaderImported = imported
+        broaderImported.id = UUID()
+        broaderImported.identity = .executablePath("/fixture")
+        let localApp = CaseAppRegistration(id: UUID(), displayName: "Local matching app",
+            identity: imported.identity, defaultMode: .approve, projectModes: [:],
+            createdAt: Date(timeIntervalSinceReferenceDate: 100), allowedProjectIDs: [])
         let sourceStore = CaseVaultStore(fileURL: source.profile.locations.caseVault)
         var sourcePayload = try sourceStore.load(using: source.caseKey)
-        sourcePayload.apps = [imported, paused]
+        sourcePayload.apps = [imported, paused, broaderImported]
         try sourceStore.save(sourcePayload, using: source.caseKey)
         let key = ArtifactBackupTestKeys.make()
         let archive = archiveURL(in: source.profile)
@@ -390,7 +471,7 @@ final class ArtifactBackupEngineTests: XCTestCase {
                 secrets: [CaseSecret(id: localID, name: "Local only", projectID: CaseProject.generalID,
                                      description: "", copyCount: 0,
                                      lastCopiedAt: nil, createdAt: stamp, updatedAt: stamp)],
-                values: [CaseSecretValue(secretID: localID, value: "local-secret-value")]),
+                values: [CaseSecretValue(secretID: localID, value: "local-secret-value")], apps: [localApp]),
             using: localKey)
 
         let environment = target.environment()
@@ -402,7 +483,10 @@ final class ArtifactBackupEngineTests: XCTestCase {
         XCTAssertEqual(Set(merged.secrets.map(\.name)), ["Local only", "Netcup root"])
         XCTAssertEqual(merged.value(for: localID), "local-secret-value")
         XCTAssertTrue(merged.values.contains { $0.value == "synthetic-case-secret" })
-        XCTAssertEqual(merged.apps.first { $0.id == imported.id }?.allowedProjectIDs, [CaseProject.generalID])
+        XCTAssertEqual(merged.apps.filter { $0.identity == imported.identity }, [localApp])
+        XCTAssertEqual(merged.apps.first?.id, localApp.id, "The local policy wins over a broader imported path")
+        XCTAssertEqual(merged.apps.first { $0.id == broaderImported.id }?.defaultMode, .bypass)
+        XCTAssertEqual(merged.apps.first { $0.id == broaderImported.id }?.allowedProjectIDs, [CaseProject.generalID])
         XCTAssertEqual(merged.apps.first { $0.id == paused.id }?.allowedProjectIDs, [], "restore must not turn no access into all projects")
         // Still this Mac's own key: the source key must not open it.
         XCTAssertThrowsError(try CaseVaultStore(fileURL: target.locations.caseVault)

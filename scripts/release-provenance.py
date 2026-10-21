@@ -14,8 +14,9 @@ import tempfile
 
 BUILD_INPUTS = ("Sources", "Resources", "Package.swift", "Package.resolved", "VERSION", "scripts")
 BUNDLE_IDS = {"prod": "com.rootwise.sidekey", "beta": "com.rootwise.sidekey.beta"}
-# adhoc, developer-id, or the SHA-1 of the self-signed community certificate.
-CODE_SIGNING = re.compile(r"adhoc|developer-id|certificate:[0-9a-f]{40}")
+# adhoc, developer-id, the Apple team of a non-notarized Developer ID build,
+# or the SHA-1 of the self-signed community certificate.
+CODE_SIGNING = re.compile(r"adhoc|developer-id|team:[A-Z0-9]{10}|certificate:[0-9a-f]{40}")
 
 
 class InvalidProvenance(ValueError):
@@ -63,7 +64,7 @@ def metadata(args: argparse.Namespace) -> dict:
     if args.build <= 0:
         raise InvalidProvenance("release build must be a positive integer")
     if not CODE_SIGNING.fullmatch(args.code_signing):
-        raise InvalidProvenance("code signing must be adhoc, developer-id or certificate:<sha1>")
+        raise InvalidProvenance("code signing must be adhoc, developer-id, team:<team id> or certificate:<sha1>")
     bundle = "Whytap" if args.flavor == "prod" else "Whytap-Beta"
     expected_name = f"{bundle}-{args.version}-build{args.build}.dmg"
     if args.archive.name != expected_name:

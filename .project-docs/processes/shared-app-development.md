@@ -6,8 +6,11 @@ summary: Isolate feature work, serialize checked main integration and update one
 status: confirmed
 tags: [development, agents, worktrees, integration, main, build, rollback, queue]
 canonical_for: [parallel-development, shared-working-application]
-verified_at: 2026-10-20
+verified_at: 2026-10-21
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-21 the user approved moving the working app and releases from the community certificate to the Developer ID team UVBKCN5PPV, the one approved signing-identity migration.
+    confirmed_at: 2026-10-21
   - type: user-confirmed
     reference: On 2026-10-20 the user authorized the builder to check for meetings itself and restart without asking outside meetings, accepting interruption of other work.
     confirmed_at: 2026-10-20
@@ -38,7 +41,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsStore.swift
     confirmed_at: 2026-10-19
-related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md, ../decisions/2026-10-19-whytap-name.md, ../decisions/2026-10-19-build-queue.md, ../decisions/2026-10-20-meeting-aware-builder-refresh.md]
+related: [../project.md, local-customization.md, ../decisions/2026-10-19-shared-working-app.md, ../decisions/2026-10-19-whytap-name.md, ../decisions/2026-10-19-build-queue.md, ../decisions/2026-10-20-meeting-aware-builder-refresh.md, ../decisions/2026-10-21-developer-id-team-signing.md]
 ---
 
 # Parallel development, one working Whytap
@@ -51,18 +54,21 @@ builds, installs, launches an app or sends a message.
 ## Shared application and source
 
 The user's working application is `/Applications/Whytap.app`, production bundle
-identity `com.rootwise.sidekey`. Keep its existing signing identity, Keychain
-services and data locations. A switch to Beta changes some credentials, local
+identity `com.rootwise.sidekey`. Keep its signing identity (the Developer ID
+team in `Resources/developer-id-team.txt`, after the one migration described
+under the integrator steps), Keychain services and data locations. A switch to
+Beta changes some credentials, local
 stores and permissions; do not use it as a shortcut for sharing development.
 Only this installed application is used for ordinary user acceptance.
 
-The [Whytap rename](../decisions/2026-10-19-whytap-name.md) changes the canonical
-bundle to `/Applications/Whytap.app` at the next checked safe promotion. Before
-that handoff, the existing `/Applications/Exodia.app` remains the working copy.
-Preserve its certificate, stores and permissions and keep one installed copy.
-The primary checkout and receipt remain the existing primary checkout and
-the existing primary checkout’s build receipt; do not move other sessions' WIP.
-Keep the existing `exodia-integration.lock` name across this transition.
+The [Whytap naming decision](../decisions/2026-10-19-whytap-name.md) owns the
+current name and compatibility contracts. The canonical primary checkout folder
+is named `whytap`; an older `exodia` path can remain a compatibility symlink for
+existing sessions. Use the primary build receipt for the actual running build;
+an older worktree's source is not evidence of the installed app.
+Preserve other sessions' WIP, the signing
+identity, stores and permissions. Keep the `exodia-integration.lock` name
+so old and new sessions still serialize against the same lock.
 
 `origin/main` is the shared source of ready features. Each feature has its own
 branch and worktree, normally based on current `origin/main`. Keep the primary
@@ -266,7 +272,16 @@ Under the lock:
    Verify the candidate's strict code signature and compare its signing
    identity/designated requirement with the installed app before replacement.
    A mismatch means pending until reconciled, not a silent ad-hoc fallback or
-   identity migration. Respect release provenance. For a new local promotion,
+   identity migration. The one approved migration (2026-10-21, see
+   [Developer ID team signing](../decisions/2026-10-21-developer-id-team-signing.md))
+   replaces the community certificate requirement with the Developer ID team
+   `UVBKCN5PPV`. Install the first team-signed candidate only after the user
+   confirms in chat that they are at the Mac. Tell them beforehand that macOS
+   will ask once for each Whytap Keychain item (choose **Always Allow** and
+   enter the login password in that system window only) and once more for
+   Microphone, System Audio Recording and the other permissions. Record the
+   migration in the receipt. Afterwards a candidate must satisfy the team's
+   designated requirement like the installed app. Respect release provenance. For a new local promotion,
    `CFBundleVersion` must be higher than the installed build and must follow
    feed ordering; do not decrease the app's display version. Record any initial
    version mismatch between the installed app and main before preparing it.

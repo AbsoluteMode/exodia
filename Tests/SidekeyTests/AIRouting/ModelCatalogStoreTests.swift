@@ -144,4 +144,41 @@ final class ModelCatalogStoreTests: XCTestCase {
         XCTAssertNil(store.snapshot(for: .soniox))
         XCTAssertNil(makeStore(FakeCatalogFetcher([.failure(.offline)])).snapshot(for: .soniox))
     }
+
+    func test_legacy_cache_is_kept_offline_then_refreshed_once_for_dates() async throws {
+        let legacy = #"{"openAI":{"models":[{"id":"gpt-cached"}],"fetchedAt":0,"lastRefreshFailed":false,"limited":false}}"#
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(legacy.utf8).write(to: fileURL)
+        // Keep the old cache fresh by age: only the metadata version should refetch it.
+        let decoded = try JSONDecoder().decode([String: CatalogSnapshot].self, from: Data(legacy.utf8))
+        clock = try XCTUnwrap(decoded["openAI"]?.fetchedAt)
+        let dated = CatalogModel(id: "gpt-cached", catalogDate: Date(timeIntervalSince1970: 1_790_000_000))
+        let fetcher = FakeCatalogFetcher([.failure(.offline), .success([dated])])
+        let store = makeStore(fetcher)
+        XCTAssertEqual(store.snapshot(for: .openAI)?.models.first?.id, "gpt-cached")
+        await store.refreshIfStale(.openAI, apiKey: "fake", server: nil)
+        XCTAssertEqual(store.snapshot(for: .openAI)?.models.first?.id, "gpt-cached")
+        XCTAssertNil(store.snapshot(for: .openAI)?.models.first?.catalogDate)
+        await store.refreshIfStale(.openAI, apiKey: "fake", server: nil)
+        await store.refreshIfStale(.openAI, apiKey: "fake", server: nil)
+        XCTAssertEqual(fetcher.fetchCount, 2)
+        XCTAssertEqual(store.snapshot(for: .openAI)?.models, [dated])
+        XCTAssertEqual(makeStore(fetcher).snapshot(for: .openAI)?.models, [dated])
+    }
+
+    func test_date_metadata_does_not_invalidate_fresh_legacy_server_cache() async throws {
+        let account = ProviderAccount.server(UUID())
+        let legacy: [String: Any] = [account.storageID: [
+            "models": [], "fetchedAt": 0, "lastRefreshFailed": false, "limited": false,
+        ]]
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: legacy)
+        try data.write(to: fileURL)
+        clock = Date(timeIntervalSinceReferenceDate: 0)
+        let fetcher = FakeCatalogFetcher([.failure(.http(404, code: nil))])
+        let store = makeStore(fetcher)
+        await store.refreshIfStale(account, apiKey: nil, server: nil)
+        XCTAssertEqual(fetcher.fetchCount, 0)
+        XCTAssertNotNil(store.snapshot(for: account))
+    }
 }

@@ -1,5 +1,75 @@
 # Interface decisions
 
+## Screenshot toolbar and capture reliability — 2026-10-21
+
+The user comes to annotate a screenshot, discover the available tools, then
+copy or download the result. First see the crop and every tool on the main bar.
+Then change the selected tool's settings in an adjacent accessory and finish
+with the visible **Copy & exit ↩** action or Enter.
+
+- Expose Arrow, Shape, Pen, Text, Blur, Numbered steps, Share, Undo, Redo,
+  Download, Copy & exit and Cancel. Remove More and the Select/crop control;
+  keep the initial area drag. Clicking the active tool again stops drawing
+  and restores direct selection/annotation adjustment without another button.
+  Highlighter, Spotlight, Copy text, Pin above
+  windows and Output size are removed, including their hidden commands and
+  shortcuts. Why: the user chose a smaller annotation-focused tool set after
+  reviewing every action; full pixel resolution remains automatic.
+- Blur uses text alone; Download uses its downward arrow alone with a tooltip.
+  Why: the user explicitly removed Blur’s icon and Download’s label.
+- Keep color, width, shape, blur mode and label input in `ScreenshotToolSettings`,
+  a separate native child panel. It follows the main bar without moving its
+  targets when tools change; the label field uses a second accessory row.
+  Why: the user explicitly replaced the previous inline-settings requirement.
+- Preserve semantic AppKit typography, popover material and the accented finish
+  action. All buttons highlight their full area on hover/press; native focus
+  rings and control behavior remain. Accessory controls gain a hover outline;
+  disabled controls suppress it. Borderless buttons draw semantic foregrounds
+  without inline-cell dimming; native offscreen Blur text contrast measures
+  9.02:1 light and 6.73:1 dark. Why: interactivity and text must stay readable.
+- Wrap main-bar controls onto more rows at the width where they stop fitting,
+  retaining order, full hit areas and every command. Why: exposing more tools
+  must not hide Copy or clip controls on smaller displays.
+- Enter and the copy button both copy the selected area and exit. The button
+  names the outcome and shows ↩ in its own square keycap via HotkeyHintView.
+  Center the label/keycap group and both elements vertically; the hint passes
+  clicks through to the same button. Why: the user asked to distinguish and
+  center Enter. No passive instruction strip remains; errors,
+  processing and download results still appear when relevant. There is no
+  full-display Enter/double-click mode. Why: the user wants area capture only.
+- Cmd-Z / Shift-Cmd-Z undo/redo edits from both panels;
+  a focused text field keeps native text undo. Tab/Shift-Tab traverse enabled
+  controls in both panels. Unknown editor keys terminate locally instead of
+  bubbling back into the forwarding window. Why: outcomes and shortcuts
+  must be discoverable and match macOS editing behavior.
+- Capture the visible Hover before any focus/search/hover cleanup or island
+  wake. Hold its current open/closed mouse latch until pixels are frozen;
+  include Whytap's visible windows in the capture. Why: the user expects the
+  same visible-state freeze as Apple's region screenshot.
+- Repeated Screenshot activation preserves the current capture. Unchanged
+  screen-parameter notifications do not cancel it; actual display layout or
+  Space changes still discard stale pixels. Sanitized lifecycle logs record
+  reasons only. A 10-second capture deadline releases activity and permits retry
+  even if ScreenCaptureKit does not return; it ends before editing starts.
+  Why: repeated hotkey events must not toggle the editor off or leave it stuck.
+- Request filter content points multiplied by ScreenCaptureKit's pixel scale
+  with best capture resolution. Why: the affected Retina display reports
+  1728×1117 through the legacy display functions but has 3456×2234 source
+  pixels; exporting lossless PNG cannot recover detail already lost at capture.
+  PNG also records its original point scale, avoiding a double-sized Retina paste.
+- Keep both bars below a display's top safe-area inset. Why: full-display crops
+  must leave controls reachable on Macs with a notch.
+- Draw the primary accent fill independently of window activation, choosing
+  black/white text for the stronger contrast. Why: the floating toolbar is
+  usually not the key window, but Copy & exit must remain the leading action.
+
+The later 21 October tool reduction also supersedes the initially expanded
+21 October catalog. The earlier single-row/More/inline-settings decisions below are historical and
+superseded by this user request. No new animation is introduced; reduced motion
+uses the same immediate layout. Offscreen fixtures and generated pixels provide
+local verification; actual hotkey delivery and capture remain single-installed-app
+acceptance after the designated builder promotes the reviewed source.
+
 ## Screenshot editor polish — 2026-10-20
 
 The person comes to mark a screenshot and copy or download it quickly. First
@@ -58,18 +128,26 @@ The chosen direction is the user's tile-to-inline-form request.
   purpose and key status even before a key exists. No decorative statistics.
 - Clicking a tile expands a full-width form immediately below that tile's row.
   One form is open at a time; a thin accent outline marks it. Native keyboard
-  focus has an outline too. Cancel, Escape or repeating the tile closes it;
+  focus has an outline too. Escape or repeating the tile closes it;
   closing returns focus to that tile. Input receives focus on expansion.
 - Keep the shared system typography and adaptive Settings colors: 13 pt title,
   11.5 pt explanation and 11 pt tile status. Hover never changes geometry.
   Expansion is immediate, including Reduce Motion. At narrow widths the grid
   reduces columns and the form retains the full row width.
-- Check & save validates before persisting. Checking disables competing actions
-  and shows progress; a failed/unreachable check keeps the form and old key.
-  A successful check clears the typed value and shows the recorded provider
-  result. Existing keys are never read back into the field. Removal keeps the
-  existing confirmation and lists affected features. Custom endpoints retain
-  their name, URL and optional-key fields.
+- As amended by the user on 2026-10-21, the inline form contains only the key
+  field and Save/Remove actions. Remove is unavailable before a key exists;
+  removal is direct, with no extra confirmation row. Custom endpoints retain
+  required name/URL fields. There is no helper, permanent form status, Check now,
+  Cancel or detailed error copy. Why: the user rejected technical explanation
+  and explicitly requested two simple actions with a brief result notice.
+- Save validates before persisting and disables competing actions with a small
+  spinner. A rejected/unreachable check preserves the draft and old key. A
+  successful save clears the draft. No model-assignment sheet opens from inline
+  Save. The panel shows only Key accepted / Key not accepted for 2.5 seconds,
+  anchored to the visible panel instead of scrolled content, and announces it
+  to accessibility. Repeating Save resets the notice lifetime; the notice never
+  captures clicks or shifts fields/buttons. Existing keys are never read back.
+  Add-key entry points in Models/API hints open this same API keys surface.
 - OpenAI and Anthropic are ordinary LLM providers for all text modes. Adding a
   key never assigns routes silently; model selection retains its own synthetic
   check. Why: the user rejected limiting API setup by individual features.
@@ -93,11 +171,24 @@ The closed control retains the shared 30 pt popup label and existing widths.
   commands; the user removed Refresh models and Other model ID on 2026-10-21.
 - Match every query term in any order, ignoring case, diacritics, width and
   separators. Split letters/digits: `qwen 27` and `qwen27` find
-  `qwen/qwen3.8-27b`. Prefer contiguous matches within each provider, preserving
-  the catalog order for ties. Why: remembering a family and size should suffice.
+  `qwen/qwen3.8-27b`. Prefer contiguous matches within each provider. For a
+  nonempty query, equally relevant models sort by newest catalog date, with
+  unknown dates last; equal/missing dates retain catalog order. An empty query
+  retains catalog order and provider groups never move. Why: relevance comes
+  first, then recency helps choose between equivalent matches.
 - Keep provider headings, current-selection checkmarks, cached-refresh failures
   and disabled unsupported models. A two-line model label and full-ID tooltip
   handle long names. Exact account/model pairs remain distinct.
+- Show a secondary date line under each dated model: Anthropic `Released`,
+  OpenAI `Created`, OpenRouter `Added to OpenRouter`. Why: their APIs describe
+  different events, so a shared release label would mislead. Hide missing,
+  malformed and Unix-epoch dates without a placeholder. Format the provider's
+  UTC day in the user's date locale; dates participate in search announcements.
+  Refresh older metadata caches once on opening, retaining offline results.
+  No new controls or motion; the existing full-row feedback covers the date.
+  Sources: [Anthropic](https://platform.claude.com/docs/en/api/models/list),
+  [OpenAI](https://developers.openai.com/api/reference/resources/models),
+  [OpenRouter](https://openrouter.ai/docs/guides/overview/models#model-object-schema).
 - The native search field owns normal editing and IME composition. Up/Down
   moves through enabled results and scrolls them into view; Return selects.
   Escape clears the query, then closes; outside click dismisses. Focus returns
@@ -112,7 +203,11 @@ The closed control retains the shared 30 pt popup label and existing widths.
 Offscreen native fixtures cover the 440 pt picker in both appearances, filtered,
 empty, absent-provider, stale-catalog and long/disabled-row states. Search and
 native editing-command tests cover matching, stable ordering, account identity,
-keyboard bounds and IME Return. These checks do not prove physical focus,
+keyboard bounds and IME Return. Dated fixtures add all three date meanings,
+unknown dates and long IDs in both appearances. Secondary date text contrast
+is 6.62:1 light / 6.84:1 dark, or 5.30:1 / 5.45:1 on the active row.
+Tie-order tests preserve better matches, unknown-last ordering and stable ties.
+These checks do not prove physical focus,
 popover dismissal or VoiceOver on the installed app; those remain acceptance.
 The interpretation that a family plus size is the useful search input follows
 the user's example; typo correction and model aliases are outside this change.
@@ -136,9 +231,18 @@ feature expenses without a permanent model-level grid or scattered period contro
   MacSettingsTheme tokens. Approximation and incomplete totals use text marks,
   so meaning does not rely on color.
 - From/To controls share the period menu's 30 pt geometry, neutral fill and
-  typography. They open a native calendar, closing on a changed date or Done/
-  Return/Escape. Why: the user rejected mismatched black date fields and their
-  persistent blue text selection. The control retains a keyboard focus outline.
+  typography. They open a 310 pt calendar with separate month menu and editable year combo.
+  Selecting a day or Today applies and closes; month/year browsing never changes
+  the filter, and Done/Return/Escape close without applying the browsed month.
+  Year offers the recent 100 years and accepts any earlier positive year; future
+  days and next-month navigation after today are disabled. Why: the user found
+  the native whole-calendar focus ring distracting and year navigation unclear
+  (2026-10-21). Focus stays visible on individual controls/day buttons, with
+  full-area hover and pressed feedback; disabled days never respond to hover.
+  The neutral closed controls retain their keyboard focus outline. The month
+  selector uses a local native popup with an enabled-gated highlight drawing;
+  shared plain menus are unchanged. Why: its pressed state must be verifiable
+  from the real native control, rather than assumed from SwiftUI Menu styling.
 - Hover opens model details; click pins, keyboard focus opens, Escape closes.
   Row fill follows actual pointer hover, so an open popover does not leave a
   selected-looking row after the pointer moves away.
@@ -151,17 +255,32 @@ feature expenses without a permanent model-level grid or scattered period contro
   help and model details explain these marks. ElevenLabs credits are never
   combined with dollars or inferred from a plan.
 
-Update 2026-10-21: ElevenLabs feature rows estimate credits using their
-recorded audio time and the matching model's reported credits/minute. The ≈
-mark remains on values; model details show recorded minutes. A separate
-ElevenLabs Reported usage section lists actual workspace charges by API key and
-model for the selected period, with scope visible beside its heading. It includes
-other apps and is never added to feature Total. Refresh retries history/billing;
-permission, key and network errors have useful text. Refresh, period/date and
-calendar actions visibly highlight their full hit area on hover and press,
-outline keyboard focus, and dim while disabled without active hover feedback.
-Feature disclosures retain row hover and explicit press/focus feedback. This preserves the chosen
-table while making its available evidence useful and its scope explicit.
+Update 2026-10-21: one feature table remains the cost surface. Soniox exact
+request prices replace estimates when available; API delay/failure retains ≈
+values. ElevenLabs uses recorded minutes and cached model credit/minute rates;
+the separate workspace usage block is removed to follow the user's chosen
+calculation policy. Rates are learned from credit/minute statistics, retained
+across outages and never converted from USD. A new model without a rate stays
+unavailable. Price checking leaves history visible, shows a small header spinner
+and disables Refresh; failures show concise text near the period. Refresh,
+period/date and calendar actions retain full-area hover/press, focus outlines
+and inactive disabled states. Existing feature disclosures and layout stay intact.
+
+Update 2026-10-21: ElevenLabs model details distinguish missing recorded audio
+duration from a missing model rate, beside the affected historical model.
+A durationless attempt cannot be priced by fetching a rate; it does not trigger
+that lookup or a misleading rate warning. Unknown costs stay excluded with +
+on partial totals. Known estimates are unchanged; no cost is inferred from a
+failed connection or borrowed from another model.
+
+The revised date popover has 310 pt offscreen fixtures in English/Russian and
+both appearances. Calendar arithmetic covers leap days, DST, previous years
+and future bounds; native month highlight snapshots cover rest/pressed/disabled
+(with disabled/highlighted drawings identical), and native month actions reject
+disabled future choices. Native year-editor Return is tested without selecting a day
+or closing the popover. Physical day-grid keyboard navigation and VoiceOver
+remain acceptance on the shared installed application. White selected-day text
+on the shared #0064D2 fill has 5.59:1 contrast.
 
 Offscreen native fixtures cover all four tabs at 600/900 pt, both appearances,
 long model histories, custom dates, empty/error states and synthetic temporary-store
@@ -367,10 +486,33 @@ in SwiftUI; the native app does not acquire a React runtime or npm dependencies.
 - External binding changes remain authoritative. Disabled controls cannot change
   state, including through accessibility. A native Toggle accessibility proxy
   exposes the setting name and state, with a visible keyboard focus ring.
+- Hover highlights the switch's full capsule without changing its geometry;
+  disabled switches do not highlight. Press and keyboard focus retain their
+  separate existing feedback.
 - Only thumb position/press scale animate: a short spring (0.22 s response,
   0.88 damping) and a 0.1 s press transition. Reduce Motion removes these
   movements; Reduce Transparency uses an opaque white thumb. Native glass is
   guarded for macOS 26, with a simple highlighted thumb on macOS 14/15.
+
+### Agent permissions wording
+
+- The existing action switch is named **Bypass mode**. The person comes to
+  let the agent work without interruptions; the label matches that intent
+  instead of suggesting only that tools exist. There is one control, bound
+  to the existing preference, with no migration or default change.
+- The visible explanation states both outcomes: On runs file edits and
+  commands without approval using the Mac user's permissions; Off blocks
+  those actions. It also states that changes apply to the next request.
+  Why: OpenCode controls local approvals; OpenRouter routes model requests.
+  Off must not imply an interactive approval mode that Whytap does not offer.
+- Keep the established row, wrapping subtitle, switch size, keyboard and
+  accessibility behavior. Live pointer and keyboard acceptance remains in
+  the single installed app; offscreen renders only establish text/layout.
+- Verification: eight offscreen images cover On/Off in light/dark at
+  739 × 560 and 1059 × 760 pt content sizes (960/1280 pt Settings windows).
+  Theme tests verify text contrast ≥4.5:1 and control borders ≥3:1.
+  VoiceOver remains a live check because AppKit omits even the native switch
+  from invisible-window accessibility trees.
 
 ### Embedded surfaces
 
@@ -405,7 +547,11 @@ installed app. Older-macOS fallback needs device acceptance.
 ## Text-only Settings sidebar — 2026-10-20
 
 The user requested removal of the sidebar icons and animation on hover.
-Keep section names, order, 220 pt sidebar width and 38 pt row hit targets.
+Keep section names, order and 220 pt sidebar width. As amended 2026-10-21,
+rows have 30 pt hit targets, 4 pt gaps and 10 pt vertical list insets. The ten
+sections and pinned footer fit at the minimum Settings size without scrolling;
+the ScrollView remains a fallback if the section list grows. Why: the user
+requested smaller buttons so every section is immediately visible.
 Removing the icon and gap gives labels 180 pt instead of 144 pt, without
 changing text size or moving any row during interaction.
 
@@ -417,7 +563,10 @@ changing text size or moving any row during interaction.
   Selection remains recognizable during hover.
   FAQ and Quit use the same feedback. Existing navigation highlights remain.
 - Reduce Motion makes the hover response immediate. Native Button actions,
-  keyboard access and focus are preserved. No function requires hovering.
+  keyboard access and focus are preserved. Press adds a stronger full-row
+  fill; keyboard focus has an inset outline, and the selected row exposes its
+  selection to accessibility. Disabled buttons dim and suppress hover/press/focus
+  highlights. No function requires hovering.
 
 Offscreen native Settings fixtures cover the minimum 960 × 560 pt and larger
 1280 × 760 pt window in both appearances. Physical hover, focus/VoiceOver and
@@ -471,8 +620,39 @@ Touch ID remain acceptance on the one signed installed app after promotion.
 
 # Backup: automatic synchronization — 2026-10-20
 
+As requested on 2026-10-21, a short explanation above the status card states
+the recovery purpose (keys, passwords and settings), local encryption, private
+GitHub storage, automatic synchronization after the first backup and keeping the
+recovery code. GitHub
+receives ciphertext, not the recovery credential. Why: the status alone does
+not explain what is protected or who can read the stored copy. Keep the existing
+13 pt secondary text role and multiline wrapping; no new disclosure or setup
+step. The native offscreen fixtures cover the longer content at 560 and 760 pt.
+The shared MacButton style and the Backup GitHub link highlight the full hit
+area on hover, use a stronger pressed overlay and show a separate focus ring;
+disabled controls suppress those active states. Why: the user explicitly asked
+for visible interaction feedback on 2026-10-21. These state changes add no motion
+and preserve control geometry and existing native keyboard activation.
+Colored-text buttons use a hover outline, strengthened on press, instead of
+brightening their background. Why: the recovery-code action's dark-theme blue
+text would drop from 4.92:1 to 3.59:1 on hover and 2.76:1 on press with the neutral
+overlay. The outline keeps its text contrast unchanged and marks the whole hit
+area. The state matrix includes this ghost action in both appearances.
+The backup regression tests cover key-only automatic
+sync and clean-profile recovery. Native offscreen renders cover 560/760 pt in
+both already-supported Settings appearances and normal/hover/pressed/focus/
+disabled control surfaces. The explanation has 8.35:1 dark and 5.94:1 light
+contrast; white primary-button text stays at least 5.59:1 through active states.
+Physical pointer, Tab navigation and VoiceOver remain shared-app acceptance.
+The first code is shown once after upload. Leaving before completion retains
+a visible Save your recovery code status, with a Save recovery code action;
+subsequent Show recovery code uses the same ghost action. Both require Mac
+authentication. Repeating Back up does not reveal the code. A paused status
+explains that Back up resumes synchronization. These states keep recovery
+possible without claiming that merely showing the code proves it was saved.
+
 The user opens Backup to confirm their data is protected, then open its GitHub
-copy or restore it. The existing native Settings card, two actions, system font
+copy or restore it. The existing native Settings card, primary actions, system font
 and dark theme remain. Direction is supplied by the user: a compact status with
 a backup link, without the connection caption or date. Use a 13 pt medium status
 and a 12 pt GitHub link on one row, existing green only for verified sync, existing
@@ -640,10 +820,10 @@ rights. No alternative composition or decorative screen is needed.
 | Search | Finds project and key names/descriptions, including empty projects and General. A project match shows all its keys; a key match shows just matching keys under its project. + Key stays available in project results. Return cannot create a key; name/value fields open separately after + Key. Empty results say Nothing found. |
 | Connected icons | Open the selected registration directly. Connect stays visible beside the horizontally scrolling strip, including when empty. Codex/OpenAI uses blue, Claude/Anthropic orange, Cursor a white halo. Hover/focus change color and glow without changing geometry; keyboard focus has an outline. Reduce Motion removes the short opacity/color transition. |
 | Client picker | Discovers installed OpenCode and Cursor only after Connect. Shows bundled brand marks, loading, no installed clients or already-connected states. Selecting a client opens a draft; nothing is registered until Connect on the rights screen. The arbitrary program picker is removed. |
-| Rights | Default Accept asks before use; Bypass allows use without prompts. All projects explicitly includes future projects; Selected shows checkboxes and denies unchecked projects at the broker. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
+| Rights | Default Accept asks before use; Bypass allows use without prompts. All projects includes future projects (explained in native help); Selected shows searchable checkboxes and denies unchecked projects at the broker. Filtering preserves the full draft selection. Existing per-project overrides remain visible/editable. An empty saved scope closes access; a new connection needs at least one project or All. |
 | Save | One transaction stores mode and scope; registration, widening access and enabling Bypass require Touch ID. Pending authentication disables edits and Back. Failure preserves the draft and explains recovery; connector errors remain visible after registration, with Retry setup reusing the same registration and rights. |
 | Back / disconnect | Back discards unsaved rights. Disconnect revokes access before editing client config. Existing island outside-click and Escape dismissal still apply. |
-| Approval | The request shows the command, app, project and key names. A native editable field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical A use that value. The bottom row contains Deny/Allow only. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
+| Approval | The request shows the command, app, project and key names. A native editable field changes temporary Bypass to 1–240 minutes without arrows; the separate temporary Bypass button and physical 3 use that value. The bottom row contains Deny (1)/Allow (2) only. Letters and Escape pass through. Default 15 is restored for the next request. Grants are scoped to app/project and disappear at expiry, policy change or restart. |
 
 Display metadata and project sections are rebuilt when the vault changes and
 reused for renders. Search only filters/ranks metadata; values never enter its
@@ -732,12 +912,12 @@ only Connect commits the draft after authentication. The user chose this flow.
   medium labels and the existing white-on-dark island palette. Hover changes
   the fill; keyboard focus adds an outline without moving the row. Native
   buttons expose the agent name and setup action. No new animation is added.
-- Put Accept/Спрашивать and Bypass/Без запроса inside the mode choices, with an
+- Put Accept/Ask first and Bypass/No prompt inside the mode choices, with an
   outline for selection and amber Bypass. Keep the shared-terminal consequence
   visible inside this group when Bypass applies. Why: the decision and its
   consequence should read together, without detached explanatory lines.
-- Put all/selected project controls and their summary/checklist in a separate
-  group. All explicitly includes current and new projects; unchecked projects
+- Put all/selected project controls and their checklist in a separate
+  group. All includes current and new projects, explained in native help; unchecked projects
   remain denied. Existing project overrides get their own group. Why: scope
   must stay clear without a loose footer between unrelated controls.
 - The primary Connect/Save button contains a Touch ID glyph. Native help and its
@@ -770,6 +950,32 @@ or tooltip. Picker rows use the same feedback family. Offscreen state fixtures
 cover normal/hover/pressed/focus/disabled at 310 pt; physical focus remains
 shared-app acceptance. No authorization or registration behavior changes.
 
+Case access polish — 2026-10-21: the user requested thin horizontal rules between
+the "Access mode" / "Projects" headings and their controls. Keep the existing
+groups and 7 pt spacing; use a 1 pt white rule at 14% opacity. Remove the visible
+"Current and future projects" caption. "Selected projects" adds a 28 pt search field with a
+loupe and clear action, matching every word against project names/descriptions
+without case or diacritic sensitivity. General remains searchable. No matches
+shows "No matching projects". Why: a long project list needs filtering while the
+current layout already satisfies the user. Search affects only visible rows;
+hidden selections remain in the saved draft. The field has full-area hover,
+native text editing and a focus outline; clear and project rows retain shared
+hover/press/focus/disabled feedback. Escape keeps the existing panel dismissal.
+Synthetic offscreen fixtures cover 310/390 pt, long names, matches, no matches
+and disabled controls; native field edits verify search never writes the scope.
+On the synthetic 0.08-gray backdrop, the search border is 3.38:1 at rest and
+3.07:1 on hover; its 70%-white placeholder is 6.99:1 at rest and 5.95:1 on hover.
+Physical input and compositor contrast remain installed-app acceptance.
+
+Case English copy — 2026-10-21: the user chose to translate Case before its
+motion video, so every visible Case string, accessibility label, tooltip, error
+and connector problem is English, in the short sentence case of Settings and the
+hover tools. Case, Connect, Accept, Bypass, General, key names, layout and
+behavior are unchanged. Touch ID reasons are lowercase verb phrases ("open
+Case", "connect Cursor to Case") because macOS shows them as "Whytap is trying
+to <reason>." Hover search keeps the old Russian aliases and adds English key
+terms. Why: Case was the only Russian surface in an English app and website.
+
 ## Case approval controls — 2026-10-21
 
 The person reviews a key-use request, then declines, allows once or grants
@@ -781,8 +987,8 @@ with only Deny and Allow in the final row. Keep the native black island card.
   and buttons, 11 pt monospaced command). The command stays one line; native
   hover help and accessibility expose the full original string including line
   breaks. Why: the compact summary must remain inspectable before approval.
-- Temporary Bypass is an actual capsule button with the existing physical A
-  hint. The duration is a 34×24 pt native text field followed by мин, without
+- Temporary Bypass is an actual capsule button with the physical 3
+  hint. The duration is a 34×24 pt native text field followed by min, without
   arrows. Default 15 and supported 1–240 stay unchanged. Why: direct typing
   replaces repeated stepper clicks and removes the third competing bottom action.
 - Invalid/empty drafts remain editable, show warning text color and disable the
@@ -795,7 +1001,7 @@ with only Deny and Allow in the final row. Keep the native black island card.
   Approval hotkeys are suspended before the first typed character; clicks on
   the other actions still work after the existing quiet period. Finish editing,
   timeout, hide or replacement by a queued prompt releases the old field editor
-  and key status. Why: numeric entry must not trigger Y/N/A/Escape or trap later
+  and key status. Why: numeric entry must not trigger approval answers or trap later
   typing in a panel that no longer contains the original field.
 - Buttons visibly highlight their full capsule on hover, change fill while
   pressed and show a keyboard-focus outline. Disabled/unarmed buttons dim and
@@ -817,3 +1023,31 @@ VoiceOver, native tooltip timing, text selection/IME and real Touch ID remain
 shared-app acceptance after promotion. A real authorized key-presence check on the
 previous installed build returned only a static presence confirmation; it does
 not validate this new UI. No secret value was printed or sent over the network.
+
+Numeric approval follow-up — 2026-10-21: after a real key-presence request, the
+user reported that letter interception interfered with their active app and
+requested digits only. Use 1 for Deny, 2 for Allow and 3 for temporary Bypass,
+in both the top row and numeric keypad. These hints replace the letters in the
+existing capsules without changing layout, colors, hover, focus or timing.
+Letters, Escape, navigation and digits with Command/Control/Option/Shift pass
+through; Shift punctuation must not authorize a command. The duration editor
+keeps approval keys suspended. The shared keycap values also feed Help.
+Filter tests cover all other physical keycodes, modified digits, repeats and
+unarmed input; synthetic offscreen fixtures verify the new hints at 310/312 pt.
+Physical keyboard acceptance remains a check on the installed app.
+
+
+Case English copy and interaction feedback — builder review,2026-10-21:
+Use English for Case panels, creation/editing/recovery messages and approval
+copy while preserving IDs, rights, authentication, numeric1/2/3, timing and data.
+The translated project headers, add-key rows, icon actions, reset/retry,
+create/submit and delete-confirm controls use the existing Case access button
+feedback: full-area hover, press and keyboard focus; disabled controls dim and
+show no active hover. Text fields highlight on hover/focus and their full
+capsule focuses the existing editor; bindings, submission and cancellation stay
+with their callers. Edit fields keep their own native focus state.
+The armed reset copy accurately says a new Case is created and the old encrypted
+file is retained, matching CaseVaultStore.reset; it does not promise recovery
+without the original key. The two-step reset and its handlers are unchanged.
+Final English offscreen fixtures and the combined full suite are builder gates;
+physical pointer/keyboard/VoiceOver and the real Touch ID panel remain separate.
