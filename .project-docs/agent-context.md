@@ -138,6 +138,14 @@ Voice flow (Drop / dictation):
        replace only their fragment; nested requests stay requests. The prompt
        is calibrated on GPT-6 Sol and does not change selected routes. WHY:
        .project-docs/decisions/2026-10-21-smart-editor-prompt.md
+       SmartFormattingProfile selects destination syntax from app identity and
+       focused AX role/document metadata (within the same 1.5s context deadline).
+       Markdown editors/recognized web composers use a fixed syntax subset;
+       IDEs require a real Markdown file, and single-line/unknown fields stay plain.
+       Slack/Telegram use local RTF + semantic HTML + plain clipboard fallback;
+       code/URLs survive filler stripping and every flavor is restored after
+       paste. Fast and clean-Decision editor bypass stay unchanged. WHY:
+       .project-docs/decisions/2026-10-21-smart-destination-formatting.md
        Smart uses the lowest supported OpenRouter reasoning effort (or off
        when optional), discovered from the cached model catalog, and asks
        OpenRouter to sort providers of the selected model by throughput. Meeting
@@ -336,7 +344,10 @@ Case secrets manager:
   Mode explanations live inside their choices, and Touch ID help belongs to Save. Codex highlights blue, Claude orange and Cursor white
   on hover/keyboard focus. Search matches project and key names/descriptions,
   including empty projects and General. A matching project shows all its keys;
-  key-only matches show only those keys. + Key opens a separate creation field,
+  key-only matches show only those keys. Results put the project with the best
+  match first (equal ones keep project order); a query word starting a word of a
+  project name lets the rest match that project's keys (`whytap github`); later
+  words of 3+ letters tolerate one typo (`github_lan`). + Key opens a separate creation field,
   including from a project search result; typing/Return in search never writes. Navigation is white and explanations are
   short. Case has no Doppler integration or import screen.
   All explicitly opened hover submenus survive pointer exit until Back, an
@@ -983,6 +994,12 @@ as inert files, excluding active provider jobs. Inactive configurations and
 coexisting older copies survive repeated restores; schemas 1–3 remain readable. Local Case application
 policies precede imports, including matching identities with different UUIDs.
 WHY: `.project-docs/decisions/2026-10-21-backup-reliability.md`.
+A resumed upload accepts an existing draft part when GitHub's reported
+`sha256:` digest matches the local part, without downloading it; a mismatch
+replaces it, and assets without a usable digest are compared by one download.
+New parts and the index are still read back before publishing. Settings shows
+"Uploading backup part N of M…". WHY:
+`.project-docs/decisions/2026-10-21-backup-resume-digest.md`.
 GitHub connection checks are read-only; Connect is the only action that can
 create the private Exodia-Backup repository. Connection alone never backs up data.
 API & Models routes, server registrations and their provider keys are included.

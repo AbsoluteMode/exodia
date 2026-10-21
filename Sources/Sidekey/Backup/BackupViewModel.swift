@@ -871,7 +871,10 @@ final class BackupViewModel: ObservableObject {
                 let transfer = try await prepareTransfer(record, file: file, destinationID: destinationID, key: key)
                 let store = local, snapshotID = record.summary.id
                 let id = try await github.upload(file: transfer.file, summary: record.summary, key: key, resumeReleaseID: transfer.draftID,
-                    onDraft: { id in try await store.recordDraft(id: snapshotID, destinationID: destinationID, draftID: id) })
+                    onDraft: { id in try await store.recordDraft(id: snapshotID, destinationID: destinationID, draftID: id) },
+                    onProgress: { [weak self] part, total in
+                        await MainActor.run { self?.statusText = "Uploading backup part \(part) of \(total)…" }
+                    })
                 try await local.markCopied(id: record.summary.id, destinationID: destinationID, remoteID: id, depth: transfer.depth)
                 if transfer.file.pathExtension == "upload" { try? FileManager.default.removeItem(at: transfer.file) }
             } else if destinationKind == "folder" {

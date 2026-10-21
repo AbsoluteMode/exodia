@@ -935,24 +935,40 @@ final class CaseViewModel: ObservableObject {
 
     private func filterRows() {
         guard unlockState == .unlocked else { return }
-        rows = CaseRanker.sortedEntries(secrets: indexedSecrets, projects: indexedProjects,
-                                       query: query, now: now()).map { entry in
+        let entries = CaseRanker.sortedEntries(secrets: indexedSecrets, projects: indexedProjects,
+                                               query: query, now: now())
+        rows = entries.map { entry in
             indexedRows[entry.id] ?? CaseDisplayRow(id: entry.id, kind: .project, displayName: entry.displayName,
                                                   description: entry.description, projectID: entry.projectID)
         }
-        if isSearching {
-            let projectMatches = Set(rows.filter { $0.kind == .project }.map(\.id))
-            let matches = Dictionary(grouping: rows.filter { $0.kind == .secret }, by: \.projectID)
-            projectSections = allSections.compactMap { section in
-                // A matching project is useful even before its first key.
-                // Keep all its keys; key-only matches show just matching keys.
-                if projectMatches.contains(section.id) { return section }
-                guard let keys = matches[section.id], !keys.isEmpty else { return nil }
-                return CaseProjectSection(id: section.id, name: section.name, description: section.description,
-                                          keyCount: section.keyCount, secrets: keys)
-            }
-        } else {
+        guard isSearching else {
             projectSections = allSections
+            return
+        }
+        let projectMatches = Dictionary(entries.filter { $0.kind == .project }.map { ($0.id, $0.match) },
+                                        uniquingKeysWith: { first, _ in first })
+        let keyMatches = Dictionary(grouping: entries.filter { $0.kind == .secret }, by: \.projectID)
+        let sectionsByID = Dictionary(allSections.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // The project with the best match (its own or a key's) comes first.
+        // WHY: docs/decisions/2026-10-21-case-search-project-ranking.md
+        projectSections = CaseRanker.projectOrder(entries, defaultOrder: allSections.map(\.id)).compactMap { id in
+            guard let section = sectionsByID[id] else { return nil }
+            let matchedKeys = keyMatches[id] ?? []
+            let keys = matchedKeys.compactMap { indexedRows[$0.id] }
+            // A matching project is useful even before its first key and keeps
+            // all its keys, matching ones first. When it matched only by the
+            // query's first part and the rest picks better keys
+            // (`whytap github`), it shows just those, like key-only matches.
+            if let projectMatch = projectMatches[id],
+               !(projectMatch.isPartial && matchedKeys.contains { $0.match.isStronger(than: projectMatch) }) {
+                let shown = Set(keys.map(\.id))
+                return CaseProjectSection(id: section.id, name: section.name, description: section.description,
+                                          keyCount: section.keyCount,
+                                          secrets: keys + section.secrets.filter { !shown.contains($0.id) })
+            }
+            guard !keys.isEmpty else { return nil }
+            return CaseProjectSection(id: section.id, name: section.name, description: section.description,
+                                      keyCount: section.keyCount, secrets: keys)
         }
     }
 

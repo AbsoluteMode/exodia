@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import Sidekey
 
@@ -7,6 +8,10 @@ final class BackupGitHubFixture {
     var draft = true
     var corruptReadback = false
     var failOneReadback = false
+    /// Uploaded assets carry GitHub's "sha256:<hex>" digest of their bytes.
+    var reportsDigests = false
+    /// The next download of the asset with this name fails once.
+    var failReadbackOf: String?
     var publishCount = 0
     var uploadNames: [String] = []
     var assets: [[String: Any]] = []
@@ -49,7 +54,8 @@ final class BackupGitHubFixture {
             let name = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first!.value!
             let data = StubURLProtocol.capturedBodies.last!, id = nextAssetID
             nextAssetID += 1
-            let asset: [String: Any] = ["id": id, "name": name, "size": data.count, "state": "uploaded"]
+            var asset: [String: Any] = ["id": id, "name": name, "size": data.count, "state": "uploaded"]
+            if reportsDigests { asset["digest"] = "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
             assets.append(asset); bytes[id] = data; uploadNames.append(name)
             return (201, [:], json(asset))
         }
@@ -57,6 +63,9 @@ final class BackupGitHubFixture {
             let id = Int(path.components(separatedBy: "/").last!)!
             let data = bytes[id]!
             if failOneReadback { failOneReadback = false; throw URLError(.networkConnectionLost) }
+            if let name = failReadbackOf, assets.contains(where: { $0["id"] as? Int == id && $0["name"] as? String == name }) {
+                failReadbackOf = nil; throw URLError(.networkConnectionLost)
+            }
             return (200, ["Content-Type": "application/octet-stream"], corruptReadback ? Data(repeating: 0, count: data.count) : data)
         }
         if path.hasSuffix("/releases/\(releaseID)"), method == "PATCH" { draft = false; publishCount += 1; return (200, [:], release()) }

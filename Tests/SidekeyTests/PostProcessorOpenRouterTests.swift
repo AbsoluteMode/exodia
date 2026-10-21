@@ -72,6 +72,18 @@ final class PostProcessorOpenRouterTests: XCTestCase {
         XCTAssertNil(openRouter.lastEndpoint)
     }
 
+    func testDestinationFormattingUsesSelectedCleanupRoute() async throws {
+        let env = makeEnv()
+        let server = env.routing.addServer(name: "Test", baseURL: "http://localhost:8000/v1")
+        env.routing.setRoute(FeatureRoute(account: .server(server.id), model: "selected-model"), for: .dropSmartCleanup)
+        let client = FakeOpenRouterClient(completion: "Проверь `timeout_ms`, пожалуйста.")
+        let result = try await env.processor(client).process("Проверь timeout_ms", targetApp: "Obsidian", language: "ru", transcriptionMode: "smart", formatting: .commonMark)
+        XCTAssertEqual(result, "Проверь `timeout_ms`, пожалуйста.")
+        XCTAssertEqual(client.lastModel, "selected-model")
+        XCTAssertTrue(client.lastMessages[0].content.contains("CommonMark"))
+        XCTAssertTrue(client.lastMessages[0].content.hasPrefix(PostProcessor.systemPrompt))
+    }
+
     func testServerRouteProcessesDirectlyWithoutRequiredKey() async throws {
         let env = makeEnv()
         let server = env.routing.addServer(name: "Local", baseURL: "http://localhost:8000/v1")

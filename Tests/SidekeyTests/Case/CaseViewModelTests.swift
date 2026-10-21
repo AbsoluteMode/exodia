@@ -750,6 +750,92 @@ final class CaseViewModelTests: XCTestCase {
         XCTAssertTrue(vm.projectSections[0].secrets.isEmpty)
     }
 
+    /// The island list for the reported `github_lan`: the project holding the
+    /// best key comes first instead of waiting for its turn by project name.
+    func test_search_puts_the_project_with_the_best_match_first() async throws {
+        let fixture = githubVault()
+        let vm = fixture.env.makeViewModel()
+        try await vm.unlock()
+
+        for query in ["github_lan", "github_len", "github lending", "github_lan_key"] {
+            vm.query = query
+            XCTAssertEqual(vm.projectSections.first?.name, "whytap", query)
+            XCTAssertEqual(vm.projectSections.first?.secrets.map(\.displayName), ["GITHUB_LENDING_KEY"], query)
+        }
+
+        vm.query = "github token"
+        XCTAssertEqual(vm.projectSections.map(\.name), ["acme / dev", "acme / dev_personal", "sidekey / dev", "whytap"],
+                       "projects with the same key keep their order, first-word matches follow")
+
+        vm.query = "github"
+        XCTAssertEqual(vm.projectSections.map(\.name), ["acme / dev", "acme / dev_personal", "sidekey / dev", "whytap"])
+        XCTAssertEqual(vm.projectSections[2].secrets.map(\.displayName), ["GITHUB_CLIENT_ID", "GITHUB_OAUTH_CLIENT_ID"])
+        XCTAssertNil(fixture.env.savedPayload, "search never writes the vault")
+    }
+
+    func test_project_name_in_the_query_puts_its_matching_keys_first() async throws {
+        let fixture = githubVault()
+        let vm = fixture.env.makeViewModel()
+        try await vm.unlock()
+
+        for query in ["whytap github", "github whytap", "whytap lending"] {
+            vm.query = query
+            let first = try XCTUnwrap(vm.projectSections.first, query)
+            XCTAssertEqual(first.id, fixture.whytapID, query)
+            XCTAssertEqual(first.secrets.first?.displayName, "GITHUB_LENDING_KEY", query)
+            XCTAssertFalse(first.secrets.contains { $0.displayName == "OPENAI_API_KEY" },
+                           "only the keys the rest of the query names: \(query)")
+            XCTAssertEqual(first.keyCount, 3)
+        }
+
+        vm.query = "whytap"
+        XCTAssertEqual(vm.projectSections.map(\.id), [fixture.whytapID, fixture.acmeDevID])
+        XCTAssertEqual(vm.projectSections[0].secrets.map(\.displayName), ["WHYTAP_SITE_URL", "GITHUB_LENDING_KEY", "OPENAI_API_KEY"],
+                       "a project match keeps all its keys, matching ones first")
+        XCTAssertEqual(vm.projectSections[1].secrets.map(\.displayName), ["WHYTAP_DEPLOY_HOOK"],
+                       "a key-only match comes after the project of the same name")
+
+        vm.query = "whytap zzz"
+        let whytap = try XCTUnwrap(vm.projectSections.first { $0.id == fixture.whytapID })
+        XCTAssertEqual(whytap.secrets.map(\.displayName), ["WHYTAP_SITE_URL", "GITHUB_LENDING_KEY", "OPENAI_API_KEY"],
+                       "a first-word project match with no better key match shows the whole project")
+    }
+
+    func test_clearing_the_search_restores_the_project_order() async throws {
+        let fixture = githubVault()
+        let vm = fixture.env.makeViewModel()
+        try await vm.unlock()
+        let initial = vm.projectSections
+
+        vm.query = "github_len"
+        XCTAssertNotEqual(vm.projectSections.map(\.id), initial.map(\.id))
+        vm.query = "  "
+        XCTAssertEqual(vm.projectSections, initial)
+        vm.query = ""
+        XCTAssertEqual(vm.projectSections, initial)
+        XCTAssertEqual(initial.map(\.name), ["General", "acme / dev", "acme / dev_personal", "sidekey / dev", "whytap"])
+    }
+
+    /// The projects and key names behind the `github_lan` report, without values.
+    private func githubVault() -> (env: TestCaseEnvironment, whytapID: UUID, acmeDevID: UUID) {
+        let acmeDev = group(name: "acme / dev")
+        let acmePersonal = group(name: "acme / dev_personal")
+        let sidekeyDev = group(name: "sidekey / dev")
+        let whytap = group(name: "whytap")
+        let keys = [
+            secret(name: "GITHUB_TOKEN", groupID: acmeDev.id),
+            secret(name: "WHYTAP_DEPLOY_HOOK", groupID: acmeDev.id),
+            secret(name: "GITHUB_TOKEN", groupID: acmePersonal.id),
+            secret(name: "GITHUB_CLIENT_ID", groupID: sidekeyDev.id),
+            secret(name: "GITHUB_OAUTH_CLIENT_ID", groupID: sidekeyDev.id),
+            secret(name: "OPENAI_API_KEY", groupID: whytap.id),
+            secret(name: "GITHUB_LENDING_KEY", groupID: whytap.id),
+            secret(name: "WHYTAP_SITE_URL", groupID: whytap.id),
+        ]
+        let payload = CaseVaultPayload(projects: [.general(now: Date()), whytap, sidekeyDev, acmePersonal, acmeDev], secrets: keys)
+        return (TestCaseEnvironment(payload: payload), whytap.id, acmeDev.id)
+    }
+
     func test_large_vault_search_and_cached_sections() async throws {
         let date = Date()
         let projects = (0..<120).map { group(name: "project-\($0)") }

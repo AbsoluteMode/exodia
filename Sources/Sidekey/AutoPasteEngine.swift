@@ -63,6 +63,7 @@ final class AutoPasteEngine {
     typealias IsTerminatedFn = (pid_t) -> Bool
     typealias PermissionFn = (Bool) -> Bool
     typealias PasteboardWriteFn = (String) -> (before: Int, after: Int)?
+    typealias RichPasteboardWriteFn = (SmartRichTextPaste) -> (before: Int, after: Int)?
     typealias PostEventFn = (CGKeyCode, Bool, CGEventFlags) -> Void
     typealias SleepUsFn = (UInt32) -> Void
     typealias NowMsFn = () -> UInt64
@@ -113,6 +114,7 @@ final class AutoPasteEngine {
     private let isTerminated: IsTerminatedFn
     private let permissionGranted: PermissionFn
     private let pasteboardWrite: PasteboardWriteFn
+    private let richPasteboardWrite: RichPasteboardWriteFn?
     private let postEvent: PostEventFn
     private let sleepUs: SleepUsFn
     private let nowMs: NowMsFn
@@ -138,6 +140,7 @@ final class AutoPasteEngine {
             isTerminated: AutoPasteEngine.defaultIsTerminated,
             permissionGranted: PermissionsHelper.postEventAccessGranted,
             pasteboardWrite: AutoPasteEngine.defaultPasteboardWrite,
+            richPasteboardWrite: AutoPasteEngine.defaultRichPasteboardWrite,
             postEvent: AutoPasteEngine.defaultPostEvent,
             sleepUs: { usleep($0) },
             nowMs: { DispatchTime.now().uptimeNanoseconds / 1_000_000 },
@@ -160,6 +163,7 @@ final class AutoPasteEngine {
         isTerminated: @escaping IsTerminatedFn,
         permissionGranted: @escaping PermissionFn,
         pasteboardWrite: @escaping PasteboardWriteFn,
+        richPasteboardWrite: RichPasteboardWriteFn? = nil,
         postEvent: @escaping PostEventFn,
         sleepUs: @escaping SleepUsFn,
         nowMs: @escaping NowMsFn,
@@ -176,6 +180,7 @@ final class AutoPasteEngine {
         self.isTerminated = isTerminated
         self.permissionGranted = permissionGranted
         self.pasteboardWrite = pasteboardWrite
+        self.richPasteboardWrite = richPasteboardWrite
         self.postEvent = postEvent
         self.sleepUs = sleepUs
         self.nowMs = nowMs
@@ -231,7 +236,7 @@ final class AutoPasteEngine {
     /// they want the dictation back. On any step failure between
     /// snapshot and the final restore, the engine still restores so the
     /// user's clipboard is consistent with "no drop happened".
-    func paste(_ text: String) async -> Bool {
+    func paste(_ text: String, formatting: SmartFormattingProfile = .plain) async -> Bool {
         guard !text.isEmpty else {
             return false
         }
@@ -251,11 +256,20 @@ final class AutoPasteEngine {
         setClipboardSuppression(true)
 
         // Step 3: pasteboard write. If this fails the rest of the
-        // pipeline is moot — no event was posted, no mutation landed,
-        // so we don't need to restore. Suppression must still be
-        // cleared on the failure path.
-        guard let counts = pasteboardWrite(text) else {
+        // pipeline is moot. A writer may have cleared the clipboard before
+        // reporting failure, so restore if its change count moved. Suppression
+        // must still be cleared on the failure path.
+        let beforeWriteCount = currentChangeCount()
+        let written: (before: Int, after: Int)?
+        if formatting.usesRichPaste, let richPasteboardWrite, let rich = SmartRichTextPaste.make(text) {
+            written = richPasteboardWrite(rich)
+        } else { written = pasteboardWrite(text) }
+        guard let counts = written else {
             logEmit(.error, "autopaste_failed step=pasteboard reason=write_returned_nil")
+            if currentChangeCount() != beforeWriteCount {
+                pasteboardRestore(snapshot)
+                suppressClipboardThrough(currentChangeCount())
+            }
             setClipboardSuppression(false)
             return false
         }
@@ -512,6 +526,22 @@ final class AutoPasteEngine {
         let ok = pb.setString(text, forType: .string)
         let after = pb.changeCount
         return ok ? (before: before, after: after) : nil
+    }
+
+    private static func defaultRichPasteboardWrite(_ content: SmartRichTextPaste) -> (before: Int, after: Int)? {
+        writeRichContent(content, to: .general)
+    }
+
+    /// A named pasteboard is injectable for validation without touching the
+    /// user's clipboard. All flavors share the existing snapshot/restore path.
+    static func writeRichContent(_ content: SmartRichTextPaste, to pasteboard: NSPasteboard) -> (before: Int, after: Int)? {
+        let item = NSPasteboardItem()
+        guard item.setString(content.plainText, forType: .string), item.setData(content.rtf, forType: .rtf) else { return nil }
+        if let html = content.html { item.setData(html, forType: .html) }
+        let before = pasteboard.changeCount
+        pasteboard.clearContents()
+        guard pasteboard.writeObjects([item]) else { return nil }
+        return (before, pasteboard.changeCount)
     }
 
     private static func defaultPostEvent(_ keyCode: CGKeyCode, _ down: Bool, _ flags: CGEventFlags) {
