@@ -705,9 +705,22 @@ Physical pointer, Tab navigation and VoiceOver remain shared-app acceptance.
 The first code is shown once after upload. Leaving before completion retains
 a visible Save your recovery code status, with a Save recovery code action;
 subsequent Show recovery code uses the same ghost action. Both require Mac
-authentication. Repeating Back up does not reveal the code. A paused status
-explains that Back up resumes synchronization. These states keep recovery
-possible without claiming that merely showing the code proves it was saved.
+authentication. Repeating Back up does not reveal the code. These states keep
+recovery possible without claiming that merely showing the code proves it was saved.
+
+Pause and resume (2026-10-21): once a copy reached GitHub, a separate card below
+the status card holds an **Automatic backup** row with the shared MacSwitch; it
+stays visible while GitHub is unreachable because local captures continue. Its
+subtitle says the cadence ("At most hourly, only when something changed") with
+the next check time, or "Paused. Back up still saves one copy and keeps this
+off." Why: the pause was previously reachable only through Cancel during a sync
+or a hidden preference, and Back up silently resumed it. A persistent setting
+uses the macOS switch idiom rather than a one-shot button; it stays enabled while
+a sync runs so it can cancel an automatic capture. The status card's paused hint
+is removed. Offscreen fixtures cover paused/on states at 560 pt and the synced
+state at 560/760 pt in both appearances; live switch pointer, keyboard and
+VoiceOver checks remain installed-app acceptance. WHY:
+`.project-docs/decisions/2026-10-21-backup-capture-pacing.md`.
 
 The user opens Backup to confirm their data is protected, then open its GitHub
 copy or restore it. The existing native Settings card, primary actions, system font

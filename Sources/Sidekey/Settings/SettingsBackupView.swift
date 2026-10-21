@@ -34,7 +34,7 @@ struct SettingsBackupView: View {
                         }
                     }
                 }
-                Text("Restore your keys, passwords and settings. Backups are encrypted on your Mac and saved in your private GitHub repository, so GitHub cannot read your secrets. Changes sync automatically after your first backup. Keep your recovery code to restore.")
+                Text("Restore your keys, passwords and settings. Backups are encrypted on your Mac and saved in your private GitHub repository, so GitHub cannot read your secrets. Your first backup turns on hourly automatic sync. Keep your recovery code to restore.")
                     .font(.system(size: 13))
                     .foregroundStyle(MacSettingsTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -78,12 +78,16 @@ struct SettingsBackupView: View {
                                 }
                             }
                         }
-                        if model.syncState == .paused {
-                            Text("Automatic sync is paused. Choose Back up to resume.")
-                                .font(.system(size: 12)).foregroundStyle(MacSettingsTheme.text2)
-                        }
                     }
                     .padding(14)
+                }
+                if model.showsAutomaticBackup {
+                    MacCard {
+                        MacRow(title: "Automatic backup", subtitle: automaticBackupSubtitle) {
+                            MacSwitch(isOn: Binding(get: { model.isEnabled }, set: { model.setAutomaticBackup($0) }),
+                                      isEnabled: model.canChangeAutomaticBackup, label: "Automatic backup")
+                        }
+                    }
                 }
                 if showRestore && !model.needsRestart {
                     MacCard {
@@ -173,6 +177,13 @@ struct SettingsBackupView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
             if let window = notification.object as? NSWindow, window.title.contains("Settings") { clearCode() }
         }
+    }
+
+    // WHY: .project-docs/decisions/2026-10-21-backup-capture-pacing.md
+    private var automaticBackupSubtitle: String {
+        guard model.isEnabled else { return "Paused. Back up still saves one copy and keeps this off." }
+        guard let next = model.nextAutomaticCapture else { return "At most hourly, only when something changed." }
+        return "At most hourly, only when something changed. Next check after \(next.formatted(date: .omitted, time: .shortened))."
     }
 
     private func restore() {

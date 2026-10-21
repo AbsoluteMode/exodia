@@ -86,8 +86,18 @@ final class BackupViewModel: ObservableObject {
     private var nextAutomaticAttempt = Date.distantPast
     private var stalledSourceStamp: String?
     private var githubRequiresReconnect = false
-    private var lastContentCheck = Date.distantPast
-    static let contentCheckInterval: TimeInterval = 3600
+    @Published private(set) var lastContentCheck = Date.distantPast
+    private var automaticOperationRunning = false
+    private let availableCapacity: @Sendable (URL) -> Int64?
+    /// One automatic full capture per hour at most, changed or not. Sources
+    /// such as a Notify script's status file or clipboard history change every
+    /// few seconds, and every capture is a complete multi-gigabyte snapshot.
+    /// This is also the required hourly content check. Back up is immediate.
+    /// WHY: .project-docs/decisions/2026-10-21-backup-capture-pacing.md
+    static let automaticCaptureInterval: TimeInterval = 3600
+    /// Free space a capture must leave on this Mac's volume after its archive.
+    static let automaticFreeSpaceReserve: Int64 = 10_000_000_000
+    static let manualFreeSpaceReserve: Int64 = 2_000_000_000
 
     init(defaults: UserDefaults = .standard,
          keyStore: TokenStore = KeychainStore(account: BackupViewModel.keyAccount),
@@ -103,6 +113,7 @@ final class BackupViewModel: ObservableObject {
          pendingKeyStore: TokenStore = KeychainStore(account: "backup.pending-key.v1"),
          githubSession: URLSession = GitHubBackupNetwork.session,
          now: @escaping @MainActor () -> Date = { Date() },
+         availableCapacity: @escaping @Sendable (URL) -> Int64? = { BackupViewModel.availableCapacity(at: $0) },
          recoveryAuthentication: @escaping @MainActor () async throws -> Bool = {
              let context = LAContext()
              return try await context.evaluatePolicy(.deviceOwnerAuthentication,
@@ -115,6 +126,7 @@ final class BackupViewModel: ObservableObject {
         self.pendingKeyStore = pendingKeyStore
         self.githubSession = githubSession
         self.now = now
+        self.availableCapacity = availableCapacity
         self.recoveryAuthentication = recoveryAuthentication
         self.cleanupWork = cleanupWork
         hasPresentedRecoveryCode = defaults.bool(forKey: "backup.recovery-code-presented.v1")
@@ -194,7 +206,13 @@ final class BackupViewModel: ObservableObject {
         // or skip the rest of startup (including connection and recovery UI).
         do {
             try await cleanupWork()
-            if !hasPendingMaintenance { try await local.cleanupOrphans() }
+            if !hasPendingMaintenance {
+                try await local.cleanupOrphans()
+                // Paused or not, already copied archives beyond the delta parent
+                // are released at launch. A vanished unsent snapshot is captured again.
+                let retention = try await local.applyRetention(destinationID: defaults.string(forKey: "backup.destination-id.v1"))
+                if retention.forgottenPending > 0 { markDirty() }
+            }
         } catch {
             if !hasPendingMaintenance { fail(error) }
         }
@@ -618,6 +636,34 @@ final class BackupViewModel: ObservableObject {
         defaults.set(true, forKey: "backup.github-auto-sync.v1")
     }
 
+    /// The Automatic backup switch exists once a copy reached the destination,
+    /// and stays usable while that destination is unreachable: local captures
+    /// continue offline, so pausing them must too.
+    var showsAutomaticBackup: Bool { lastRemoteBackupAt != nil && destinationKind != nil }
+
+    var canChangeAutomaticBackup: Bool {
+        showsAutomaticBackup && recoverySaved && !needsRestart && !hasPendingMaintenance
+    }
+
+    /// When the next automatic capture may start; nil while paused or already due.
+    var nextAutomaticCapture: Date? {
+        guard isEnabled else { return nil }
+        let next = lastContentCheck.addingTimeInterval(Self.automaticCaptureInterval)
+        return next > now() ? next : nil
+    }
+
+    /// Pause keeps every local and GitHub copy, survives restart and stops
+    /// automatic captures and uploads until resumed. A running automatic
+    /// backup is cancelled; one the user started with Back up continues.
+    func setAutomaticBackup(_ enabled: Bool) {
+        if !enabled, operationKind == .backup, automaticOperationRunning {
+            cancelCurrentOperation(); return
+        }
+        guard !enabled || (recoverySaved && destinationKind != nil) else { return }
+        setEnabled(enabled)
+        if isEnabled == enabled { defaults.set(true, forKey: "backup.github-auto-sync.v1") }
+    }
+
     func checkGitHubConnection() async {
         guard !Task.isCancelled else { return }
         await retainOperation(.connection, cancelWithCaller: true) {
@@ -694,7 +740,13 @@ final class BackupViewModel: ObservableObject {
                 self.recoverySaved = true
                 self.defaults.set(true, forKey: "backup.recovery-verified.v1")
                 if await self.performBackupNow(), !Task.isCancelled {
-                    self.enableCreatedBackupSync()
+                    // Only the first created backup turns sync on. An explicit
+                    // pause stays until the Automatic backup switch resumes it.
+                    if !self.defaults.bool(forKey: "backup.github-auto-sync.v1") {
+                        self.enableCreatedBackupSync()
+                    } else if !self.isEnabled {
+                        self.statusText = "Encrypted backup uploaded to GitHub and checked. Automatic backup stays paused."
+                    }
                     if firstBackup, self.codePresentationID == presentationID {
                         self.recoveryCode = code
                         self.rememberRecoveryCodePresented()
@@ -793,6 +845,17 @@ final class BackupViewModel: ObservableObject {
         guard !isBusy, !needsRestart, !hasPendingMaintenance else { return false }
         guard recoverySaved, destinationKind != nil else { beginSetup(); return false }
         guard idle() else { errorMessage = ConfigBackupError.busy.localizedDescription; return false }
+        guard !automatic || isEnabled else { return false }
+        // Set before the first suspension so the switch can cancel this run.
+        automaticOperationRunning = automatic
+        defer { automaticOperationRunning = false }
+        if let shortage = await diskShortage(automatic: automatic) {
+            // Checked before any export: a full disk never gets a partial archive.
+            lastAttempt = now(); statusText = "Backup needs attention."; errorMessage = shortage
+            return false
+        }
+        // A pause during the disk check stops an automatic run before it exports.
+        guard !Task.isCancelled, !isBusy, !automatic || isEnabled else { return false }
         isBusy = true; errorMessage = nil; lastAttempt = now()
         statusText = "Saving an encrypted copy on this Mac…"
         var unfinished: URL?
@@ -851,9 +914,36 @@ final class BackupViewModel: ObservableObject {
         }
     }
 
+    /// Space for one more archive (staging clones unchanged files on APFS),
+    /// plus a reserve that keeps this Mac usable. Unknown capacity proceeds;
+    /// a write that still runs out of space fails without keeping a partial file.
+    private func diskShortage(automatic: Bool) async -> String? {
+        guard let available = availableCapacity(local.root) else { return nil }
+        let localSizes = ((try? await local.records()) ?? []).filter { $0.recoveryOnly != true }.map(\.summary.totalBytes)
+        let estimate = (localSizes + versions.map(\.size)).max() ?? 0
+        let required = max(0, estimate) + (automatic ? Self.automaticFreeSpaceReserve : Self.manualFreeSpaceReserve)
+        guard available < required else { return nil }
+        let format = { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
+        return automatic
+            ? "Automatic backup is waiting for disk space: it needs about \(format(required)) free on this Mac and \(format(available)) is available. Free some space or pause automatic backup."
+            : "There is not enough disk space for a backup: it needs about \(format(required)) free on this Mac and \(format(available)) is available. Free some space, then try again."
+    }
+
+    nonisolated static func availableCapacity(at url: URL) -> Int64? {
+        var candidate = url.standardizedFileURL
+        while !FileManager.default.fileExists(atPath: candidate.path), candidate.pathComponents.count > 1 {
+            candidate.deleteLastPathComponent()
+        }
+        return (try? candidate.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+            .volumeAvailableCapacityForImportantUsage
+    }
+
     @discardableResult
     private func copyPending(current: (UUID, URL)? = nil, key: Data) async throws -> Int {
         guard let destinationID = defaults.string(forKey: "backup.destination-id.v1") else { throw ConfigBackupError.saveFailed }
+        // An unsent archive removed outside Whytap cannot be uploaded; its
+        // content is captured again instead of failing every retry.
+        if try await local.applyRetention(destinationID: destinationID).forgottenPending > 0 { markDirty() }
         let pending = try await local.pendingCopies(destinationID: destinationID)
         // Finish a resumable transfer before preparing the latest generation.
         // Offline edits can then replace the one unprepared pending snapshot.
@@ -895,18 +985,22 @@ final class BackupViewModel: ObservableObject {
         let output = await local.uploadFileURL(id: record.summary.id, destinationID: destinationID)
         if let prepared = record.preparation, prepared.destinationID == destinationID {
             guard (0...32).contains(prepared.depth), prepared.baseID != record.summary.id else { throw ConfigBackupError.invalidArchive }
-            if let baseID = prepared.baseID {
-                guard FileManager.default.fileExists(atPath: output.path), try await delta.baseID(in: output, key: key) == baseID else {
-                    throw ConfigBackupError.invalidArchive
-                }
+            guard let baseID = prepared.baseID else { return (file, 0, prepared.draftID) }
+            if FileManager.default.fileExists(atPath: output.path) {
+                guard try await delta.baseID(in: output, key: key) == baseID else { throw ConfigBackupError.invalidArchive }
                 return (output, prepared.depth, prepared.draftID)
             }
-            return (file, 0, prepared.draftID)
+            // The prepared delta vanished before GitHub had a draft for it, so
+            // nothing remote depends on it: prepare again from local archives.
+            guard prepared.draftID == nil else { throw ConfigBackupError.invalidArchive }
         }
         if FileManager.default.fileExists(atPath: output.path) { try FileManager.default.removeItem(at: output) }
         let records = try await local.records()
+        // A parent archive removed from this Mac cannot serve as a delta base;
+        // fall back to the newest one still present instead of a full upload.
         let base = records.first { $0.summary.id != record.summary.id && $0.destinationID == destinationID
-            && $0.recoveryOnly != true && $0.remoteID != nil && ($0.uploadedDepth ?? 0) < 32 }
+            && $0.recoveryOnly != true && $0.remoteID != nil && ($0.uploadedDepth ?? 0) < 32
+            && FileManager.default.fileExists(atPath: local.root.appendingPathComponent($0.summary.id.uuidString.lowercased() + ".exodiabackup").path) }
         let baseFile = base.map { record in local.root.appendingPathComponent(record.summary.id.uuidString.lowercased() + ".exodiabackup") }
         let prepared = try await delta.prepare(full: file, base: baseFile, output: output, key: key)
         let depth = prepared.baseID == nil ? 0 : (base?.uploadedDepth ?? 0) + 1
@@ -1252,6 +1346,10 @@ final class BackupViewModel: ObservableObject {
 
     func poll() async {
         guard !stopped, !isBusy, !needsRestart else { return }
+        // A pause written elsewhere (another window, `defaults write`) applies
+        // without restarting Whytap.
+        let storedEnabled = defaults.bool(forKey: "backup.enabled.v1")
+        if storedEnabled != isEnabled, !storedEnabled || !hasPendingMaintenance { isEnabled = storedEnabled }
         await captureSettings()
         if hasPendingMaintenance {
             if !maintenanceRetryAttempted && idle() { await resumeBackupManagement() }
@@ -1259,10 +1357,12 @@ final class BackupViewModel: ObservableObject {
         }
         let probe = changeProbe
         let stamp = await Task.detached(priority: .utility) { probe() }.value
+        // A detected change only marks the copy as pending. Captures stay
+        // paced by the hourly schedule even when a source changes constantly.
         if stamp != sourceStamp { markDirty() }
-        let contentCheckDue = now().timeIntervalSince(lastContentCheck) >= Self.contentCheckInterval
+        let captureDue = now().timeIntervalSince(lastContentCheck) >= Self.automaticCaptureInterval
         guard isEnabled, recoverySaved, idle(), now().timeIntervalSince(lastAttempt) >= 120,
-              stamp != stalledSourceStamp || contentCheckDue else { return }
+              stamp != stalledSourceStamp || captureDue else { return }
         if destinationKind == "github", githubConnectionState != .connected,
            !githubRequiresReconnect, github != nil, now() >= nextAutomaticAttempt {
             await retainOperation(.connection) {
@@ -1273,23 +1373,38 @@ final class BackupViewModel: ObservableObject {
             guard !stopped, !Task.isCancelled, !needsRestart, !hasPendingMaintenance,
                   isEnabled, recoverySaved, idle() else { return }
         }
-        if needsFullBackup || contentCheckDue {
-            await retainOperation(.backup) { await self.performBackupNow(automatic: true) }
+        var shortage: String?
+        if captureDue {
+            shortage = await diskShortage(automatic: true)
+            // The switch may have paused sync while the disk check awaited.
+            guard !stopped, !isBusy, !needsRestart, !hasPendingMaintenance, isEnabled else { return }
+            if shortage == nil {
+                await retainOperation(.backup) { await self.performBackupNow(automatic: true) }
+                return
+            }
         }
-        else if now() >= nextAutomaticAttempt, !githubRequiresReconnect,
+        // Uploading a waiting copy needs no disk space and releases its parent.
+        if now() >= nextAutomaticAttempt, !githubRequiresReconnect,
                 let pending = try? await local.pendingCopies(destinationID: defaults.string(forKey: "backup.destination-id.v1") ?? ""), !pending.isEmpty {
             await retainOperation(.backup) { await self.retryPendingCopies() }
         }
+        if let shortage { statusText = "Backup needs attention."; errorMessage = shortage }
     }
 
     private func retryPendingCopies() async {
             isBusy = true; lastAttempt = now()
+            automaticOperationRunning = true
+            defer { automaticOperationRunning = false }
             do {
                 let copied = try await copyPending(key: key())
                 if copied > 0 {
                     errorMessage = nil; statusText = "Your encrypted backup is up to date."
                     transferFailureCount = 0; nextAutomaticAttempt = .distantPast
                     await refreshVersionsQuietly()
+                } else if try await local.pendingCopies(destinationID: defaults.string(forKey: "backup.destination-id.v1") ?? "").isEmpty {
+                    // Every waiting copy had vanished; its old transfer error no longer applies.
+                    errorMessage = nil; transferFailureCount = 0; nextAutomaticAttempt = .distantPast
+                    await refreshVersionsQuietly(includeDestination: false)
                 }
             } catch { recordBackupFailure(error, sourceStamp: nil); fail(error) }
             isBusy = false

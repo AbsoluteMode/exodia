@@ -10,7 +10,10 @@ In **Settings → Backup**:
 - **Back up** saves everything listed below, including stored provider keys,
   encrypts it locally and verifies the GitHub upload. Save the code shown after
   completion outside Whytap. The same code unlocks subsequent automatic backups.
-  Once created, the backup synchronizes changes while Whytap is idle.
+  The first backup turns on automatic sync while Whytap is idle.
+- **Automatic backup** (shown once a GitHub copy exists) pauses or resumes
+  automatic sync. A pause survives restart and keeps every copy; **Back up**
+  then saves one copy and leaves sync paused.
 - **Restore backup** takes that code and prepares the newest complete GitHub
   backup, including all its settings, keys and data. Quit Whytap normally and
   open it again to apply it. Current data is kept for recovery.
@@ -23,21 +26,25 @@ Older copies obtain that date from their authenticated archive manifest.
 
 There are no data-selection switches, code verification steps or confirmation
 screens. Created GitHub backups synchronize automatically, including copies made
-before automatic sync was introduced. Settings, keys and artifact metadata are checked every minute. At least once
-an hour while Whytap is running and idle, a coherent export is hashed by content,
-even if no file metadata changed. A matching hash creates no archive or upload.
-Changed data produces a fresh encrypted local snapshot before any network work.
+before automatic sync was introduced. Settings, keys and artifact metadata are
+checked every minute, but a change only marks the backup as pending: each
+automatic snapshot is a complete archive, so one is taken at most once an hour.
+That hourly check runs while Whytap is running and idle and hashes a coherent
+export by content, even if no file metadata changed. A matching hash creates no
+archive or upload. Changed data produces a fresh encrypted local snapshot before
+any network work. **Back up** is never delayed by this schedule.
 Calendar refresh-token rotation alone does not create a version; the next real
 snapshot carries the current authorization, as with local settings history.
-Attempts are spaced at least two minutes apart and wait during recording or
-agent work. Without a connection, the newest pending automatic snapshot replaces
+Snapshots wait during recording or agent work, and need free disk space for one
+more archive plus 10 GB (2 GB for **Back up**); otherwise Backup shows how much
+space is needed and nothing is exported. Without a connection, the newest pending automatic snapshot replaces
 superseded unprepared snapshots; a resumable upload and verified older copies
 are retained. Connection failures do not prevent fresh local capture. Network
 retries back off to at most once every fifteen minutes, or longer if GitHub
 requests it. Starting without a network also retries the connection in the
 background; opening Settings is not required. Account or repository
-permission failures require reconnecting. An unchanged unsupported file or size
-limit is retried at most hourly; a source change or **Back up** retries sooner.
+permission failures require reconnecting. An unsupported file or size limit is
+retried at the next hourly snapshot; **Back up** retries sooner.
 A deleted unfinished GitHub draft is recreated automatically after repository
 access is checked, without a reconnect loop. An interrupted upload continues
 from the parts already on GitHub, confirmed by GitHub's checksum without
@@ -47,6 +54,14 @@ and after the recovery code has been presented,
 and links directly to the repository's GitHub Releases. Pending, syncing, paused
 and error states have their own labels. Existing folder destinations and local
 encrypted settings history are retained internally.
+This Mac keeps only what GitHub does not have yet or still needs: unsent
+snapshots, a resumable upload, restore checkpoints and the newest uploaded
+archive, which the next upload is computed against. Older uploaded archives are
+removed after each upload and at launch; GitHub keeps every uploaded version and
+nothing is deleted there automatically. Each upload adds only the files that
+changed, except a complete copy after 32 changes in a row. If you delete local
+archives yourself, Whytap forgets them and takes a fresh snapshot instead of
+failing.
 Startup removes interrupted temporary generations and unindexed transfer files,
 while retaining indexed snapshots, resumable uploads and restore checkpoints.
 An unreadable or explicitly parked catalog preserves its unknown archives.
