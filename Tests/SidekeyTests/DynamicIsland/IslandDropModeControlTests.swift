@@ -294,7 +294,7 @@ final class IslandDropModeControlTests: XCTestCase {
             (.subtitles, "Subtitles", .openSubtitles),
             (.quit, "Quit", .quit),
             (.settings, "Settings", .openSettings),
-            (.screenshot, "Screenshot", .openScreenshot)
+            (.screenshot, "Shot", .openScreenshot)
         ]
         XCTAssertEqual(Set(expected.map(\.tool)), Set(HoverTool.allCases))
         for entry in expected {
