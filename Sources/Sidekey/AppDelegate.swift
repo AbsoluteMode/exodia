@@ -1346,20 +1346,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func deliverDropTranscript(_ text: String) async -> Bool {
+    private func deliverDropTranscript(_ text: String, formatting: SmartFormattingProfile = .plain) async -> Bool {
         guard !text.isEmpty else { return false }
 
-        return await autoPasteEngine.paste(text)
+        return await autoPasteEngine.paste(text, formatting: formatting)
     }
 
     private func finishDropDelivery(
         text: String,
         rawTranscript: String,
-        targetApp: String?
+        targetApp: String?,
+        formatting: SmartFormattingProfile = .plain
     ) async {
         let cleaned = text
         AppState.shared.phase = .inserting
-        let pasted = await deliverDropTranscript(cleaned)
+        let pasted = await deliverDropTranscript(cleaned, formatting: formatting)
         if !pasted {
             // Fallback: text is already in the clipboard (AutoPasteEngine
             // writes up-front). No UI toast surface exists in this PR;
@@ -3123,23 +3124,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let turnID = dropTurnTrace?.turnId ?? "unavailable"
         var contextMs = 0
         var cleanupStartedAt = processStartedAt
+        var formatting = SmartFormattingProfile.plain
+        var deliveryFormatting = SmartFormattingProfile.plain
+        let targetBundleID = targetPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
         if mode == .smart { AppState.shared.phase = .verifying }
         do {
             let final = try await policy.prepare(
-                rawText: rawText, fillerTerms: FillerTermsStore().terms()
+                rawText: rawText, fillerTerms: FillerTermsStore().terms(),
+                preservingMarkdown: { formatting != .plain }
             ) { [self] in
                 guard let postProcessor else { throw OpenRouterLLMError.notConfigured }
-                let appContext = await AXContextReader.snapshot(forPID: targetPID)
+                let snapshot = await AXContextReader.formattingSnapshot(forPID: targetPID)
                 try Task.checkCancellation()
+                formatting = SmartFormattingProfile.resolve(
+                    bundleID: targetBundleID, appName: targetApp,
+                    documentURL: snapshot?.documentURL, focusedRole: snapshot?.focusedRole
+                )
                 cleanupStartedAt = ProcessInfo.processInfo.systemUptime
                 contextMs = Int((cleanupStartedAt - processStartedAt) * 1000)
                 let prefs = PrivacyPreferences.shared
-                return try await postProcessor.process(
-                    rawText, targetApp: targetApp, appContext: appContext,
+                let output = try await postProcessor.processOutput(
+                    rawText, targetApp: targetApp, appContext: snapshot?.context,
                     screenshot: nil, language: prefs.selectedLanguage?.code,
                     outputLanguage: outputLanguageCodeForDrop(mode: mode),
-                    transcriptionMode: mode.rawValue
+                    transcriptionMode: mode.rawValue, formatting: formatting
                 )
+                deliveryFormatting = output.deliveryProfile(formatting)
+                return output.text
             }
             guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }
             os_log(
@@ -3148,7 +3159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Int((ProcessInfo.processInfo.systemUptime - processStartedAt) * 1000), contextMs,
                 mode == .smart ? Int((ProcessInfo.processInfo.systemUptime - cleanupStartedAt) * 1000) : 0
             )
-            await finishDropDelivery(text: final, rawTranscript: rawText, targetApp: targetApp)
+            await finishDropDelivery(text: final, rawTranscript: rawText, targetApp: targetApp, formatting: deliveryFormatting)
             return true
         } catch {
             guard !Task.isCancelled, generation == streamingSetupGeneration else { return false }
