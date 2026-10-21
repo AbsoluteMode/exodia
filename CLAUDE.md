@@ -185,8 +185,11 @@ Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
   environment variables. OpenAI uses OpenCode's own model metadata when its
   /models list omits limits. Both direct APIs serve every LLM mode. WHY:
   .project-docs/decisions/2026-10-21-provider-key-tiles.md
-  Actions are allowed by default so the agent can edit and run tests; the user
-  can turn them off in Settings. This is an action policy, not a filesystem
+  Settings -> Agents -> Bypass mode (on by default) runs file edits and
+  commands without approval through OpenCode's --auto and allow rules.
+  Off blocks file edits and commands; it does not enable approval prompts.
+  Changes apply to the next request and preserve the existing
+  agent.opencode.allowActions preference. This is an action policy, not a filesystem
   sandbox. No provider fallback or automatic model substitution.
   AgentDaemonWorkingDirectory uses agent/ under Application Support/whytap
   with AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
@@ -343,7 +346,10 @@ Case secrets manager:
   grant after authentication/approval, the broker revalidates the current
   caller, registration and project. Revoking or rebinding a registration
   invalidates its pending requests, including queued approvals.
-  Approve uses a non-activating island panel with physical Y/N/A/Escape keys,
+  Approve uses a non-activating island panel with bare physical digit keys
+  1 (deny), 2 (allow once), 3 (temporary Bypass), including the numeric keypad.
+  Letters, Escape, navigation and modified digits pass to the active app. WHY:
+  docs/decisions/2026-10-21-case-numeric-approval.md. It keeps
   300 ms of keyboard quiet before arming, a 60 s timeout and memory-only timed
   grants. Temporary Bypass is a separate button beside a native editable
   1–240 minute field (default 15), without stepper arrows; the bottom row has

@@ -54,7 +54,9 @@ before resolution and rechecks current scope before releasing values or grants.
 Access changes invalidate that app's temporary grants.
 
 The prompt selects 1–240 minutes for temporary Bypass, default 15. The button
-and physical A use the displayed duration; the broker validates the range.
+and physical 3 use the displayed duration; the broker validates the range.
+The numeric-only answer mapping is recorded in
+[numeric approval keys](2026-10-21-case-numeric-approval.md).
 The grant covers only the same app/project and remains memory-only. Search
 matches projects and keys and their descriptions, including empty projects and
 General; adding uses a separate explicit form. Project matches show their full
