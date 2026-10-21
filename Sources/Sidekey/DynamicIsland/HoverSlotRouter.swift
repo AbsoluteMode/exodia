@@ -11,6 +11,7 @@ enum HoverInlinePanel: Equatable {
     /// rather than firing the old bottom-strip action.
     case history
     case tasks
+    case calendar
     case notifications
     case vocabularyEditor
     case caseVault
@@ -142,7 +143,7 @@ enum HoverSlotRouter {
         case .tasks:
             return .openPanel(.tasks)
         case .calendar:
-            return .openCalendar
+            return .openPanel(.calendar)
         case .translate:
             return .openTranslate
         case .subtitles:

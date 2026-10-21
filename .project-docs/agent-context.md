@@ -614,7 +614,7 @@ whytap:// links:
   are exhaustive, so a new tile or tab needs a destination to compile. The enums
   are the public registry of linkable places: never rename raw values. A link
   only shows a place: inline tools open their HoverPanelRequest, navigate tools
-  and tabs open Settings with setHighlight, Calendar/Translate/Subtitles
+  and tabs open Settings with setHighlight, Translate/Subtitles
   windows open idle, Drop Mode/Record/Screenshot select their Toolbox pane
   (SettingsWindowSelection.focus), Case opens Toolbox without selecting its
   Touch ID pane and Quit highlights the Quit row (Invariant 7). Unknown ids
@@ -847,7 +847,17 @@ To-do opens a compact inline hover list with Return-to-add, click-to-complete/re
 and a History mode with completion date/time. Completed tasks move below active
 ones for the current opening, then appear only in History. Native tooltips expose
 full truncated titles. Drafts survive closing; saved Toolbox slots remain unchanged.
-Calendar opens the native Planner window. PlannerStore atomically saves private local tasks
+Calendar opens a 350pt inline Hover agenda on today. Tile, search, assigned hotkey
+and whytap://tool/calendar use the same surface; reopening resets to today.
+Day navigation, full event details, feed selection and Connect stay in Hover.
+Connect uses the same provider authorization as Settings → Integrations, without
+a Whytap account. Toolbox uses the same inline entry; there are no runtime
+PlannerWindowController calls. CalendarConnectionFlow keeps permission work alive
+through temporary Hover hiding. Only Hover-owned connections pin its menu;
+Settings connections do not. Repeat opens preserve an active connection.
+Success reactivates Hover only if visible; failures retain a retry path.
+WHY: .project-docs/decisions/2026-10-21-calendar-hover.md
+PlannerStore atomically saves private local tasks
 and Whytap events; unreadable archives block writes. CalendarConnections combines
 selected EventKit calendars with direct Google Calendar, Microsoft Graph (including
 Teams links) and Zoom Calendar Service connections. Remote events are read-only;
@@ -861,14 +871,24 @@ does not create a settings version or full backup; subsequent backups capture th
 latest token, and restored sign-in can require reconnecting. No
 shared OAuth registrations are created by the app itself; the owner supplies
 registered native clients during packaging through configure-calendar-clients.py.
+Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calendar
+and Zoom Calendar separately, with feature permissions and scoped connect sheets.
+Shared Google and Zoom clients cannot start new browser sign-in until actual
+provider approval is recorded by the publicAccessApproved packaging string.
+Missing or malformed approval remains closed; independent source-user clients
+remain available in Advanced setup. Connection activity is shared across Settings
+and Hover, serializes sign-in, and defers restore/update restart until completion.
+Backup work, staged restore and pending maintenance also block new connection
+changes so restore cannot overwrite a newly connected account.
 Live accounts require provider setup and separate acceptance. Encrypted backups
 include local Planner content, calendar metadata and saved credentials. Old backups
-preserve current calendar settings. A visible Planner, inline To-do, or retained task draft
-defers update restart and restore; ordinary backups still run. Closing the window
+preserve current calendar settings. A visible Calendar/Planner, inline To-do, or retained task draft
+defers update restart and restore; ordinary backups still run. Closing the panel
 stops calendar polling; another tool hotkey preserves an attached editor. Tests
 use fake providers and temporary stores. Guide:
 docs/planner.md. WHY: .project-docs/decisions/2026-10-19-planner.md,
-.project-docs/decisions/2026-10-20-todo-hover.md
+.project-docs/decisions/2026-10-20-todo-hover.md,
+.project-docs/decisions/2026-10-21-calendar-integrations.md
 
 Customization: any local coding harness can use the same source checkout.
 Run `python3 scripts/customize.py discover --json` for commands, change

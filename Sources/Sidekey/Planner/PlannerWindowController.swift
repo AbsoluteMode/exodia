@@ -14,7 +14,6 @@ final class PlannerNavigation: ObservableObject {
 
 @MainActor
 final class PlannerWindowController: NSWindowController, NSWindowDelegate {
-    static let shared = PlannerWindowController(store: .shared, connections: .shared)
     private let navigation = PlannerNavigation()
     private var draftObservation: AnyCancellable?
     private let activityChanged: @MainActor (Bool) -> Void

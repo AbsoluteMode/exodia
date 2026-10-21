@@ -14,6 +14,8 @@ struct ToolboxDeps {
     var copyHistoryCard: (HistoryStripCard) -> Void = { _ in }
     var toggleMeetingRecord: () -> Void = {}
     var openScreenshot: () -> Void = {}
+    /// Show an inline tool in this process, without LaunchServices scheme lookup.
+    var openHoverPanel: (HoverInlinePanel) -> Void = { _ in }
     var quitApplication: () -> Void = {}
     /// Reuse the floating translator's models, preferences and activity guard.
     var translationController: () -> TranslationWindowController? = { nil }

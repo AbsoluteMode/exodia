@@ -148,7 +148,7 @@ final class PlannerStoreTests: XCTestCase {
 
     func testToolSearchAndRoutingLeaveSavedLayoutAlone() {
         XCTAssertEqual(HoverSlotRouter.effect(for: .tasks), .openPanel(.tasks))
-        XCTAssertEqual(HoverSlotRouter.effect(for: .calendar), .openCalendar)
+        XCTAssertEqual(HoverSlotRouter.effect(for: .calendar), .openPanel(.calendar))
         XCTAssertTrue(HoverSlotRouter.effect(for: .tasks).requiresExpansion)
         XCTAssertEqual(IslandHoverToolSearch.results(for: "задачи").first, .tasks)
         XCTAssertEqual(IslandHoverToolSearch.results(for: "calendar").first, .calendar)

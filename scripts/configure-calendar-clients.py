@@ -17,7 +17,7 @@ def validated_clients(value):
         raise ValueError("Expected registered Google, Microsoft or Zoom native clients.")
     result = {}
     for provider, client in value.items():
-        allowed = {"clientID", "clientSecret"} if provider == "google" else {"clientID"}
+        allowed = ({"clientID", "clientSecret"} if provider == "google" else {"clientID"}) | {"publicAccessApproved"}
         if not isinstance(client, dict) or set(client) - allowed:
             raise ValueError("Only public native-client configuration is accepted.")
         identifier = client.get("clientID")
@@ -26,6 +26,9 @@ def validated_clients(value):
         secret = client.get("clientSecret")
         if secret is not None and (not isinstance(secret, str) or not secret or len(secret.encode()) > 8192 or "\0" in secret):
             raise ValueError("Invalid Google desktop client configuration.")
+        approval = client.get("publicAccessApproved")
+        if approval is not None and approval not in ("true", "false"):
+            raise ValueError("Public approval must be an explicit true/false string.")
         result[provider] = dict(client)
     return result
 

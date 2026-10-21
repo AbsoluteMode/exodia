@@ -289,7 +289,7 @@ final class IslandDropModeControlTests: XCTestCase {
             (.monitor, "Monitor", .openPanel(.monitor)),
             (.brightness, "Display", .openPanel(.brightness)),
             (.tasks, "To-do", .openPanel(.tasks)),
-            (.calendar, "Calendar", .openCalendar),
+            (.calendar, "Calendar", .openPanel(.calendar)),
             (.translate, "Translate", .openTranslate),
             (.subtitles, "Subtitles", .openSubtitles),
             (.quit, "Quit", .quit),
@@ -313,7 +313,7 @@ final class IslandDropModeControlTests: XCTestCase {
         for tool in [HoverTool.hotkeys, .notes, .meetingRecord, .quit, .settings, .calendar] {
             HoverSlotRouter.effect(for: tool).invoke(on: actions)
         }
-        XCTAssertEqual(invoked, ["hotkeys", "notes", "record", "quit", "settings", "calendar"])
+        XCTAssertEqual(invoked, ["hotkeys", "notes", "record", "quit", "settings"])
 
         let russian = AppLanguage(code: "ru", displayName: "Русский", englishName: "Russian")
         func capsule(_ tool: HoverTool, mode: TranscriptionMode = .smart,
