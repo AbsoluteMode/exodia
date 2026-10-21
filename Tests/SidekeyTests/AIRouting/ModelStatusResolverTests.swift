@@ -60,6 +60,25 @@ final class ModelStatusResolverTests: XCTestCase {
         ])
     }
 
+    func test_picker_keeps_provider_date_meanings_and_hides_unknown_dates() throws {
+        let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-21T00:00:00Z"))
+        let dated = CatalogModel(id: "gpt-date-test", uses: [.chat, .chatWithTools], catalogDate: date)
+        let unknown = CatalogModel(id: "gpt-unknown-date", uses: [.chat, .chatWithTools])
+        let accounts: [ProviderAccount] = [.anthropic, .openAI, .openRouter]
+        let env = try makeEnv(snapshots: Dictionary(uniqueKeysWithValues: accounts.map { ($0, fresh([dated, unknown])) }),
+                              keyed: accounts)
+        for (account, prefix) in [(ProviderAccount.anthropic, "Released "), (.openAI, "Created "),
+                                  (.openRouter, "Added to OpenRouter ")] {
+            let options = try XCTUnwrap(env.resolver.sections(for: .dropSmartCleanup).first { $0.account == account }).options
+            let label = try XCTUnwrap(options.first { $0.model == dated.id }?.dateLabel)
+            XCTAssertTrue(label.hasPrefix(prefix))
+            XCTAssertTrue(label.contains("2026"))
+            XCTAssertNil(options.first { $0.model == unknown.id }?.dateLabel)
+            XCTAssertNil(ModelStatusResolver.catalogDateLabel(Date(timeIntervalSince1970: 0), account: account))
+        }
+        XCTAssertNil(ModelStatusResolver.catalogDateLabel(date, account: .soniox))
+    }
+
     func test_prod_after_migration_shows_one_switch_for_four_features() throws {
         let env = try makeEnv(snapshots: [.soniox: sonioxCatalog()], keyed: [.soniox])
         let rt = FeatureRoute(account: .soniox, model: "stt-rt-v4")

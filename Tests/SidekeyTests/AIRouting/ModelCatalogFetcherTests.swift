@@ -143,6 +143,36 @@ final class ModelCatalogFetcherTests: XCTestCase {
         XCTAssertNil(server("ftp://h/v1").modelsURL)
     }
 
+    func test_model_dates_are_optional_and_bad_metadata_does_not_break_catalogs() throws {
+        let timestamp: TimeInterval = 1_790_000_000
+        for parse in [ModelCatalogFetcher.parseOpenAI, ModelCatalogFetcher.parseOpenRouter] {
+            let models = try parse(Data(#"""
+            {"data":[
+              {"id":"gpt-valid","created":1790000000},
+              {"id":"gpt-missing"}, {"id":"gpt-null","created":null},
+              {"id":"gpt-epoch","created":0}, {"id":"gpt-negative","created":-1},
+              {"id":"gpt-bad","created":"unknown"}, {"id":"gpt-extreme","created":1e100}
+            ]}
+            """#.utf8))
+            XCTAssertEqual(models.count, 7)
+            XCTAssertEqual(models.first { $0.id == "gpt-valid" }?.catalogDate,
+                           Date(timeIntervalSince1970: timestamp))
+            XCTAssertTrue(models.filter { $0.id != "gpt-valid" }.allSatisfy { $0.catalogDate == nil })
+        }
+        let page = try ModelCatalogFetcher.parseAnthropicPage(Data(#"""
+        {"data":[
+          {"id":"valid","created_at":"2026-09-21T00:00:00.000Z"},
+          {"id":"missing"}, {"id":"null","created_at":null},
+          {"id":"epoch","created_at":"1970-01-01T00:00:00Z"},
+          {"id":"bad","created_at":"unknown"}, {"id":"wrong-type","created_at":123}
+        ]}
+        """#.utf8))
+        XCTAssertEqual(page.models.count, 6)
+        XCTAssertEqual(page.models[0].catalogDate,
+                       ISO8601DateFormatter().date(from: "2026-09-21T00:00:00Z"))
+        XCTAssertTrue(page.models.dropFirst().allSatisfy { $0.catalogDate == nil })
+    }
+
     func test_server_catalog_without_key_sends_no_authorization() async throws {
         let fetcher = makeFetcher(body: #"{"data":[{"id":"qwen"},{"id":"llama"}]}"#)
         for key in [nil, ""] as [String?] {

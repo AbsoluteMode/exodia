@@ -22,10 +22,21 @@ final class ModelPickerRenderTests: XCTestCase {
 
         let unlisted = PickerSection(account: .server(UUID()), title: "My server", options: [], refreshFailed: false,
                                      acceptsModelName: true)
+        let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-21T00:00:00Z"))
+        let datedSections: [PickerSection] = [ProviderAccount.anthropic, .openAI, .openRouter].map { account in
+            PickerSection(account: account, title: account.kind.displayName, options: [
+                PickerOption(model: account == .openRouter
+                             ? "vendor/a-very-long-model-identifier-that-wraps-over-two-lines-in-this-picker"
+                             : "example-model", state: .verified, isSelected: account == .anthropic, hint: nil,
+                             dateLabel: ModelStatusResolver.catalogDateLabel(date, account: account)),
+            ] + (account == .anthropic ? [
+                PickerOption(model: "unknown-date", state: .new, isSelected: false, hint: nil),
+            ] : []), refreshFailed: false)
+        }
         for dark in [false, true] {
-            for state in ["all", "qwen27", "empty", "no-provider", "unlisted-server"] {
+            for state in ["all", "qwen27", "empty", "no-provider", "unlisted-server", "dates"] {
                 let query = state == "qwen27" ? "qwen 27" : (state == "empty" ? "missing model" : "")
-                let picker = ModelPicker(sections: state == "no-provider" ? [] : (state == "unlisted-server" ? [unlisted] : sections),
+                let picker = ModelPicker(sections: state == "no-provider" ? [] : (state == "unlisted-server" ? [unlisted] : (state == "dates" ? datedSections : sections)),
                                          missingProviderHint: "Add API key", initialQuery: query,
                                          onSelect: { _, _ in }, onRefresh: {}, onAddKey: {},
                                          onClose: {})

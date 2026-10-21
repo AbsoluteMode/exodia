@@ -24,6 +24,8 @@ struct PickerOption: Equatable {
     let state: PickerOptionState
     let isSelected: Bool
     let hint: String?
+    var dateLabel: String? = nil
+    var catalogDate: Date? = nil
 }
 
 /// One provider account's block in a feature's model picker.
@@ -161,9 +163,13 @@ struct ModelStatusResolver {
             for id in ids {
                 let state = verdict(model: id, account: account, for: feature)
                 if case .notSupported = state, !isSelected(id) { continue }
+                let date = snapshot?.models.first { $0.id == id }?.catalogDate
+                let dateLabel = Self.catalogDateLabel(date, account: account)
                 options.append(PickerOption(
                     model: id, state: state, isSelected: isSelected(id),
-                    hint: hint(model: id, account: account, feature: feature, use: use)
+                    hint: hint(model: id, account: account, feature: feature, use: use),
+                    dateLabel: dateLabel,
+                    catalogDate: dateLabel == nil ? nil : date
                 ))
             }
             return PickerSection(
@@ -180,6 +186,27 @@ struct ModelStatusResolver {
     /// been updated for this long before the catalog was fetched is left out
     /// of pickers; it stays in the catalog, so a route on it keeps working.
     static let staleAfter: TimeInterval = 365 * 86_400
+
+    static func catalogDateLabel(_ date: Date?, account: ProviderAccount) -> String? {
+        guard let date, date.timeIntervalSince1970 > 0, date < .distantFuture else { return nil }
+        let title: String
+        switch account {
+        case .anthropic: title = "Released"
+        case .openAI: title = "Created"
+        case .openRouter: title = "Added to OpenRouter"
+        default: return nil
+        }
+        return "\(title) \(catalogDateFormatter.string(from: date))"
+    }
+
+    private static let catalogDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        // Catalog dates describe a UTC calendar day, even west of Greenwich.
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
 
     static func isStale(_ model: CatalogModel, fetchedAt: Date?) -> Bool {
         guard let updated = model.updatedAt, let fetchedAt else { return false }
