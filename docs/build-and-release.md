@@ -2,10 +2,12 @@
 
 Most users install a ready-made Whytap DMG and update through the island's
 **Update** button. Source builds remain available for customization. The
-development build works without an Apple Developer account. The default
-community release pipeline signs with the Developer ID certificate of Whytap's
-Apple team, without notarization or an App Store Connect key; a checkout without
-`Resources/developer-id-team.txt` signs with the community certificate or ad hoc.
+development build works without an Apple Developer account. The community
+release pipeline signs with the Developer ID certificate of Whytap's Apple team,
+and a run that publishes also has Apple notarize and staple the build, with the
+team's App Store Connect API key from Whytap Case. A checkout without
+`Resources/developer-id-team.txt` signs with the community certificate or ad hoc
+and cannot be notarized.
 
 In [Releases](https://github.com/AbsoluteMode/whytap/releases), Whytap community
 builds use Whytap-named assets. Existing Exodia packages remain downloadable
@@ -87,8 +89,11 @@ doppler run --project sidekey --config dev -- env FLAVOR=prod ./scripts/user-rel
 ```
 
 The build signs with the team's Developer ID certificate from the login keychain.
-Doppler supplies the Sparkle key for publication, and the community code-signing
-key only for a build without the team file; see below.
+The full run also notarizes and staples it with the App Store Connect API key
+from Whytap Case (see [Apple notarization](#apple-notarization)); `--build-only`
+does not, unless `EXODIA_NOTARIZE=1` is set. Doppler supplies the Sparkle key
+for publication, and the community code-signing key only for a build without
+the team file; see below.
 
 `--dry-run` reads the live feed and installed build to calculate versions, but
 does not build or upload. It is not the offline preflight. `--build-only` creates
@@ -105,11 +110,14 @@ set `BUILD_VERSION` explicitly for a first release when neither exists.
 Every upload must be bound to the commit used for its build. The release helper
 `scripts/release-provenance.py` must capture the build-time HEAD and clean input
 state, then seal the completed DMG's SHA-256 and size together with its version,
-build, flavor, distribution mode, code-signing identity, bundle ID and
-architectures. Its subcommands are `capture`, `seal` and `verify`; the build and
-upload scripts call them. The upload derives the expected code-signing identity
-from the committed team or certificate (see below), so a local ad-hoc or
-test-certificate build cannot be published.
+build, flavor, distribution mode, code-signing identity, notarization, bundle ID
+and architectures (manifest schema 3). Its subcommands are `capture`, `seal` and
+`verify`; the build and upload scripts call them. The upload derives the
+expected code-signing identity from the committed team or certificate (see
+below), so a local ad-hoc or test-certificate build cannot be published, and
+expects `notarization: notarized` for a team release unless `EXODIA_NOTARIZE=0`.
+The provenance CLI defaults `--notarization` to `none` for existing local
+build-only verifiers; publishing always passes its explicit expectation.
 Keep the adjacent `<DMG>.manifest.json` with the archive;
 `--upload-only` requires both files from the same build.
 
@@ -125,17 +133,83 @@ For CLI packaging without a live Finder layout session, set
 `EXODIA_DMG_HEADLESS=1`. It skips only cosmetic Finder layout; packaging and
 verification remain the same. The default keeps the Finder layout step.
 
-Community mode skips Apple notarization. Publication still requires
-authenticated GitHub release access and Whytap's Sparkle Ed25519 private key
-through `SPARKLE_ED_PRIVATE_KEY` or `SPARKLE_ED_PRIVATE_KEY_FILE`. Keep its
-matching public key in `Resources/sparkle-public-ed-key.txt`. Never commit or
-print the private key. `upload-release.sh` verifies the generated archive
-signature before upload.
+Publication requires authenticated GitHub release access and Whytap's Sparkle
+Ed25519 private key through `SPARKLE_ED_PRIVATE_KEY` or
+`SPARKLE_ED_PRIVATE_KEY_FILE`. Keep its matching public key in
+`Resources/sparkle-public-ed-key.txt`. Never commit or print the private key.
+`upload-release.sh` verifies the generated archive signature before upload.
 
 Sparkle signatures authenticate update archives using Whytap's own key. They
-are independent of Apple code signing and do not make a community download
-Apple-notarized. First-download Gatekeeper warnings remain; see
-[installation](install.md).
+are independent of Apple code signing and notarization. Gatekeeper's
+first-download warning disappears only for notarized releases; releases up to
+2.2.15 are not notarized, see [installation](install.md).
+
+### Apple notarization
+
+A team-signed release is notarized by Apple and stapled, so a downloaded Whytap
+opens without **Open Anyway**. Notarization costs nothing beyond the Apple
+Developer Program membership. `EXODIA_NOTARIZE=1` selects it. `user-release.sh`
+sets it by default for every run that publishes a team build; `--build-only`,
+which the builder uses for local refreshes, notarizes only when asked.
+`EXODIA_NOTARIZE=0` explicitly publishes a team archive without notarization,
+for example while Apple's notary queue is stalled; the upload warns about it.
+
+The App Store Connect API key lives only in Whytap Case, project `whytap`, never
+in Doppler, the repository or a shell profile:
+
+| Case key | Value |
+| --- | --- |
+| `ASC_API_KEY_ID` | the key's Key ID |
+| `ASC_API_KEY_ISSUER_ID` | the team's Issuer ID |
+| `ASC_API_KEY_P8` | the contents of `AuthKey_<Key ID>.p8` |
+
+The Account Holder or an Admin of team `UVBKCN5PPV` creates a team key with the
+**Developer** role in App Store Connect → Users and Access → Integrations →
+App Store Connect API → Team Keys, and downloads the `.p8` file (possible only
+once). Paste the whole file into Case; a value whose line breaks were lost in
+the single-line field is accepted.
+
+Before compiling, `build-dmg.sh` checks `xcrun notarytool` and lists the key
+names of the Case project (`whytap case ls -p whytap`, names only). A missing key
+stops the build and names it. After signing, the build zips the app and submits
+it with `whytap case run -p whytap --only ASC_API_KEY_ID,ASC_API_KEY_ISSUER_ID,ASC_API_KEY_P8`,
+which runs `scripts/notarize-submit.sh` with the key in that one process's
+environment. The script writes the private key to a 0600 file in a private
+temporary directory, runs `xcrun notarytool submit --wait --timeout 1200` and
+wipes the file on exit, also when interrupted. notarytool accepts the Key ID and
+Issuer ID only as arguments; the private key is never an argument and nothing
+prints it. A rejected submission's log is saved as
+`build/notarization-<submission id>.json`.
+
+The build then staples the ticket to the app, requires Gatekeeper to report
+`source=Notarized Developer ID` for it and runs `syspolicy_check distribution`.
+It packages and signs the DMG, checks that the app inside keeps its ticket,
+notarizes and staples the DMG and requires the same Gatekeeper result for it.
+Stapling both lets a copy of the app open without reaching Apple's servers. The
+manifest seals `notarization: notarized` next to `code_signing: team:UVBKCN5PPV`.
+For a team release the upload refuses an unnotarized manifest and also runs
+`xcrun stapler validate` and the Gatekeeper assessment on the DMG itself, before
+loading the Sparkle key or calling GitHub.
+
+Case treats each `case run` like any other secret use: in Accept mode it asks
+once per submission, so twice per build (the app and the DMG). The client that
+runs the build must be registered in Case with access to project `whytap`.
+A submission usually takes a few minutes. The wait ends after 20 minutes, and
+the build then fails without an archive; the submission continues on Apple's
+side, so rebuild later.
+
+Build a notarized beta for testing, then check it:
+
+```bash
+FLAVOR=beta EXODIA_NOTARIZE=1 ./scripts/user-release.sh --build-only
+xcrun stapler validate build/Whytap-Beta-<version>-build<build>.dmg
+spctl -a -vv build/Whytap-Beta.app
+spctl -a -t open --context context:primary-signature -vv build/Whytap-Beta-<version>-build<build>.dmg
+```
+
+`stapler` reports that the validate action worked, and both assessments report
+`accepted` with `source=Notarized Developer ID`. WHY:
+[notarized releases](decisions/2026-10-21-notarized-releases.md).
 
 ### Developer ID team identity
 
@@ -143,8 +217,9 @@ Apple-notarized. First-download Gatekeeper warnings remain; see
 With that file `build-dmg.sh` signs the app, its nested code and the DMG with the
 team's Developer ID Application certificate from the login keychain, using the
 hardened runtime and Apple's secure timestamp (the build needs network access
-for it). It does not notarize: the distribution stays `community`, and the
-manifest seals `code_signing: team:UVBKCN5PPV`.
+for it). The distribution stays `community`, and the manifest seals
+`code_signing: team:UVBKCN5PPV`. Notarization is a separate step of the same
+build; see [Apple notarization](#apple-notarization).
 
 Before compiling, the build looks for exactly one valid Developer ID Application
 identity of that team and stops if there is none. While a renewed certificate
@@ -224,10 +299,12 @@ Neither can be published: `user-release.sh` refuses them in a full run, and the
 upload rejects any archive whose identity differs from the committed team or
 certificate.
 
-`EXODIA_LEGACY_SIGNED_RELEASE=1` explicitly selects the optional Developer ID and
-notarization path. Only that mode requires `TEAM_ID`, a Developer ID certificate
-and `ASC_API_KEY_ID`, `ASC_API_KEY_ISSUER_ID`, `ASC_API_KEY_P8`. It is not the default
-Whytap delivery path.
+`EXODIA_LEGACY_SIGNED_RELEASE=1` explicitly selects the older Developer ID and
+notarization path. That mode requires `TEAM_ID`, a Developer ID certificate and
+`ASC_API_KEY_ID`, `ASC_API_KEY_ISSUER_ID`, `ASC_API_KEY_P8` in the environment,
+does not check the team's designated requirement and records
+`distribution: developer-id`. Team notarization above replaces it; it is not the
+Whytap delivery path. It shares `notarize-submit.sh` with team notarization.
 
 ## Channels and updates
 

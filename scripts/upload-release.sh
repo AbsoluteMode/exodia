@@ -19,6 +19,9 @@
 #   GITHUB_REPO          owner/name (default: AbsoluteMode/whytap)
 #   RELEASE_NOTES_FILE   markdown file used as the release body
 #                        (default: GitHub auto-generated notes)
+#   EXODIA_NOTARIZE      1 (default with the committed team) requires an
+#                        Apple-notarized, stapled archive; 0 explicitly
+#                        publishes a team archive without notarization
 #
 # Channels:
 #   prod  -> tag v${SHORT_VERSION}. Assets: the versioned DMG, a
@@ -117,15 +120,53 @@ elif [ -f "${COMMUNITY_SIGNING_CERTIFICATE}" ]; then
 else
     EXPECTED_CODE_SIGNING="adhoc"
 fi
+# A team release is published notarized unless EXODIA_NOTARIZE=0 says otherwise.
+# WHY: docs/decisions/2026-10-21-notarized-releases.md
+case "${EXODIA_NOTARIZE:-}" in
+    ""|0|1) ;;
+    *) echo "ERROR: EXODIA_NOTARIZE must be 0 or 1" >&2; exit 1 ;;
+esac
+if [ "${DISTRIBUTION_MODE}" = "developer-id" ]; then
+    EXPECTED_NOTARIZATION="notarized"
+elif [[ "${EXPECTED_CODE_SIGNING}" == team:* ]]; then
+    if [ "${EXODIA_NOTARIZE:-1}" = "1" ]; then
+        EXPECTED_NOTARIZATION="notarized"
+    else
+        EXPECTED_NOTARIZATION="none"
+        echo "WARN: publishing without Apple notarization (EXODIA_NOTARIZE=0); first launches need Open Anyway." >&2
+    fi
+elif [ "${EXODIA_NOTARIZE:-0}" = "1" ]; then
+    echo "ERROR: EXODIA_NOTARIZE=1 needs the Developer ID team in Resources/developer-id-team.txt." >&2
+    exit 1
+else
+    EXPECTED_NOTARIZATION="none"
+fi
 verify_archive_provenance() {
     /usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" verify \
         --project-root "${PROJECT_DIR}" --archive "$1" --manifest "${DMG_MANIFEST}" \
         --version "${SHORT_VERSION}" --build "${BUILD_VERSION}" \
         --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}" \
-        --code-signing "${EXPECTED_CODE_SIGNING}"
+        --code-signing "${EXPECTED_CODE_SIGNING}" --notarization "${EXPECTED_NOTARIZATION}"
 }
 # Validate before key access or any GitHub operation. Never infer provenance from a filename.
 SOURCE_SHA="$(verify_archive_provenance "${DMG_LOCAL}")"
+
+# The manifest records the build's claim; check the archive itself as well.
+if [ "${EXPECTED_NOTARIZATION}" = "notarized" ]; then
+    if ! xcrun stapler validate "${DMG_LOCAL}" >/dev/null 2>&1; then
+        echo "ERROR: ${DMG_FILENAME} has no valid stapled notarization ticket; refusing publication." >&2
+        exit 1
+    fi
+    assessment_status=0
+    assessment="$(spctl --assess -vv --type open --context context:primary-signature "${DMG_LOCAL}" 2>&1)" \
+        || assessment_status=$?
+    if [ "${assessment_status}" -ne 0 ] || [[ "${assessment}" != *"source=Notarized Developer ID"* ]]; then
+        echo "ERROR: Gatekeeper does not accept ${DMG_FILENAME} as notarized; refusing publication." >&2
+        printf '%s\n' "${assessment}" >&2
+        exit 1
+    fi
+    echo "Notarized archive: stapled ticket and Gatekeeper assessment verified"
+fi
 
 command -v gh >/dev/null 2>&1 || { echo "ERROR: gh (GitHub CLI) is required" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "ERROR: gh is not authenticated (run: gh auth login)" >&2; exit 1; }

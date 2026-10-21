@@ -689,13 +689,15 @@ Update flow (download-on-action):
   crashes, process kills or power loss. A final Sparkle delegate guard rechecks
   activity before an app-initiated relaunch. Feed = GitHub Releases
   (`BuildConfig.appcastURL`).
-  Community archives use our independent Sparkle Ed25519 signature, without
-  notarization. The app is signed with the Developer ID certificate of the
+  Community archives use our independent Sparkle Ed25519 signature. The app
+  is signed with the Developer ID certificate of the
   team in Resources/developer-id-team.txt (team designated requirement and
   keychain partition, so TCC grants and Keychain access survive updates);
   without that file with Whytap's self-signed community certificate when
   Resources/community-signing-certificate.pem is committed, otherwise ad hoc.
+  Published team builds are also Apple-notarized and stapled (app and DMG).
   Source dev builds (9999 / -dev) do not start the binary updater. WHY:
+  docs/decisions/2026-10-21-notarized-releases.md,
   .project-docs/decisions/2026-10-17-community-updates.md,
   .project-docs/decisions/2026-10-19-community-signing-identity.md,
   .project-docs/decisions/2026-10-21-developer-id-team-signing.md,
@@ -1149,11 +1151,14 @@ python3 scripts/customize.py doctor --json
 # Explicit ad-hoc local build if no local certificate is desired
 SIDEKEY_DEV_CODE_SIGN_IDENTITY=- ./scripts/dev-run.sh --run
 
-# Community binary: local universal build, Developer ID team signing, no notarization
+# Community binary: local universal build, Developer ID team signing;
+# a run that publishes also notarizes (EXODIA_NOTARIZE, key from Whytap Case)
 FLAVOR=prod ./scripts/user-release.sh --preflight-only
 # Commit relevant build inputs before the build; retain the adjacent DMG manifest.
 # The team's Developer ID certificate comes from the login keychain.
 FLAVOR=prod ./scripts/user-release.sh --build-only
+# A publishable build-only archive is notarized and stapled:
+FLAVOR=prod EXODIA_NOTARIZE=1 ./scripts/user-release.sh --build-only
 # Publishing also needs the project's Sparkle signing key and GitHub access
 FLAVOR=prod ./scripts/user-release.sh --upload-only
 ```
@@ -1161,10 +1166,17 @@ FLAVOR=prod ./scripts/user-release.sh --upload-only
 Whytap stays open source and uses ready-made community builds for normal installs
 and updates. The default DMG/Sparkle pipeline builds and signs locally with the
 Developer ID certificate of the team committed in `Resources/developer-id-team.txt`
-(UVBKCN5PPV), without notarization; publishing requires our independent Sparkle
-Ed25519 signing key and GitHub access. Keep archive signature verification and
-app integrity checks. The former notarized mode remains optional behind
-`EXODIA_LEGACY_SIGNED_RELEASE=1`. Do not disable Gatekeeper or other OS
+(UVBKCN5PPV). A run that publishes also has Apple notarize and staple the app and
+the DMG (`EXODIA_NOTARIZE`, default 1 when publishing a team build; `--build-only`
+local refreshes skip it unless set). The App Store Connect API key comes only from
+Whytap Case project `whytap` (`ASC_API_KEY_ID`, `ASC_API_KEY_ISSUER_ID`,
+`ASC_API_KEY_P8`), injected per submission by `whytap case run` into
+`scripts/notarize-submit.sh`; never Doppler, the repository or output. A team
+upload requires a notarized manifest and stapled DMG unless `EXODIA_NOTARIZE=0`.
+Publishing requires our independent Sparkle Ed25519 signing key and GitHub
+access. Keep archive signature verification and app integrity checks. The older
+notarized mode remains optional behind `EXODIA_LEGACY_SIGNED_RELEASE=1`. WHY:
+`docs/decisions/2026-10-21-notarized-releases.md`. Do not disable Gatekeeper or other OS
 protections. First downloads may require user approval. Never change the team:
 it is in every build's designated requirement and keychain partition, so another
 team makes every install regrant macOS permissions and approve each Keychain
@@ -1178,8 +1190,8 @@ printed. WHY:
 
 Release provenance is required: commit and clean Sources, Resources, Package.swift,
 Package.resolved, VERSION and scripts before building. Capture build-time HEAD;
-seal archive SHA-256/size, version, build, flavor and code-signing identity in
-`<DMG>.manifest.json`.
+seal archive SHA-256/size, version, build, flavor, code-signing identity and
+notarization in `<DMG>.manifest.json`.
 Upload-only requires the adjacent manifest. Reject missing/inconsistent
 provenance, changed HEAD or archive bytes before signing-key access/uploads, and
 target the release at the verified manifest's build commit. Rebuild after changing

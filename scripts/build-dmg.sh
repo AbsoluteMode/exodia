@@ -3,10 +3,12 @@
 # build-dmg.sh — Build a universal community Whytap DMG.
 # Default: the Developer ID certificate of the Apple team committed in
 # Resources/developer-id-team.txt, from the login keychain, without
-# notarization. Without that file: Whytap's self-signed community certificate
+# notarization. EXODIA_NOTARIZE=1 also notarizes and staples the app and the
+# DMG with the team's App Store Connect API key from Whytap Case.
+# Without that file: Whytap's self-signed community certificate
 # when Resources/community-signing-certificate.pem is committed, otherwise
-# ad-hoc; neither needs an Apple Developer account.
-# Developer-ID/notarization is available only with EXODIA_LEGACY_SIGNED_RELEASE=1.
+# ad-hoc; neither needs an Apple Developer account nor can be notarized.
+# The older Developer-ID/notarization path stays behind EXODIA_LEGACY_SIGNED_RELEASE=1.
 #
 # Usage:
 #   FLAVOR=beta|prod \
@@ -27,10 +29,15 @@
 #                  PEM private key of the community certificate (Doppler, never printed)
 #   EXODIA_COMMUNITY_SIGNING_CERTIFICATE_FILE  test-only certificate override;
 #                  its archives cannot be published
+#   EXODIA_NOTARIZE  0|1 (default: 0) notarize a team-signed build; needs
+#                  ASC_API_KEY_ID, ASC_API_KEY_ISSUER_ID and ASC_API_KEY_P8 in
+#                  Whytap Case project whytap (never in the environment)
+#   EXODIA_CASE_HELPER  Case command (default: the installed Whytap's
+#                  Contents/Helpers/whytap)
 #
 # Community requirements: local Swift/Xcode macOS 26 SDK and build resources;
 # team signing also needs the Developer ID certificate and network access for
-# Apple's signing timestamp.
+# Apple's signing timestamp; notarization also needs Apple's notary service.
 # Optional legacy mode additionally needs TEAM_ID and ASC_API_KEY_* credentials.
 # --preflight-only validates the selected build path without building or publishing.
 #
@@ -46,6 +53,21 @@ case "${LEGACY_SIGNED_RELEASE}" in
     1) DISTRIBUTION_MODE="developer-id"; SIGNING_TIMESTAMP_ARGS=(--timestamp) ;;
     *) echo "ERROR: EXODIA_LEGACY_SIGNED_RELEASE must be 0 or 1" >&2; exit 2 ;;
 esac
+# WHY: docs/decisions/2026-10-21-notarized-releases.md
+NOTARIZE="${EXODIA_NOTARIZE:-0}"
+case "${NOTARIZE}" in
+    0|1) ;;
+    *) echo "ERROR: EXODIA_NOTARIZE must be 0 or 1" >&2; exit 2 ;;
+esac
+# The legacy mode always notarized, with its key in the environment.
+NOTARY_CREDENTIALS="case"
+if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+    NOTARIZE=1
+    NOTARY_CREDENTIALS="environment"
+fi
+NOTARY_CASE_PROJECT="whytap"
+NOTARY_KEYS="ASC_API_KEY_ID,ASC_API_KEY_ISSUER_ID,ASC_API_KEY_P8"
+CASE_HELPER="${EXODIA_CASE_HELPER:-/Applications/Whytap.app/Contents/Helpers/whytap}"
 DMG_HEADLESS="${EXODIA_DMG_HEADLESS:-0}"
 case "${DMG_HEADLESS}" in
     0|1) ;;
@@ -284,13 +306,6 @@ if ! [[ "${SPARKLE_PUBLIC_ED_KEY}" =~ ^[A-Za-z0-9+/=]{43,44}$ ]]; then
     exit 1
 fi
 
-if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
-    if ! xcrun notarytool --version >/dev/null 2>&1; then
-        echo "ERROR: xcrun notarytool is required only for the selected legacy release." >&2
-        exit 1
-    fi
-fi
-
 # --- Toolchain guard: require the macOS 26 (Tahoe) SDK -------------------
 # WHY: on macOS 26 AppKit applies the Liquid Glass material pipeline only to
 # binaries linked against the macOS 26 SDK. An Xcode 16.x toolchain links the
@@ -355,16 +370,38 @@ if [ -n "${SIGNING_TEAM_ID}" ]; then
     SIGNING_TIMESTAMP_ARGS=(--timestamp)
 fi
 echo "▶ Code signing: ${CODE_SIGNING}"
+NOTARIZATION="none"
+if [ "${NOTARIZE}" = "1" ]; then
+    # Apple notarizes only code signed with a Developer ID certificate.
+    if [ "${LEGACY_SIGNED_RELEASE}" = "0" ] && [ -z "${SIGNING_TEAM_ID}" ]; then
+        echo "ERROR: EXODIA_NOTARIZE=1 needs the Developer ID team in Resources/developer-id-team.txt;" >&2
+        echo "community-certificate and ad-hoc builds cannot be notarized." >&2
+        exit 1
+    fi
+    NOTARIZATION="notarized"
+    if [ "${NOTARY_CREDENTIALS}" = "case" ]; then
+        echo "▶ Notarization: Apple notary service, key from Whytap Case project ${NOTARY_CASE_PROJECT}"
+    else
+        echo "▶ Notarization: Apple notary service, key from the environment (legacy mode)"
+    fi
+fi
 
 if [ "${PREFLIGHT_ONLY}" -eq 1 ]; then
     SIGNING_KEY_CONFIGURED=0
     if [ -n "${EXODIA_COMMUNITY_SIGNING_KEY:-}" ] || [ -n "${EXODIA_COMMUNITY_SIGNING_KEY_FILE:-}" ]; then
         SIGNING_KEY_CONFIGURED=1
     fi
+    NOTARY_SOURCE=""
+    if [ "${NOTARIZE}" = "1" ] && [ "${NOTARY_CREDENTIALS}" = "case" ]; then
+        NOTARY_SOURCE="case:${NOTARY_CASE_PROJECT}"
+    elif [ "${NOTARIZE}" = "1" ]; then
+        NOTARY_SOURCE="environment"
+    fi
     /usr/bin/python3 - "${DISTRIBUTION_MODE}" "${BUNDLE_ID}" "${SHORT_VERSION}" "${BUILD_VERSION}" \
-        "${CODE_SIGNING}" "${SIGNING_KEY_CONFIGURED}" <<'PYJSON'
+        "${CODE_SIGNING}" "${SIGNING_KEY_CONFIGURED}" "${NOTARIZATION}" "${NOTARY_SOURCE}" \
+        "${NOTARY_KEYS}" <<'PYJSON'
 import json, sys
-mode, bundle_id, version, build, code_signing, key_configured = sys.argv[1:]
+mode, bundle_id, version, build, code_signing, key_configured, notarization, notary_source, notary_keys = sys.argv[1:]
 certificate = code_signing.split(":", 1)[1] if code_signing.startswith("certificate:") else None
 team = code_signing.split(":", 1)[1] if code_signing.startswith("team:") else None
 print(json.dumps({"distribution": mode, "bundle_id": bundle_id,
@@ -373,7 +410,10 @@ print(json.dumps({"distribution": mode, "bundle_id": bundle_id,
     "signing_team_id": team,
     "signing_key_configured": key_configured == "1",
     "requires_apple_developer": mode == "developer-id" or team is not None,
-    "requires_notarization": mode == "developer-id"}))
+    "requires_notarization": notarization == "notarized",
+    "notarization": notarization,
+    "notarization_credentials": notary_source or None,
+    "notarization_keys": notary_keys.split(",") if notary_source else []}))
 PYJSON
     exit 0
 fi
@@ -429,22 +469,58 @@ if [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
     fi
 fi
 
+# Notarization needs Apple's tools and, for team builds, the API key in Case.
+# Check both before compiling; only key names are read here, never values.
+if [ "${NOTARIZE}" = "1" ]; then
+    if ! xcrun notarytool --version >/dev/null 2>&1; then
+        echo "ERROR: notarization needs xcrun notarytool (Xcode command-line tools)." >&2
+        exit 1
+    fi
+fi
+if [ "${NOTARIZE}" = "1" ] && [ "${NOTARY_CREDENTIALS}" = "case" ]; then
+    if [ ! -x "${CASE_HELPER}" ]; then
+        echo "ERROR: notarization reads the App Store Connect API key from Whytap Case," >&2
+        echo "but its command is missing: ${CASE_HELPER}" >&2
+        echo "Install Whytap in /Applications or set EXODIA_CASE_HELPER to its Contents/Helpers/whytap." >&2
+        exit 1
+    fi
+    case_status=0
+    CASE_KEY_NAMES="$("${CASE_HELPER}" case ls -p "${NOTARY_CASE_PROJECT}" 2>/dev/null \
+        | awk '{ print $1 }')" || case_status=$?
+    if [ "${case_status}" -ne 0 ]; then
+        echo "ERROR: Whytap Case could not list project ${NOTARY_CASE_PROJECT} (exit ${case_status})." >&2
+        echo "Open Whytap, unlock Case and allow this client, then rebuild." >&2
+        exit 1
+    fi
+    missing_keys=()
+    for key_name in ${NOTARY_KEYS//,/ }; do
+        if ! printf '%s\n' "${CASE_KEY_NAMES}" | grep -qx "${key_name}"; then
+            missing_keys+=("${key_name}")
+        fi
+    done
+    if [ "${#missing_keys[@]}" -gt 0 ]; then
+        echo "ERROR: notarization needs an App Store Connect API key in Whytap Case project ${NOTARY_CASE_PROJECT}." >&2
+        echo "Missing keys: ${missing_keys[*]}" >&2
+        echo "Create a team key with the Developer role (App Store Connect -> Users and Access ->" >&2
+        echo "Integrations -> Team Keys), then add its Key ID as ASC_API_KEY_ID, the Issuer ID as" >&2
+        echo "ASC_API_KEY_ISSUER_ID and the contents of AuthKey_<key ID>.p8 as ASC_API_KEY_P8." >&2
+        echo "See docs/build-and-release.md (Apple notarization)." >&2
+        exit 1
+    fi
+    echo "▶ Notarization key found in Whytap Case project ${NOTARY_CASE_PROJECT}"
+fi
+
 # Pin the clean build-input commit before compiling; sealing checks it again.
 BUILD_SOURCE_SHA="$(/usr/bin/python3 "${PROJECT_DIR}/scripts/release-provenance.py" capture \
     --project-root "${PROJECT_DIR}")"
 
 # --- Secrets staging (private umask, mktemp, trap cleanup) ----------------
-
-ASC_KEY_DIR=""
-ASC_KEY_PATH=""
+# The notarization key is staged by notarize-submit.sh in its own process.
 
 SIGNING_DIR=""
 SIGNING_KEYCHAIN=""
 
 cleanup() {
-    if [ -n "${ASC_KEY_DIR:-}" ] && [ -d "${ASC_KEY_DIR}" ]; then
-        rm -rf "${ASC_KEY_DIR}"
-    fi
     if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -f "${SIGNING_KEYCHAIN}" ]; then
         security delete-keychain "${SIGNING_KEYCHAIN}" >/dev/null 2>&1 || true
     fi
@@ -468,14 +544,39 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
-    ORIGINAL_UMASK="$(umask)"
-    umask 077
-    ASC_KEY_DIR="$(mktemp -d -t sidekey-asc)"
-    ASC_KEY_PATH="${ASC_KEY_DIR}/AuthKey.p8"
-    printf '%s' "${ASC_API_KEY_P8}" > "${ASC_KEY_PATH}"
-    umask "${ORIGINAL_UMASK}"
-fi
+# $1 = archive to submit: the zipped app or the signed DMG.
+notarize_archive() {
+    local status=0
+    if [ "${NOTARY_CREDENTIALS}" = "case" ]; then
+        # Case puts the key into this one command's environment only. The
+        # command is single-quoted; its own shell expands the paths below.
+        EXODIA_NOTARY_SUBMIT="${PROJECT_DIR}/scripts/notarize-submit.sh" \
+        EXODIA_NOTARY_ARCHIVE="$1" \
+        EXODIA_NOTARY_LOG_DIR="${PROJECT_DIR}/build" \
+            "${CASE_HELPER}" case run -p "${NOTARY_CASE_PROJECT}" --only "${NOTARY_KEYS}" \
+            '/bin/bash "$EXODIA_NOTARY_SUBMIT" "$EXODIA_NOTARY_ARCHIVE" "$EXODIA_NOTARY_LOG_DIR"' \
+            || status=$?
+    else
+        /bin/bash "${PROJECT_DIR}/scripts/notarize-submit.sh" "$1" "${PROJECT_DIR}/build" || status=$?
+    fi
+    if [ "${status}" -ne 0 ]; then
+        echo "ERROR: notarization of ${1##*/} failed (exit ${status}); see the messages above." >&2
+        exit 1
+    fi
+}
+
+# $1 = notarized path; the remaining arguments select the assessment type.
+require_notarized_assessment() {
+    local target="$1" output status=0
+    shift
+    output="$(spctl --assess -vv "$@" "${target}" 2>&1)" || status=$?
+    if [ "${status}" -ne 0 ] || [[ "${output}" != *"source=Notarized Developer ID"* ]]; then
+        echo "ERROR: Gatekeeper does not accept ${target##*/} as notarized:" >&2
+        printf '%s\n' "${output}" >&2
+        exit 1
+    fi
+    printf '%s\n' "${output}" | sed 's/^/  /'
+}
 
 # --- Build ---------------------------------------------------------------
 
@@ -1004,43 +1105,23 @@ echo "  ok: directories are +rx, files are +r, executables are +x"
 echo "▶ Re-verifying signature after permission normalization..."
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 
-if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+if [ "${NOTARIZE}" = "1" ]; then
     # --- Notarize app bundle ------------------------------------------------
+    # The app carries its own stapled ticket, so a copy dragged out of the DMG
+    # opens without Apple's servers; the DMG is notarized separately below.
 
     echo "▶ Zipping app bundle for notarization submission..."
     rm -f "${APP_ZIP}"
     ditto -c -k --keepParent "${APP_BUNDLE}" "${APP_ZIP}"
-
-    echo "▶ Submitting app bundle to Apple notarization (this may take a few minutes)..."
-    # --timeout 1200 (= 20 min) hard-caps the --wait poll. When Apple's notary
-    # queue stalls (observed May 2026: 18–30 h waits), notarytool exits non-zero
-    # at 20 min instead of leaving a local release attempt stuck indefinitely.
-    # On a healthy queue this submission finishes in well under 5 min, so the cap
-    # is never hit during normal operation. The submission continues server-side
-    # even after timeout; the next local release attempt will re-submit and
-    # usually succeed.
-    if ! xcrun notarytool submit "${APP_ZIP}" \
-            --key "${ASC_KEY_PATH}" \
-            --key-id "${ASC_API_KEY_ID}" \
-            --issuer "${ASC_API_KEY_ISSUER_ID}" \
-            --wait \
-            --timeout 1200; then
-        echo "ERROR: notarytool submit failed for app bundle." >&2
-        echo "Inspect log via:" >&2
-        echo "  xcrun notarytool history --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}'" >&2
-        echo "  xcrun notarytool log <submission-id> --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}' --output-format json" >&2
-        exit 1
-    fi
+    notarize_archive "${APP_ZIP}"
+    rm -f "${APP_ZIP}"
 
     echo "▶ Stapling notarization ticket to app bundle..."
     xcrun stapler staple "${APP_BUNDLE}"
     xcrun stapler validate "${APP_BUNDLE}"
 
-    # Verify Gatekeeper acceptance of stapled app bundle
-    if ! spctl --assess --type execute --verbose=2 "${APP_BUNDLE}"; then
-        echo "ERROR: Gatekeeper rejected the notarized app; refusing to package it." >&2
-        exit 1
-    fi
+    echo "▶ Gatekeeper assessment of the stapled app..."
+    require_notarized_assessment "${APP_BUNDLE}" --type execute
 
     # macOS 14+ checks distribution-specific problems that spctl can miss, such
     # as external library search paths left behind by the developer toolchain.
@@ -1048,6 +1129,10 @@ if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
         syspolicy_check distribution "${APP_BUNDLE}"
     fi
 
+    # The ticket lives outside the signature seal; the requirement is unchanged.
+    if [ -n "${SIGNER_REQUIREMENT}" ]; then
+        verify_release_signature "${APP_BUNDLE}"
+    fi
 else
     echo "▶ Community build: Apple notarization and stapling are not used."
 fi
@@ -1241,6 +1326,14 @@ if [ -n "${SIGNER_REQUIREMENT}" ] && [ "${APP_PRESENT}" -eq 1 ]; then
     fi
     echo "  ok: ${APP_BUNDLE_NAME}.app in the DMG keeps the designated requirement"
 fi
+if [ "${NOTARIZE}" = "1" ] && [ "${APP_PRESENT}" -eq 1 ]; then
+    if ! xcrun stapler validate "${DMG_MOUNT_POINT}/${APP_BUNDLE_NAME}.app" >/dev/null; then
+        echo "ERROR: ${APP_BUNDLE_NAME}.app in the DMG lost its stapled notarization ticket." >&2
+        detach_dmg_mount "${DMG_MOUNT_POINT}" 3 >/dev/null 2>&1 || true
+        exit 1
+    fi
+    echo "  ok: ${APP_BUNDLE_NAME}.app in the DMG keeps its stapled ticket"
+fi
 detach_dmg_mount "${DMG_MOUNT_POINT}" 3 >/dev/null 2>&1 || true
 
 if [ "${SYMLINK_OK}" -ne 1 ]; then
@@ -1280,29 +1373,17 @@ if [ -n "${SIGNER_REQUIREMENT}" ]; then
     require_signature "${DMG_PATH}" "identifier \"${BUNDLE_ID}.dmg\" and ${SIGNER_REQUIREMENT}"
 fi
 
-if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
+if [ "${NOTARIZE}" = "1" ]; then
     # --- Notarize DMG -------------------------------------------------------
 
-    echo "▶ Submitting DMG to Apple notarization..."
-    # --timeout 1200: same rationale as the app-bundle submission above. See
-    # comment there for full context on why the cap matters.
-    if ! xcrun notarytool submit "${DMG_PATH}" \
-            --key "${ASC_KEY_PATH}" \
-            --key-id "${ASC_API_KEY_ID}" \
-            --issuer "${ASC_API_KEY_ISSUER_ID}" \
-            --wait \
-            --timeout 1200; then
-        echo "ERROR: notarytool submit failed for DMG." >&2
-        echo "Inspect log via:" >&2
-        echo "  xcrun notarytool history --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}'" >&2
-        echo "  xcrun notarytool log <submission-id> --key '${ASC_KEY_PATH}' --key-id '${ASC_API_KEY_ID}' --issuer '${ASC_API_KEY_ISSUER_ID}' --output-format json" >&2
-        exit 1
-    fi
+    notarize_archive "${DMG_PATH}"
 
     echo "▶ Stapling notarization ticket to DMG..."
     xcrun stapler staple "${DMG_PATH}"
     xcrun stapler validate "${DMG_PATH}"
 
+    echo "▶ Gatekeeper assessment of the stapled DMG..."
+    require_notarized_assessment "${DMG_PATH}" --type open --context context:primary-signature
 fi
 
 # Write the build-time receipt only after final archive bytes are complete.
@@ -1310,13 +1391,15 @@ fi
     --project-root "${PROJECT_DIR}" --source-sha "${BUILD_SOURCE_SHA}" \
     --archive "${DMG_PATH}" --version "${SHORT_VERSION}" --build "${BUILD_VERSION}" \
     --flavor "${FLAVOR}" --distribution "${DISTRIBUTION_MODE}" \
-    --code-signing "${CODE_SIGNING}" >/dev/null
+    --code-signing "${CODE_SIGNING}" --notarization "${NOTARIZATION}" >/dev/null
 
 # --- Final ---------------------------------------------------------------
 
 echo ""
 if [ "${LEGACY_SIGNED_RELEASE}" = "1" ]; then
     echo "✓ Developer-ID signed + notarized DMG: ${DMG_PATH}"
+elif [ -n "${SIGNING_TEAM_ID}" ] && [ "${NOTARIZE}" = "1" ]; then
+    echo "✓ Notarized DMG (Developer ID team ${SIGNING_TEAM_ID}, app and DMG stapled): ${DMG_PATH}"
 elif [ -n "${SIGNING_TEAM_ID}" ]; then
     echo "✓ Community DMG (Developer ID team ${SIGNING_TEAM_ID}, not Apple-notarized): ${DMG_PATH}"
 elif [ -n "${SIGNING_CERTIFICATE_SHA1}" ]; then
