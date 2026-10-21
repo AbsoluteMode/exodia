@@ -40,7 +40,7 @@ its neutral workspace and sessions.
 
 Coding harnesses share the [source customization workflow](../docs/customization/README.md).
 
-Distribution: [community binaries and updates](decisions/2026-10-17-community-updates.md), signed with the Developer ID team and not notarized, with source builds retained for customizations.
+Distribution: [community binaries and updates](decisions/2026-10-17-community-updates.md), signed with the Developer ID team and, for published releases, [notarized by Apple](../docs/decisions/2026-10-21-notarized-releases.md), with source builds retained for customizations.
 The earlier [Apple-notarized DMG policy](decisions/2026-09-10-public-installation.md)
 is historical; runtime installation and resource checks remain current.
 
