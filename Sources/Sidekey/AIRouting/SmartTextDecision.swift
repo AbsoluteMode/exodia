@@ -33,7 +33,14 @@ struct SmartTextDecision: SmartTextDeciding {
         let input = String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
         guard let probability = try await client.cleanupProbability(route: route, input: input),
               probability.isFinite, (0...1).contains(probability) else { return false }
-        return probability <= 0.05
+        return probability <= Self.fastPathThreshold(for: route)
+    }
+
+    // Calibrate each model separately. A different provider/model must not
+    // inherit Jev's measured operating point or prompt.
+    // WHY: .project-docs/decisions/2026-10-21-smart-decision-calibration.md
+    static func fastPathThreshold(for route: ResolvedRoute) -> Double {
+        JevDecisionCalibration.applies(to: route) ? JevDecisionCalibration.fastPathThreshold : 0.05
     }
 
     private struct State: Encodable {
@@ -105,7 +112,7 @@ struct TextDecisionClient: TextDecisionClienting {
             // https://openrouter.ai/blog/insights/what-is-jev/
             url = URL(string: "https://openrouter.ai/api/alpha/decisions")!
             body = ["model": route.model, "state": input, "questions": [
-                "needs_cleanup": ["type": "noul", "instructions": instructions]
+                "needs_cleanup": ["type": "noul", "instructions": JevDecisionCalibration.applies(to: route) ? JevDecisionCalibration.instructions : instructions]
             ]]
         case .openAI:
             // https://developers.openai.com/api/docs/guides/decisions

@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import Sidekey
 
 @MainActor
@@ -34,6 +35,7 @@ final class SmartTextDecisionTests: XCTestCase {
         XCTAssertNil(body["messages"])
         let questions = try XCTUnwrap(body["questions"] as? [String: [String: String]])
         XCTAssertEqual(questions["needs_cleanup"]?["type"], "noul")
+        XCTAssertEqual(questions["needs_cleanup"]?["instructions"], JevDecisionCalibration.instructions)
     }
 
     func test_openai_request_uses_decisions_and_predicate() throws {
@@ -45,6 +47,38 @@ final class SmartTextDecisionTests: XCTestCase {
         let questions = try XCTUnwrap(body["questions"] as? [[String: String]])
         XCTAssertEqual(questions.first?["type"], "predicate")
         XCTAssertEqual(questions.first?["name"], "needs_cleanup")
+        XCTAssertEqual(questions.first?["instructions"], TextDecisionClient.instructions)
+    }
+
+    func test_calibrated_jev_threshold_is_model_specific_and_keeps_context() async throws {
+        let env = environment()
+        try env.keys.save("synthetic-decision-key", account: ProviderAccount.openRouter.keychainAccount(in: env.routing)!)
+        env.routing.setRoute(FeatureRoute(account: .openRouter, model: "typesafe/jev-1.14"), for: .dropSmartDecision)
+        let client = Client(nil)
+        let decision = SmartTextDecision(resolver: FeatureRouteResolver(routing: env.routing, keys: env.keys), client: client)
+        for (p, expected) in [(0.05, true), (0.40, true), (0.50, true), (0.501, false), (1.0, false), (-0.1, false), (Double.nan, false)] {
+            client.probability = p
+            let result = try await decision.canUseFastPath("Synthetic message.", targetApp: "Telegram", appContext: "Reference only", language: "ru")
+            XCTAssertEqual(result, expected)
+        }
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(client.input).utf8)) as? [String: String])
+        XCTAssertTrue(state["context"]?.contains("Telegram") == true)
+        XCTAssertTrue(state["context"]?.contains("Reference only") == true)
+        XCTAssertEqual(state["language"], "ru")
+        let other = ResolvedRoute(feature: .dropSmartDecision, account: .openRouter,
+                                  model: "typesafe/jev-1.15", apiKey: "synthetic-key", server: nil)
+        XCTAssertEqual(SmartTextDecision.fastPathThreshold(for: other), 0.05)
+        XCTAssertEqual(SmartTextDecision.fastPathThreshold(for: route(.openAI)), 0.05)
+        client.probability = nil
+        let missing = try await decision.canUseFastPath("Synthetic message.", targetApp: nil, appContext: nil, language: nil)
+        XCTAssertFalse(missing)
+    }
+
+    func test_measured_jev_prompt_is_pinned_until_recalibrated() {
+        let hash = SHA256.hash(data: Data(JevDecisionCalibration.instructions.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hash, "e4771633bf4eff7b0a481b81485d57614768cbccf0062d18a5f7db182de8644e",
+                       "Changing the measured question requires rerunning calibration, not just updating this hash.")
     }
 
     func test_typed_responses_and_refusals_never_become_generated_text() throws {
