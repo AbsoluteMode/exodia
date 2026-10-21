@@ -56,14 +56,16 @@ Use the existing Smart editor call with an explicit full-message contract:
 The prompt is calibrated for GPT-6 Sol, shared by configured Smart editor
 routes. It does not select or substitute a model, change provider pins,
 add a second call or change Fast/Retry behavior. This decision concerns the
-editor stage; a separate Smart decision stage must still identify rambling
-or unstructured text as needing editing.
+editor stage; Smart decision instructions also identify rambling or
+unstructured text as needing editing, even with correct grammar.
 
 ## Sources
 
 The implementation uses `PostProcessor.systemPrompt`. The response is delivered
 through `DropOutputPolicy` and `DropFillerFilter`, which preserve internal newlines.
-Synthetic-client integration tests verify paragraphs/lists through this path
+Paragraph- and list-initial filler removal consumes orphan punctuation without
+flattening newlines or changing list markers. Synthetic-client integration
+tests verify paragraphs/lists through this path
 and output-language wiring. Live model acceptance uses supplied/synthetic
 dictation examples separately from unit tests and never runs in CI.
 
