@@ -9,6 +9,15 @@ canonical_for: [screenshot-editor, screenshot-text-number-blur]
 verified_at: 2026-10-21
 sources:
   - type: user-confirmed
+    reference: On 2026-10-21 the user clarified the four arrows must appear as a cross directly on the screenshot toolbar, with reassignment in that same panel rather than Settings.
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Sources/Sidekey/Screenshots/ScreenshotArrowCluster.swift
+    confirmed_at: 2026-10-21
+  - type: repository
+    reference: Tests/SidekeyTests/Screenshots/ScreenshotArrowToolbarTests.swift
+    confirmed_at: 2026-10-21
+  - type: user-confirmed
     reference: On 2026-10-21 the user reported Cmd-Z still failed after a curved stroke and requested four assignable arrow actions, Screenshot before Agent priority, chosen defaults, replacement on drop and dashed draggable slots.
     confirmed_at: 2026-10-21
   - type: repository
@@ -243,6 +252,24 @@ suspension. Native text fields keep cursor navigation; held export keys do
 not repeat destructive or finish actions. Synthetic tests use unshown windows
 and private subjects/defaults; physical delivery and dragging remain installed
 app acceptance.
+
+# Placement correction — 2026-10-21
+
+The user did not see the arrows because the implementation put them only in
+Settings. They clarified a cardinal cross directly on the screenshot toolbar,
+with reassignment in that same panel. This supersedes the Settings-only surface
+and its inverted-T layout, not the saved four-action contract.
+
+ScreenshotArrowCluster is one 96 × 60 pt toolbar component, retained as a unit
+when controls wrap. Four native buttons draw dashed directional silhouettes
+with the assigned function symbols. Clicking opens a native assignment menu;
+physical arrow keys execute the assigned functions. Every visible toolbar
+function and existing assignment can be dragged onto a destination, replacing
+only that slot and saving immediately. Dragging never also activates its source.
+Menus expose every retained editor action plus per-arrow reset and keyboard/
+VoiceOver access. Busy processing disables assignments, menu items and drops.
+The former Settings-only component is removed; persistence, Help, backup,
+Command-Z, native text handling and Agent priority stay intact.
 
 # Consequences
 

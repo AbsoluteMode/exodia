@@ -83,10 +83,13 @@ There is no provider setup, account, app-managed model download or API request.
 Editor shortcuts, also listed in Help: A Arrow, R Rectangle,
 O Oval, P Pen, T Text, B Blur, N Numbered steps, ⌘C Copy,
 ⌘S Download, ⌘Z Undo, ⇧⌘Z Redo. Undo/redo also work with Russian input.
-Bare arrows default to ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. Change these in
-Settings → Hotkeys → Screenshot arrows: drag an action onto a dashed slot to
-replace it, drag an existing assignment to another slot, or click a slot for
-the keyboard-accessible menu. Save applies the choices; Revert discards edits.
+Bare arrows default to ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. Four dashed,
+arrow-shaped assignment controls form a cross directly on the screenshot toolbar.
+Drag a toolbar tool/action onto one to replace its function, or drag one arrow's
+assignment onto another; the source remains. Click a dashed arrow for the native
+menu of every tool/command and Reset this arrow. Assignments save immediately,
+without leaving the editor, copying the screenshot or cancelling capture. The
+physical arrow keys execute those assignments; Tab and Space reach the menus.
 Shift-arrows move the crop 10 points; Option-arrows resize it. Move crop can
 also be assigned to a bare arrow for 1-point movement. Screenshot owns arrows
 before Agent; text fields keep native cursor movement. Closing Screenshot

@@ -2,31 +2,38 @@
 
 ## Screenshot arrow assignments — 2026-10-21
 
-The person comes to assign four quick screenshot actions. First see the current
-↑/←/↓/→ mapping; then drag an action onto a slot or choose its menu and Save.
-Keep this in Settings Hotkeys so the frozen screenshot retains its compact bar.
+The person comes to annotate a captured region and configure four quick actions
+without leaving it. First see four directional controls on the screenshot toolbar,
+then drag a toolbar function onto one or click it to change its assignment.
 
-- Use an inverted-T arrow cluster with dashed rounded contours, the shared
-  HotkeyHintView keycaps, and an always-visible action name. Why: the user
-  asked for dashed draggable slots and replacement on drop.
-- Defaults are ↑ Pen, ↓ Blur, ← Undo, → Copy & exit. The palette contains every
-  retained tool/command plus Delete annotation and Move crop. A slot is also
-  a drag source; dropping copies and replaces only the destination. Why: these
-  defaults cover drawing, obscuring, correcting and finishing.
-- Each whole slot highlights on hover/press/drop; the native Menu retains
-  keyboard activation and VoiceOver with an explicit focus treatment. Palette
-  items highlight across their entire drag area. Why: pointer users need clear
-  feedback, and dragging cannot be the sole way to assign an action.
-- Reuse semantic settings text/surfaces, 12 pt action text and 8 pt spacing.
-  Three equal columns remain at 360 pt, with wrapping action names; the palette
-  adapts its column count. No animation is added, so reduced motion is unchanged.
-- Screenshot suspends Agent’s Carbon registrations before handling arrows.
-  Native text editing remains first within the editor; modified arrows adjust
-  the crop. Why: screenshot commands must not paste/open an Agent action behind
-  the frozen editor.
+- Place the four controls in a compact 96 × 60 pt cardinal cross inside the
+  existing wrapping toolbar: Up above Left/Right, Down below. Each outline is
+  an actual directional arrow with a dashed contour and the assigned function's
+  symbol inside. Why: the user clarified the controls belong on the screenshot
+  toolbar itself and must look like a cross; the earlier Settings-only/inverted-T
+  placement was an incorrect interpretation and is superseded.
+- Keep defaults ↑ Pen, ↓ Blur, ← Undo, → Copy & exit and preserve saved mappings.
+  The physical keys execute those actions. Clicking a contour opens a native
+  assignment menu, including every retained tool/command and Reset this arrow.
+  Why: changing a Copy/Cancel binding must never finish the capture accidentally.
+- Existing toolbar tools/actions and the assigned arrows are native drag sources.
+  A drop replaces only its destination and saves immediately; the source remains.
+  A tracked drag must not also select the source tool, export or open a menu.
+  Why: reassignment belongs in the same panel, without a trip to Settings or Save.
+- Reuse the toolbar's popover material and adaptive semantic AppKit colors. Arrow
+  shapes highlight on hover, press and valid drop, and draw native focus masks.
+  Tab traverses all four controls; Space opens the same menu. Busy state disables
+  assignments, their drop targets and menu items. Why: dragging needs clear
+  feedback and an equivalent keyboard/VoiceOver path.
+- Keep the cross together when the rest of the toolbar wraps; all existing tools
+  and finish actions stay visible. No new animation is introduced. Why: narrow
+  displays must retain the four-way geometry and direct access to Copy & exit.
+- Screenshot still suspends Agent's Carbon registrations; text fields keep native
+  cursor navigation and modified arrows adjust the crop. Command-Z retains the
+  physical-key fix. Why: this placement correction must preserve editing priority.
 
-Offscreen native render fixtures cover 360 and 520 pt. They do not establish
-physical drag, keyboard or VoiceOver acceptance in the installed application.
+Native offscreen toolbar renders cover 360/520/900 pt in light/dark appearances.
+They do not establish physical drag/menu/VoiceOver acceptance in the installed app.
 
 ## Screenshot toolbar and capture reliability — 2026-10-21
 
