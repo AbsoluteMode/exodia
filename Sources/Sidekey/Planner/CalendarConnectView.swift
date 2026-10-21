@@ -104,7 +104,7 @@ struct CalendarConnectView: View {
     @StateObject private var flow: CalendarConnectionFlow
     private let keepsFlowOnDisappear: Bool
     private var working: Bool { flow.working }
-    private var error: String? { flow.error }
+    private var error: String? { flow.lastProvider == provider ? flow.error : nil }
     @State private var showSetup = false
     private var registeredClient: CalendarClientConfiguration? { .registered(provider, info: configurationInfo) }
     private var readiness: CalendarConnectionReadiness { .authorization(provider, clientID: clientID, info: configurationInfo) }

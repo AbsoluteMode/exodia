@@ -751,6 +751,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             copyHistoryCard: actions.copyHistoryCard,
             toggleMeetingRecord: actions.toggleMeetingRecord,
             openScreenshot: actions.openScreenshot,
+            openHoverPanel: { [weak self] panel in self?.show(.hoverPanel(panel)) },
             quitApplication: actions.quitApplication,
             translationController: { [weak self] in self?.ensureTranslationController() },
             endToolSessions: { [weak self] in _ = self?.translationWindowController?.endEmbedding() },

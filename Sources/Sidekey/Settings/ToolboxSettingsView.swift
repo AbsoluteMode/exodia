@@ -376,7 +376,7 @@ struct ToolboxSettingsView: View {
                     Text(tool == .calendar ? "Open today’s calendar inside Hover." : "Open your task list inside Hover.")
                         .font(.callout).foregroundStyle(.secondary)
                     IntegrationAction(title: "Open " + HoverToolRegistry.info(for: tool).title) {
-                        if let url = URL(string: "whytap://tool/" + tool.rawValue) { NSWorkspace.shared.open(url) }
+                        deps.openHoverPanel(tool == .calendar ? .calendar : .tasks)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             case .monitor:
