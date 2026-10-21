@@ -43,7 +43,16 @@ actor GitHubBackupTransport {
         enum CodingKeys: String, CodingKey { case name, permissions; case isPrivate = "private" }
     }
     private struct User: Decodable { let login: String }
-    private struct Asset: Decodable { let id: Int; let name: String; let size: Int64; let state: String }
+    private struct Asset: Decodable {
+        let id: Int; let name: String; let size: Int64; let state: String
+        /// GitHub's "sha256:<hex>" over the stored bytes; absent on older assets.
+        let digest: String?
+        var sha256: String? {
+            guard let digest, digest.hasPrefix("sha256:") else { return nil }
+            let hex = digest.dropFirst("sha256:".count).lowercased()
+            return hex.count == 64 && hex.allSatisfy({ $0.isASCII && $0.isHexDigit }) ? hex : nil
+        }
+    }
     private struct Release: Decodable {
         let id: Int
         let draft: Bool
@@ -125,12 +134,15 @@ actor GitHubBackupTransport {
 
     /// Upload immutable ciphertext parts into a draft. The authenticated index
     /// is written last; only then is the release published as a complete version.
+    /// `onProgress` receives the 1-based part being checked or uploaded and the total.
     func upload(file: URL, summary: ArtifactBackupSummary, key: Data, resumeReleaseID: Int? = nil,
-                onDraft: (@Sendable (Int) async throws -> Void)? = nil) async throws -> Int {
+                onDraft: (@Sendable (Int) async throws -> Void)? = nil,
+                onProgress: (@Sendable (Int, Int) async -> Void)? = nil) async throws -> Int {
         try await requirePrivateRepository()
         guard key.count == 32 else { throw ConfigBackupError.keyUnavailable }
         let bytes = try Self.fileSize(file)
         let uploadPartSize = try Self.partSize(for: bytes)
+        let totalParts = Int((bytes + Int64(uploadPartSize) - 1) / Int64(uploadPartSize))
         let tag = "exodia-backup-" + summary.id.uuidString.lowercased()
         let release: Release
         if let resumeReleaseID {
@@ -149,13 +161,16 @@ actor GitHubBackupTransport {
             try Task.checkCancellation()
             guard parts.count < Self.maximumParts else { throw ConfigBackupError.tooLarge }
             let name = String(format: "part-%05d.bin", parts.count)
-            let asset = try await reusableAsset(data, name: name, release: release)
+            await onProgress?(parts.count + 1, totalParts)
             let digest = Self.digest(data)
-            guard asset.size == data.count, asset.state == "uploaded" else { throw Failure.incomplete }
-            // A successful upload response is not proof of durable bytes. Read
-            // each part back before publishing a completed snapshot.
-            let returned = try await downloadAsset(asset, maximumBytes: Self.maximumPartBytes)
-            guard returned.count == data.count, Self.digest(returned) == digest else { throw Failure.incomplete }
+            if try await verifiedExistingAsset(data, digest: digest, name: name, release: release) == nil {
+                let asset = try await uploadAsset(data, name: name, releaseID: release.id)
+                guard asset.size == data.count, asset.state == "uploaded" else { throw Failure.incomplete }
+                // A successful upload response is not proof of durable bytes. Read
+                // each new part back before publishing a completed snapshot.
+                let returned = try await downloadAsset(asset, maximumBytes: Self.maximumPartBytes)
+                guard returned.count == data.count, Self.digest(returned) == digest else { throw Failure.incomplete }
+            }
             parts.append(Part(name: name, size: data.count, digest: digest))
         }
         guard parts.reduce(Int64(0), { $0 + Int64($1.size) }) == bytes else { throw Failure.incomplete }
@@ -363,16 +378,27 @@ actor GitHubBackupTransport {
         guard data.count <= 8_000_000 else { throw Failure.invalidResponse }
         return data
     }
-    private func reusableAsset(_ data: Data, name: String, release: Release) async throws -> Asset {
-        if let existing = release.assets.first(where: { $0.name == name }) {
-            if existing.state == "uploaded", existing.size == data.count,
-               try await downloadAsset(existing, maximumBytes: Self.maximumPartBytes) == data { return existing }
-            // GitHub documents empty starter assets after an upstream failure.
-            // Only this unfinished draft's reserved asset may be replaced.
-            guard release.draft, !release.assets.contains(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) else { throw Failure.incomplete }
-            _ = try await json(path: repoPath + "/releases/assets/\(existing.id)", method: "DELETE")
-        } else { guard release.draft else { throw Failure.incomplete } }
-        return try await uploadAsset(data, name: name, releaseID: release.id)
+    /// The part's existing asset when it already holds these bytes; nil when the
+    /// caller must upload it, after removing a mismatched asset from the draft.
+    private func verifiedExistingAsset(_ data: Data, digest: String, name: String, release: Release) async throws -> Asset? {
+        guard let existing = release.assets.first(where: { $0.name == name }) else {
+            guard release.draft else { throw Failure.incomplete }
+            return nil
+        }
+        if existing.state == "uploaded", existing.size == data.count, try await holds(existing, data: data, digest: digest) { return existing }
+        // GitHub documents empty starter assets after an upstream failure.
+        // Only this unfinished draft's reserved asset may be replaced.
+        guard release.draft, !release.assets.contains(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) else { throw Failure.incomplete }
+        _ = try await json(path: repoPath + "/releases/assets/\(existing.id)", method: "DELETE")
+        return nil
+    }
+    /// GitHub reports the SHA-256 it computed for the stored asset; a match proves
+    /// those bytes without downloading them, so a restart costs metadata only.
+    /// Older assets without a usable digest keep the download comparison.
+    // WHY: .project-docs/decisions/2026-10-21-backup-resume-digest.md
+    private func holds(_ asset: Asset, data: Data, digest: String) async throws -> Bool {
+        if let stored = asset.sha256 { return stored == digest }
+        return try await downloadAsset(asset, maximumBytes: Self.maximumPartBytes) == data
     }
     /// A saved draft ID is only a resume hint. `upload` has just verified the
     /// repository as private and writable, so a 404 for this one release means

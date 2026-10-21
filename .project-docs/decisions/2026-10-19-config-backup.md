@@ -59,7 +59,9 @@ The settings/key history is independent of cloud setup. Complete archives use
 bounded-memory authenticated framing, with all private names and the manifest
 inside the encryption. A GitHub snapshot is published only after every part and
 its encrypted completion index have been read back and checked. Interrupted
-uploads stay drafts. Remote versions are retained until the user removes them;
+uploads stay drafts. A resumed draft part may instead be confirmed by GitHub's
+reported SHA-256 digest of the stored asset; see
+[resume digest](2026-10-21-backup-resume-digest.md). Remote versions are retained until the user removes them;
 this is not a promise of unlimited storage or indefinite provider availability.
 
 Restore is parked while the runtime is open and applied before AppDelegate on
