@@ -48,9 +48,9 @@ struct AgentModeView: View {
                 installationSection
                 modelSection
                 MacCard {
-                    MacRow(title: "Allow agent actions",
-                           subtitle: "The agent can edit files and run commands, including tests, with your Mac user’s permissions.") {
-                        MacSwitch(isOn: $settings.openCodeAllowActions, label: "Allow agent actions")
+                    MacRow(title: "Bypass mode",
+                           subtitle: "On: edit files and run commands without approval, using your Mac user’s permissions. Off: file edits and commands are blocked. Applies to the next request.") {
+                        MacSwitch(isOn: $settings.openCodeAllowActions, label: "Bypass mode")
                     }
                 }
                 HStack(spacing: 12) {

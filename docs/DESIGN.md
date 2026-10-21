@@ -462,10 +462,33 @@ in SwiftUI; the native app does not acquire a React runtime or npm dependencies.
 - External binding changes remain authoritative. Disabled controls cannot change
   state, including through accessibility. A native Toggle accessibility proxy
   exposes the setting name and state, with a visible keyboard focus ring.
+- Hover highlights the switch's full capsule without changing its geometry;
+  disabled switches do not highlight. Press and keyboard focus retain their
+  separate existing feedback.
 - Only thumb position/press scale animate: a short spring (0.22 s response,
   0.88 damping) and a 0.1 s press transition. Reduce Motion removes these
   movements; Reduce Transparency uses an opaque white thumb. Native glass is
   guarded for macOS 26, with a simple highlighted thumb on macOS 14/15.
+
+### Agent permissions wording
+
+- The existing action switch is named **Bypass mode**. The person comes to
+  let the agent work without interruptions; the label matches that intent
+  instead of suggesting only that tools exist. There is one control, bound
+  to the existing preference, with no migration or default change.
+- The visible explanation states both outcomes: On runs file edits and
+  commands without approval using the Mac user's permissions; Off blocks
+  those actions. It also states that changes apply to the next request.
+  Why: OpenCode controls local approvals; OpenRouter routes model requests.
+  Off must not imply an interactive approval mode that Whytap does not offer.
+- Keep the established row, wrapping subtitle, switch size, keyboard and
+  accessibility behavior. Live pointer and keyboard acceptance remains in
+  the single installed app; offscreen renders only establish text/layout.
+- Verification: eight offscreen images cover On/Off in light/dark at
+  739 × 560 and 1059 × 760 pt content sizes (960/1280 pt Settings windows).
+  Theme tests verify text contrast ≥4.5:1 and control borders ≥3:1.
+  VoiceOver remains a live check because AppKit omits even the native switch
+  from invisible-window accessibility trees.
 
 ### Embedded surfaces
 
