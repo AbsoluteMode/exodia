@@ -221,14 +221,20 @@ final class ArtifactBackupRestoreTests: XCTestCase {
         XCTAssertEqual(try ArtifactRestoreDestination.resolve("workspace/monitor/servers.json",
                                                               in: locations),
                        .file(locations.monitorRoot.appendingPathComponent("servers.json.restored-inactive")))
+        XCTAssertEqual(try ArtifactRestoreDestination.resolve("workspace/monitor/SERVERS.JSON", in: locations),
+                       .file(locations.monitorRoot.appendingPathComponent("servers.json.restored-inactive")))
+        XCTAssertEqual(try ArtifactRestoreDestination.resolve("workspace/notify/SOURCES/demo.JSON", in: locations),
+                       .inline(.notifySource("demo.JSON")))
 
         for path in ["meetings/notes/not-a-uuid.md", "meetings/db/other.sqlite",
                      "meetings/staged/not-a-uuid/chunk-000.wav",
                      "meetings/staged/\(meeting)/soniox-transcription.json",
                      "history/assets/evil.sh", "workspace/agent/CLAUDE.md",
-                     "workspace/notify/sources/demo.sh", "workspace/unknown/file.json",
+                     "workspace/unknown/file.json",
                      "case/vault.other"] {
             XCTAssertThrowsError(try ArtifactRestoreDestination.resolve(path, in: locations), path)
         }
+        XCTAssertEqual(try ArtifactRestoreDestination.resolve("workspace/notify/sources/demo.json.restored-invalid", in: locations),
+                       .file(locations.notifyRoot.appendingPathComponent("sources/demo.json.restored-invalid")))
     }
 }

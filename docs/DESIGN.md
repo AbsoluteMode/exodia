@@ -168,17 +168,16 @@ feature expenses without a permanent model-level grid or scattered period contro
   help and model details explain these marks. ElevenLabs credits are never
   combined with dollars or inferred from a plan.
 
-Update 2026-10-21: ElevenLabs feature rows estimate credits using their
-recorded audio time and the matching model's reported credits/minute. The ≈
-mark remains on values; model details show recorded minutes. A separate
-ElevenLabs Reported usage section lists actual workspace charges by API key and
-model for the selected period, with scope visible beside its heading. It includes
-other apps and is never added to feature Total. Refresh retries history/billing;
-permission, key and network errors have useful text. Refresh, period/date and
-calendar actions visibly highlight their full hit area on hover and press,
-outline keyboard focus, and dim while disabled without active hover feedback.
-Feature disclosures retain row hover and explicit press/focus feedback. This preserves the chosen
-table while making its available evidence useful and its scope explicit.
+Update 2026-10-21: one feature table remains the cost surface. Soniox exact
+request prices replace estimates when available; API delay/failure retains ≈
+values. ElevenLabs uses recorded minutes and cached model credit/minute rates;
+the separate workspace usage block is removed to follow the user's chosen
+calculation policy. Rates are learned from credit/minute statistics, retained
+across outages and never converted from USD. A new model without a rate stays
+unavailable. Price checking leaves history visible, shows a small header spinner
+and disables Refresh; failures show concise text near the period. Refresh,
+period/date and calendar actions retain full-area hover/press, focus outlines
+and inactive disabled states. Existing feature disclosures and layout stay intact.
 
 The revised date popover has 310 pt offscreen fixtures in English/Russian and
 both appearances. Calendar arithmetic covers leap days, DST, previous years
@@ -497,8 +496,39 @@ Touch ID remain acceptance on the one signed installed app after promotion.
 
 # Backup: automatic synchronization — 2026-10-20
 
+As requested on 2026-10-21, a short explanation above the status card states
+the recovery purpose (keys, passwords and settings), local encryption, private
+GitHub storage, automatic synchronization after the first backup and keeping the
+recovery code. GitHub
+receives ciphertext, not the recovery credential. Why: the status alone does
+not explain what is protected or who can read the stored copy. Keep the existing
+13 pt secondary text role and multiline wrapping; no new disclosure or setup
+step. The native offscreen fixtures cover the longer content at 560 and 760 pt.
+The shared MacButton style and the Backup GitHub link highlight the full hit
+area on hover, use a stronger pressed overlay and show a separate focus ring;
+disabled controls suppress those active states. Why: the user explicitly asked
+for visible interaction feedback on 2026-10-21. These state changes add no motion
+and preserve control geometry and existing native keyboard activation.
+Colored-text buttons use a hover outline, strengthened on press, instead of
+brightening their background. Why: the recovery-code action's dark-theme blue
+text would drop from 4.92:1 to 3.59:1 on hover and 2.76:1 on press with the neutral
+overlay. The outline keeps its text contrast unchanged and marks the whole hit
+area. The state matrix includes this ghost action in both appearances.
+The backup regression tests cover key-only automatic
+sync and clean-profile recovery. Native offscreen renders cover 560/760 pt in
+both already-supported Settings appearances and normal/hover/pressed/focus/
+disabled control surfaces. The explanation has 8.35:1 dark and 5.94:1 light
+contrast; white primary-button text stays at least 5.59:1 through active states.
+Physical pointer, Tab navigation and VoiceOver remain shared-app acceptance.
+The first code is shown once after upload. Leaving before completion retains
+a visible Save your recovery code status, with a Save recovery code action;
+subsequent Show recovery code uses the same ghost action. Both require Mac
+authentication. Repeating Back up does not reveal the code. A paused status
+explains that Back up resumes synchronization. These states keep recovery
+possible without claiming that merely showing the code proves it was saved.
+
 The user opens Backup to confirm their data is protected, then open its GitHub
-copy or restore it. The existing native Settings card, two actions, system font
+copy or restore it. The existing native Settings card, primary actions, system font
 and dark theme remain. Direction is supplied by the user: a compact status with
 a backup link, without the connection caption or date. Use a 13 pt medium status
 and a 12 pt GitHub link on one row, existing green only for verified sync, existing

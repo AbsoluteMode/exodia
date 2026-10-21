@@ -598,8 +598,10 @@ final class ProviderBatchTranscriberTests: XCTestCase {
         let upload = try MultipartForm(requests[0], body: StubURLProtocol.capturedBodies[0])
         XCTAssertEqual(upload.fields, [:])
         XCTAssertEqual(upload.files, [MultipartFile(name: "file", filename: "audio.wav", contentType: "audio/wav", content: wav)])
-        let job = try XCTUnwrap(JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies[1]) as? NSDictionary)
-        XCTAssertEqual(job, ["model": "stt-async-v5", "file_id": fileID, "language_hints": ["ru", "en"]] as NSDictionary)
+        var job = try XCTUnwrap(JSONSerialization.jsonObject(with: StubURLProtocol.capturedBodies[1]) as? [String: Any])
+        let reference = try XCTUnwrap(job.removeValue(forKey: "client_reference_id") as? String)
+        XCTAssertNotNil(UUID(uuidString: reference))
+        XCTAssertEqual(job as NSDictionary, ["model": "stt-async-v5", "file_id": fileID, "language_hints": ["ru", "en"]] as NSDictionary)
     }
 
     // Breaks if Auto input drops the "en" hint the realtime Soniox request

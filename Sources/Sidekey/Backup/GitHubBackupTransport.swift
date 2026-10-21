@@ -19,12 +19,14 @@ actor GitHubBackupTransport {
 
     enum Failure: Error, LocalizedError, Equatable {
         case authentication, permission, publicRepository, unavailable, invalidResponse, incomplete, noCLI, noLogin
+        case rateLimited(until: Date)
+        var requiresReconnect: Bool { [.authentication, .permission, .publicRepository].contains(self) }
         var errorDescription: String? {
             switch self {
             case .authentication: return "GitHub could not sign you in. Reconnect with a valid token or GitHub CLI login."
             case .permission: return "GitHub needs access to Exodia-Backup. Give the token Contents read and write access; creating the private repository also requires repository creation permission."
             case .publicRepository: return "Exodia-Backup is public. Your backups are encrypted, but automatic uploads are paused. Make the repository private, then reconnect."
-            case .unavailable: return "GitHub is unavailable or its request limit was reached. Your local copy is safe; Whytap will retry."
+            case .unavailable, .rateLimited: return "GitHub is unavailable or its request limit was reached. Your local copy is safe; Whytap will retry."
             case .invalidResponse: return "GitHub returned an unexpected response. Reconnect and try again."
             case .incomplete: return "This GitHub backup is incomplete or damaged. Choose another version."
             case .noCLI: return "GitHub CLI was not found. Connect with an access token, or install GitHub CLI and run gh auth login."
@@ -51,7 +53,21 @@ actor GitHubBackupTransport {
         let assets: [Asset]
     }
     private struct Part: Codable, Equatable { let name: String; let size: Int; let digest: String }
-    private struct Index: Codable, Equatable { let version: Int; let snapshotID: UUID; let byteCount: Int64; let parts: [Part] }
+    private struct Index: Codable, Equatable {
+        let version: Int
+        let snapshotID: UUID
+        let byteCount: Int64
+        let parts: [Part]
+        /// Optional for older archives. Release dates describe GitHub commits
+        /// or uploads, not the time the user's snapshot was captured.
+        var createdAt: Date?
+
+        func matches(_ other: Self) -> Bool {
+            version == other.version && snapshotID == other.snapshotID
+                && byteCount == other.byteCount && parts == other.parts
+                && (createdAt == nil || createdAt == other.createdAt)
+        }
+    }
 
     init(token: String, owner: String, session: URLSession = GitHubBackupNetwork.session) throws {
         guard Self.validOwner(owner), Self.validToken(token) else { throw Failure.authentication }
@@ -161,7 +177,7 @@ actor GitHubBackupTransport {
             parts.append(Part(name: name, size: data.count, digest: digest))
         }
         guard parts.reduce(Int64(0), { $0 + Int64($1.size) }) == bytes else { throw Failure.incomplete }
-        let index = Index(version: 1, snapshotID: summary.id, byteCount: bytes, parts: parts)
+        let index = Index(version: 1, snapshotID: summary.id, byteCount: bytes, parts: parts, createdAt: summary.createdAt)
         let sealed = try AES.GCM.seal(JSONEncoder().encode(index), using: SymmetricKey(data: key),
                                       authenticating: Data(Self.marker.utf8))
         guard let combined = sealed.combined else { throw Failure.incomplete }
@@ -172,7 +188,7 @@ actor GitHubBackupTransport {
                 opened = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: SymmetricKey(data: key),
                                           authenticating: Data(Self.marker.utf8))
             } catch { throw Failure.incomplete }
-            guard try JSONDecoder().decode(Index.self, from: opened) == index else { throw Failure.incomplete }
+            guard try JSONDecoder().decode(Index.self, from: opened).matches(index) else { throw Failure.incomplete }
         } else {
             guard release.draft else { throw Failure.incomplete }
             if let starter = release.assets.first(where: { $0.name == "complete.exodia-index" }) {
@@ -188,7 +204,7 @@ actor GitHubBackupTransport {
         return release.id
     }
 
-    func versions() async throws -> [BackupVersion] {
+    func versions(key: Data? = nil) async throws -> [BackupVersion] {
         var versions: [BackupVersion] = []
         // Bounded pagination; older versions remain on GitHub and are never
         // automatically deleted by a second Mac.
@@ -198,13 +214,23 @@ actor GitHubBackupTransport {
             for release in releases where !release.draft && release.body == Self.marker {
                 guard let uuid = Self.snapshotID(release.tag_name),
                       release.assets.contains(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) else { continue }
-                versions.append(BackupVersion(id: uuid.uuidString, createdAt: Self.date(release.created_at),
+                let date: Date
+                if let key {
+                    let index: Index
+                    do { index = try await authenticatedIndex(release, key: key) }
+                    catch ConfigBackupError.cannotUnlock { continue }
+                    if let createdAt = index.createdAt { date = createdAt }
+                    else { date = try await legacySnapshotDate(index, release: release, key: key) }
+                } else { date = Self.date(release.created_at) }
+                versions.append(BackupVersion(id: uuid.uuidString, createdAt: date,
                     size: release.assets.filter { $0.name.hasPrefix("part-") }.reduce(0, { $0 + $1.size }),
                     localURL: nil, remoteID: release.id, location: .github))
             }
             if releases.count < 100 { break }
         }
-        return versions.sorted { $0.createdAt > $1.createdAt }
+        return versions.sorted {
+            $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt > $1.createdAt
+        }
     }
 
     /// Explicitly requested cleanup includes unfinished drafts. It remains
@@ -254,20 +280,8 @@ actor GitHubBackupTransport {
         guard let id = version.remoteID, id > 0, key.count == 32 else { throw Failure.incomplete }
         let releaseData = try await json(path: repoPath + "/releases/\(id)")
         guard let release = try? JSONDecoder().decode(Release.self, from: releaseData), !release.draft,
-              release.body == Self.marker, Self.snapshotID(release.tag_name)?.uuidString == version.id,
-              let marker = release.assets.first(where: { $0.name == "complete.exodia-index" }) else { throw Failure.incomplete }
-        let data = try await downloadAsset(marker, maximumBytes: 2_000_000)
-        let plaintext: Data
-        do {
-            plaintext = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: SymmetricKey(data: key),
-                                         authenticating: Data(Self.marker.utf8))
-        } catch { throw ConfigBackupError.cannotUnlock }
-        guard let index = try? JSONDecoder().decode(Index.self, from: plaintext), index.version == 1,
-              index.snapshotID.uuidString == version.id, !index.parts.isEmpty,
-              index.parts.count <= Self.maximumParts, index.byteCount > 0,
-              index.parts.allSatisfy({ $0.size > 0 && $0.size <= Self.maximumPartBytes && $0.digest.utf8.count == 64 }),
-              index.parts.reduce(Int64(0), { $0 + Int64($1.size) }) == index.byteCount,
-              Set(index.parts.map(\.name)).count == index.parts.count else { throw Failure.incomplete }
+              release.body == Self.marker, Self.snapshotID(release.tag_name)?.uuidString == version.id else { throw Failure.incomplete }
+        let index = try await authenticatedIndex(release, key: key)
         try ConfigBackupFiles.ensurePrivateDirectory(file.deletingLastPathComponent())
         let temporary = file.deletingLastPathComponent().appendingPathComponent(".download-" + UUID().uuidString)
         guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
@@ -276,16 +290,76 @@ actor GitHubBackupTransport {
         defer { try? FileManager.default.removeItem(at: temporary) }
         let handle = try FileHandle(forWritingTo: temporary)
         defer { try? handle.close() }
-        for (offset, part) in index.parts.enumerated() {
+        for part in index.parts {
             try Task.checkCancellation()
-            guard part.name == String(format: "part-%05d.bin", offset), part.size > 0, part.size <= Self.maximumPartBytes,
-                  let asset = release.assets.first(where: { $0.name == part.name }), asset.size == part.size else { throw Failure.incomplete }
-            let bytes = try await downloadAsset(asset, maximumBytes: Self.maximumPartBytes)
-            guard bytes.count == part.size, Self.digest(bytes) == part.digest else { throw Failure.incomplete }
+            let bytes = try await verifiedPart(part, release: release)
             try handle.write(contentsOf: bytes)
         }
         try handle.synchronize(); try handle.close()
         guard rename(temporary.path, file.path) == 0 else { throw ConfigBackupError.saveFailed }
+    }
+
+    private func authenticatedIndex(_ release: Release, key: Data) async throws -> Index {
+        guard key.count == 32,
+              let marker = release.assets.first(where: { $0.name == "complete.exodia-index" && $0.state == "uploaded" }) else {
+            throw Failure.incomplete
+        }
+        let data = try await downloadAsset(marker, maximumBytes: 2_000_000)
+        let plaintext: Data
+        do {
+            plaintext = try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: SymmetricKey(data: key),
+                                         authenticating: Data(Self.marker.utf8))
+        } catch { throw ConfigBackupError.cannotUnlock }
+        guard let index = try? JSONDecoder().decode(Index.self, from: plaintext), index.version == 1,
+              index.snapshotID == Self.snapshotID(release.tag_name), !index.parts.isEmpty,
+              index.parts.count <= Self.maximumParts, index.byteCount > 0,
+              index.parts.allSatisfy({ $0.size > 0 && $0.size <= Self.maximumPartBytes && $0.digest.utf8.count == 64 }),
+              index.parts.reduce(Int64(0), { $0 + Int64($1.size) }) == index.byteCount,
+              Set(index.parts.map(\.name)).count == index.parts.count,
+              index.parts.enumerated().allSatisfy({ $0.element.name == String(format: "part-%05d.bin", $0.offset) }),
+              index.createdAt?.timeIntervalSinceReferenceDate.isFinite != false else { throw Failure.incomplete }
+        return index
+    }
+
+    private func verifiedPart(_ part: Part, release: Release) async throws -> Data {
+        guard let asset = release.assets.first(where: { $0.name == part.name && $0.state == "uploaded" }),
+              asset.size == part.size else { throw Failure.incomplete }
+        let bytes = try await downloadAsset(asset, maximumBytes: Self.maximumPartBytes)
+        guard bytes.count == part.size, Self.digest(bytes) == part.digest else { throw Failure.incomplete }
+        return bytes
+    }
+
+    /// Old indexes lack a timestamp. Authenticate the bounded archive head to
+    /// read its manifest; full and delta manifests retain the snapshot date.
+    /// Full verification still precedes restore. Temporary bytes stay encrypted.
+    private func legacySnapshotDate(_ index: Index, release: Release, key: Data) async throws -> Date {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("backup-date-" + UUID().uuidString)
+        try ConfigBackupFiles.ensurePrivateDirectory(directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("head.enc")
+        guard FileManager.default.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+            throw ConfigBackupError.saveFailed
+        }
+        let writer = try FileHandle(forWritingTo: file)
+        defer { try? writer.close() }
+        var received = 0
+        for part in index.parts {
+            let bytes = try await verifiedPart(part, release: release)
+            try writer.write(contentsOf: bytes)
+            received += bytes.count
+            do {
+                let reader = try ArtifactArchiveReader(url: file, archiveKey: key)
+                defer { reader.close() }
+                let manifest = try ArtifactRestoreTransaction.readManifest(reader)
+                guard manifest.id == index.snapshotID else { throw Failure.incomplete }
+                return manifest.createdAt
+            } catch ArtifactBackupError.truncated {
+                guard received < ArtifactBackupManifest.maxBytes + ArtifactArchiveHeader.maxChunkSize + 1_048_576 else {
+                    throw Failure.incomplete
+                }
+            }
+        }
+        throw Failure.incomplete
     }
 
     // MARK: HTTP. Only GitHub-owned fixed API origins receive the token.
@@ -356,8 +430,21 @@ actor GitHubBackupTransport {
         switch response.statusCode {
         case 200..<300: return
         case 401: throw Failure.authentication
-        case 403, 404: throw Failure.permission
-        case 429, 500...599: throw Failure.unavailable
+        case 403, 429:
+            let retry = response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+            let exhausted = response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0"
+            let reset = response.value(forHTTPHeaderField: "X-RateLimit-Reset").flatMap(Double.init)
+            if retry != nil || exhausted {
+                let now = Date()
+                var until = now.addingTimeInterval(60)
+                if let retry, retry.isFinite, retry >= 0 { until = max(until, now.addingTimeInterval(retry)) }
+                if exhausted, let reset, reset.isFinite { until = max(until, Date(timeIntervalSince1970: reset)) }
+                throw Failure.rateLimited(until: until)
+            }
+            if response.statusCode == 403 { throw Failure.permission }
+            throw Failure.unavailable
+        case 404: throw Failure.permission
+        case 500...599: throw Failure.unavailable
         default: throw Failure.invalidResponse
         }
     }
