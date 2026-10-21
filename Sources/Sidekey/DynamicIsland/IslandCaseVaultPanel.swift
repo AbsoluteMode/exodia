@@ -35,6 +35,7 @@ struct IslandCaseVaultPanel: View {
     var onOpenAccessScreen: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
     @State private var valueDraft = ""
     @State private var nameDraft = ""
@@ -227,7 +228,7 @@ struct IslandCaseVaultPanel: View {
             .background(Capsule().fill(Color.white.opacity(0.13)))
             .modifier(CaseVaultFieldFeedback(focused: inputFocused == .search, border: inputBorderColor))
             .contentShape(Capsule())
-            .onTapGesture { inputFocused = .search }
+            .onTapGesture { if isEnabled { inputFocused = .search } }
 
             Button(action: startCreatingProject) {
                 Text("+ Project")
@@ -266,7 +267,7 @@ struct IslandCaseVaultPanel: View {
             .modifier(CaseVaultFieldFeedback(focused: inputFocused == .newKey, border: inputBorderColor))
             .focused($inputFocused, equals: .newKey)
             .contentShape(Capsule())
-            .onTapGesture { inputFocused = .newKey }
+            .onTapGesture { if isEnabled { inputFocused = .newKey } }
             .onSubmit(submitInput)
             Button(action: submitInput) {
                 Image(systemName: "arrow.right.circle")
@@ -776,6 +777,7 @@ private struct CaseVaultFieldFeedback: ViewModifier {
 
 private struct CaseVaultEditField<Content: View>: View {
     let content: Content
+    @Environment(\.isEnabled) private var isEnabled
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -788,6 +790,6 @@ private struct CaseVaultEditField<Content: View>: View {
             .background(Capsule().fill(Color.white.opacity(0.10)))
             .modifier(CaseVaultFieldFeedback(focused: focused))
             .contentShape(Capsule())
-            .onTapGesture { focused = true }
+            .onTapGesture { if isEnabled { focused = true } }
     }
 }

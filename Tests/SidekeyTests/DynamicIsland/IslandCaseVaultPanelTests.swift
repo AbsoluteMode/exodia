@@ -51,13 +51,12 @@ final class IslandCaseVaultPanelTests: XCTestCase {
         XCTAssertFalse(source.contains("Settings"))
     }
 
-    func test_caseVaultPanelArmedResetWarnsAboutPermanentDeletion() throws {
+    func test_caseVaultPanelArmedResetOffersExplicitConfirmation() throws {
         let source = try caseVaultPanelSource()
 
         // Two-step confirm: armed state must flip the button label AND swap the
-        // supporting copy to spell out that the second press is irreversible.
+        // supporting copy. CaseVaultStoreTests covers retention of the old encrypted file.
         XCTAssertTrue(source.contains("Confirm reset"))
-        XCTAssertTrue(source.contains("Case will be deleted permanently. Click again to confirm."))
     }
 
     private func caseVaultPanelSource() throws -> String {
