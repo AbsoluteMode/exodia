@@ -41,7 +41,7 @@ every child folder. The newest version wins, compared numerically
 and nested together) are ordered by path, so the result never depends on the
 directory listing order. Only executable regular files count: a directory
 passes `access(X_OK)`, so it is excluded explicitly; symlinks are followed, so
-`~/.local/bin/claude` from the native installer still counts. The home folder
+the native installer’s per-user CLI symlink still counts. The home folder
 is injectable so tests use a temporary one.
 
 The existing preference between the desktop copy and a legacy CLI is
