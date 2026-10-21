@@ -1,23 +1,21 @@
 import SwiftUI
 
 /// The Brightness hover tool: one row with the backlight slider and the Extra
-/// switch, and one status line (a notice, or the battery time left).
+/// switch, with a status line only when brightness needs attention.
+// WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
 @MainActor
 struct IslandBrightnessStrip: View {
-    /// 10 pt padding, a 24 pt control row, 8 pt spacing and a 16 pt status line.
+    /// Fits 10 pt padding, a 24 pt control row and an optional 16 pt notice with 8 pt spacing.
     static let contentHeight: CGFloat = 68
     static let unavailableText = "Brightness isn't adjustable on this display."
 
     @ObservedObject private var controller: ScreenBrightnessController
-    @ObservedObject private var battery: BatteryRuntimeMonitor
     private let onBack: () -> Void
 
-    /// Nil uses the shared instances; default arguments would read them outside the main actor.
+    /// Nil uses the shared instance; a default argument would read it outside the main actor.
     init(controller: ScreenBrightnessController? = nil,
-         battery: BatteryRuntimeMonitor? = nil,
          onBack: @escaping () -> Void) {
         self.controller = controller ?? .shared
-        self.battery = battery ?? .shared
         self.onBack = onBack
     }
 
@@ -83,22 +81,16 @@ struct IslandBrightnessStrip: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             controller.beginInteraction()
-            battery.start()
         }
         .onDisappear {
             controller.endInteraction()
-            battery.stop()
         }
-        // The time left follows the display at once, between battery readings.
-        .onChange(of: controller.level) { _, _ in battery.displayDidChange() }
-        .onChange(of: controller.isExtraOn) { _, _ in battery.displayDidChange() }
     }
 
     private var statusLine: (text: String, systemImage: String?, isNotice: Bool)? {
         if let notice = controller.notice { return (notice, "exclamationmark.triangle.fill", true) }
         if !controller.isAvailable { return (Self.unavailableText, nil, false) }
-        guard let text = BatteryRuntimeFormatter.text(for: battery.status) else { return nil }
-        return (text, BatteryRuntimeFormatter.systemImage(for: battery.status), false)
+        return nil
     }
 }
 

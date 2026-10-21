@@ -31,7 +31,7 @@ All paths below start at `Sources/Sidekey/`.
 | Inline views, shared three-column geometry and bounded scrolling | `DynamicIsland/IslandView.swift`, `DynamicIsland/IslandDropModeControl.swift` |
 | Floating text translation and system-audio subtitles | `Translation/TranslationWindowController.swift`, `Translation/LiveSubtitleModel.swift` |
 | Inline monitoring, picker and refresh lifecycle | `Monitor/MonitorHoverPanel.swift`, `Monitor/MonitorStore.swift` |
-| Inline brightness strip, backlight, Extra boost (display table + EDR trigger) and battery time | `Brightness/IslandBrightnessStrip.swift`, `Brightness/ScreenBrightnessController.swift`, `Brightness/GammaBrightnessBoost.swift`, `Brightness/BrightnessHeadroomTrigger.swift`, `Brightness/BatteryRuntime.swift` |
+| Inline brightness strip, backlight, Extra boost (display table + EDR trigger) | `Brightness/IslandBrightnessStrip.swift`, `Brightness/ScreenBrightnessController.swift`, `Brightness/GammaBrightnessBoost.swift`, `Brightness/BrightnessHeadroomTrigger.swift` |
 | Brightness keys (event tap, steps, Extra gesture) and the Settings -> Toolbox -> Display pane | `Brightness/BrightnessKeys.swift`, `Brightness/BrightnessKeyEventTap.swift`, `Brightness/ToolboxDisplayPane.swift` |
 | Measured pointer targets, viewport clipping and down/up ownership | `DynamicIsland/IslandHoverHitBridge.swift`, `DynamicIsland/IslandPanel.swift` |
 | Catalog search, aliases, AppKit search field and keyboard commands | `DynamicIsland/IslandHoverToolSearch.swift` |
@@ -82,7 +82,7 @@ change and rebuild it with the canonical development script.
 ## Checks
 
 ```bash
-python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests|MonitorDashboardTests|BrightnessHoverToolTests|ScreenBrightnessControllerTests|GammaBrightnessBoostTests|BrightnessBoostFrameTimerTests|BrightnessKeysTests|BatteryRuntimeTests|BatteryRuntimeMonitorTests'
+python3 scripts/customize.py test --filter 'HoverToolTests|HoverLayoutStoreTests|HoverSlotRouterTests|HoverHotkeyTests|IslandHoverPanelControlTests|IslandHoverToolSearchTests|IslandHoverHitBridgeTests|HoverToolPresentationTests|IslandHoverPanelHitZoneTests|MonitorDashboardTests|BrightnessHoverToolTests|ScreenBrightnessControllerTests|GammaBrightnessBoostTests|BrightnessBoostFrameTimerTests|BrightnessKeysTests'
 python3 scripts/customize.py build
 ```
 
