@@ -1804,8 +1804,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.show(tab: .toolbox)
             controller.selection.focus(tool)
             controller.selection.setHighlight(.tab(.toolbox))
-        case .planner(let section):
-            PlannerWindowController.shared.show(section)
         case .translation(let mode):
             openTranslation(mode)
         case .island:

@@ -15,7 +15,6 @@ enum WhytapLinkDestination: Equatable {
     case settings(HoverNavigationTarget)
     /// Open Settings -> Toolbox with this tool's pane selected.
     case toolboxTool(HoverTool)
-    case planner(PlannerSection)
     case translation(TranslationWindowController.Mode)
     /// A well-formed link to something this version does not have (a newer
     /// tile, tab or link kind): only show the island.

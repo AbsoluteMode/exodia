@@ -490,7 +490,7 @@ final class UpdateController: NSObject, ObservableObject {
         if appState.calendarHoverActive {
             return "Ready. Close Calendar, then choose Restart."
         }
-        if appState.plannerActive || appState.todoActive || appState.calendarHoverActive {
+        if appState.plannerActive || appState.todoActive {
             return "Ready. Finish or clear your To-do draft and close To-do and Planner, then choose Restart."
         }
         if appState.agentPhase != .idle {

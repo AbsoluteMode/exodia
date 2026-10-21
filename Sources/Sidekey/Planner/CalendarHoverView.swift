@@ -7,9 +7,11 @@ import SwiftUI
 final class CalendarHoverModel: ObservableObject {
     enum Page: Equatable { case agenda, sources, providers, connect(CalendarProvider), event(String) }
     static let shared = CalendarHoverModel(store: .shared, connections: .shared,
-        activityChanged: { AppState.shared.calendarHoverActive = $0 })
+        activityChanged: { AppState.shared.calendarHoverActive = $0 },
+        connectionActivityChanged: { AppState.shared.calendarHoverConnectionActive = $0 })
     let store: PlannerStore
     let connections: CalendarConnections
+    let connectionFlow: CalendarConnectionFlow
     @Published var page: Page = .agenda
     @Published private(set) var selectedDay: Date
     @Published private(set) var refreshToken = 0
@@ -19,8 +21,10 @@ final class CalendarHoverModel: ObservableObject {
     private let activityChanged: (Bool) -> Void
 
     init(store: PlannerStore, connections: CalendarConnections, now: @escaping () -> Date = Date.init,
-         activityChanged: @escaping (Bool) -> Void = { _ in }) {
+         activityChanged: @escaping (Bool) -> Void = { _ in },
+         connectionActivityChanged: @escaping (Bool) -> Void = { _ in }, connectionFlow: CalendarConnectionFlow? = nil) {
         self.store = store; self.connections = connections; self.now = now; self.activityChanged = activityChanged
+        self.connectionFlow = connectionFlow ?? CalendarConnectionFlow(connections: connections, activityChanged: connectionActivityChanged)
         selectedDay = Calendar.current.startOfDay(for: now())
     }
 
@@ -29,7 +33,10 @@ final class CalendarHoverModel: ObservableObject {
         visible = true; openToday(); activityChanged(true)
     }
     func end() { visible = false; activityChanged(false) }
-    func openToday() { page = .agenda; today() }
+    func openToday() {
+        guard !connectionFlow.working else { return }
+        page = .agenda; today()
+    }
     func today() { followingToday = true; selectedDay = Calendar.current.startOfDay(for: now()); refresh() }
     func moveDay(_ offset: Int) {
         guard let day = Calendar.current.date(byAdding: .day, value: offset, to: selectedDay) else { return }
@@ -62,6 +69,7 @@ struct CalendarHoverView: View {
     @ObservedObject var model: CalendarHoverModel
     @ObservedObject private var store: PlannerStore
     @ObservedObject private var connections: CalendarConnections
+    @ObservedObject private var connectionFlow: CalendarConnectionFlow
     let onBack: () -> Void
     private let liveUpdates: Bool
     private let configurationInfo: [String: Any]?
@@ -70,6 +78,7 @@ struct CalendarHoverView: View {
     init(model: CalendarHoverModel, liveUpdates: Bool = true,
          configurationInfo: [String: Any]? = Bundle.main.infoDictionary, onBack: @escaping () -> Void) {
         self.model = model; self.store = model.store; self.connections = model.connections
+        self.connectionFlow = model.connectionFlow
         self.liveUpdates = liveUpdates; self.configurationInfo = configurationInfo; self.onBack = onBack
     }
 
@@ -78,8 +87,10 @@ struct CalendarHoverView: View {
             header
             if case .connect(let provider) = model.page {
                 CalendarConnectView(connections: connections, provider: provider, allowsProviderSelection: false,
-                    configurationInfo: configurationInfo, compact: true, allowsAdvancedSetup: true, onClose: {
+                    configurationInfo: configurationInfo, compact: true, allowsAdvancedSetup: true,
+                    flow: model.connectionFlow, keepsFlowOnDisappear: true, onClose: {
                         model.page = .agenda; model.refresh()
+                        if model.visible { NSApp.activate(ignoringOtherApps: true) }
                     })
                     .id(provider)
             } else {
@@ -112,7 +123,7 @@ struct CalendarHoverView: View {
         HStack(spacing: 6) {
             CalendarHoverButton {
                 if model.page == .agenda { onBack() }
-                else if case .connect = model.page { model.page = .providers }
+                else if case .connect = model.page { connectionFlow.cancel(); model.page = .providers }
                 else { model.page = .agenda }
             } label: { Image(systemName: "chevron.left").frame(width: 26, height: 26) }
                 .accessibilityLabel(model.page == .agenda ? "Back to tools" : "Back to calendar")
@@ -167,11 +178,17 @@ struct CalendarHoverView: View {
                 CalendarHoverButton { model.moveDay(1) } label: { Image(systemName: "chevron.right").frame(width: 26, height: 28) }
                     .accessibilityLabel("Next day")
                 CalendarHoverButton { model.refresh() } label: {
-                    Image(systemName: "arrow.clockwise").frame(width: 26, height: 28)
+                    Group {
+                        if connections.refreshing { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.clockwise") }
+                    }.frame(width: 26, height: 28)
                 }.disabled(connections.refreshing).accessibilityLabel("Refresh calendars")
             }
-            if !connections.errors.isEmpty || store.errorMessage != nil {
-                CalendarHoverButton { model.page = .sources } label: {
+            if !connections.errors.isEmpty || store.errorMessage != nil || connectionFlow.error != nil {
+                CalendarHoverButton {
+                    if connectionFlow.error != nil, let provider = connectionFlow.lastProvider { model.page = .connect(provider) }
+                    else { model.page = .sources }
+                } label: {
                     Label("Some calendars need attention", systemImage: "exclamationmark.triangle")
                         .font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading).padding(6)
                 }
@@ -266,6 +283,10 @@ struct CalendarHoverView: View {
                 Spacer(minLength: 0)
             }.padding(9).frame(maxWidth: .infinity, alignment: .leading)
         }.accessibilityValue(visible ? "Shown" : "Hidden").help(title)
+            .accessibilityRepresentation {
+                Toggle(title, isOn: Binding(get: { !connections.hiddenFeeds.contains(id) },
+                    set: { connections.setVisible($0, feedID: id) }))
+            }
             .disabled(connections.connectionBlockReason != nil || connections.isConnecting)
     }
 

@@ -120,6 +120,88 @@ final class CalendarHoverTests: XCTestCase {
         }
     }
 
+    func testHoverConnectionSurvivesUnmountReopenAndCommitsOnce() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlannerURLProtocol.self]
+        let http = CalendarHTTP(session: URLSession(configuration: configuration))
+        let credentials = PlannerMemoryCredentials()
+        let connections = CalendarConnections(defaults: defaults,
+            oauth: CalendarOAuthClient(http: http, storage: credentials), http: http)
+        let pending = AsyncThrowingStream<(code: String, redirect: String), Error>.makeStream()
+        var activity: [Bool] = []
+        let flow = CalendarConnectionFlow(connections: connections, activityChanged: { activity.append($0) }, authorize: { _, _, _, _ in
+            var iterator = pending.stream.makeAsyncIterator()
+            guard let result = try await iterator.next() else { throw CancellationError() }
+            return result
+        })
+        defer { pending.continuation.finish(); flow.cancel() }
+        let model = CalendarHoverModel(store: PlannerStore(url: directory.appendingPathComponent("planner.json")),
+            connections: connections, now: { self.day }, connectionFlow: flow)
+        let info: [String: Any] = ["WhytapCalendarOAuthClients": ["microsoft": ["clientID": "fixture"]]]
+        var completed = 0
+        model.begin(); model.page = .connect(.microsoft)
+        XCTAssertTrue(flow.start(provider: .microsoft, clientID: "fixture", secret: "", label: "Synthetic Outlook",
+            info: info, onSuccess: { completed += 1; model.page = .agenda }))
+        model.openToday()
+        XCTAssertEqual(model.page, .connect(.microsoft), "A repeated hotkey must retain the active connection")
+        _ = NSApplication.shared
+        let host = NSHostingView(rootView: CalendarConnectView(connections: connections, provider: .microsoft,
+            allowsProviderSelection: false, configurationInfo: info, compact: true, flow: flow, keepsFlowOnDisappear: true))
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 310, height: 350),
+            styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30))
+        window.contentView = nil; window.close()
+        model.end(); model.begin()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(flow.working); XCTAssertTrue(connections.isConnecting)
+        XCTAssertEqual(model.page, .connect(.microsoft))
+        XCTAssertFalse(window.isVisible || window.isKeyWindow)
+        PlannerURLProtocol.handler = { _ in (200, ["access_token": "fixture-access", "refresh_token": "fixture-refresh", "expires_in": 3600, "token_type": "Bearer"]) }
+        pending.continuation.yield((code: "fixture-code", redirect: "http://localhost:8080/callback"))
+        pending.continuation.finish()
+        for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertFalse(flow.working); XCTAssertFalse(connections.isConnecting)
+        XCTAssertEqual(completed, 1); XCTAssertEqual(activity, [true, false])
+        XCTAssertEqual(connections.accounts.map(\.label), ["Synthetic Outlook"])
+        XCTAssertEqual(credentials.saveCount, 1)
+        XCTAssertNil(flow.error)
+    }
+
+    func testExplicitCancelReleasesConnectionAndSettingsFlowDoesNotBelongToHover() async throws {
+        let connections = CalendarConnections(defaults: defaults)
+        let pending = AsyncThrowingStream<(code: String, redirect: String), Error>.makeStream()
+        let flow = CalendarConnectionFlow(connections: connections, authorize: { _, _, _, _ in
+            var iterator = pending.stream.makeAsyncIterator()
+            guard let result = try await iterator.next() else { throw CalendarConnectionError.cancelled }
+            return result
+        })
+        defer { pending.continuation.finish(); flow.cancel() }
+        let info: [String: Any] = ["WhytapCalendarOAuthClients": ["microsoft": ["clientID": "fixture"]]]
+        XCTAssertTrue(flow.start(provider: .microsoft, clientID: "fixture", secret: "", label: "", info: info, onSuccess: { XCTFail("Cancelled") }))
+        let otherHover = CalendarHoverModel(store: PlannerStore(url: directory.appendingPathComponent("planner.json")), connections: connections)
+        XCTAssertTrue(connections.isConnecting)
+        XCTAssertFalse(otherHover.connectionFlow.working, "A Settings operation must not pin Hover's menu")
+        flow.cancel()
+        for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertFalse(flow.working); XCTAssertFalse(connections.isConnecting)
+        XCTAssertTrue(connections.accounts.isEmpty); XCTAssertNil(flow.error)
+    }
+
+    func testConnectionErrorSurvivesTemporaryHidingAndDoesNotAddAccount() async throws {
+        let connections = CalendarConnections(defaults: defaults)
+        let flow = CalendarConnectionFlow(connections: connections, authorize: { _, _, _, _ in throw CalendarConnectionError.denied })
+        let info: [String: Any] = ["WhytapCalendarOAuthClients": ["microsoft": ["clientID": "fixture"]]]
+        XCTAssertTrue(flow.start(provider: .microsoft, clientID: "fixture", secret: "", label: "", info: info, onSuccess: { XCTFail("Denied") }))
+        for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(flow.error, CalendarConnectionError.denied.localizedDescription)
+        let model = CalendarHoverModel(store: PlannerStore(url: directory.appendingPathComponent("planner.json")),
+            connections: connections, connectionFlow: flow)
+        model.begin(); model.end(); model.begin()
+        XCTAssertNotNil(model.connectionFlow.error)
+        XCTAssertFalse(connections.isConnecting); XCTAssertTrue(connections.accounts.isEmpty)
+    }
+
     func testOffscreenCalendarHoverFixtures() async throws {
         guard let output = ProcessInfo.processInfo.environment["WHYTAP_CALENDAR_HOVER_RENDER_DIR"] else {
             throw XCTSkip("Set WHYTAP_CALENDAR_HOVER_RENDER_DIR for synthetic offscreen Calendar fixtures")

@@ -14,13 +14,13 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Planner/CalendarHoverView.swift
     confirmed_at: 2026-10-21
-related: [2026-10-21-calendar-integrations.md, 2026-10-20-todo-hover.md]
+related: [2026-10-21-calendar-integrations.md, 2026-10-20-todo-hover.md, 2026-10-19-planner.md]
 ---
 
 # Calendar in Hover
 
 This supersedes the standalone Planner window as Calendar's normal entry.
-The Calendar tile, tool search, assigned hotkey and `whytap://tool/calendar`
+The Calendar tile, tool search, assigned hotkey, Toolbox and `whytap://tool/calendar`
 all open the same inline panel. Every new opening selects today, including
 a repeated Calendar hotkey. Day navigation stays local to that opening.
 
@@ -43,7 +43,12 @@ Events remain read-only in Hover; retained local events are displayed alongside
 connected sources, including events spanning midnight and all-day events.
 
 The menu survives pointer exit. Outside click/Escape dismisses it, except during
-the provider permission flow so switching to the browser cannot cancel OAuth.
+its own provider permission flow so switching to the browser cannot cancel OAuth.
+Settings permission flows do not pin Hover. CalendarConnectionFlow owns the
+operation independently of the view: meeting/agent priority can temporarily hide
+Hover without cancelling it. Repeating Calendar while connecting resumes that
+screen. Success returns to the agenda, activating Hover only if it is visible;
+errors remain available for retry. Explicit Back/Cancel ends the operation.
 Explicit Cancel/Back can cancel a connection. The menu reacquires keyboard focus
 when the connection finishes. All buttons/rows have full-area hover, press,
 focus and disabled states; the fixed hit band includes the whole panel.
@@ -52,5 +57,7 @@ A visible Calendar defers restore/update restart. Ordinary read-only backup is
 unaffected. Google verification and Zoom publication remain pending; this UI
 change neither grants permissions nor marks either provider approved.
 
-The legacy Planner editor types and archive are retained for compatibility;
+There are no runtime calls into PlannerWindowController and no shared window
+singleton, so a second calendar surface cannot replace the daily event cache.
+The legacy Planner editor types and archive are retained for compatibility/tests;
 this change does not delete or migrate tasks, events, accounts or credentials.

@@ -1077,8 +1077,14 @@ The user can inspect an event or connect another provider without losing Hover.
   Disabled controls suppress active hover/press. Foreground is 96% white, secondary
   text at least 76%. Reduce Motion removes the short hover color animation and
   disables panel transactions; geometry never changes during hover/press.
+  On the 12% gray fixture backdrop, secondary label contrast is 8.72:1 normal,
+  6.78:1 on hover and 5.33:1 pressed. Actual glass contrast remains native acceptance.
 - A provider browser/macOS prompt is an explicit setup handoff; the Calendar
-  panel remains open during the serialized connection. Cancel/Back cancels it.
+  panel remains open during its serialized connection. Settings connections
+  do not pin Hover. Permission work lives in CalendarConnectionFlow outside the
+  view, so temporary meeting/agent priority and repeat opens do not cancel it.
+  Success returns to the agenda without stealing focus from a priority surface;
+  errors retain a retry path. Explicit Cancel/Back cancels it.
   Source events and local archive data keep their current formats.
 
 Verification: synthetic NSHostingView fixtures at 310/360/500pt cover the agenda,

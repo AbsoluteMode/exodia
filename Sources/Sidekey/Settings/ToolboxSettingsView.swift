@@ -373,10 +373,10 @@ struct ToolboxSettingsView: View {
                 ToolboxDisplayPane()
             case .tasks, .calendar:
                 VStack(spacing: 14) {
-                    Text("Open your tasks and calendars in Whytap Planner.")
+                    Text(tool == .calendar ? "Open today’s calendar inside Hover." : "Open your task list inside Hover.")
                         .font(.callout).foregroundStyle(.secondary)
-                    Button("Open " + HoverToolRegistry.info(for: tool).title) {
-                        PlannerWindowController.shared.show(tool == .tasks ? .tasks : .calendar)
+                    IntegrationAction(title: "Open " + HoverToolRegistry.info(for: tool).title) {
+                        if let url = URL(string: "whytap://tool/" + tool.rawValue) { NSWorkspace.shared.open(url) }
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             case .monitor:

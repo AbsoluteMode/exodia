@@ -101,10 +101,10 @@ struct CalendarConnectView: View {
     @State private var label = ""
     @State private var clientID = ""
     @State private var clientSecret = ""
-    @State private var working = false
-    @State private var error: String?
-    @State private var browser = CalendarBrowserSignIn()
-    @State private var signInTask: Task<Void, Never>?
+    @StateObject private var flow: CalendarConnectionFlow
+    private let keepsFlowOnDisappear: Bool
+    private var working: Bool { flow.working }
+    private var error: String? { flow.error }
     @State private var showSetup = false
     private var registeredClient: CalendarClientConfiguration? { .registered(provider, info: configurationInfo) }
     private var readiness: CalendarConnectionReadiness { .authorization(provider, clientID: clientID, info: configurationInfo) }
@@ -112,7 +112,8 @@ struct CalendarConnectView: View {
 
     init(connections: CalendarConnections, provider: CalendarProvider = .google,
          allowsProviderSelection: Bool = true, configurationInfo: [String: Any]? = Bundle.main.infoDictionary,
-         compact: Bool = false, allowsAdvancedSetup: Bool? = nil, onClose: (() -> Void)? = nil) {
+         compact: Bool = false, allowsAdvancedSetup: Bool? = nil, flow: CalendarConnectionFlow? = nil,
+         keepsFlowOnDisappear: Bool = false, onClose: (() -> Void)? = nil) {
         self.connections = connections
         self._provider = State(initialValue: provider)
         self.allowsProviderSelection = allowsProviderSelection
@@ -120,7 +121,8 @@ struct CalendarConnectView: View {
         self.allowsAdvancedSetup = allowsAdvancedSetup ?? allowsProviderSelection
         self.onClose = onClose
         self.configurationInfo = configurationInfo
-        self._browser = State(initialValue: CalendarBrowserSignIn(configurationInfo: configurationInfo))
+        self.keepsFlowOnDisappear = keepsFlowOnDisappear
+        self._flow = StateObject(wrappedValue: flow ?? CalendarConnectionFlow(connections: connections))
     }
 
     var body: some View {
@@ -128,12 +130,12 @@ struct CalendarConnectView: View {
             if compact { compactBody } else { standardBody }
         }
         .onAppear { loadRegisteredClient() }
-        .onChange(of: provider) { _, _ in loadRegisteredClient(); error = nil; showSetup = false }
+        .onChange(of: provider) { _, _ in loadRegisteredClient(); flow.clearError(); showSetup = false }
         .onChange(of: clientID) { oldID, newID in
             clientSecret = CalendarClientConfiguration.secretAfterClientIDChange(from: oldID, to: newID,
                 currentSecret: clientSecret, registered: registeredClient)
         }
-        .onDisappear { signInTask?.cancel(); browser.cancel() }
+        .onDisappear { if !keepsFlowOnDisappear { flow.cancel() } }
     }
 
     private var canConnect: Bool {
@@ -264,7 +266,7 @@ struct CalendarConnectView: View {
     }
 
     private func close() { if let onClose { onClose() } else { dismiss() } }
-    private func cancel() { signInTask?.cancel(); browser.cancel(); close() }
+    private func cancel() { flow.cancel(); close() }
 
     private func loadRegisteredClient() {
         clientID = registeredClient?.clientID ?? ""
@@ -288,34 +290,8 @@ struct CalendarConnectView: View {
         }
     }
     private func connect() {
-        guard readiness == .available, accountStorageAvailable, !working, connections.beginConnecting(provider: provider) else { return }
-        working = true; error = nil
-        let chosenProvider = provider
-        let chosenID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let chosenSecret = clientSecret
-        let chosenLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        signInTask = Task {
-            defer { working = false; connections.endConnecting() }
-            do {
-                if chosenProvider == .apple { try await connections.enableApple() }
-                else {
-                    let id = UUID()
-                    let verifier = try CalendarPKCE.random()
-                    let state = try CalendarPKCE.random()
-                    let result = try await browser.authorize(provider: chosenProvider, clientID: chosenID, state: state, verifier: verifier)
-                    try await connections.oauth.connect(provider: chosenProvider, clientID: chosenID, clientSecret: chosenSecret,
-                        code: result.code, redirect: result.redirect, verifier: verifier, id: id)
-                    do {
-                        try Task.checkCancellation()
-                        try connections.add(ConnectedCalendarAccount(id: id, provider: chosenProvider,
-                            label: chosenLabel.isEmpty ? chosenProvider.title : String(chosenLabel.prefix(120))))
-                    } catch { try? await connections.oauth.disconnect(id); throw error }
-                }
-                try Task.checkCancellation()
-                if compact { NSApp.activate(ignoringOtherApps: true) }
-                close()
-            } catch is CancellationError { }
-            catch { self.error = (error as? CalendarConnectionError)?.localizedDescription ?? "Couldn’t connect the calendar. Try again." }
-        }
+        guard readiness == .available, accountStorageAvailable else { return }
+        flow.start(provider: provider, clientID: clientID, secret: clientSecret, label: label,
+                   info: configurationInfo, onSuccess: close)
     }
 }

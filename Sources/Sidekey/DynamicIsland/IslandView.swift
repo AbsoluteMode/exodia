@@ -581,7 +581,7 @@ struct IslandView: View {
     private func dismissHoverMenu() {
         guard !appState.screenshotPreparing else { return }
         guard hoverPanelMode != .caseVault || !caseViewModel.isSystemInteractionActive else { return }
-        guard hoverPanelMode != .calendar || !appState.calendarConnectionActive else { return }
+        guard hoverPanelMode != .calendar || !appState.calendarHoverConnectionActive else { return }
         hoverPanelMode = .controls
         hoverSearchFocused = false
         hoverVocabularyFocused = false
@@ -1270,7 +1270,7 @@ struct IslandView: View {
                         .frame(width: compactWidth, height: hoverDrawerHeight)
                         .background(IslandHoverMenuDismissObserver(
                             enabled: holdsHoverMenu && !(hoverPanelMode == .caseVault && caseViewModel.isSystemInteractionActive)
-                                && !(hoverPanelMode == .calendar && appState.calendarConnectionActive),
+                                && !(hoverPanelMode == .calendar && appState.calendarHoverConnectionActive),
                             onDismiss: dismissHoverMenu
                         ))
                         .islandHoverGlassSurface(
@@ -1400,7 +1400,7 @@ struct IslandView: View {
                 requestPanelKeyboardFocus(.caseVault, glance: false)
             }
         }
-        .onChange(of: appState.calendarConnectionActive) { _, active in
+        .onChange(of: appState.calendarHoverConnectionActive) { _, active in
             if !active && hoverPanelMode == .calendar && isHoverExpanded {
                 requestPanelKeyboardFocus(.calendar, glance: false)
             }

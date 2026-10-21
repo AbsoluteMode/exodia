@@ -839,8 +839,11 @@ Calendar opens a 350pt inline Hover agenda on today. Tile, search, assigned hotk
 and whytap://tool/calendar use the same surface; reopening resets to today.
 Day navigation, full event details, feed selection and Connect stay in Hover.
 Connect uses the same provider authorization as Settings → Integrations, without
-a Whytap account. Browser/macOS permission prompts are the only external setup
-surfaces; the Hover menu stays open during authorization and recovers focus after.
+a Whytap account. Toolbox uses the same inline entry; there are no runtime
+PlannerWindowController calls. CalendarConnectionFlow keeps permission work alive
+through temporary Hover hiding. Only Hover-owned connections pin its menu;
+Settings connections do not. Repeat opens preserve an active connection.
+Success reactivates Hover only if visible; failures retain a retry path.
 WHY: .project-docs/decisions/2026-10-21-calendar-hover.md
 PlannerStore atomically saves private local tasks
 and Whytap events; unreadable archives block writes. CalendarConnections combines

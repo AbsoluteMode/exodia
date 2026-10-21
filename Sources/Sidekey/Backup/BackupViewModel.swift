@@ -1321,7 +1321,7 @@ final class BackupViewModel: ObservableObject {
             errorMessage = "Close Calendar before restoring a backup."
             return false
         }
-        guard !AppState.shared.plannerActive && !AppState.shared.todoActive && !AppState.shared.calendarHoverActive else {
+        guard !AppState.shared.plannerActive && !AppState.shared.todoActive else {
             errorMessage = "Finish or clear your To-do draft and close To-do and Planner before restoring a backup."
             return false
         }

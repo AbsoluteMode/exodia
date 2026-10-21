@@ -58,7 +58,11 @@ polling; there is no background sync or persistent external-event cache.
 
 The explicitly opened panel survives pointer exit; Escape/outside click closes
 it. During provider authorization the panel stays open so clicking the browser
-or macOS prompt does not cancel the connection. Explicit Cancel/Back cancels it.
+or macOS prompt does not cancel the connection. Meeting/agent priority may
+hide Hover, while the connection continues. Opening Calendar again resumes the
+active connection; completion activates Hover only if it is visible. Failures
+retain a retry path. Connections begun in Settings do not pin Hover.
+Explicit Cancel/Back cancels the operation.
 A visible Calendar defers restore and update restart; ordinary backups still run.
 Disconnect removes local credentials/events, keeping the original provider data.
 
