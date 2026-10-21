@@ -54,6 +54,27 @@ final class AIUsageTests: XCTestCase {
         XCTAssertEqual(AIUsagePrice(events: [event(0.02), event(nil)]).text, "$0.02 +")
     }
 
+    func test_elevenlabs_model_details_explain_missing_duration_separately_from_missing_rate() {
+        let missingDuration = event(nil, feature: .dropFast, account: .elevenLabs, model: "scribe_v2")
+        let missingRate = AIUsageEvent.speech(.init(feature: .dropFast, account: .elevenLabs, model: "scribe_v2"), seconds: 60)
+        let unknown = AIUsageModelRow(id: "fixture", events: [missingDuration])
+        XCTAssertEqual(unknown.total, "Credits unavailable")
+        XCTAssertTrue(unknown.pricingExplanation?.contains("durations were not recorded") == true)
+        let unpriced = AIUsageModelRow(id: "fixture", events: [missingRate])
+        XCTAssertEqual(unpriced.recordedMinutes, 1)
+        XCTAssertEqual(unpriced.pricingExplanation, "Credit rate unavailable for this model.")
+
+        let known = AIUsageEvent(context: missingRate.context, currency: .elevenLabsCredits,
+                                amount: 18, basis: .estimated, audioSeconds: 60)
+        let complete = AIUsageModelRow(id: "fixture", events: [known])
+        XCTAssertNil(complete.pricingExplanation)
+        let partial = AIUsageModelRow(id: "fixture", events: [missingDuration, known])
+        XCTAssertEqual(partial.total, "≈ 18 + credits")
+        XCTAssertEqual(partial.recordedMinutes, 1)
+        XCTAssertEqual(partial.pricingExplanation, unknown.pricingExplanation)
+        XCTAssertNil(AIUsageModelRow(id: "usd", events: [event(nil)]).pricingExplanation)
+    }
+
     @MainActor func test_each_costs_visit_defaults_to_this_month() {
         let model = AIUsageCostsViewModel(store: AIUsageStore(url: storeURL()))
         XCTAssertEqual(model.period, .month)

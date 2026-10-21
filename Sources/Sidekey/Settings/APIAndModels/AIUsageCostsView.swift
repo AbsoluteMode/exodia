@@ -83,7 +83,17 @@ struct AIUsageModelRow: Identifiable {
     var model: String { events[0].context.model }
     var provider: String { events[0].context.account.kind.displayName }
     var currency: AIUsageCurrency { events[0].currency }
-    var total: String { AIUsageTotal(events: events, currency: currency).text + (currency == .elevenLabsCredits ? " credits" : "") }
+    var total: String { AIUsagePrice(events: events).text }
+    var recordedMinutes: Double { events.reduce(0) { $0 + $1.audioSeconds } / 60 }
+    var pricingExplanation: String? {
+        guard currency == .elevenLabsCredits, events.contains(where: { $0.amount == nil }) else { return nil }
+        // A failed batch attempt has no measured duration in the journal.
+        // Do not imply a broken credit lookup or borrow the realtime model's rate.
+        if events.contains(where: { $0.amount == nil && $0.audioSeconds <= 0 }) {
+            return "Some audio durations were not recorded; those credits cannot be estimated."
+        }
+        return "Credit rate unavailable for this model."
+    }
 }
 
 @MainActor
@@ -407,9 +417,14 @@ struct AIUsageModelsPopover: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(item.model).font(.system(size: 12, weight: .medium)).textSelection(.enabled)
                                 Text(item.provider).font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
-                                if item.events.contains(where: { $0.audioSeconds > 0 }) {
-                                    Text((item.events.reduce(0) { $0 + $1.audioSeconds } / 60).formatted(.number.precision(.fractionLength(0...2))) + " min recorded")
+                                if item.recordedMinutes > 0 {
+                                    Text(item.recordedMinutes.formatted(.number.precision(.fractionLength(0...2))) + " min recorded")
                                         .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
+                                }
+                                if let explanation = item.pricingExplanation {
+                                    Text(explanation)
+                                        .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             Text(item.total).font(.system(size: 12)).monospacedDigit().multilineTextAlignment(.trailing)
@@ -417,9 +432,9 @@ struct AIUsageModelsPopover: View {
                         if item.id != row.models.last?.id { Divider() }
                     }
                 }
-            }.frame(height: min(320, CGFloat(row.models.count) * 76))
+            }.frame(height: min(320, row.models.reduce(CGFloat(0)) { $0 + ($1.pricingExplanation == nil ? 76 : 112) }))
             if row.events.contains(where: { $0.amount == nil }) {
-                Text("The provider did not report a usable price. These calls are excluded from the numeric total.")
+                Text("Calls without a usable price are excluded from the numeric total.")
                     .font(.system(size: 11.5)).foregroundStyle(MacSettingsTheme.text2).padding(.top, 9)
             }
         }.padding(16).frame(width: 390).foregroundStyle(MacSettingsTheme.text)

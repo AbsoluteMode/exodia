@@ -25,6 +25,7 @@ struct SettingsWindowView: View {
     /// survives tab switches — the detail pane recreates the tab views.
     @StateObject private var displayPickerViewModel = DisplayPickerViewModel()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focusedSidebarControl: String?
 
     /// The `otherVolumeDuckConfig` parameter is optional so callers without a
     /// pre-built config can pass `nil` and let `SettingsOtherView` construct its
@@ -65,6 +66,7 @@ struct SettingsWindowView: View {
         SidekeyAuroraWindow(title: AppBuildIdentity.current.settingsTitle, followsSystemAppearance: true) {
             settingsShell
         }
+        .frame(minWidth: 960, minHeight: 560)
     }
 
     private var settingsShell: some View {
@@ -78,7 +80,6 @@ struct SettingsWindowView: View {
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 960, minHeight: 560)
     }
 
     @ViewBuilder
@@ -86,7 +87,7 @@ struct SettingsWindowView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Scrollable tab list
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: SettingsSidebarStyle.rowSpacing) {
                     ForEach(SettingsWindowTab.availableCases) { tab in
                         sidebarTabButton(tab)
                     }
@@ -138,7 +139,6 @@ struct SettingsWindowView: View {
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .modifier(SettingsSidebarHover(isSelected: selection.selectedTab == tab))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHighlighted
@@ -149,7 +149,10 @@ struct SettingsWindowView: View {
             )
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isHighlighted)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SettingsSidebarButtonStyle(isSelected: selection.selectedTab == tab && !isHighlighted,
+                                                focused: focusedSidebarControl == tab.id))
+        .focused($focusedSidebarControl, equals: tab.id)
+        .accessibilityAddTraits(selection.selectedTab == tab ? .isSelected : [])
         .accessibilityLabel(tab.title)
     }
 
@@ -171,9 +174,9 @@ struct SettingsWindowView: View {
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .modifier(SettingsSidebarHover())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SettingsSidebarButtonStyle(focused: focusedSidebarControl == "learning"))
+        .focused($focusedSidebarControl, equals: "learning")
         .accessibilityLabel("Open FAQ and Learning Center")
     }
 
@@ -197,14 +200,14 @@ struct SettingsWindowView: View {
             .padding(.horizontal, SettingsSidebarStyle.buttonHorizontalPadding)
             .frame(height: SettingsSidebarStyle.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .modifier(SettingsSidebarHover(isSelected: isHighlighted))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isHighlighted ? Color.red.opacity(0.25) : Color.clear)
             )
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isHighlighted)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SettingsSidebarButtonStyle(focused: focusedSidebarControl == "quit"))
+        .focused($focusedSidebarControl, equals: "quit")
         .accessibilityLabel(AppBuildIdentity.current.quitActionTitle)
     }
 
@@ -261,24 +264,45 @@ struct SettingsWindowView: View {
     }
 }
 
-/// Fade only the background: text, focus and hit targets stay in place.
+/// Compact rows retain full-area hover, press and keyboard-focus feedback.
 // WHY: docs/DESIGN.md — Text-only Settings sidebar.
-private struct SettingsSidebarHover: ViewModifier {
+struct SettingsSidebarButtonStyle: ButtonStyle {
     var isSelected = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
+    var focused = false
 
-    func body(content: Content) -> some View {
-        content
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.10) : MacSettingsTheme.hover.opacity(0.85))
-                    .opacity(isHovered ? 1 : 0)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
-                    .allowsHitTesting(false)
-            }
-            .onHover { isHovered = $0 }
-            .onDisappear { isHovered = false }
+    func makeBody(configuration: Configuration) -> some View {
+        Content(configuration: configuration, isSelected: isSelected, focused: focused)
+    }
+
+    private struct Content: View {
+        let configuration: ButtonStyleConfiguration
+        let isSelected: Bool
+        let focused: Bool
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var hovered = false
+
+        var body: some View {
+            configuration.label
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(isSelected ? (configuration.isPressed ? Color.black.opacity(0.12) : Color.white.opacity(0.10))
+                              : (configuration.isPressed ? MacSettingsTheme.selection : MacSettingsTheme.hover.opacity(0.85)))
+                        .opacity(isEnabled && (hovered || configuration.isPressed) ? 1 : 0)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)
+                        .allowsHitTesting(false)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(isSelected ? Color.white : MacSettingsTheme.accent, lineWidth: 2)
+                        .opacity(isEnabled && focused ? 1 : 0)
+                        .allowsHitTesting(false)
+                }
+                .opacity(isEnabled ? 1 : 0.45)
+                .onHover { hovered = isEnabled && $0 }
+                .onChange(of: isEnabled) { _, enabled in if !enabled { hovered = false } }
+                .onDisappear { hovered = false }
+        }
     }
 }
 
@@ -393,9 +417,10 @@ final class SettingsWindowSelection: ObservableObject {
 enum SettingsSidebarStyle {
     static let width: CGFloat = 220
     static let horizontalPadding: CGFloat = 10
-    static let verticalPadding: CGFloat = 14
+    static let verticalPadding: CGFloat = 10
     static let buttonHorizontalPadding: CGFloat = 10
-    static let rowHeight: CGFloat = 38
+    static let rowHeight: CGFloat = 30
+    static let rowSpacing: CGFloat = 4
     static let labelFontSize: CGFloat = 13
     static let labelMinimumScaleFactor: CGFloat = 0.88
 
