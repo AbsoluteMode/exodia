@@ -282,8 +282,8 @@ enum ArtifactRestoreDestination: Hashable {
     }
 
     /// The only paths a restore is allowed to act on. Anything else — an
-    /// unknown root, a traversal attempt, a name that is not the shape the
-    /// store writes — refuses the whole archive instead of writing a file
+    /// unknown root, a traversal attempt, or executable provider job state
+    /// refuses the whole archive instead of writing a file
     /// somewhere unexpected.
     static func resolve(_ path: String, in locations: ArtifactBackupLocations) throws -> Self {
         try ArtifactBackupPath.validate(path)
@@ -313,20 +313,23 @@ enum ArtifactRestoreDestination: Hashable {
         case ("meetings", 3) where parts[1] == "notes":
             guard isMeetingSidecar(parts[2]) else { throw ArtifactBackupError.unsafeContent }
             return .file(try inside(locations.meetingsCatalog, [parts[2]]))
-        case ("meetings", 4) where parts[1] == "staged":
-            guard UUID(uuidString: parts[2]) != nil, isStagedRecordingFile(parts[3]) else {
+        case ("meetings", _) where parts[1] == "staged" && parts.count >= 4:
+            guard UUID(uuidString: parts[2]) != nil,
+                  !ArtifactBackupStager.isRecordingRuntimeFile(parts.dropFirst(3).joined(separator: "/")) else {
                 throw ArtifactBackupError.unsafeContent
             }
             // The audio travels, the finalize record arrives parked. Launch
             // recovery only picks up `manifest.json`, so a restored Mac does
             // not start processing another Mac's unfinished recordings by
             // itself — and the bytes are still there to recover from.
-            let name = parts[3] == MeetingFinalizeManifest.fileName
+            let name = parts.count == 4 && parts.last!.lowercased() == MeetingFinalizeManifest.fileName
                 ? MeetingFinalizeManifest.fileName + parkedSuffix
-                : parts[3]
-            return .file(try inside(locations.meetingsStaging, [parts[2], name]))
+                : parts.last!
+            return .file(try inside(locations.meetingsStaging, Array(parts[2..<(parts.count - 1)]) + [name]))
         case ("history", 3) where parts[1] == "db" && parts[2] == "history.sqlite":
             return .file(locations.historyDatabase)
+        case ("history", 3) where parts[1] == "db" && parts[2] == ArtifactUsageBackup.fileName:
+            return .file(locations.usageDatabase)
         case ("history", 3) where parts[1] == "assets":
             guard isAssetName(parts[2]) else { throw ArtifactBackupError.unsafeContent }
             return .file(try inside(locations.historyAssets, [parts[2]]))
@@ -363,16 +366,6 @@ enum ArtifactRestoreDestination: Hashable {
         if name.hasSuffix(".md") { return UUID(uuidString: String(name.dropLast(3))) != nil }
         if name.hasSuffix("-transcript.json") { return UUID(uuidString: String(name.dropLast(16))) != nil }
         return false
-    }
-
-    private static func isStagedRecordingFile(_ name: String) -> Bool {
-        guard ArtifactBackupStager.isUsableName(name) else { return false }
-        if name == MeetingFinalizeManifest.fileName || name == MeetingFinalizeManifest.fileName + parkedSuffix { return true }
-        if name.hasPrefix("manifest-"), name.hasSuffix(".json" + parkedSuffix) { return true }
-        // Chunks, their digests, raw orphan audio and the unfinished chunk a
-        // crash left behind — all of it is retained recovery audio.
-        return name.hasPrefix("chunk-") || name.hasSuffix(".wav") || name.hasSuffix(".sha256")
-            || name.hasSuffix(".wav.tmp")
     }
 
     private static func isAssetName(_ name: String) -> Bool {
@@ -662,7 +655,8 @@ struct ArtifactRestoreTransaction {
         var warnings = head.verification.warnings
         do {
             try createPrivateDirectory(rollbackRoot)
-            for target in Self.checkpointTargets(for: sections, locations: locations) {
+            let includesUsage = sections.contains(.history) && manifest.entries.contains { $0.path == ArtifactUsageBackup.archivePath }
+            for target in Self.checkpointTargets(for: sections, locations: locations, includesUsage: includesUsage) {
                 let existed = FileManager.default.fileExists(atPath: target.path)
                 guard existed else {
                     // Recorded anyway: a failure must also remove what the
@@ -727,6 +721,18 @@ struct ArtifactRestoreTransaction {
                 }
             }
             try reader.verifyEnd()
+            if includesUsage {
+                func prior(_ target: URL) -> URL? {
+                    guard let step = journal.steps.first(where: { $0.target == target.path }), step.movedAside else { return nil }
+                    return URL(fileURLWithPath: step.backup)
+                }
+                let priorJournal = locations.usageDatabase.deletingLastPathComponent()
+                    .appendingPathComponent(ArtifactUsageBackup.fileName + "-journal")
+                let priorWAL = locations.usageDatabase.deletingLastPathComponent()
+                    .appendingPathComponent(ArtifactUsageBackup.fileName + "-wal")
+                if let warning = try ArtifactUsageBackup.mergePrior(database: prior(locations.usageDatabase), rollbackJournal: prior(priorJournal),
+                    writeAheadLog: prior(priorWAL), into: locations.usageDatabase, scratch: rollbackRoot) { warnings.append(warning) }
+            }
             if faults.interruptAfter?(.files) == true {
                 throw ArtifactRestoreInterruption(stage: .files)
             }
@@ -901,7 +907,7 @@ struct ArtifactRestoreTransaction {
     /// Everything a section replaces. The history WAL files matter: a restored
     /// database next to the previous `-wal` would be a corrupt pair.
     static func checkpointTargets(for sections: Set<ArtifactBackupSection>,
-                                  locations: ArtifactBackupLocations) -> [URL] {
+                                  locations: ArtifactBackupLocations, includesUsage: Bool = false) -> [URL] {
         var targets: [URL] = []
         if sections.contains(.caseVault) { targets.append(locations.caseVault) }
         if sections.contains(.meetings) {
@@ -915,6 +921,7 @@ struct ArtifactRestoreTransaction {
                     .appendingPathComponent(locations.historyDatabase.lastPathComponent + suffix))
             }
             targets.append(locations.historyAssets)
+            if includesUsage { targets.append(contentsOf: ArtifactUsageBackup.checkpointTargets(locations: locations)) }
         }
         if sections.contains(.workspace) {
             targets.append(locations.monitorRoot)
@@ -930,7 +937,7 @@ struct ArtifactRestoreTransaction {
     /// transaction's own checkpoint directory.
     private static func validate(_ journal: ArtifactRestoreJournal, plan: ArtifactRestorePlan,
                                  locations: ArtifactBackupLocations, rollbackRoot: URL) -> Bool {
-        let allowed = Set(checkpointTargets(for: Set(plan.sections), locations: locations)
+        let allowed = Set(checkpointTargets(for: Set(plan.sections), locations: locations, includesUsage: true)
             .map { $0.standardizedFileURL.path })
         let prefix = rollbackRoot.standardizedFileURL.path + "/"
         guard journal.id == plan.id, journal.steps.count <= 64 else { return false }

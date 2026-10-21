@@ -491,7 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         BatteryRuntimeMonitor.shared.startHistory()
 
         startReady()
-        ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore)
+        ArtifactBackupEngine.shared.register(meetings: meetingsStore, history: historyStore, usage: AIUsageStore.shared)
         BackupViewModel.shared.start()
     }
 
