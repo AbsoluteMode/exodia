@@ -147,7 +147,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         await model.poll()
         XCTAssertEqual(model.syncState, .waiting, "The cooldown must not show a stale green check")
         XCTAssertEqual(remote.publishCount, 1)
-        time.addTimeInterval(121)
+        time.addTimeInterval(3600)
         idle = false
         await model.poll()
         XCTAssertEqual(remote.publishCount, 1, "Active work defers sync")
@@ -209,7 +209,7 @@ final class BackupSimpleFlowTests: XCTestCase {
 
         // No setting or artifact notification accompanies a Keychain-only edit.
         try source.credentialStores[account]!.save("synthetic-new-key")
-        time.addTimeInterval(121)
+        time.addTimeInterval(3600)
         await model.poll()
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(model.syncState, .synced)
@@ -241,7 +241,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         for index in 0..<6 {
             source.defaults.set("offline-\(index)", forKey: "sidekey.preferences.transcriptionMode")
             try source.write("unique-artifact-\(index)", to: source.locations.monitorRoot.appendingPathComponent("dashboards/notes.txt"))
-            time.addTimeInterval(1_000)
+            time.addTimeInterval(3600)
             await model.poll()
         }
         let archives = try FileManager.default.contentsOfDirectory(atPath: source.root.appendingPathComponent("archives").path)
@@ -333,7 +333,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         await model.poll()
         await model.backupEverything()
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(10)], ofItemAtPath: file.path)
-        time.addTimeInterval(121)
+        time.addTimeInterval(3600)
         await model.poll()
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(remote.publishCount, 1)
@@ -361,7 +361,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertEqual(remote.publishCount, 1)
         XCTAssertEqual(model.versions.count, 1)
         source.defaults.set(true, forKey: "sidekey.preferences.hideHelpers")
-        time.addTimeInterval(121); await model.poll()
+        time.addTimeInterval(3600); await model.poll()
         XCTAssertEqual(remote.publishCount, 2)
         let restore = self.model(target)
         await restore.connectGitHub(token: "synthetic-token")
@@ -371,7 +371,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertEqual(restored.refreshToken, credential.refreshToken)
         credential.clientID = "fixture-new-client"
         try source.credentialStores[name]!.save(String(decoding: try JSONEncoder().encode(credential), as: UTF8.self))
-        time.addTimeInterval(121); await model.poll()
+        time.addTimeInterval(3600); await model.poll()
         XCTAssertEqual(remote.publishCount, 3, "A different calendar client is a real credential change")
     }
 
@@ -502,7 +502,7 @@ final class BackupSimpleFlowTests: XCTestCase {
                 await restarted.poll()
                 XCTAssertEqual(StubURLProtocol.capturedRequests.count, requests, "Honor GitHub's Retry-After: \(StubURLProtocol.capturedRequests.dropFirst(requests).map { $0.url!.path })")
             }
-            time.addTimeInterval(2_000)
+            time.addTimeInterval(3600)
             await restarted.poll()
             XCTAssertEqual(restarted.githubConnectionState, .connected)
             XCTAssertEqual(remote.publishCount, published + 1)
@@ -523,7 +523,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         await restarted.start()?.value
         let requests = StubURLProtocol.capturedRequests.count
         source.defaults.set("after-revocation", forKey: "sidekey.preferences.transcriptionMode")
-        time.addTimeInterval(2_000)
+        time.addTimeInterval(3600)
         await restarted.poll()
         XCTAssertEqual(StubURLProtocol.capturedRequests.count, requests)
         XCTAssertEqual(remote.publishCount, 1)
@@ -683,7 +683,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         XCTAssertEqual(model.recoveryCode, code)
     }
 
-    func testPermanentSourceFailureWaitsForAChangedSourceBeforeRetrying() async throws {
+    func testPermanentSourceFailureRetriesOnlyAtTheNextHourlyCapture() async throws {
         let source = try profile()
         var time = Date(), attempts = 0
         let model = model(source, now: { time }, changeProbe: {
@@ -694,7 +694,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         let initial = attempts
         let unsupported = source.locations.notifyRoot.appendingPathComponent(".env")
         try source.write("synthetic config", to: unsupported)
-        time.addTimeInterval(121)
+        time.addTimeInterval(3600)
         await model.poll()
         XCTAssertEqual(attempts, initial + 1)
         XCTAssertTrue(model.errorMessage?.contains("Notifications/.env") == true)
@@ -702,7 +702,7 @@ final class BackupSimpleFlowTests: XCTestCase {
         await model.poll()
         XCTAssertEqual(attempts, initial + 1, "A deterministic source error must not repeatedly export recordings")
         try FileManager.default.removeItem(at: unsupported)
-        time.addTimeInterval(1_000)
+        time.addTimeInterval(2_600)
         await model.poll()
         XCTAssertEqual(attempts, initial + 2)
         XCTAssertNil(model.errorMessage)

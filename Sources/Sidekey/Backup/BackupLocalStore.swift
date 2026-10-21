@@ -82,20 +82,55 @@ actor BackupLocalStore {
         records[index].copiedAt = date; records[index].remoteID = remoteID; records[index].destinationID = destinationID
         records[index].uploadedDepth = depth; records[index].preparation = nil
         try ConfigBackupFiles.write(JSONEncoder().encode(records), to: catalog)
-        // Keep every unsent copy and the latest 30 successfully copied
-        // generations. Remote copies are not automatically deleted.
-        let expired = Array(records.filter { $0.copiedAt != nil }.dropFirst(30))
-        let ids = Set(expired.map { $0.summary.id })
-        if !ids.isEmpty {
-            for record in expired {
-                let url = fileURL(record.summary.id)
-                let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                if values?.isRegularFile == true && values?.isSymbolicLink != true { try? FileManager.default.removeItem(at: url) }
+        try applyRetention(destinationID: destinationID)
+    }
+
+    struct RetentionResult: Equatable {
+        /// Unsent snapshots whose archive vanished: their content must be captured again.
+        var forgottenPending = 0
+        var removedCopies = 0
+    }
+
+    /// Local archives are a working set; the destination keeps the history.
+    /// Keep unsent snapshots, restore checkpoints and the newest copied
+    /// archive (the next upload's delta parent, and a fast local restore).
+    /// Older copied archives are removed: each is a complete multi-gigabyte
+    /// snapshot that already exists at the destination. Remote copies are
+    /// never deleted here. Catalog entries whose archive was removed outside
+    /// Whytap are forgotten instead of failing every later sync.
+    /// WHY: .project-docs/decisions/2026-10-21-backup-capture-pacing.md
+    @discardableResult
+    func applyRetention(destinationID: String?) throws -> RetentionResult {
+        let values = try records()
+        var result = RetentionResult()
+        var kept: [Record] = []
+        for record in values {
+            guard FileManager.default.fileExists(atPath: fileURL(record.summary.id).path) else {
+                if record.copiedAt == nil && record.recoveryOnly != true { result.forgottenPending += 1 }
+                if let preparation = record.preparation {
+                    let upload = uploadFileURL(id: record.summary.id, destinationID: preparation.destinationID)
+                    let metadata = try? upload.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                    if metadata?.isRegularFile == true && metadata?.isSymbolicLink != true { try? FileManager.default.removeItem(at: upload) }
+                }
+                continue
             }
-            // Only forget entries whose file was successfully removed.
-            records.removeAll { ids.contains($0.summary.id) && !FileManager.default.fileExists(atPath: fileURL($0.summary.id).path) }
-            try ConfigBackupFiles.write(JSONEncoder().encode(records), to: catalog)
+            kept.append(record)
         }
+        let copied = kept.filter { $0.copiedAt != nil && $0.recoveryOnly != true }
+        var parents = Set<UUID>()
+        if let newest = copied.first(where: { $0.destinationID == destinationID }) { parents.insert(newest.summary.id) }
+        if let newest = copied.first { parents.insert(newest.summary.id) }
+        for record in copied where !parents.contains(record.summary.id) {
+            let url = fileURL(record.summary.id)
+            let metadata = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard metadata?.isRegularFile == true, metadata?.isSymbolicLink != true else { continue }
+            try? FileManager.default.removeItem(at: url)
+            if !FileManager.default.fileExists(atPath: url.path) { result.removedCopies += 1 }
+        }
+        // Only forget entries whose file is actually gone.
+        kept.removeAll { !FileManager.default.fileExists(atPath: fileURL($0.summary.id).path) }
+        if kept.count != values.count { try ConfigBackupFiles.write(JSONEncoder().encode(kept), to: catalog) }
+        return result
     }
     func uploadFileURL(id: UUID, destinationID: String) -> URL {
         let suffix = SHA256.hash(data: Data(destinationID.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()

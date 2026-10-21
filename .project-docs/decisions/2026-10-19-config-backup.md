@@ -240,7 +240,9 @@ It does not implement passkey-based key derivation or continuous synchronization
   repeated retries do not cancel a planned restore. Unreadable old recovery-key
   metadata is preserved inside Keychain while a new generation is retained.
 - Local settings history retains 300 read-verified versions, full local backups
-  retain the latest 30 copied versions plus every unsent or pre-restore copy.
+  retain the latest 30 copied versions plus every unsent or pre-restore copy
+  (since 2026-10-21 only the newest copied archive, see
+  [backup capture pacing](2026-10-21-backup-capture-pacing.md)).
   Corrupt/unreadable local versions are not silently pruned. GitHub copies are
   never automatically deleted. Backups are best-effort while the app is open;
   status reports the latest completed copy rather than promising zero data loss.

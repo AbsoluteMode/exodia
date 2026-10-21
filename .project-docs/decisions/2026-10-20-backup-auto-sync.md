@@ -56,3 +56,7 @@ This supersedes the manual-only scheduling paragraph of the simple GitHub backup
 decision. Encryption, verification, local retention and safe restore contracts
 remain in force. Sync requires Whytap running and an idle opportunity; it is not
 a multi-Mac merge. No new objection or unresolved product choice was supplied.
+
+The two-minute capture spacing and "Choose Back up to resume" are superseded by
+[backup capture pacing](2026-10-21-backup-capture-pacing.md): captures are at
+most hourly and a visible Automatic backup switch owns pause and resume.

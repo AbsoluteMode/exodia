@@ -139,3 +139,7 @@ New schema 4 snapshots require an updated app to restore. Schemas 1–3 remain
 readable. Snapshot payloads, recovery-code encoding and repository names remain
 compatible; the optional encrypted index date is backward-readable. A reviewed
 PR is submitted to the shared builder, which owns integration and installation.
+
+Earlier settings-triggered checks and sooner retries after a source change are
+superseded by [backup capture pacing](2026-10-21-backup-capture-pacing.md):
+automatic captures start at most hourly; Back up remains immediate.

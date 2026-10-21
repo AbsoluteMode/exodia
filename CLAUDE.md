@@ -965,16 +965,24 @@ date, without a selection/confirmation wizard. A new Mac restores existing
 copies before uploading under another recovery key. Repeat code display requires Mac
 authentication; a never-presented first code keeps a save-code status visible.
 A normal quit and relaunch applies it; the running stores are never replaced.
-There are no normal-page backup settings, management/history disclosures or
-folder picker. Existing automatic schedules, folder destinations, local encrypted
-history and unfinished maintenance recovery remain compatible internally.
-A successfully created GitHub backup enables automatic sync. Existing verified
-GitHub copies adopt it once; later explicit cancellation pauses it across restart.
-The 60-second poll detects settings/credential and artifact changes, waits for idle
-and spaces attempts at least 120 seconds apart. Pending edits, failed transfers,
+The only backup setting is a visible Automatic backup switch; there are no
+management/history disclosures or folder picker. Existing automatic schedules,
+folder destinations, local encrypted history and unfinished maintenance recovery
+remain compatible internally. The first successfully created GitHub backup enables
+automatic sync. Existing verified GitHub copies adopt it once. Pausing (the switch
+or cancelling a sync) persists across restart, is re-read each poll, and Back up
+then saves one copy without resuming. Pending edits, failed transfers,
 pauses and maintenance never show Backup synced. Background sync keeps the same
 recovery credential without revealing it. WHY:
 `.project-docs/decisions/2026-10-20-backup-auto-sync.md`.
+The 60-second poll only marks detected changes pending. Automatic complete
+captures start at most hourly, changed or not, and need room for one more archive
+plus a 10 GB reserve (2 GB for Back up); transfer retries keep their own backoff.
+Local archives are only unsent snapshots, resumable transfers, restore checkpoints
+and the newest copied archive (the next delta parent), released after each upload
+and at launch; entries whose archive vanished are forgotten. GitHub copies are
+never deleted automatically. WHY:
+`.project-docs/decisions/2026-10-21-backup-capture-pacing.md`.
 At least hourly while running and idle, coherent content is hashed even without
 metadata changes. Only changed content creates a new encrypted archive. Calendar
 refresh-token rotation uses the same client-identity comparison as settings

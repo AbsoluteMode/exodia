@@ -106,9 +106,9 @@ final class BackupRenderTests: XCTestCase {
         XCTAssertEqual(model.syncState, .synced)
         await model.stopAndWait() // Freeze the fixture before offscreen view tasks arrive.
         for width in [560, 760] {
-            try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: width, height: 270),
+            try render(hosted(SettingsBackupView(model: model)), size: NSSize(width: width, height: 380),
                        to: directory.appendingPathComponent("backup-synced-\(width).png"))
-            try render(hosted(SettingsBackupView(model: model), scheme: .light), size: NSSize(width: width, height: 270),
+            try render(hosted(SettingsBackupView(model: model), scheme: .light), size: NSSize(width: width, height: 380),
                        to: directory.appendingPathComponent("backup-synced-light-\(width).png"), appearance: .aqua)
         }
         for scheme in [ColorScheme.dark, .light] {
