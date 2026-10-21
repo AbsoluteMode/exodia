@@ -132,11 +132,11 @@ Voice flow (Drop / dictation):
             mode changes from every control. The cleanup provider mark appears
             only while processing; paste shows “pasting…” without a provider. WHY:
             .project-docs/decisions/2026-10-19-strict-drop-modes.md
-       Smart's editor prompt consolidates repeated requests while
-       retaining independent facts, reasons, constraints and uncertainty; long
-       messages use blank-line paragraphs and plain lists. Self-corrections
-       replace only their fragment; nested requests stay requests. The prompt
-       is calibrated on GPT-6 Sol and does not change selected routes. WHY:
+       Smart's editor uses minimal repairs,
+       retaining the author's wording, thought order, facts and uncertainty;
+       it does not summarize or deeply rewrite. Self-corrections replace only
+       their fragment; nested requests stay requests. Evaluated on GPT-6 Sol,
+       the prompt does not change selected routes. WHY:
        .project-docs/decisions/2026-10-21-smart-editor-prompt.md
        SmartFormattingProfile selects destination syntax from app identity and
        focused AX role/document metadata (within the same 1.5s context deadline).
