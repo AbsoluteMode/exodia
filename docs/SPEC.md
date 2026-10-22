@@ -5,7 +5,7 @@
 > у провайдера ключом пользователя или на его OpenAI-compatible endpoint;
 > локальные модели убраны 2026-10-18
 > (`.project-docs/decisions/2026-10-18-remove-local-models.md`). Агент —
-> локальный OpenCode с моделью пользователя через OpenRouter.
+> встроенный Whytap Agent с моделью пользователя через OpenRouter, OpenAI или Anthropic.
 > Разделы ниже про roadmap и vocabulary написаны в облачную эпоху и
 > сохранены как продуктовый контекст; упоминания backend/подписки в них не
 > актуальны. См. `docs/plans/2026-09-02-fully-local-open-source.md`.
@@ -42,7 +42,7 @@ Knowledge workers — разработчики, продакт-менеджер�
 
 - macOS 14.2+, Swift + AppKit + SwiftUI; surface — Dynamic Island (status-bar item нет)
 - Voice flow: hold Space (удержание пробела в редактируемом поле; Escape — отмена) → запись → realtime STT: «Your key» (Soniox / Deepgram / ElevenLabs / self-hosted OpenAI-compatible, напрямую ключом пользователя из Keychain) → cleanup (OpenRouter ключом пользователя / custom OpenAI-compatible endpoint / без LLM) → Cmd+V
-- Agent flow: Right Cmd tap/hold → локальный OpenCode → выбранная пользователем модель OpenRouter, рендер в окне
+- Agent flow: Right Cmd tap/hold → Whytap Agent → выбранная пользователем модель OpenRouter, OpenAI или Anthropic, рендер в окне
 - Meeting Notes: always-on детектор → запись (mic + system audio) → BYOK-процессор (Soniox размечает спикеров, саммари — LLM пользователя) → notes window
 - App-aware форматирование (Notion/Linear/Slack/Telegram → markdown, остальное → plain)
 - Без аккаунта, без серверов Whytap, без телеметрии
@@ -107,7 +107,7 @@ Accept (запрос под островом: Y — разрешить, N/Escape
 
 Case открывается в панели высотой 320 pt. Подключённые приложения показаны
 иконками без лампочки и подписей; клик открывает права именно этого приложения.
-Постоянная кнопка Connect предлагает только найденные на Mac OpenCode, Claude Code
+Постоянная кнопка Connect предлагает встроенный Whytap Agent, найденные на Mac Claude Code
 и Cursor с логотипами, без Codex и без выбора произвольной программы. Затем открываются два блока:
 режим Accept/Bypass с пояснениями внутри вариантов и область проектов.
 Сохранение подключает агента через Touch ID, обозначенный на кнопке; подробности
@@ -764,3 +764,14 @@ Quit. Незнакомый id (ссылка на функцию из более 
 обязана содержать ⌃ или ⌥; Quit по ссылке не назначается; занятая комбинация
 показывает, кому она принадлежит, и ничего не меняет. Ссылки никогда не читают
 данные и не меняют, куда они уходят.
+
+### Native agent and Tavily (2026-10-22)
+
+Встроенный агент вызывает модель напрямую, без запуска OpenCode и MCP bootstrap.
+Рабочая папка — `Application Support/whytap/agent`, отдельно от исходников.
+AGENTS.md хранит память; контекст ограничен шестью парами / 12 000 символами и
+15 минутами. Скриншоты и результаты инструментов в новый файл диалога не пишутся.
+Settings → Agents содержит отдельный ключ Tavily в Keychain и проверку /usage
+без платного поиска. Поиск отправляет только запрос и возвращает до пяти результатов.
+Существующее разрешение редактирования/команд сохраняется; approve и bypass —
+следующий этап. См. [решение](../.project-docs/decisions/2026-10-22-native-agent.md).

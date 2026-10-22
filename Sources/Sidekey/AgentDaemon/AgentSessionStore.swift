@@ -14,10 +14,12 @@ final class AgentSessionStore: AgentSessionStoring {
     /// Endless resume makes every turn replay the whole history — a week-old
     /// session was observed costing ~30s of resume init plus ~70K context
     /// tokens per question.
-    static let resumeWindow: TimeInterval = 15 * 60
+    nonisolated static let resumeWindow: TimeInterval = 15 * 60
     static let shared = AgentSessionStore(fileURL: defaultFileURL())
 
     private struct Snapshot: Codable, Equatable {
+        var native: String?
+        var nativeUpdatedAt: Date?
         var claude: String?
         var claudeUpdatedAt: Date?
         var codex: String?
@@ -41,6 +43,8 @@ final class AgentSessionStore: AgentSessionStoring {
     func sessionID(for provider: CLIProviderID) -> String? {
         let stored: (id: String?, updatedAt: Date?)
         switch provider {
+        case .native:
+            stored = (snapshot.native, snapshot.nativeUpdatedAt)
         case .claude:
             stored = (snapshot.claude, snapshot.claudeUpdatedAt)
         case .codex:
@@ -59,6 +63,9 @@ final class AgentSessionStore: AgentSessionStoring {
         let normalized = Self.normalized(sessionID)
         let updatedAt = normalized == nil ? nil : now()
         switch provider {
+        case .native:
+            snapshot.native = normalized
+            snapshot.nativeUpdatedAt = updatedAt
         case .claude:
             snapshot.claude = normalized
             snapshot.claudeUpdatedAt = updatedAt

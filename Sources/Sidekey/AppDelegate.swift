@@ -2079,7 +2079,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               agentController == nil else { return }
         let claudeProvider: any CLIProvider = ClaudeCodeProvider()
         let codexProvider: any CLIProvider = CodexProvider()
-        let openCodeProvider: any CLIProvider = OpenCodeProvider()
+        let nativeProvider: any CLIProvider = NativeAgentProvider()
         // ONE shared response store backs both the controller's agent stream
         // and the island flow store the answer panel renders from. Building
         // the flow store here (not letting the controller mint its own) lets
@@ -2094,7 +2094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch AgentProviderStore.shared.activeProvider {
                 case .claude: return claudeProvider
                 case .codex: return codexProvider
-                case .opencode: return openCodeProvider
+                case .opencode, .native: return nativeProvider
                 case nil: return nil
                 }
             },

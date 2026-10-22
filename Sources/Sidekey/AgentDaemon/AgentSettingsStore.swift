@@ -77,6 +77,12 @@ final class AgentSettingsStore: ObservableObject {
                 effort: selectedCodexOption?.resolvedEffort(codexEffort),
                 serviceTier: selectedCodexOption?.resolvedTier(codexServiceTier ?? codexConfig.serviceTier)
             )
+        case .native:
+            return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions,
+                                   openCodeModelSpec: selectedOpenCodeModelSpec,
+                                   openCodeProvider: selectedOpenCodeProvider ?? .openRouter,
+                                   openRouterProvider: selectedOpenCodeProvider == .openRouter
+                                       ? routing.route(for: .agent)?.provider : nil)
         case .opencode:
             return AgentRunOptions(model: selectedOpenCodeModel, allowActions: openCodeAllowActions,
                                    openCodeModelSpec: selectedOpenCodeModelSpec,

@@ -4,7 +4,7 @@ Voice input and a voice-driven agent for macOS. Bring your own API keys
 (BYOK) or your own OpenAI-compatible endpoint.
 
 Hold **Space** in any text field, speak, release: the transcript is pasted
-where the cursor is. Tap **Right Command** to ask your local OpenCode agent
+where the cursor is. Tap **Right Command** to ask Whytap Agent
 by text, hold it to ask by voice. Choose its model through OpenRouter. Let
 Whytap notices your meetings and turn them into notes. All of it without an
 account, without Whytap servers and without telemetry.
@@ -48,7 +48,7 @@ Source and custom builds remain available; see [Development](#development).
 |---|---|---|
 | Dictation (Drop) | Your key (BYOK): Soniox, Deepgram, ElevenLabs, or a self-hosted OpenAI-compatible endpoint | the provider you chose, with your key |
 | Smart cleanup of dictated text | OpenRouter with your key, or a custom OpenAI-compatible endpoint (Ollama, LM Studio, vLLM) | the endpoint you chose |
-| Agent (Right Command) | OpenCode with your OpenRouter or Anthropic key and selected model | tools and memory on your Mac; inference at your selected provider |
+| Agent (Right Command) | Built-in Whytap Agent with your OpenRouter, OpenAI or Anthropic model | tools and memory on your Mac; inference at your selected provider |
 | Meeting Notes | Your speech provider (Soniox labels speakers), then your LLM for the summary | the providers you chose |
 
 Whytap no longer ships on-device speech or text models. If you used **Local**
@@ -88,15 +88,21 @@ top of the screen is the main UI; there is no menu bar item.
 
 ## Connect your agent
 
-In **Settings, Agents**, install OpenCode or use an existing installation. Add
-an OpenRouter or Anthropic key and choose the **Agent** model in **API &
-Models** (from the catalog, or by its exact ID), then click **Save & connect**
-in Agents. The provider charges your account for model requests. The
-connection check itself does not submit a paid model request.
+Choose the **Agent** model and add its OpenRouter, OpenAI or Anthropic key in
+**Settings → API & Models**, then click **Connect** in **Agents**. The agent is
+built into Whytap. Connect prepares the local workspace and checks that a key
+is present; model requests are billed by your provider.
 
-The agent can edit files and run tests by default. **Allow agent actions** can
-be turned off in Settings. Its model configuration, memory and conversation
-sessions stay local in the agent workspace.
+For web search, add a **Tavily** key in **Settings → Agents → Web search**.
+Saving checks the key without running a search. Search queries go to Tavily;
+results go to your selected model.
+
+The agent can edit files and run commands by default. Turn off **Allow file
+edits and commands** to block both. Its dedicated folder is
+`~/Library/Application Support/whytap/agent`, also available through **Open
+folder**. AGENTS.md keeps memory; recent text context resumes for 15 minutes,
+up to six pairs/12,000 characters. Screenshots and tool output stay out of that
+new conversation file. Approval modes are a later phase.
 
 ## Custom notifications
 

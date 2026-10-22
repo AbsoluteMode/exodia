@@ -25,22 +25,33 @@ final class AgentProviderStore: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let previous = defaults.string(forKey: Self.key).flatMap(CLIProviderID.init)
-        self.legacyConnectionNeedsSetup = (previous != nil && previous != .opencode)
+        self.legacyConnectionNeedsSetup = (previous != nil && previous != .opencode && previous != .native)
             || defaults.bool(forKey: Self.migrationKey)
-        if legacyConnectionNeedsSetup { defaults.set(true, forKey: Self.migrationKey) }
-        // The OpenCode migration requires an explicit BYOK connection. Keep
-        // old CLI credentials/settings untouched, but never silently dispatch
-        // to a hidden legacy provider after the Settings chooser is replaced.
-        self.activeProvider = previous == .opencode ? previous : nil
-        if previous != nil && previous != .opencode { defaults.removeObject(forKey: Self.key) }
-        self.preferredProvider = defaults.string(forKey: Self.preferredKey).flatMap(CLIProviderID.init)
+        // Preserve the explicit connected state and exact model/key route. This
+        // migration replaces only the harness; a disconnected agent stays off.
+        self.activeProvider = previous == .opencode || previous == .native ? .native : nil
+        if let activeProvider { defaults.set(Self.persistedID(activeProvider), forKey: Self.key) }
+        else if previous != nil { defaults.removeObject(forKey: Self.key) }
+        if activeProvider == .native {
+            self.legacyConnectionNeedsSetup = false
+            defaults.removeObject(forKey: Self.migrationKey)
+        }
+        let preferred = defaults.string(forKey: Self.preferredKey).flatMap(CLIProviderID.init)
+        self.preferredProvider = preferred == .opencode || preferred == .native ? .native : preferred
+        if preferred == .native { defaults.set(Self.persistedID(.native), forKey: Self.preferredKey) }
+    }
+
+    /// Preserve the on-disk identifier understood by the retained rollback app.
+    /// The in-memory provider is native; keys/routes and the old bundle stay compatible.
+    private static func persistedID(_ id: CLIProviderID) -> String {
+        id == .native ? CLIProviderID.opencode.rawValue : id.rawValue
     }
 
     func markConnected(_ id: CLIProviderID) {
         activeProvider = id                            // radio: replaces any previous
-        defaults.set(id.rawValue, forKey: Self.key)
+        defaults.set(Self.persistedID(id), forKey: Self.key)
         selectPreferred(id)
-        if id == .opencode {
+        if id == .opencode || id == .native {
             legacyConnectionNeedsSetup = false
             defaults.removeObject(forKey: Self.migrationKey)
         }
@@ -51,7 +62,7 @@ final class AgentProviderStore: ObservableObject {
     /// setup (CLI installed, sign-in still pending) is not silently reverted.
     func selectPreferred(_ id: CLIProviderID) {
         preferredProvider = id
-        defaults.set(id.rawValue, forKey: Self.preferredKey)
+        defaults.set(Self.persistedID(id), forKey: Self.preferredKey)
     }
 
     func disconnect() {

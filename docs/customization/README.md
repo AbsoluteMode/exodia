@@ -45,7 +45,7 @@ credentials or the user's transcripts. Missing prerequisites cause a nonzero exi
 | Custom monitoring | [Dashboard contract](dashboards.md) | passive JSON snapshot plus a separate collector |
 | Settings page | `Settings/SettingsWindowTab.swift` | `Settings/SettingsWindowView.swift` detail switch |
 | Persistence, keys or migrations | [Local data](local-data.md) | use existing stores rather than new raw file writes |
-| Agent execution | `AgentDaemon/OpenCodeProvider.swift`, `Agent/AgentController.swift` | OpenRouter model, process environment, streaming and action policy |
+| Agent execution | `AgentDaemon/NativeAgentProvider.swift`, `AgentDaemon/NativeAgentModel.swift`, `AgentDaemon/NativeAgentTools.swift`, `Agent/AgentController.swift` | Direct selected model, local tools, Tavily, bounded context and action policy |
 | Dictation | `Streaming/`, `PostProcessor.swift` | preserve graceful finish, retained audio and delivery recovery |
 | Meeting notes | `Meetings/MeetingsCoordinator.swift` | capture, staged audio, processing checkpoints and notes |
 

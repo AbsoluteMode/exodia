@@ -104,14 +104,14 @@ source controls are in Notify. [Script contract](customization/notifications.md)
 |---|---|---|
 | Meeting detector (FluidAudio Silero VAD) | nowhere; a one-time download from Hugging Face fetches the model | the first time the detector checks for speech |
 | Your key: speech (Soniox, Deepgram, ElevenLabs, or a self-hosted endpoint speaking the OpenAI Realtime protocol) and text (OpenRouter or a custom OpenAI-compatible endpoint) | the provider or endpoint chosen for that feature in API & Models, with your key (a custom endpoint may need none). Each feature's data goes only to its own provider, including its recovery path; nothing moves to another provider | while the feature's route is in use |
-| Agent (OpenCode) | the provider chosen for the Agent row (OpenRouter or Anthropic) and its selected model, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
+| Agent (native) | the provider chosen for the Agent row (OpenRouter, OpenAI or Anthropic) and its selected model, using your API key; tool actions may access destinations needed by your request | when you submit an agent request |
 | Key checks | the provider of the key: a free request (model list, key or account endpoint) that sends only the key. A restricted ElevenLabs key may need a minimal paid speech request, made only when you save the key or press Check now | when you save a key, press Check now, or open API & Models and the last result is a day old |
 | Model catalogs | the public model lists of OpenRouter and Deepgram (no key), and the model lists of Soniox and Anthropic (your key); a custom server's `/models` list. Only the request itself is sent, no audio or text | when you open API & Models and the cache is a day old, save a key, or press Refresh models |
 | OpenRouter providers | OpenRouter, with your key: the list of providers serving the model selected for an OpenRouter feature, with their latency and throughput. Only the request itself is sent, no audio or text. A pinned provider then receives that feature's requests alone, with no fallback | when an OpenRouter row is shown in API & Models (reused for 5 minutes) |
 | Model probes | the provider of the feature you are choosing a model for: 1 second of digital silence for speech models, the prompt "Reply with OK." (plus one fictitious tool for agent models) for text models. Never your audio, transcripts, prompts or notes. Costs a fraction of a cent | only when you pick a model that is not in the built-in list, or press Check now |
 | Encrypted backup | your private GitHub repository or the folder/sync service you selected; only authenticated ciphertext leaves Whytap | after you explicitly configure and enable Backup |
 | Connected calendars | the Google, Microsoft or Zoom account provider you explicitly connect; OAuth authorization and event queries for the displayed date range | sign-in in your browser, then while the calendar view is visible or refreshing; local tasks/events are not uploaded |
-| OpenCode installation | official anomalyco/opencode GitHub release metadata and executable | only after clicking Install in Settings → Agents |
+| Tavily search | the tool’s search query goes to Tavily; returned excerpts and URLs go to the selected agent model | only when the agent calls web_search; a free /usage check runs when saving the Tavily key |
 | Monitor | the SSH targets configured locally by the user; optionally Doppler to resolve credential references | while Monitor is open; custom collectors run separately under the user’s control |
 | Google search hotkey | a `google.com/search` URL opened in your browser | when you press Right Option |
 | Sparkle updates | GitHub Releases (`appcast.xml` and the DMG) | hourly check, download only on your click |
@@ -193,12 +193,19 @@ Exports contain flattened edited pixels. Clipboard copies may enter ordinary
 clipboard history. OCR and blur do not guarantee irreversible anonymization;
 check the visible result. See [screenshots](screenshots.md).
 
-The built-in agent also has a separate screen tool. When a request needs visible
-screen context, it captures one frame from the island's selected display (or an
-explicit display ID) with Whytap's Screen Recording permission. A bounded JPEG
-image is returned through local MCP to the selected agent model/provider. It is
-not copied to the clipboard or saved by the capture tool; OpenCode's local
-conversation history and the provider's normal retention can include the image.
-There is no automatic capture on every question and no mouse/keyboard control.
-A model must accept image input to interpret the screenshot; no substitute model
-is selected automatically.
+The built-in agent has a requested screen tool. The signed Whytap app captures
+one display under its Screen Recording permission and sends the bounded JPEG
+to the selected model in the current tool loop. Capture creates no file or
+clipboard copy, and the native conversation file stores no pixels, tool output
+or provider reasoning. Providers may retain supplied content under their own
+policies. OpenAI agent requests explicitly use `store: false`.
+
+The dedicated `Application Support/whytap/agent` folder retains AGENTS.md memory,
+session IDs and at most six completed text pairs (12,000 characters) in
+`native-conversation.json`. Context older than 15 minutes is not reused; the file
+is replaced after a successful later turn, rather than deleted by a timer.
+Old OpenCode runtime/history files remain on disk unused and can contain earlier
+content, including screenshots; the migration does not erase them. Tavily’s key
+uses a separate Keychain item, included in the existing encrypted provider-key
+backup contract. Only tool search queries are sent to Tavily, never the whole
+conversation, selection or screenshot automatically.
