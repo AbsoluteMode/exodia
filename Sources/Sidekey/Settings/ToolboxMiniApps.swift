@@ -73,12 +73,22 @@ struct ToolboxHistoryPane: View {
         HistoryHoverView(mode: $mode, cards: cards, targetAppName: nil,
                          onSelectMode: { mode = $0 }, onCopy: deps.copyHistoryCard,
                          onPreviewAnchorChange: { _, _ in }, onPaste: { _ in },
-                         allowsKeyboardPaste: false)
+                         allowsKeyboardPaste: false, onDelete: delete)
             .task(id: mode) {
                 cards = []
                 let loaded = await deps.historyCards(mode)
                 guard !Task.isCancelled else { return }
                 cards = loaded
             }
+    }
+
+    private func delete(_ card: HistoryStripCard) {
+        Task { @MainActor in
+            guard await deps.deleteHistoryCard(card) else { return }
+            let shownMode = mode
+            let loaded = await deps.historyCards(shownMode)
+            guard mode == shownMode else { return }
+            cards = loaded
+        }
     }
 }

@@ -116,6 +116,8 @@ struct HistoryStripCardsRowView: View {
     /// card the cursor is on. Default no-op so test instantiations
     /// that don't care about hover stay one-line.
     var onHoverChange: (HistoryStripCard, Bool) -> Void = { _, _ in }
+    /// Delete… for clipboard cards; `nil` hides the context menu.
+    var onDelete: ((HistoryStripCard) -> Void)? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -157,7 +159,8 @@ struct HistoryStripCardsRowView: View {
                         assetsDirectory: assetsDirectory,
                         onCopy: { onCopy(card) },
                         onExpand: { onExpand(card) },
-                        onHoverChange: { hovered in onHoverChange(card, hovered) }
+                        onHoverChange: { hovered in onHoverChange(card, hovered) },
+                        onDelete: deleteAction(for: card)
                     )
                 }
             }
@@ -165,6 +168,11 @@ struct HistoryStripCardsRowView: View {
             .padding(.vertical, 4)
         }
         .frame(width: proxy.size.width, height: proxy.size.height)
+    }
+
+    private func deleteAction(for card: HistoryStripCard) -> (() -> Void)? {
+        guard let onDelete, case .clipboard = card else { return nil }
+        return { onDelete(card) }
     }
 }
 
