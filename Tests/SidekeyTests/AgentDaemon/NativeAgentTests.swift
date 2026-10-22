@@ -299,8 +299,9 @@ final class NativeAgentTests: XCTestCase {
         let (binary, ready) = try detachedCommandFixture(directory)
         defer { cleanDetachedFixture(binary, ready: ready) }
         let started = ContinuousClock.now
-        let result = await NativeAgentCommand().run(command: "'\(binary.path)' '\(ready.path)'", directory: directory, helper: nil, timeout: .milliseconds(250))
+        let result = await NativeAgentCommand().run(command: "printf 'before\\n'; '\(binary.path)' '\(ready.path)'; printf 'leader-done\\n'", directory: directory, helper: nil, timeout: .milliseconds(250))
         XCTAssertLessThan(ContinuousClock.now - started, .seconds(1))
+        XCTAssertTrue(result.hasPrefix("before\nleader-done\n"), "Preserve output even while a detached process holds the pipe open: \(result)")
         XCTAssertTrue(result.contains("Detached child processes may still be running"))
         XCTAssertFalse(result.contains("[Exit 0]"), "An inherited open pipe is not a clean successful completion")
         XCTAssertTrue(CaseBuiltInAgentProcesses.shared.pids.isEmpty)

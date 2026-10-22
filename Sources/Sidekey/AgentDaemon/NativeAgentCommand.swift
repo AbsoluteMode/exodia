@@ -25,21 +25,32 @@ final class NativeAgentCommand: @unchecked Sendable {
                 var environment = ProcessInfo.processInfo.environment.filter { ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG"].contains($0.key) }
                 environment["PATH"] = ([helper?.deletingLastPathComponent().path].compactMap { $0 }
                     + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
+                let readFD = output.fileHandleForReading.fileDescriptor
+                _ = fcntl(readFD, F_SETFL, fcntl(readFD, F_GETFL) | O_NONBLOCK)
                 output.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                    let chunk = (try? handle.read(upToCount: 8192)) ?? Data()
                     guard let self else { return }
-                    if chunk.isEmpty {
-                        let suffix = self.lock.withLock { self.outputEnded = true; return self.exitSuffix }
-                        handle.readabilityHandler = nil
-                        if let suffix { self.finish(suffix) }
-                        return
-                    }
-                    self.lock.withLock {
-                        guard !self.finished else { return }
+                    var ended = false
+                    let suffix: String? = self.lock.withLock {
+                        guard !self.finished else { return nil }
+                        // FileHandle.read(upToCount:) can wait for a full chunk
+                        // while a detached child holds the pipe open. One
+                        // nonblocking read preserves bytes already available.
+                        // The lock prevents a late read after finish closes FD.
+                        var bytes = [UInt8](repeating: 0, count: 8192)
+                        var count: Int
+                        repeat { count = Darwin.read(readFD, &bytes, bytes.count) } while count < 0 && errno == EINTR
+                        guard count >= 0 else { return nil }
+                        if count == 0 {
+                            self.outputEnded = true; ended = true
+                            return self.exitSuffix
+                        }
                         let room = max(0, 32_000 - self.data.count)
-                        self.data.append(chunk.prefix(room))
-                        self.truncated = self.truncated || chunk.count > room
+                        self.data.append(contentsOf: bytes.prefix(min(room, count)))
+                        self.truncated = self.truncated || count > room
+                        return nil
                     }
+                    if ended { handle.readabilityHandler = nil }
+                    if let suffix { self.finish(suffix) }
                 }
                 do {
                     let child = try spawn(command: command, directory: directory, environment: environment)
