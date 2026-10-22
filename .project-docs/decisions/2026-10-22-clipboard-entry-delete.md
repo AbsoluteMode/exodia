@@ -117,4 +117,4 @@ back, including deleted ones. Time Machine, APFS snapshots and other disk
 copies are outside the app. Earlier versions of the row that SQLite may have
 left in pages freed by past evictions are not scrubbed.
 
-2026-10-22 · PR: pending
+2026-10-22 · PR: https://github.com/AbsoluteMode/whytap/pull/206
