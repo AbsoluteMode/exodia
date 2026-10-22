@@ -68,7 +68,8 @@ final class HistoryStripPanel: NSPanel {
         feed: HistoryStripFeed,
         assetsDirectory: URL,
         toast: CopiedToastController? = nil,
-        autoPasteEngine: AutoPasteEngine? = nil
+        autoPasteEngine: AutoPasteEngine? = nil,
+        deleteCard: ((HistoryStripCard) async -> Bool)? = nil
     ) {
         self.controller = controller
         self.feed = feed
@@ -121,7 +122,8 @@ final class HistoryStripPanel: NSPanel {
                 controller: controller,
                 feed: feed,
                 assetsDirectory: assetsDirectory,
-                toast: toast
+                toast: toast,
+                deleteCard: deleteCard
             )
         )
         host.frame = NSRect(origin: .zero, size: initialFrame.size)
@@ -280,6 +282,8 @@ final class HistoryStripPanel: NSPanel {
         if localKeyMonitor == nil {
             let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self else { return event }
+                // A modal alert (Delete confirmation) owns Esc and Return.
+                guard NSApp.modalWindow == nil else { return event }
                 if event.keyCode == 53 {
                     self.controller.handleEsc()
                     return nil

@@ -29,6 +29,8 @@ struct HistoryCardView: View {
     /// selection. Default = no-op so tests / preview call sites that
     /// don't care about hover stay unchanged.
     let onHoverChange: (Bool) -> Void
+    /// Context-menu Delete… (clipboard cards only); `nil` hides the menu.
+    let onDelete: (() -> Void)?
 
     init(
         card: HistoryStripCard,
@@ -36,7 +38,8 @@ struct HistoryCardView: View {
         assetsDirectory: URL,
         onCopy: @escaping () -> Void,
         onExpand: @escaping () -> Void,
-        onHoverChange: @escaping (Bool) -> Void = { _ in }
+        onHoverChange: @escaping (Bool) -> Void = { _ in },
+        onDelete: (() -> Void)? = nil
     ) {
         self.card = card
         self.width = width
@@ -44,6 +47,7 @@ struct HistoryCardView: View {
         self.onCopy = onCopy
         self.onExpand = onExpand
         self.onHoverChange = onHoverChange
+        self.onDelete = onDelete
     }
 
     /// Card sizing — picked so 3–5 cards fit horizontally on a 1440-wide
@@ -78,6 +82,11 @@ struct HistoryCardView: View {
             if hovered { NSCursor.pointingHand.set() }
             else { NSCursor.arrow.set() }
             onHoverChange(hovered)
+        }
+        .contextMenu {
+            if let onDelete {
+                Button("Delete…", role: .destructive, action: onDelete)
+            }
         }
     }
 

@@ -97,6 +97,11 @@ final class HistoryStripController: ObservableObject {
     /// card to copy and paste manually elsewhere via Cmd+V).
     @Published private(set) var targetAppName: String?
 
+    /// Bumped when a stored entry disappears outside the strip's own
+    /// actions (Delete… from any History surface). `HistoryStripView`
+    /// reads the feed on every render, so the bump refreshes its cards.
+    @Published private(set) var contentRevision = 0
+
     /// Last sidebar filter the user picked. Mirrored into UserDefaults so
     /// Hover History can reopen the same mode the user chose last time,
     /// even across controller re-creation.
@@ -219,6 +224,28 @@ final class HistoryStripController: ObservableObject {
     /// by the expanded panel's "x" button.
     func collapseExpanded() {
         expandedEntry = nil
+    }
+
+    /// A clipboard entry was deleted. Drops the hover and an expanded view
+    /// of that copy (Enter must not paste it, the panel must not keep
+    /// showing it), then refreshes the cards.
+    func clipboardEntryRemoved(_ card: HistoryStripCard) {
+        if hoveredCard == card { hoveredCard = nil }
+        if case .clipboard(let entry) = card,
+           expandedEntry == .clipboard(Self.expandedBody(for: entry.payload)) {
+            expandedEntry = nil
+        }
+        contentRevision += 1
+    }
+
+    static func expandedBody(
+        for payload: ClipboardHistoryEntryPayload
+    ) -> HistoryStripExpandedEntry.ClipboardBody {
+        switch payload {
+        case .text(let s): return .text(s)
+        case .image(let img): return .image(img)
+        case .fileURLs(let urls): return .fileURLs(urls)
+        }
     }
 
     func rememberedFilter(default defaultFilter: HistoryStripMode = .clipboard) -> HistoryStripMode {

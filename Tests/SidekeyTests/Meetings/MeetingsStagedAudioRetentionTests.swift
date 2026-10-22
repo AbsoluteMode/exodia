@@ -362,6 +362,25 @@ final class MeetingsStagedAudioRetentionTests: XCTestCase {
         return dir
     }
 
+    /// A metadata read failure must not turn an unknown recording age into
+    /// an expired recording. No real recording or user directory is used.
+    func testUnreadableDirectoryIsKeptUntilItsDatesCanBeRead() throws {
+        let dir = try stageLeftover(id: UUID(), hoursAgo: 2)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+
+        XCTAssertNil(MeetingsCoordinator.lastWrite(in: dir))
+        XCTAssertNil(MeetingsCoordinator.lastRecordedWrite(in: dir))
+        let found = MeetingsCoordinator.releasableStagedRecordings(
+            in: stagingRoot, at: Date(), manifestStore: MeetingFinalizeManifestStore()
+        )
+        XCTAssertFalse(found.unmanaged.contains(dir))
+        XCTAssertTrue(found.expired.isEmpty)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+        XCTAssertNotNil(MeetingsCoordinator.lastWrite(in: dir))
+    }
+
     private func continuation(of meetingId: UUID, part: Int = 2) -> MeetingContinuation {
         MeetingContinuation(
             meetingId: meetingId, precedingRecordingId: meetingId,

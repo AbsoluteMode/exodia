@@ -186,6 +186,8 @@ final class HistoryExpandedPanel: NSPanel {
             // first-responder routing to work.
             let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self else { return event }
+                // A modal alert (Delete confirmation) owns Esc and Cmd-keys.
+                guard NSApp.modalWindow == nil else { return event }
                 if event.keyCode == 53 {
                     self.controller.handleEsc()
                     return nil

@@ -1797,7 +1797,8 @@ final class MeetingsCoordinator {
     /// retries never rewrite (they rewrite the manifest and the Soniox
     /// checkpoint). Without chunks, the newest entry of the directory.
     nonisolated static func lastRecordedWrite(in dir: URL) -> Date? {
-        let chunks = modificationDates(in: dir).filter {
+        guard let dates = modificationDates(in: dir) else { return nil }
+        let chunks = dates.filter {
             $0.key.hasPrefix("chunk-") && $0.key.hasSuffix(".wav")
         }
         return chunks.values.max() ?? lastWrite(in: dir)
@@ -1808,19 +1809,23 @@ final class MeetingsCoordinator {
     nonisolated static func lastWrite(in dir: URL) -> Date? {
         guard let own = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate else { return nil }
-        return max(own, modificationDates(in: dir).values.max() ?? own)
+        guard let dates = modificationDates(in: dir) else { return nil }
+        return max(own, dates.values.max() ?? own)
     }
 
-    private nonisolated static func modificationDates(in dir: URL) -> [String: Date] {
-        let urls = (try? FileManager.default.contentsOfDirectory(
+    private nonisolated static func modificationDates(in dir: URL) -> [String: Date]? {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
             at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey]
-        )) ?? []
+        ) else { return nil }
         var dates: [String: Date] = [:]
         for url in urls {
-            if let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
-                dates[url.lastPathComponent] = date
+            // An incomplete view of the directory cannot prove that its
+            // newest recording is old enough to delete.
+            guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
+                return nil
             }
+            dates[url.lastPathComponent] = date
         }
         return dates
     }

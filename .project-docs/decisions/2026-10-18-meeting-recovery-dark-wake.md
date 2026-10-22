@@ -17,7 +17,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Meetings/MeetingsCoordinatorTests.swift
     confirmed_at: 2026-10-18
-related: [2026-10-18-silent-meetings.md]
+related: [2026-10-18-silent-meetings.md, 2026-10-22-no-retained-meeting-audio.md]
 ---
 
 # Meeting recovery in dark wake

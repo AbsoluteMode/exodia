@@ -20,7 +20,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Meetings/MeetingsStoreDeleteTests.swift
     confirmed_at: 2026-10-19
-related: [2026-10-18-silent-meetings.md, 2026-09-07-soniox-meeting-files.md]
+related: [2026-10-18-silent-meetings.md, 2026-09-07-soniox-meeting-files.md, 2026-10-22-clipboard-entry-delete.md, 2026-10-22-no-retained-meeting-audio.md]
 ---
 
 # Deleting a meeting, and staged audio of stored meetings

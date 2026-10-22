@@ -23,7 +23,7 @@ sources:
   - type: url
     reference: https://soniox.com/docs/api-reference/stt/websocket-api
     confirmed_at: 2026-10-19
-related: [2026-10-20-meeting-source-noise-floor.md]
+related: [2026-10-20-meeting-source-noise-floor.md, 2026-10-22-no-retained-meeting-audio.md]
 ---
 
 # Live meeting test capture

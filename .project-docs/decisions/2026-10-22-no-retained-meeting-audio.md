@@ -76,7 +76,8 @@ not to be kept; audio is debugging material for development builds.
   starting (its directory exists while the microphone start may wait for the
   permission answer), a live Reconnect part, recordings being processed and
   entries not named by a UUID. Listing, dating and removal run off the main
-  thread; use is rechecked after every suspension.
+  thread; use is rechecked after every suspension. An unreadable directory
+  listing or modification date leaves its age unknown and keeps the recording.
 - Research capture (`sidekey.meetings.liveTestCapture`) works only in source
   dev builds (build 9999 or a `-dev` version, the same markers that keep dev
   bundles off packaged updates). A packaged build ignores the flag and removes
