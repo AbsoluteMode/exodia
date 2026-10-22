@@ -144,9 +144,16 @@ struct NativeAgentModel {
     }
 
     mutating func append(results: [(NativeAgentToolCall, NativeAgentToolResult)]) {
+        func modelText(_ result: NativeAgentToolResult) -> String {
+            if result.text.isEmpty { return "[Empty tool result]" }
+            if result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return "[Whitespace-only tool result: \(result.text.count) characters]\n" + result.text
+            }
+            return result.text
+        }
         if options.openCodeProvider == .anthropic {
             let content: [[String: Any]] = results.map { call, result in
-                var blocks: [[String: Any]] = [["type": "text", "text": result.text]]
+                var blocks: [[String: Any]] = [["type": "text", "text": modelText(result)]]
                 if let image = result.image { blocks.append(["type": "image", "source": ["type": "base64", "media_type": result.mimeType, "data": image]]) }
                 return ["type": "tool_result", "tool_use_id": call.id, "content": blocks]
             }
@@ -154,9 +161,9 @@ struct NativeAgentModel {
         } else {
             for (call, result) in results {
                 if options.openCodeProvider == .openAI {
-                    messages.append(["type": "function_call_output", "call_id": call.id, "output": result.text])
+                    messages.append(["type": "function_call_output", "call_id": call.id, "output": modelText(result)])
                 } else {
-                    messages.append(["role": "tool", "tool_call_id": call.id, "content": result.text])
+                    messages.append(["role": "tool", "tool_call_id": call.id, "content": modelText(result)])
                 }
             }
             for (_, result) in results where result.image != nil {

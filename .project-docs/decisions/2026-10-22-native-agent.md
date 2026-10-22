@@ -34,6 +34,8 @@ requests. Keep its source and old local data for compatibility and recovery;
 do not delete history or credentials. Migrate an explicitly connected OpenCode
 agent to the native runtime while preserving the exact model/provider/endpoint
 and action setting. A disconnected agent stays disconnected.
+Keep the legacy opencode connection identifier on disk while resolving native
+dispatch in memory, so restoring the retained app does not lose its connection.
 
 Initialization reads bounded local AGENTS.md memory and recent text pairs, then
 sends the selected provider one request with the entire small tool catalog.
@@ -78,8 +80,11 @@ Case uses the signed helper and existing broker approvals. Register only the
 native shell child PID, released at exit; never register the app PID or read
 vault files directly. A gated shell startup makes that identity available before
 a Case request can be sent. Commands have an isolated process group, 30-second
-deadline and bounded output. Cancellation stops the group; persistent background
-jobs require a separate facility. Do not pass model keys to child environments.
+deadline and bounded output. Cancellation signals the group, then bounds the
+output drain even if a child detached into another session. An inherited open
+pipe produces an incomplete/stopped warning, never a clean Exit 0. Detached
+processes may survive; persistent background jobs require a separate facility.
+Do not pass model keys or unrelated app descriptors to child processes.
 
 Preserve agent.opencode.allowActions: on permits file writes/commands under the
 Mac user's permissions; off omits and rejects them. The UI names that concrete
@@ -94,7 +99,9 @@ Use synthetic provider responses, temporary files/preferences and in-memory
 keys. Verify first-request tools/exact route, each provider's tool round trip,
 image format and reasoning retention, action metadata, disabled writes/commands,
 Tavily auth/query/result bounds and failed replacement, HTTP body redaction,
-conversation expiry/scope and shell timeout/cancellation. Render native Settings
+conversation expiry/scope and shell timeout/cancellation.
+Include a detached-child/open-pipe regression, signal exit status, descriptor
+inheritance and rollback-compatible connection settings. Render native Settings
 offscreen in both appearances without launching another app or reading keys.
 Live Tavily credentials, real provider/model behavior and Screen Recording remain
 separate acceptance checks in the one installed app.

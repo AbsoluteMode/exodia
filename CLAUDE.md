@@ -202,6 +202,8 @@ Agent flow (native Whytap runtime; OpenRouter, OpenAI or Anthropic):
   local key availability, model selection and writable workspace; it does not
   prove the provider accepts the key. Existing connected OpenCode users migrate
   to native without changing the route/key; disconnected users stay disconnected.
+  Persist the legacy opencode connection identifier so the retained rollback app
+  can still read the connected state; dispatch resolves it to native in memory.
   Keys stay in Keychain, only in requests to their own service. No model key is
   put in child environments, argv, files or logs. The old OpenCode implementation
   and its local files remain unused for compatibility; do not delete user data.
@@ -226,7 +228,10 @@ Agent flow (native Whytap runtime; OpenRouter, OpenAI or Anthropic):
   on by default; off removes and rejects write_file/run_command. Case keeps its
   own approvals through the signed helper and scoped child PID registrations.
   Commands use a dedicated process group, 30-second deadline and bounded output;
-  cancellation stops descendants. This is an action policy, not a filesystem
+  cancellation signals that group. Stop waiting within a bounded drain if a
+  detached child holds output open, and report that it may still be running.
+  Child environments exclude model keys and unrelated app descriptors. This is
+  an action policy, not a filesystem
   sandbox. Approve and bypass modes are a later phase, not implemented here.
   The loop has bounded steps/tool calls/context, explicit failures and no automatic
   retries that could repeat side effects. Files, selections, web/tool output and

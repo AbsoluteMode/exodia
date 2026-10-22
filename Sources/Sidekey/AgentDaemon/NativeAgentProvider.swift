@@ -108,12 +108,13 @@ final class NativeAgentProvider: CLIProvider {
                 var text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                 if let extracted = AgentUsefulLinksExtractor.extract(from: text) {
                     text = extracted.answer
-                    actions = extracted.block
+                    actions = Self.merging(actions, extracted.block)
                 }
-                guard !text.isEmpty || actions != nil else { throw NativeAgentError.message("The model returned an empty answer. Try again.") }
+                guard !text.isEmpty || actions?.items.isEmpty == false else { throw NativeAgentError.message("The model returned an empty answer. Try again.") }
                 // Persist only after a complete successful turn. A disk error must
                 // not hide a valid answer or repeat any actions.
-                try? conversation.append(user: prompt, assistant: text, directory: directory)
+                let historyAnswer = text.isEmpty ? (actions?.items.map(\.insertText).joined(separator: "\n") ?? "") : text
+                try? conversation.append(user: prompt, assistant: historyAnswer, directory: directory)
                 lock.withLock { sessionID = conversation.id }
                 continuation.yield(.finalAnswer(text: text))
                 if let actions { continuation.yield(.blockComplete(.usefulActions(actions))) }
@@ -135,12 +136,18 @@ final class NativeAgentProvider: CLIProvider {
                 else if screenCount > 2 && call.name == "capture_screen" { result = .init(text: "Screen capture limit reached for this request.") }
                 else { result = await tools.execute(call) }
                 try Task.checkCancellation()
-                if let block = result.actions { actions = block }
+                if let block = result.actions { actions = Self.merging(actions, block) }
                 results.append((call, result))
             }
             model.append(results: results)
         }
         throw NativeAgentError.message("The agent reached its step limit. Try a smaller task.")
+    }
+
+    private static func merging(_ existing: UsefulActionsBlock?, _ incoming: UsefulActionsBlock) -> UsefulActionsBlock {
+        var items = existing?.items ?? []
+        for item in incoming.items where !items.contains(item) { items.append(item) }
+        return UsefulActionsBlock(items: items)
     }
 
     static let systemPrompt = """

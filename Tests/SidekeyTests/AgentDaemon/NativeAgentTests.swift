@@ -252,6 +252,127 @@ final class NativeAgentTests: XCTestCase {
         XCTAssertNotEqual(kill(pid, 0), 0, "Cancellation must stop descendants even when their parent exits first")
     }
 
+
+    private func detachedCommandFixture(_ directory: URL) throws -> (URL, URL) {
+        let source = directory.appendingPathComponent("detached.c")
+        let binary = directory.appendingPathComponent("detached-job").resolvingSymlinksInPath()
+        let ready = directory.appendingPathComponent("detached-pid")
+        try Data(#"""
+        #include <unistd.h>
+        #include <stdio.h>
+        #include <stdlib.h>
+        int main(int argc, char **argv) {
+            pid_t child = fork();
+            if (child < 0) return 2;
+            if (child > 0) {
+                for (int i=0; i<200 && access(argv[1], F_OK)!=0; i++) usleep(5000);
+                if (argc > 2) usleep(500000);
+                return 0;
+            }
+            if (setsid() < 0) _exit(3);
+            FILE *file = fopen(argv[1], "w");
+            if (!file) _exit(4);
+            fprintf(file, "%d", getpid()); fclose(file);
+            sleep(3);
+            _exit(0);
+        }
+        """#.utf8).write(to: source)
+        let compiler = Process()
+        let errors = Pipe()
+        compiler.executableURL = URL(fileURLWithPath: "/usr/bin/cc")
+        compiler.arguments = [source.path, "-o", binary.path]
+        compiler.standardError = errors
+        try compiler.run(); compiler.waitUntilExit()
+        XCTAssertEqual(compiler.terminationStatus, 0)
+        return (binary, ready)
+    }
+
+    private func cleanDetachedFixture(_ binary: URL, ready: URL) {
+        guard let raw = try? String(contentsOf: ready, encoding: .utf8), let pid = Int32(raw),
+              let process = CaseSystemProcessInspector().info(pid: pid),
+              URL(fileURLWithPath: process.executablePath).resolvingSymlinksInPath() == binary else { return }
+        kill(pid, SIGKILL)
+    }
+
+    func testDetachedOutputCannotKeepCommandWaitingAfterLeaderExit() async throws {
+        let (directory, _, _) = try fixture()
+        let (binary, ready) = try detachedCommandFixture(directory)
+        defer { cleanDetachedFixture(binary, ready: ready) }
+        let started = ContinuousClock.now
+        let result = await NativeAgentCommand().run(command: "'\(binary.path)' '\(ready.path)'", directory: directory, helper: nil, timeout: .milliseconds(250))
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(1))
+        XCTAssertTrue(result.contains("Detached child processes may still be running"))
+        XCTAssertFalse(result.contains("[Exit 0]"), "An inherited open pipe is not a clean successful completion")
+        XCTAssertTrue(CaseBuiltInAgentProcesses.shared.pids.isEmpty)
+    }
+
+    func testCancellationFinishesDespiteDetachedOutput() async throws {
+        let (directory, _, _) = try fixture()
+        let (binary, ready) = try detachedCommandFixture(directory)
+        defer { cleanDetachedFixture(binary, ready: ready) }
+        let command = "'\(binary.path)' '\(ready.path)' hold-parent"
+        let task = Task { await NativeAgentCommand().run(command: command, directory: directory, helper: nil) }
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: ready.path) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path))
+        let started = ContinuousClock.now
+        task.cancel()
+        let result = await task.value
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(1))
+        XCTAssertTrue(result.contains("stopped waiting"))
+        XCTAssertTrue(result.contains("Detached"))
+    }
+
+    func testCommandsDoNotInheritUnrelatedAppFileDescriptors() async throws {
+        let (directory, _, _) = try fixture()
+        let file = directory.appendingPathComponent("owned-descriptor")
+        try Data("fixture".utf8).write(to: file)
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        _ = fcntl(handle.fileDescriptor, F_SETFD, 0)
+        let command = "if [ -e /dev/fd/\(handle.fileDescriptor) ]; then printf inherited; else printf closed; fi"
+        let result = await NativeAgentCommand().run(command: command, directory: directory, helper: nil)
+        XCTAssertTrue(result.hasPrefix("closed"), result)
+    }
+
+    func testTerminatedShellIsNotReportedAsSuccessfulExit() async throws {
+        let (directory, _, _) = try fixture()
+        let result = await NativeAgentCommand().run(command: "kill -KILL $$", directory: directory, helper: nil)
+        XCTAssertTrue(result.contains("Terminated by signal 9"))
+        XCTAssertFalse(result.contains("[Exit 0]"))
+    }
+
+    func testMultipleActionCallsAccumulateAndActionOnlyHistoryHasContent() async throws {
+        let (directory, keys, http) = try fixture()
+        try keys.save("key", account: OpenRouterLLMKeyStore.account)
+        var step = 0
+        StubURLProtocol.handler = { _ in
+            step += 1
+            if step == 1 {
+                let calls = ["/tmp/first", "/tmp/second"].enumerated().map { index, path -> [String: Any] in
+                    let args = String(decoding: try! JSONSerialization.data(withJSONObject: ["items": [["type": "path", "path": path]]]), as: UTF8.self)
+                    return ["id": "call\(index)", "type": "function", "function": ["name": "show_actions", "arguments": args]]
+                }
+                return self.serve(self.router(["role": "assistant", "content": NSNull(), "tool_calls": calls], finish: "tool_calls"))
+            }
+            return self.serve(self.router(["role": "assistant", "content": ""]))
+        }
+        let provider = NativeAgentProvider(keys: keys, http: http, workspace: { directory }, usageSink: { _ in })
+        var actionCount = 0
+        for await event in provider.run(prompt: "return both folders", resumeSessionID: nil, options: .init(model: "model")) {
+            if case .blockComplete(.usefulActions(let block)) = event { actionCount = block.items.count }
+        }
+        XCTAssertEqual(actionCount, 2)
+        let history = NativeAgentConversation.load(directory: directory, resumeID: provider.lastSessionID, route: "openrouter/model/")
+        XCTAssertEqual(history.pairs.last?.assistant, "/tmp/first\n/tmp/second")
+        var model = NativeAgentModel(options: .init(model: "model", openCodeProvider: .anthropic), key: "key", system: "system", history: history.pairs, prompt: "continue", http: http, usageSink: { _ in })
+        model.append(results: [(.init(id: "read", name: "read_file", arguments: [:]), .init(text: ""))])
+        let result = try XCTUnwrap((model.messages.last?["content"] as? [[String: Any]])?.first?["content"] as? [[String: Any]])
+        XCTAssertEqual(result.first?["text"] as? String, "[Empty tool result]")
+    }
+
     func testNativeMigrationPreservesDisconnectedStateAndModelPreferences() throws {
         let suite = "NativeMigration-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
@@ -260,6 +381,11 @@ final class NativeAgentTests: XCTestCase {
         defaults.set("opencode", forKey: "agent.activeProvider")
         defaults.set("vendor/model", forKey: "agent.opencode.model")
         XCTAssertEqual(AgentProviderStore(defaults: defaults).activeProvider, .native)
+        XCTAssertEqual(defaults.string(forKey: "agent.activeProvider"), "opencode", "Keep the rollback app’s persisted provider ID")
+        let connected = AgentProviderStore(defaults: defaults)
+        connected.markConnected(.native)
+        XCTAssertEqual(defaults.string(forKey: "agent.preferredProvider"), "opencode")
+        XCTAssertEqual(AgentProviderStore(defaults: defaults).preferredProvider, .native)
         XCTAssertEqual(defaults.string(forKey: "agent.opencode.model"), "vendor/model")
         AgentProviderStore(defaults: defaults).disconnect()
         XCTAssertNil(AgentProviderStore(defaults: defaults).activeProvider)

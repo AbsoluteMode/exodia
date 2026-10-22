@@ -1,7 +1,8 @@
 import Darwin
 import Foundation
 
-/// A separate process group makes cancellation cover the shell and descendants.
+/// A separate process group bounds ordinary jobs. A detached child can leave
+/// that group: never wait indefinitely for its inherited output descriptor.
 /// Only this gated child is registered with Case, preserving existing approvals.
 final class NativeAgentCommand: @unchecked Sendable {
     private let lock = NSLock()
@@ -25,7 +26,7 @@ final class NativeAgentCommand: @unchecked Sendable {
                 environment["PATH"] = ([helper?.deletingLastPathComponent().path].compactMap { $0 }
                     + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
                 output.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                    let chunk = handle.availableData
+                    let chunk = (try? handle.read(upToCount: 8192)) ?? Data()
                     guard let self else { return }
                     if chunk.isEmpty {
                         let suffix = self.lock.withLock { self.outputEnded = true; return self.exitSuffix }
@@ -34,6 +35,7 @@ final class NativeAgentCommand: @unchecked Sendable {
                         return
                     }
                     self.lock.withLock {
+                        guard !self.finished else { return }
                         let room = max(0, 32_000 - self.data.count)
                         self.data.append(chunk.prefix(room))
                         self.truncated = self.truncated || chunk.count > room
@@ -41,10 +43,13 @@ final class NativeAgentCommand: @unchecked Sendable {
                 }
                 do {
                     let child = try spawn(command: command, directory: directory, environment: environment)
-                    lock.withLock { pid = child }
-                    CaseBuiltInAgentProcesses.shared.insert(child)
-                    if lock.withLock({ interrupted }) { stop() }
-                    else { try? gate.fileHandleForWriting.write(contentsOf: Data("start\n".utf8)) }
+                    let mayStart = lock.withLock {
+                        pid = child
+                        CaseBuiltInAgentProcesses.shared.insert(child)
+                        if interrupted || finished { kill(-child, SIGKILL); return false }
+                        return true
+                    }
+                    if mayStart { try? gate.fileHandleForWriting.write(contentsOf: Data("start\n".utf8)) }
                     try? gate.fileHandleForWriting.close()
                     try? gate.fileHandleForReading.close()
                     try? output.fileHandleForWriting.close()
@@ -53,17 +58,32 @@ final class NativeAgentCommand: @unchecked Sendable {
                         // prevents its group ID being reused before descendant cleanup.
                         var info = siginfo_t()
                         while waitid(P_PID, id_t(child), &info, WEXITED | WNOWAIT) == -1 && errno == EINTR {}
-                        kill(-child, SIGKILL)
-                        var status: Int32 = 0
-                        while waitpid(child, &status, 0) == -1 && errno == EINTR {}
-                        lock.withLock { pid = 0 }
-                        CaseBuiltInAgentProcesses.shared.remove(child)
                         let suffix = lock.withLock {
-                            let text = interrupted ? "\n[Command stopped]" : "\n[Exit \((status >> 8) & 0xff)]"
+                            // Hold the lock across reap/PID removal, so a stop
+                            // callback cannot signal a newly reused process ID.
+                            kill(-child, SIGKILL)
+                            CaseBuiltInAgentProcesses.shared.remove(child)
+                            var status: Int32 = 0
+                            var reaped: pid_t
+                            repeat { reaped = waitpid(child, &status, 0) } while reaped == -1 && errno == EINTR
+                            pid = 0
+                            let signal = status & 0x7f
+                            let text = interrupted ? "\n[Command stopped]"
+                                : reaped == -1 ? "\n[Command exit status unavailable]"
+                                : signal == 0 ? "\n[Exit \((status >> 8) & 0xff)]" : "\n[Terminated by signal \(signal)]"
                             exitSuffix = text
                             return outputEnded ? text : nil
                         }
                         if let suffix { finish(suffix) }
+                        else {
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                                guard let self else { return }
+                                let cancelled = self.lock.withLock { self.interrupted }
+                                self.finish(cancelled
+                                    ? "\n[Command stopped waiting; output did not close. Detached child processes may still be running.]"
+                                    : "\n[Command incomplete: output did not close after the shell exited. Stopped waiting; detached child processes may still be running.]")
+                            }
+                        }
                     }
                     Task { [weak self] in
                         try? await Task.sleep(for: timeout)
@@ -84,12 +104,21 @@ final class NativeAgentCommand: @unchecked Sendable {
         posix_spawn_file_actions_adddup2(&actions, output.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         posix_spawn_file_actions_adddup2(&actions, output.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
         guard posix_spawn_file_actions_addchdir_np(&actions, directory.path) == 0 else { throw CocoaError(.fileNoSuchFile) }
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
+        let flags = POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT
+        posix_spawnattr_setflags(&attributes, Int16(flags))
         posix_spawnattr_setpgroup(&attributes, 0)
+        var defaults = sigset_t()
+        sigemptyset(&defaults)
+        for signal in [SIGINT, SIGTERM, SIGHUP, SIGPIPE, SIGCHLD] { sigaddset(&defaults, signal) }
+        posix_spawnattr_setsigdefault(&attributes, &defaults)
+        var mask = sigset_t()
+        sigemptyset(&mask)
+        posix_spawnattr_setsigmask(&attributes, &mask)
         for handle in [gate.fileHandleForReading, gate.fileHandleForWriting, output.fileHandleForReading, output.fileHandleForWriting] {
             _ = fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC)
         }
-        let arguments = ["/bin/sh", "-c", "read -r _whytap_start\n" + command].map { $0.withCString { strdup($0) } } + [nil]
+        _ = fcntl(gate.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+        let arguments = ["/bin/sh", "-c", "read -r _whytap_start || exit 125\n" + command].map { $0.withCString { strdup($0) } } + [nil]
         let variables = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer { arguments.forEach { free($0) }; variables.forEach { free($0) } }
         var child: pid_t = 0
@@ -107,15 +136,18 @@ final class NativeAgentCommand: @unchecked Sendable {
         let child: pid_t? = lock.withLock {
             guard !finished else { return nil }
             interrupted = true
-            return pid > 0 ? pid : nil
+            if pid > 0 { kill(-pid, SIGTERM); return pid }
+            return nil
         }
-        guard let child else { return }
-        kill(-child, SIGTERM)
+        guard let child else {
+            finish("\n[Command stopped waiting. Detached child processes may still be running.]")
+            return
+        }
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
             // The wait handler owns reaping; do not signal after it has finished.
-            guard self.lock.withLock({ !self.finished && self.pid == child }) else { return }
-            kill(-child, SIGKILL)
+            self.lock.withLock { if self.pid == child { kill(-child, SIGKILL) } }
+            self.finish("\n[Command stopped waiting; its process group was signalled. Detached child processes may still be running.]")
         }
     }
 
@@ -127,6 +159,7 @@ final class NativeAgentCommand: @unchecked Sendable {
         }
         guard let result else { return }
         output.fileHandleForReading.readabilityHandler = nil
+        try? output.fileHandleForReading.close()
         if result.2 > 0 { CaseBuiltInAgentProcesses.shared.remove(result.2) }
         result.0.resume(returning: result.1)
     }
