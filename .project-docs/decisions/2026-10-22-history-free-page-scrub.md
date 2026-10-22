@@ -23,7 +23,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/History/HistoryFreePageScrubTests.swift
     confirmed_at: 2026-10-22
-related: [2026-10-22-clipboard-entry-delete.md, 2026-10-18-clipboard-retention.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-21-backup-essentials-only.md, ../../docs/decisions/2026-06-24-island-history-off-main.md]
+related: [2026-10-22-clipboard-entry-delete.md, 2026-10-18-clipboard-retention.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-21-backup-essentials-only.md]
 ---
 
 # Scrub the History database's free pages

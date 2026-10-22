@@ -21,7 +21,7 @@ struct AIRoutingState: Codable, Equatable {
     var servers: [ServerEndpoint]
     /// 0 — legacy migration pending; 1 — legacy routes carried over;
     /// 2 — subtitle translation detached from text Translation;
-    /// 3 — default Smart decision route added once.
+    /// 3 — default Smart decision route added once; 4 — that route retired.
     var migrationVersion: Int
 }
 
@@ -69,20 +69,22 @@ final class AIRoutingStore: ObservableObject {
     // MARK: - Routes
 
     func route(for feature: AIFeature) -> FeatureRoute? {
+        guard feature.isActive else { return nil }
         // A partial v1 document cannot be rewritten at launch. Expose the
         // same one-time split in memory so configured subtitles keep working
         // before the first real edit commits it (and retains the raw backup).
-        stateWithSubtitleSeparation.routes[feature.rawValue]
+        return stateWithSubtitleSeparation.routes[feature.rawValue]
     }
 
     /// The route the migration chose for `feature`, if any. Not affected by
     /// later changes.
     func migratedRoute(for feature: AIFeature) -> FeatureRoute? {
-        state.migratedRoutes[feature.rawValue]
+        feature.isActive ? state.migratedRoutes[feature.rawValue] : nil
     }
 
     /// `nil` un-sets the feature.
     func setRoute(_ route: FeatureRoute?, for feature: AIFeature) {
+        guard feature.isActive else { return }
         var updated = stateWithSubtitleSeparation
         guard state.routes[feature.rawValue] != route || updated.routes[feature.rawValue] != route else { return }
         updated.routes[feature.rawValue] = route
@@ -103,7 +105,7 @@ final class AIRoutingStore: ObservableObject {
     @discardableResult
     func clearRoutes(using account: ProviderAccount) -> [AIFeature] {
         var updated = stateWithSubtitleSeparation
-        let cleared = AIFeature.allCases.filter { updated.routes[$0.rawValue]?.account == account }
+        let cleared = AIFeature.activeCases.filter { updated.routes[$0.rawValue]?.account == account }
         guard !cleared.isEmpty else { return [] }
         for feature in cleared {
             updated.routes[feature.rawValue] = nil
@@ -181,18 +183,15 @@ final class AIRoutingStore: ObservableObject {
         return updated
     }
 
-    /// New decision work uses Jev by default. Existing feature routes and an
-    /// explicit decision choice survive. Removing its key never re-adds it.
-    // WHY: .project-docs/decisions/2026-10-21-smart-decisions.md
-    func initializeSmartDecisionIfNeeded() {
-        guard pendingBackup == nil, state.migrationVersion < 3 else { return }
+    /// Retire the independent Decision route, including after an old backup
+    /// restore. Other routes, provider pins, keys and unknown data stay intact.
+    // WHY: .project-docs/decisions/2026-10-22-smart-editor-pass.md
+    func retireSmartDecisionIfNeeded() {
+        guard pendingBackup == nil else { return }
         var updated = stateWithSubtitleSeparation
-        if updated.routes[AIFeature.dropSmartDecision.rawValue] == nil {
-            updated.routes[AIFeature.dropSmartDecision.rawValue] = FeatureRoute(
-                account: .openRouter, model: ModelRegistry.smartDecisionModel
-            )
-        }
-        updated.migrationVersion = 3
+        updated.routes[AIFeature.dropSmartDecision.rawValue] = nil
+        updated.migratedRoutes[AIFeature.dropSmartDecision.rawValue] = nil
+        updated.migrationVersion = max(4, updated.migrationVersion)
         commit(updated)
     }
 

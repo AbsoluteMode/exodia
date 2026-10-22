@@ -403,6 +403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // WHY: .project-docs/decisions/2026-10-18-legacy-model-cleanup.md
         DispatchQueue.global(qos: .utility).async {
             LegacyLocalModelCleanup().run()
+            // Packaged builds keep no meeting research audio.
+            // WHY: .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+            MeetingLiveTestSettings.removeCapturesIfUnavailable()
         }
 
         // Restore standard text-editing shortcuts (⌘V/⌘C/⌘X/⌘A) for the app's

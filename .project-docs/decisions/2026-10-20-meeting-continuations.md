@@ -20,7 +20,7 @@ sources:
   - type: repository
     reference: Sources/Sidekey/Meetings/MeetingsContentController.swift
     confirmed_at: 2026-10-20
-related: [../project.md]
+related: [../project.md, 2026-10-22-no-retained-meeting-audio.md]
 ---
 
 # Immediate notes and confirmed continuations

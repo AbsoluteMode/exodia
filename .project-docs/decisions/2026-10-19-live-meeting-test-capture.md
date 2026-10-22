@@ -23,7 +23,7 @@ sources:
   - type: url
     reference: https://soniox.com/docs/api-reference/stt/websocket-api
     confirmed_at: 2026-10-19
-related: [2026-10-20-meeting-source-noise-floor.md]
+related: [2026-10-20-meeting-source-noise-floor.md, 2026-10-22-no-retained-meeting-audio.md]
 ---
 
 # Live meeting test capture
@@ -101,4 +101,11 @@ Existing meeting permissions are sufficient; capture does not open another mic.
 
 ## Supersedes / superseded by
 
-None.
+Narrowed to source dev builds by
+[no retained meeting audio](2026-10-22-no-retained-meeting-audio.md).
+
+## Update 2026-10-22
+
+Capture is limited to source dev builds; packaged builds ignore the flag and
+remove `meeting-assistant-tests` at launch. See
+[no retained meeting audio](2026-10-22-no-retained-meeting-audio.md).

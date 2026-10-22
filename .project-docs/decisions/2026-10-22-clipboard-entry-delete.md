@@ -20,7 +20,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/History/ClipboardEntryDeletionTests.swift
     confirmed_at: 2026-10-22
-related: [2026-10-18-clipboard-retention.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-21-backup-essentials-only.md, 2026-10-18-delete-meeting-and-staged-audio.md]
+related: [2026-10-18-clipboard-retention.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-21-backup-essentials-only.md, 2026-10-18-delete-meeting-and-staged-audio.md, 2026-10-22-history-free-page-scrub.md]
 ---
 
 # Delete one clipboard history entry

@@ -260,7 +260,7 @@ struct ModelStatusResolver {
         struct Key: Hashable { let account: ProviderAccount; let from: String; let to: String }
         var order: [Key] = []
         var members: [Key: [AIFeature]] = [:]
-        for feature in AIFeature.allCases {
+        for feature in AIFeature.activeCases {
             guard let route = routing.route(for: feature),
                   case .deprecatedAlias(let target) = status(for: feature)
             else { continue }
@@ -358,7 +358,7 @@ struct ModelStatusResolver {
             let entry = catalogs.snapshot(for: account)?.models.first { $0.id == model }
             return entry?.reasoning?.mandatory == true ? "always reasons, slower" : nil
         case .dropSmartDecision:
-            return account == .openAI ? "OpenAI Decisions API" : "Decision · chooses Fast or Smart processing"
+            return nil // Historical feature only; never shown as a configurable row.
         case .meetings:
             let registered = ModelRegistry.models.first {
                 $0.kind == account.kind && $0.id == model && $0.uses.contains(use)
