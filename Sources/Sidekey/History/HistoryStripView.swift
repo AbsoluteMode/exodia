@@ -22,6 +22,9 @@ struct HistoryStripView: View {
     /// raise the "Copied" toast for ~1.5s. Nil in tests that don't
     /// care about the toast surface.
     var toast: CopiedToastController? = nil
+    /// Confirms and deletes a clipboard card. The controller's
+    /// `contentRevision` bump then re-renders this view with fresh cards.
+    var deleteCard: ((HistoryStripCard) async -> Bool)? = nil
 
     /// Reload trigger — bumped externally when the underlying store
     /// changes (e.g. clipboard watcher inserts a new row). The view
@@ -110,6 +113,8 @@ struct HistoryStripView: View {
 
     @ViewBuilder
     private func content(for mode: HistoryStripMode) -> some View {
+        // Any controller change (including `contentRevision` after a
+        // Delete…) re-renders this view, so the feed is read fresh here.
         let cards = feed.cards(for: mode)
 
         // Round 2 UX 6 + UX 7: the mode-name capsule ("Agent" / "Drop"
@@ -158,8 +163,19 @@ struct HistoryStripView: View {
             // and the Enter-paste flow knows which card to write.
             onHoverChange: { card, hovered in
                 controller.setHoveredCard(hovered ? card : nil, from: card)
-            }
+            },
+            onDelete: deleteHandler
         )
+    }
+
+    /// Releases the hover first so Enter cannot paste the card while its
+    /// confirmation is open.
+    private var deleteHandler: ((HistoryStripCard) -> Void)? {
+        guard let deleteCard else { return nil }
+        return { card in
+            controller.setHoveredCard(nil, from: card)
+            Task { @MainActor in _ = await deleteCard(card) }
+        }
     }
 
     private func emptyState(for mode: HistoryStripMode) -> some View {
@@ -211,14 +227,7 @@ struct HistoryStripView: View {
         case .drop(let c):
             return .drop(.full(raw: c.formattedText, formatted: c.formattedText, targetApp: c.targetApp))
         case .clipboard(let c):
-            switch c.payload {
-            case .text(let s):
-                return .clipboard(.text(s))
-            case .image(let img):
-                return .clipboard(.image(img))
-            case .fileURLs(let urls):
-                return .clipboard(.fileURLs(urls))
-            }
+            return .clipboard(HistoryStripController.expandedBody(for: c.payload))
         }
     }
 

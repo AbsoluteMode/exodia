@@ -26,6 +26,8 @@ struct MeetingReconnectMarker: Codable, Equatable, Sendable {
 /// 2. Deleted together with the staging dir once the processor stored the
 ///    note.
 /// 3. Left on disk if processing fails, so the next launch can retry.
+/// 4. Deleted together with the audio when the note still failed
+///    `MeetingsCoordinator.failedRecordingRetention` after the last chunk.
 struct MeetingFinalizeManifest: Codable, Equatable, Sendable {
     /// The recorder-side meeting id. This is the directory name under the
     /// staging root (`meetings-staging/<recorderMeetingId>/`). A continuation
@@ -139,10 +141,11 @@ struct MeetingFinalizeManifestStore: Sendable {
 
     /// Scan `stagingRoot` for every dir that contains a manifest. Decode
     /// failures are logged and skipped — a corrupt manifest must NOT
-    /// crash recovery and must NOT cause the chunks to be deleted (the
-    /// caller never reaches the delete path for a dir that fails to
-    /// decode here). Returns `[]` when the staging root does not yet
-    /// exist (fresh install / no meetings recorded).
+    /// crash recovery and must NOT cause the chunks to be deleted right
+    /// away (recovery never reaches the delete path for a dir that fails to
+    /// decode here; the coordinator's retention sweep removes it only after
+    /// `failedRecordingRetention`). Returns `[]` when the staging root does
+    /// not yet exist (fresh install / no meetings recorded).
     func scan(stagingRoot: URL) -> [Entry] {
         guard fileManager.fileExists(atPath: stagingRoot.path) else { return [] }
         let dirs: [URL]
@@ -170,8 +173,8 @@ struct MeetingFinalizeManifestStore: Sendable {
                     MeetingFinalizeManifest.self, from: data
                   ) else {
                 // Corrupt / unreadable manifest. Log + skip — the chunks
-                // are left untouched so a future build can still recover
-                // them if the decode rule changes.
+                // stay for the failed-recording window, so a build with a
+                // changed decode rule can still recover them.
                 os_log(
                     "manifest corrupt or unreadable — skipping (dir: %{public}@)",
                     log: Self.log, type: .error,

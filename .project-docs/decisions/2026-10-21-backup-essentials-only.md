@@ -23,7 +23,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Backup/ArtifactBackupRestoreTests.swift
     confirmed_at: 2026-10-21
-related: [2026-10-21-backup-capture-pacing.md, 2026-10-19-config-backup.md, 2026-10-21-backup-reliability.md, 2026-10-20-simple-github-backup.md, 2026-10-21-backup-tagged-caches.md, 2026-10-21-clipboard-privacy-markers.md]
+related: [2026-10-21-backup-capture-pacing.md, 2026-10-19-config-backup.md, 2026-10-21-backup-reliability.md, 2026-10-20-simple-github-backup.md, 2026-10-21-backup-tagged-caches.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-22-clipboard-entry-delete.md, 2026-10-22-no-retained-meeting-audio.md]
 ---
 
 # Back up meeting text but no meeting audio or History database

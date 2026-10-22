@@ -8,7 +8,10 @@ is a verifiable claim rather than a slogan.
 
 - Audio captured for dictation (Drop) and for meetings is processed in memory
   and, for meetings, staged as WAV chunks under `~/Library/Application
-  Support/` only until your configured provider has transcribed them.
+  Support/` only while the meeting is recorded and its note is created. If
+  processing fails, the recording is kept for retries for at most 24 hours
+  after it ended and then deleted; the meeting stays listed as failed.
+  Packaged builds keep no research recordings.
 - Transcripts, agent history, clipboard history and meeting notes live in
   SQLite databases under `~/Library/Application Support/`. Delete them from
   Settings, History, or by removing the files.
@@ -19,6 +22,14 @@ is a verifiable claim rather than a slogan.
   concealed, transient or auto-generated (password managers, text expanders,
   Whytap's recovery code) are never recorded.
   History → Clipboard displays the latest 20 retained copies with scrolling.
+  To remove one entry, right-click it in History and choose Delete…; only a
+  click on Delete in the confirmation removes it. Its saved image goes with it; for a copied file list
+  only the entry is removed, never the files. SQLite overwrites the deleted
+  row and folds its write-ahead log back into the database, so the copy is
+  not left readable in those files. Deleting does not change encrypted
+  backups already uploaded: archives made before 2026-10-21 contain the
+  History database, and restoring one brings its entries back. Time Machine
+  and other copies of your disk are not changed either.
 - API keys you enter in Settings → API & Models ("Your key") are stored in the
   macOS Keychain under the app's own service name (`com.rootwise.sidekey`).
   Key values are never shown again after saving and are never written to

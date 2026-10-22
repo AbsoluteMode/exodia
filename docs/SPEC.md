@@ -595,7 +595,9 @@ routes and the native notes viewer.
 the local `sidekey.meetings.liveTestCapture` flag when Meeting Notes uses Soniox.
 The user requested no test-mode controls or test-files row in Settings.
 It adds a separate live diarization stream, stores private source tracks and
-timing locally, and preserves ordinary notes processing. No automatic
+timing locally, and preserves ordinary notes processing. Since 2026-10-22 only
+source dev builds (9999 / `-dev`) capture; packaged builds ignore the flag and
+remove earlier captures at launch. No automatic
 suggestions are enabled. Real-call source attribution and latency remain
 acceptance tests. See [testing instructions](meeting-assistant-testing.md).
 

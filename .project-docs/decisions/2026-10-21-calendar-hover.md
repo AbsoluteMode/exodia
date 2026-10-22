@@ -6,8 +6,11 @@ summary: Show a compact daily agenda, inline details and Connect; reuse provider
 status: confirmed
 tags: [calendar, hover, integrations, planner, oauth]
 canonical_for: [calendar-presentation]
-verified_at: 2026-10-21
+verified_at: 2026-10-22
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-22 the user requested that calendar provider selection retain Connect and omit the explanatory and technical status information shown in their screenshot.
+    confirmed_at: 2026-10-22
   - type: user-confirmed
     reference: On 2026-10-21 the user requested that Calendar stay inside Hover, open on the current day and offer Connect; different calendars can be added there or through Integrations.
     confirmed_at: 2026-10-21
@@ -29,6 +32,11 @@ visibility and provider selection share the same 350pt Hover surface. No
 calendar/detail/connection window is created from these paths. Provider
 authorization can open a browser or macOS permission prompt; it is an optional
 calendar connection, never registration or sign-in to Whytap.
+
+Provider selection shows each calendar's name and **Connect** as one compact,
+clickable row. Introductory copy, status subtitles and disclosure chevrons are
+omitted. Provider-specific permissions and unavailable-connection reasons remain
+in the next connection screen; public-approval gates are unchanged.
 
 Connect reuses CalendarConnectView, its PKCE/state validation, public-approval
 gates, Keychain storage and serialized connection lease. Settings → Integrations

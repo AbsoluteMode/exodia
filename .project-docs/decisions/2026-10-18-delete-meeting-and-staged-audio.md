@@ -20,7 +20,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Meetings/MeetingsStoreDeleteTests.swift
     confirmed_at: 2026-10-19
-related: [2026-10-18-silent-meetings.md, 2026-09-07-soniox-meeting-files.md]
+related: [2026-10-18-silent-meetings.md, 2026-09-07-soniox-meeting-files.md, 2026-10-22-clipboard-entry-delete.md, 2026-10-22-no-retained-meeting-audio.md]
 ---
 
 # Deleting a meeting, and staged audio of stored meetings
@@ -47,6 +47,9 @@ Two code paths created or kept such leftovers:
 1. Launch recovery of a meeting that already has a stored note removes its
    whole staged directory (audio, separate tracks, checkpoint, manifest). A
    ready row without a note keeps its audio and only loses the stale manifest.
+   *Superseded on 2026-10-22:* that row loses its audio too, and failed or
+   manifest-less recordings expire; see
+   [no retained meeting audio](2026-10-22-no-retained-meeting-audio.md).
 2. A finished meeting (`ready` or `failed`) has "Delete…" in its row context
    menu. A confirmation comes first; Cancel is the default button.
    `MeetingsCoordinator.deleteMeeting(id:)` removes the staged directory first,
