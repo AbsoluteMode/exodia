@@ -162,11 +162,23 @@ final class NativeAgentTests: XCTestCase {
         await settings.save()
         XCTAssertEqual(keys.read(account: TavilySearch.keychainAccount), "old-key")
         XCTAssertTrue(settings.configured)
+        XCTAssertTrue(settings.messageIsError)
+        XCTAssertTrue(settings.message?.contains("Check the key and connection") == true)
+        settings.draftKey = "retry-key"
+        XCTAssertNil(settings.message, "Editing the replacement clears its old validation error")
+        XCTAssertFalse(settings.messageIsError)
+        await settings.save()
+        XCTAssertNotNil(settings.message)
+        settings.clearDraft()
+        XCTAssertTrue(settings.draftKey.isEmpty)
+        XCTAssertNil(settings.message, "Leaving Settings must clear the notice with its draft")
+        XCTAssertEqual(keys.read(account: TavilySearch.keychainAccount), "old-key")
         StubURLProtocol.handler = { _ in self.serve(["key": ["usage": 1]]) }
         settings.draftKey = "new-key"
         await settings.save()
         XCTAssertEqual(keys.read(account: TavilySearch.keychainAccount), "new-key")
         XCTAssertTrue(settings.draftKey.isEmpty)
+        XCTAssertFalse(settings.messageIsError)
     }
 
     func testMissingKeyAndSearchKeyAreReportedWithoutNetwork() async throws {
@@ -438,14 +450,14 @@ final class NativeAgentTests: XCTestCase {
         for connected in [false, true] {
             if connected { try keys.save("fixture-key", account: TavilySearch.keychainAccount) }
             else { try keys.delete(account: TavilySearch.keychainAccount) }
-            let tavily = TavilySettings(keys: keys, search: .init(http: http))
-            if connected {
-                StubURLProtocol.handler = { _ in (401, [:], Data()) }
-                tavily.draftKey = "bad-fixture-key"
-                await tavily.save()
-            }
             for dark in [false, true] {
                 for width in [560.0, 760.0] {
+                    let tavily = TavilySettings(keys: keys, search: .init(http: http))
+                    if connected {
+                        StubURLProtocol.handler = { _ in (401, [:], Data()) }
+                        tavily.draftKey = "bad-fixture-key"
+                        await tavily.save()
+                    }
                     let view = AgentModeView(viewModel: model, settings: settings, store: store, agentEnabled: { true },
                                              onAgentToggle: { _ in }, openAPIAndModels: { _ in }, tavily: tavily)
                         .background(MacSettingsTheme.bgContent)
@@ -465,7 +477,16 @@ final class NativeAgentTests: XCTestCase {
                     let name = "agents-\(connected ? "connected-error" : "empty")-\(dark ? "dark" : "light")-\(Int(width)).png"
                     try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: destination.appendingPathComponent(name))
                     XCTAssertFalse(window.isVisible); XCTAssertFalse(window.isKeyWindow)
-                    window.contentView = nil; window.close()
+                    if connected {
+                        let unrelated = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: true)
+                        unrelated.isReleasedWhenClosed = false
+                        unrelated.close()
+                        XCTAssertFalse(tavily.draftKey.isEmpty, "Closing another window must not discard this draft")
+                    }
+                    window.close()
+                    XCTAssertTrue(tavily.draftKey.isEmpty)
+                    XCTAssertNil(tavily.message)
+                    window.contentView = nil
                 }
             }
         }

@@ -32,10 +32,11 @@ struct TavilySearch {
 
 @MainActor
 final class TavilySettings: ObservableObject {
-    @Published var draftKey = ""
+    @Published var draftKey = "" { didSet { clearMessage() } }
     @Published private(set) var configured: Bool
     @Published private(set) var saving = false
     @Published private(set) var message: String?
+    @Published private(set) var messageIsError = false
     private let keys: ProviderKeyStore
     private let search: TavilySearch
 
@@ -48,25 +49,35 @@ final class TavilySettings: ObservableObject {
     func save() async {
         guard !saving else { return }
         let key = draftKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { message = "Enter a Tavily API key."; return }
-        saving = true; message = nil
+        guard !key.isEmpty else { showMessage("Enter a Tavily API key.", error: true); return }
+        saving = true; clearMessage()
         defer { saving = false }
         do {
             try await search.validate(key: key)
             try Task.checkCancellation()
             try keys.save(key, account: TavilySearch.keychainAccount)
-            configured = true; draftKey = ""; message = "Tavily connected."
+            configured = true; draftKey = ""; showMessage("Tavily connected.")
         } catch is CancellationError { return }
-        catch { message = configured
-            ? "Couldn’t replace the Tavily key. Your saved key is unchanged."
-            : "Couldn’t connect Tavily. Check the key and connection, then retry." }
+        catch {
+            guard !Task.isCancelled else { return }
+            showMessage(configured
+                ? "Couldn’t replace the Tavily key. Check the key and connection; your saved key is unchanged."
+                : "Couldn’t connect Tavily. Check the key and connection, then retry.", error: true)
+        }
     }
 
     func remove() {
         guard !saving else { return }
         do {
             try keys.delete(account: TavilySearch.keychainAccount)
-            configured = false; draftKey = ""; message = "Tavily disconnected."
-        } catch { message = "Couldn’t remove the key from Keychain. Try again." }
+            configured = false; draftKey = ""; showMessage("Tavily disconnected.")
+        } catch { showMessage("Couldn’t remove the key from Keychain. Try again.", error: true) }
+    }
+
+    func clearDraft() { draftKey = "" }
+
+    private func clearMessage() { message = nil; messageIsError = false }
+    private func showMessage(_ text: String, error: Bool = false) {
+        messageIsError = error; message = text
     }
 }

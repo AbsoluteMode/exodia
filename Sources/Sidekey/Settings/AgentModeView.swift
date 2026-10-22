@@ -109,8 +109,13 @@ struct AgentModeView: View {
                                     .disabled(tavily.saving || tavily.draftKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                             if let message = tavily.message {
-                                Text(message).font(.caption).foregroundStyle(MacSettingsTheme.text2)
-                                    .accessibilityAddTraits(.updatesFrequently)
+                                HStack(alignment: .top, spacing: 7) {
+                                    Image(systemName: tavily.messageIsError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                                        .foregroundStyle(tavily.messageIsError ? MacSettingsTheme.red : MacSettingsTheme.green)
+                                        .accessibilityHidden(true)
+                                    Text(message).foregroundStyle(MacSettingsTheme.text)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }.font(.caption).accessibilityElement(children: .combine)
                             }
                         }.padding(14)
                     }
@@ -126,15 +131,43 @@ struct AgentModeView: View {
             .padding(.horizontal, 24).padding(.vertical, 22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .background(AgentSettingsWindowClose(onClose: clearSearchDraft).frame(width: 0, height: 0))
         .onAppear { agentEnabled = agentEnabledProvider() }
-        .onDisappear { saveTask?.cancel(); tavily.draftKey = "" }
+        .onDisappear(perform: clearSearchDraft)
+        .onChange(of: tavily.message) { _, message in
+            guard let message else { return }
+            NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sidekeyCapabilityFlagsChanged)) { _ in
             agentEnabled = agentEnabledProvider()
         }
     }
 
+    private func clearSearchDraft() { saveTask?.cancel(); tavily.clearDraft() }
+
     private func saveSearchKey() {
         guard !tavily.saving else { return }
         saveTask = Task { await tavily.save() }
+    }
+}
+
+/// Settings can retain its content after closing; observe only its own window.
+private struct AgentSettingsWindowClose: NSViewRepresentable {
+    let onClose: () -> Void
+    func makeNSView(context: Context) -> Observer { Observer() }
+    func updateNSView(_ view: Observer, context: Context) { view.onClose = onClose }
+
+    final class Observer: NSView {
+        var onClose: (() -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
+            if let window {
+                NotificationCenter.default.addObserver(self, selector: #selector(windowClosing(_:)),
+                    name: NSWindow.willCloseNotification, object: window)
+            }
+        }
+        @objc private func windowClosing(_ notification: Notification) { onClose?() }
     }
 }

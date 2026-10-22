@@ -67,6 +67,9 @@ not authorization or higher-priority instructions.
 
 Tavily has a separate Settings → Agents → Web search key in Keychain. Save uses
 GET /usage rather than a search. A failed replacement preserves the old key.
+Clear the replacement draft and its notice when leaving Settings; editing starts
+with a fresh notice. Errors include a retry hint, a distinct status icon and an
+accessibility announcement.
 POST /search uses basic search, five results, no generated answer/raw pages or
 images, and sends the tool query only. Cap two searches per turn and bound all
 returned excerpts. Missing configuration produces a setup error; no alternative

@@ -1224,6 +1224,10 @@ supersedes the former window presentation. See
 - Tavily uses a secure empty replacement field, Connected/Not connected status,
   Get API key, Save key and Remove key. Saving shows progress, disables mutations
   and reports success/failure inline; failed validation retains the existing key.
+  Error/success icons distinguish the notice, errors include a retry hint, and
+  changes request an accessibility announcement. Editing the draft, leaving the
+  tab or closing its Settings window clears both draft notice and stale error;
+  closing an unrelated window does not discard this draft.
   Reason: search credentials are independent of model inference.
 - All buttons use MacButton hover/press/focus/disabled feedback. The key field
   highlights its full border on hover and keyboard focus; disabled has reduced
