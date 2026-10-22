@@ -67,16 +67,7 @@ final class AgentModelIconStore {
         request.setValue("image/svg+xml,image/png", forHTTPHeaderField: "Accept")
         if let etag = entries[brand]?.etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
         do {
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-            guard [200, 304].contains(http.statusCode), response.expectedContentLength <= Self.maximumBytes else {
-                throw URLError(.badServerResponse)
-            }
-            var data = Data()
-            for try await byte in bytes {
-                guard data.count < Self.maximumBytes else { throw URLError(.dataLengthExceedsMaximum) }
-                data.append(byte)
-            }
+            let (data, http) = try await Self.download(request, session: session, limit: Self.maximumBytes)
             let entry: CachedIcon
             if http.statusCode == 304, let existing = entries[brand] {
                 entry = CachedIcon(data: existing.data, etag: existing.etag, checkedAt: date)
@@ -101,6 +92,21 @@ final class AgentModelIconStore {
         return images[brand]
     }
 
+    private nonisolated static func download(_ request: URLRequest, session: URLSession,
+                                            limit: Int) async throws -> (Data, HTTPURLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse,
+              [200, 304].contains(http.statusCode), response.expectedContentLength <= limit else {
+            throw URLError(.badServerResponse)
+        }
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < limit else { throw URLError(.dataLengthExceedsMaximum) }
+            data.append(byte)
+        }
+        return (data, http)
+    }
+
     private static func decode(_ data: Data, brand: AgentModelBrand) -> NSImage? {
         guard data.count <= maximumBytes else { return nil }
         var artwork = data
@@ -111,6 +117,12 @@ final class AgentModelIconStore {
             let mark = source.replacingOccurrences(of: #"<rect\b[^>]*/>"#, with: "", options: .regularExpression)
                 .replacingOccurrences(of: "viewBox=\"0 0 512 512\"", with: "viewBox=\"100 130 310 250\"")
                 .replacingOccurrences(of: "width=\"512\" height=\"512\"", with: "width=\"310\" height=\"250\"")
+            artwork = Data(mark.utf8)
+        }
+        if brand == .perplexity, let source = String(data: data, encoding: .utf8), source.contains("<svg") {
+            let mark = source.replacingOccurrences(of: #"stroke-width\s*=\s*(?:"[^"]*"|'[^']*')"#,
+                with: "", options: .regularExpression)
+                .replacingOccurrences(of: "<svg", with: "<svg stroke-width=\"3\"")
             artwork = Data(mark.utf8)
         }
         guard let image = NSImage(data: artwork),

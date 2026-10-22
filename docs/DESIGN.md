@@ -20,6 +20,9 @@ measurements. The mark is an accessible labelled image, not a button.
   ratio. On black, the opaque mark has 10.54:1 contrast; the existing pulse's
   dimmest frame remains 3.91:1. Reason: colored source artwork must remain legible
   in the black voice capsule and must not become differently tinted company marks.
+  Only model-author marks use this neutral mask; Drop/Google search retain their
+  previous alpha wash and colors. Perplexity uses a 3-unit contour instead of its
+  1-unit source line so the symbol remains visible at 15 pt, including after refresh.
 - Keep the existing Core Animation pulse (scale 0.94–1.08 and opacity 0.58–0.96,
   1.15 s autoreversing). Reduce Motion removes scaling/pulsing and parks at 0.78
   opacity (6.51:1 for opaque mark pixels). There is no new animation, focus stop,

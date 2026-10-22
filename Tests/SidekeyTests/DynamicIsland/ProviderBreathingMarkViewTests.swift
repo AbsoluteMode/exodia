@@ -195,6 +195,21 @@ final class ProviderBreathingMarkViewTests: XCTestCase {
         return NSBitmapImageRep(cgImage: cg)
     }
 
+    func testGoogleVoiceSearchRetainsItsExistingColorWash() throws {
+        let image = try XCTUnwrap(ProviderBreathingMarkView.markImageForTesting(brand: .google))
+        let rep = try XCTUnwrap(bitmap(from: image))
+        var coloredPixels = 0
+        for x in 0..<rep.pixelsWide {
+            for y in 0..<rep.pixelsHigh {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), c.alphaComponent > 0.95 else { continue }
+                if max(c.redComponent, c.greenComponent, c.blueComponent) - min(c.redComponent, c.greenComponent, c.blueComponent) > 0.08 {
+                    coloredPixels += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(coloredPixels, 0, "The model-only mask must not repaint the existing Google search mark")
+    }
+
     private func projectRoot() throws -> URL {
         var url = URL(fileURLWithPath: #filePath)
         while url.path != "/" {

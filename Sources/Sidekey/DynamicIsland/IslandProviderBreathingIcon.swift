@@ -211,7 +211,8 @@ final class ProviderBreathingMarkView: NSView {
             operation: .sourceOver,
             fraction: 1
         )
-        NSColor(white: 0.72, alpha: 1).set()
+        let isModelMark = brand.modelBrand != nil || brand.assetName?.hasPrefix("model-") == true
+        (isModelMark ? NSColor(white: 0.72, alpha: 1) : NSColor.white.withAlphaComponent(0.72)).set()
         NSRect(origin: .zero, size: canvas).fill(using: .sourceAtop)
         rendered.unlockFocus()
         return rendered

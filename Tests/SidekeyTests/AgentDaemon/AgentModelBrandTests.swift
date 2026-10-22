@@ -98,4 +98,25 @@ final class AgentModelBrandTests: XCTestCase {
         let corner = try XCTUnwrap(bitmap.colorAt(x: 0, y: 0))
         XCTAssertLessThan(corner.alphaComponent, 0.01)
     }
+
+    func testRefreshedPerplexityMarkKeepsEnoughStrokeCoverageForTheSmallSlot() async throws {
+        let (session, dir, _) = try fixture()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let source = try Data(contentsOf: root.appendingPathComponent("Resources/UsefulLinkIcons/model-perplexity.svg"))
+        StubURLProtocol.handler = { _ in (200, [:], source) }
+        let store = AgentModelIconStore(session: session, directory: dir)
+        let loaded = await store.image(for: .perplexity)
+        let image = try XCTUnwrap(loaded)
+        func coverage(_ image: NSImage) throws -> Double {
+            let cg = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            let rep = NSBitmapImageRep(cgImage: cg)
+            var sum = 0.0
+            for x in 0..<rep.pixelsWide { for y in 0..<rep.pixelsHigh { sum += Double(rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) } }
+            return sum / Double(rep.pixelsWide * rep.pixelsHigh)
+        }
+        let original = try coverage(XCTUnwrap(NSImage(data: source)))
+        let normalized = try coverage(image)
+        XCTAssertGreaterThan(normalized, original * 2)
+    }
 }

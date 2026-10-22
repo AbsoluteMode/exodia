@@ -57,7 +57,8 @@ Each mark revalidates at most weekly with ETag when available, deduplicates
 concurrent requests, and persists a small disposable cache across launches.
 Responses are bounded to 256 KiB and 4 seconds; failures keep usable artwork
 and back off for six hours in the running process. Cache I/O runs off the main
-actor. Cancelled/obsolete view loads cannot replace a new model's mark.
+actor, as does network byte collection; small NSImage decode/render work remains
+on the main actor. Cancelled/obsolete view loads cannot replace a new model's mark.
 There are no model calls or frontend-provider-registry requests for artwork.
 
 Source snapshots in `Resources/UsefulLinkIcons/model-*` were fetched on
@@ -65,7 +66,9 @@ Source snapshots in `Resources/UsefulLinkIcons/model-*` were fetched on
 GoogleGemini.svg, DeepSeek.png, Qwen.png, Mistral.png, Cohere.png and Perplexity.svg.
 Their PDFs preserve the mark's aspect ratio; Anthropic's known rounded tile is
 removed and its monogram cropped for the small slot (unknown replacement SVG
-layouts keep the bundled fallback). Island rendering uses a neutral
+layouts keep the bundled fallback). Perplexity's contour uses a 3-unit stroke
+for legibility at 15 pt, identically for bundled and refreshed artwork.
+Island rendering uses a neutral
 monochrome alpha mask. These are third-party brand identifiers, not Whytap-owned
 marks. Static image paths are not a documented versioned logo API, so bundled
 fallbacks remain authoritative when OpenRouter changes or refuses a path.
