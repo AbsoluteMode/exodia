@@ -160,4 +160,4 @@ still never removes a staged directory by an unknown id. It narrows the
 builds and closes the open question at the end of the
 [backup essentials decision](2026-10-21-backup-essentials-only.md).
 
-2026-10-22 · PR pending
+2026-10-22 · PR AbsoluteMode/whytap#209
