@@ -403,6 +403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // WHY: .project-docs/decisions/2026-10-18-legacy-model-cleanup.md
         DispatchQueue.global(qos: .utility).async {
             LegacyLocalModelCleanup().run()
+            // Packaged builds keep no meeting research audio.
+            // WHY: .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+            MeetingLiveTestSettings.removeCapturesIfUnavailable()
         }
 
         // Restore standard text-editing shortcuts (⌘V/⌘C/⌘X/⌘A) for the app's
@@ -449,6 +452,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     type: .info,
                     assets.path
                 )
+            // Once per database file, VACUUM away what deletes made before
+            // secure_delete left in free pages. Off the main thread; keeps
+            // every row; a skipped or failed pass retries on the next launch.
+            // WHY: .project-docs/decisions/2026-10-22-history-free-page-scrub.md
+                let scrubLog = Self.log
+                store.scrubFreePagesInBackground { result in
+                    switch result {
+                    case .success(let outcome):
+                        os_log(
+                            "history_free_page_scrub %{public}@",
+                            log: scrubLog, type: .info,
+                            outcome.logDescription
+                        )
+                    case .failure(let error):
+                        // SQLite's error text ("database or disk is full"),
+                        // never row content.
+                        os_log(
+                            "history_free_page_scrub failed: %{public}@",
+                            log: scrubLog, type: .error,
+                            String(describing: error)
+                        )
+                    }
+                }
 
                 let controller = HistoryStripController()
                 self.historyStripController = controller

@@ -9,10 +9,37 @@ enum MeetingLiveTestSettings {
             .appendingPathComponent("Sidekey/meeting-assistant-tests", isDirectory: true)
     }
 
+    /// Research audio is captured only by source dev builds (9999 / -dev).
+    /// A packaged build ignores the flag and keeps no capture on disk.
+    /// WHY: .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+    static var isAvailable: Bool { !BuildConfig.allowsPackagedUpdates }
+
+    static func isAvailable(buildVersion: String?, displayVersion: String?) -> Bool {
+        !BuildConfig.allowsPackagedUpdates(buildVersion: buildVersion, displayVersion: displayVersion)
+    }
+
+    /// The flag alone never starts a capture: the build must allow it and
+    /// Meetings must run on Soniox.
+    static func shouldCapture(available: Bool, enabled: Bool, meetingsAccount: ProviderAccount?) -> Bool {
+        available && enabled && meetingsAccount == .soniox
+    }
+
+    /// Removes the captures an earlier build or a dev build left behind.
+    /// Called once per launch off the main thread.
+    static func removeCapturesIfUnavailable(
+        available: Bool = MeetingLiveTestSettings.isAvailable, root: URL = MeetingLiveTestSettings.root
+    ) {
+        guard !available, FileManager.default.fileExists(atPath: root.path) else { return }
+        try? FileManager.default.removeItem(at: root)
+    }
+
     @MainActor
     static func makeIfEnabled() -> MeetingLiveTestCapture? {
-        guard UserDefaults.standard.bool(forKey: enabledKey),
-              AIRoutingStore.shared.route(for: .meetings)?.account == .soniox else { return nil }
+        guard shouldCapture(
+            available: isAvailable,
+            enabled: UserDefaults.standard.bool(forKey: enabledKey),
+            meetingsAccount: AIRoutingStore.shared.route(for: .meetings)?.account
+        ) else { return nil }
         return MeetingLiveTestCapture(root: root, keyProvider: {
             await Task.detached(priority: .utility) {
                 ProviderKeyStore().read(account: BYOKKeyStore.account(for: .soniox))

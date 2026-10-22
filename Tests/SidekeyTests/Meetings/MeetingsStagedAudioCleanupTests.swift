@@ -59,9 +59,10 @@ final class MeetingsStagedAudioCleanupTests: XCTestCase {
         XCTAssertNotNil(note, "cleaning the staged audio must not touch the note")
     }
 
-    /// Break caught: deleting the staged dir on `.ready` alone would destroy
-    /// the only copy of the audio when the note itself is missing.
-    func test_launch_recovery_keeps_the_audio_when_the_row_is_ready_but_its_note_is_missing() async throws {
+    /// Break caught: a ready row without a note drops only its manifest and
+    /// leaves audio that nothing will ever read. Whytap keeps no audio once
+    /// processing is over. WHY: .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+    func test_launch_recovery_removes_the_audio_when_the_row_is_ready_but_its_note_is_missing() async throws {
         let store = try makeStore()
         let id = UUID()
         try await store.upsertProgress(meta: meta(id: id, status: .ready), status: .ready)
@@ -71,12 +72,10 @@ final class MeetingsStagedAudioCleanupTests: XCTestCase {
 
         await coordinator.recoverFinalizeManifestsOnLaunch()
 
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: dir.appendingPathComponent("chunk-000.wav").path),
-            "without a note the staged audio is the only source left"
-        )
-        XCTAssertFalse(MeetingFinalizeManifestStore().manifestExists(in: dir), "the stale manifest still goes")
-        XCTAssertTrue(processor.processedIds.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.path))
+        XCTAssertTrue(processor.processedIds.isEmpty, "a ready meeting is never processed again")
+        let status = try await store.progressStatus(id: id)
+        XCTAssertEqual(status, .ready)
     }
 
     /// Break caught: cleaning more than the stored meeting's own directory,

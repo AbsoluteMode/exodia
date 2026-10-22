@@ -112,18 +112,18 @@ Voice flow (Drop / dictation):
             OpenRouter, OpenAI or Anthropic with the user's key / a custom OpenAI-compatible
             server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
             The mode is captured at take start:
-            Fast bypasses AI text processing. Smart first uses dropSmartDecision
-            (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
-            default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
-            A valid needs-cleanup probability <= 0.40 for exact OpenRouter
-            typesafe/jev-1.14 (<= 0.05 for other routes) skips editing and uses
-            Fast's verbatim output/filter path without changing the take's mode
-            or speech route. Translation always edits. Missing decision setup,
-            uncertainty, refusal or the 2s deadline keeps the selected cleanup
-            route. Cleanup errors/empty results never silently paste raw speech.
-            Decision models are excluded from LLM/agent pickers. WHY:
-            .project-docs/decisions/2026-10-21-smart-decisions.md,
-            .project-docs/decisions/2026-10-21-smart-decision-calibration.md
+            Fast bypasses AI text processing. Smart makes one request to the
+            selected cleanup model: a reserved whole-response pass marker keeps
+            the transcript verbatim with plain delivery; otherwise use the edited
+            message. Synonyms, word order and minor polish alone should pass;
+            concrete errors and useful long-message structure still edit.
+            Translation cannot pass. Failed, empty, malformed or cancelled
+            responses retain strict Retry behavior. The separate Jev/OpenAI
+            Decision stage and settings row are removed; migration4 retires only
+            that route, preserving all other model/provider choices and keys.
+            The old feature ID remains for historical usage decoding only;
+            Decision-only catalog entries stay excluded from text/agent pickers.
+            WHY: .project-docs/decisions/2026-10-22-smart-editor-pass.md
             Smart failures retain the transcript in memory and show Retry with
             the original mode and target; configuration errors open API & Models on
             the Drop Smart cleanup row.
@@ -272,7 +272,8 @@ Meeting Notes:
           (including the retired Local route) the meeting is marked failed
           with `MeetingsCoordinator.processorNotConfiguredMessage` and its
           audio stays staged; a `MeetingFinalizeManifest` re-dispatches it
-          later with the language captured at Stop time. A recording without
+          later with the language captured at Stop time, for at most 24 hours
+          after the last chunk. A recording without
           speech is not a failure: a completed Soniox job without segments
           stores a "No speech detected" note without the LLM and releases the
           staged audio, so it is never retried. Model failures remain errors.
@@ -288,9 +289,20 @@ Meeting Notes:
   note are gone, so a failed Delete leaves the meeting listed with its note.
   A note save that lands after Delete writes nothing (MeetingsStore.update
   checks the row first). Launch recovery frees the whole staged directory of
-  a meeting that already has a note, and keeps the audio when the note is
-  missing. Remote Soniox resources are not cleaned by Delete. WHY:
+  a stored meeting, including a ready row whose note is missing. Remote Soniox
+  resources are not cleaned by Delete. WHY:
   .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
+  Audio is kept only while it can still become a note. Launch and full wake
+  (also with Meeting Notes off) first run releaseUnneededStagedRecordings: a
+  failed recording goes 24 h after its last chunk (failedRecordingRetention;
+  the meeting stays failed with recordingExpiredMessage and is never
+  retried), a UUID-named directory without manifest.json 1 h after its last
+  write (24 h with an undecodable manifest). An expired Reconnect part sets
+  its meeting ready again when the note exists and no other part is pending.
+  The active or still-starting recording, a live Reconnect part and
+  recordings being processed are skipped; file work runs off the main thread.
+  Restored older archives' parked recordings count as manifest-less. WHY:
+  .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
   Manual start: Option M (configurable) or the Record hover tile; both
   converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
@@ -317,7 +329,9 @@ Meeting Notes:
 
   Internal opt-in research (no Settings controls): the local
   sidekey.meetings.liveTestCapture flag adds a separate Soniox stt-rt-v5 stream
-  only when Meetings uses Soniox. Preserve its explicitly chosen value. It saves
+  only when Meetings uses Soniox, and only in source dev builds (9999 / -dev);
+  packaged builds ignore it and remove Sidekey/meeting-assistant-tests at
+  launch. Preserve its explicitly chosen value. It saves
   private aligned source PCM, signal activity, final diarized tokens and receipt
   times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
   no automatic suggestions are enabled. The independent 100ms test mixer uses
@@ -327,7 +341,8 @@ Meeting Notes:
   overlap or an opposing source. Meeting mic capture keeps its quiet-input boost
   with a peak limiter and gradual gain release. Guide: docs/meeting-assistant-testing.md. WHY:
   .project-docs/decisions/2026-10-20-meeting-source-noise-floor.md,
-  .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
+  .project-docs/decisions/2026-10-19-live-meeting-test-capture.md,
+  .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
 
 Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
@@ -956,7 +971,14 @@ removes the image sidecar, then the row with secure_delete and a truncating WAL
 checkpoint, in one store-queue hop; a sidecar that cannot be removed keeps the
 row listed. History key monitors ignore keys while a modal alert is open.
 Uploaded backups are unchanged (pre-2026-10-21 archives restore History). WHY:
-.project-docs/decisions/2026-10-22-clipboard-entry-delete.md Startup seeds only the current
+.project-docs/decisions/2026-10-22-clipboard-entry-delete.md
+The History connection sets secure_delete=ON, so cap evictions, agent trimming
+and Delete… zero freed bytes and pages. After store setup,
+scrubFreePagesInBackground VACUUMs each database file once off main (version in
+its own history_maintenance table, so a restored older copy is scrubbed again),
+keeping every row and id, then truncates the WAL. Too little space (2x live rows
++ 64 MB) or an incomplete checkpoint records nothing and retries next launch.
+WHY: .project-docs/decisions/2026-10-22-history-free-page-scrub.md Startup seeds only the current
 pasteboard change counter; dictation write/restore suppression remains. Before
 replacing a running older binary with the old quit purge, preserve local
 clipboard data privately and restore only clipboard rows/assets after quit.

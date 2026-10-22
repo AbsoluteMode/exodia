@@ -28,6 +28,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
     case dropFast
     case dropSmart
     case dropSmartCleanup
+    // Retained only to decode historical usage and old routing documents.
     case dropSmartDecision
     case meetings
     case meetingNotes
@@ -37,6 +38,9 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
     case translation
     case subtitlesAudio
     case subtitlesTranslation
+
+    var isActive: Bool { self != .dropSmartDecision }
+    static var activeCases: [AIFeature] { allCases.filter(\.isActive) }
 
     var title: String {
         switch self {
@@ -84,6 +88,7 @@ enum AIFeature: String, CaseIterable, Codable, Sendable {
     /// chunks, so they offer real-time models (`docs/specs/api-and-models.md`,
     /// the recorded mode of meetings).
     func modelUse(on kind: AIProviderKind) -> ModelUse? {
+        guard isActive else { return nil }
         switch mode {
         case .realtime:
             switch kind {

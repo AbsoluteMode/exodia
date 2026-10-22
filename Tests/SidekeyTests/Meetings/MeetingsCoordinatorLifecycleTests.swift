@@ -440,6 +440,89 @@ final class MeetingsCoordinatorLifecycleTests: XCTestCase {
                        "Double start() must not cause buffer.gc() to be called twice on dismiss")
     }
 
+    // MARK: - Staged audio retention
+
+    /// Break caught: the retention sweep at a full wake deletes the directory
+    /// of the recording that is still running: it has no manifest until Stop,
+    /// and a paused recording writes nothing for a while.
+    /// WHY: .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+    func test_wake_sweep_keeps_the_directory_of_the_active_recording() async throws {
+        let env = try await startActiveRecording(withStagingRoot: true)
+        defer { env.teardown() }
+        let dirs = try FileManager.default.contentsOfDirectory(at: stagingRoot, includingPropertiesForKeys: nil)
+        XCTAssertEqual(dirs.count, 1, "the active recording has its staging directory")
+        let dir = try XCTUnwrap(dirs.first)
+        let threeHoursAgo = Date().addingTimeInterval(-3 * 3600)
+        let entries = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        for url in entries + [dir] {
+            try FileManager.default.setAttributes([.modificationDate: threeHoursAgo], ofItemAtPath: url.path)
+        }
+
+        await env.coordinator.recoverFinalizeManifestsOnLaunch()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.path))
+        XCTAssertTrue(env.coordinator.isRecording)
+    }
+
+    /// Break caught: the sweep at a full wake deletes the directory of a
+    /// recording whose recorder is still starting. The directory exists
+    /// before the coordinator owns the recorder, and the microphone start can
+    /// wait for the user's permission answer through a long sleep.
+    func test_wake_sweep_keeps_the_directory_of_a_recording_that_is_still_starting() async throws {
+        let config = MeetingsConfig(defaults: testDefaults)
+        config.isEnabled = true
+        let detector = LifecycleEmittingDetector()
+        let buffer = LifecycleStubBuffer()
+        let pill = MeetingPillController(buffer: buffer)
+        let mic = GatedMicSource()
+        let sys = LifecycleStubSystemSource()
+        let micInUse = LifecycleStubMicInUse()
+        let root: URL = stagingRoot
+        let coordinator = MeetingsCoordinator(
+            config: config,
+            detector: detector,
+            pill: pill,
+            buffer: buffer,
+            recorderFactory: { _ in
+                MeetingRecorder(
+                    micSource: mic, systemSource: sys, micInUseProbe: micInUse,
+                    stagingRoot: root, chunkRotationSeconds: 60,
+                    autoEndMicReleasedSeconds: 60, sampleRate: 16_000
+                )
+            },
+            stagingRoot: { root },
+            meetingsEnabled: { true }
+        )
+        coordinator.start()
+        defer {
+            mic.release()
+            mic.finishStream()
+            sys.finishStream()
+            micInUse.finishStream()
+        }
+        detector.feed(.triggered(meetingId: UUID()))
+        await waitFor(condition: {
+            if case .suggesting = pill.state { return true }
+            return false
+        }, timeout: 2.0)
+        let accept = Task { await pill._testTapAccept() }
+        await waitFor(condition: { mic.isWaiting }, timeout: 2.0)
+        XCTAssertTrue(mic.isWaiting, "the microphone start is waiting for permission")
+        let dirs = try FileManager.default.contentsOfDirectory(at: stagingRoot, includingPropertiesForKeys: nil)
+        let dir = try XCTUnwrap(dirs.first, "the starting recording already has its directory")
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-3 * 3600)], ofItemAtPath: dir.path
+        )
+
+        await coordinator.recoverFinalizeManifestsOnLaunch()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.path))
+        mic.release()
+        await accept.value
+        await waitFor(condition: { coordinator.isRecording }, timeout: 2.0)
+        XCTAssertTrue(coordinator.isRecording, "the recording starts into its kept directory")
+    }
+
     // MARK: - Test environment
 
     /// Container holding the wired-up stubs + concrete recorder for one
@@ -469,7 +552,8 @@ final class MeetingsCoordinatorLifecycleTests: XCTestCase {
     /// the caller is responsible for tearing it down (continuations
     /// must be finished so background drain tasks exit).
     private func startActiveRecording(
-        throwingMicOnSecondStart: Bool = false
+        throwingMicOnSecondStart: Bool = false,
+        withStagingRoot: Bool = false
     ) async throws -> LifecycleTestEnv {
         let config = MeetingsConfig(defaults: testDefaults)
         config.isEnabled = true
@@ -504,6 +588,7 @@ final class MeetingsCoordinatorLifecycleTests: XCTestCase {
             pill: pill,
             buffer: buffer,
             recorderFactory: factory,
+            stagingRoot: withStagingRoot ? { stagingRootCopy! } : nil,
             meetingsEnabled: { true }
         )
         coordinator.start()
@@ -656,6 +741,52 @@ private final class ThrowingMicSource: MicSourcing, @unchecked Sendable {
     func stop() async {
         lock.lock(); defer { lock.unlock() }
         _stopCalls += 1
+    }
+
+    nonisolated func finishStream() {
+        continuation.finish()
+    }
+}
+
+/// Mic source whose start() waits until the test releases it, like a
+/// first microphone start waiting for the user's permission answer.
+private final class GatedMicSource: MicSourcing, @unchecked Sendable {
+    let samples: AsyncStream<[Float]>
+    private let continuation: AsyncStream<[Float]>.Continuation
+    private let lock = NSLock()
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var released = false
+
+    init() {
+        let (stream, cont) = AsyncStream<[Float]>.makeStream()
+        self.samples = stream
+        self.continuation = cont
+    }
+
+    var isWaiting: Bool { lock.lock(); defer { lock.unlock() }; return waiter != nil }
+
+    func start() async throws {
+        await withCheckedContinuation { (waiting: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if released {
+                lock.unlock()
+                waiting.resume()
+            } else {
+                waiter = waiting
+                lock.unlock()
+            }
+        }
+    }
+
+    func stop() async {}
+
+    func release() {
+        lock.lock()
+        released = true
+        let waiting = waiter
+        waiter = nil
+        lock.unlock()
+        waiting?.resume()
     }
 
     nonisolated func finishStream() {

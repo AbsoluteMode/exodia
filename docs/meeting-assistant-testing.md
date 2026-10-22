@@ -3,12 +3,18 @@
 This collects evidence for a live assistant. It does not show question
 suggestions or replace normal meeting notes.
 
+Capture works only in a source dev build (build 9999 or a `-dev` version, made
+by `scripts/dev-run.sh` with bundle ID `com.rootwise.sidekey.beta`). A packaged
+Whytap ignores the flag and deletes `meeting-assistant-tests` at launch, so copy
+any bundle you still need elsewhere before starting the packaged app again.
+WHY: [no retained meeting audio](../.project-docs/decisions/2026-10-22-no-retained-meeting-audio.md).
+
 1. In **API & Models**, choose Soniox for **Meetings** and configure the usual
    **Meeting notes** route.
 2. In **Other**, enable **Meeting Notes**. Capture itself is an internal opt-in,
    absent from the interface at the user's request. Only for an explicitly
    authorized test, enable the local flag with
-   `defaults write com.rootwise.sidekey sidekey.meetings.liveTestCapture -bool true`.
+   `defaults write com.rootwise.sidekey.beta sidekey.meetings.liveTestCapture -bool true`.
    Testing adds a Soniox streaming transcription request. Removing the former
    Settings controls preserves an already selected value.
 3. Start notes normally at the next call. Include separate speech from each
@@ -20,7 +26,7 @@ suggestions or replace normal meeting notes.
    UUID folders contain private audio and text. Delete unwanted test folders
    in Finder; deleting a normal note does not delete these bundles. Disable
    capture after testing with
-   `defaults write com.rootwise.sidekey sidekey.meetings.liveTestCapture -bool false`.
+   `defaults write com.rootwise.sidekey.beta sidekey.meetings.liveTestCapture -bool false`.
 
 An offline report without transcript content:
 

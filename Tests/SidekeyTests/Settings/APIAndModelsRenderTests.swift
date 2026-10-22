@@ -7,7 +7,7 @@ import XCTest
 /// `EXODIA_APIMODELS_RENDER_DIR` is set. Every network path is a stub.
 @MainActor
 final class APIAndModelsRenderTests: XCTestCase {
-    func test_render_smart_decisions() async throws {
+    func test_render_smart_editor_pass() async throws {
         guard let output = ProcessInfo.processInfo.environment["EXODIA_APIMODELS_RENDER_DIR"] else {
             throw XCTSkip("set EXODIA_APIMODELS_RENDER_DIR to write the pictures")
         }
@@ -26,13 +26,14 @@ final class APIAndModelsRenderTests: XCTestCase {
         }
         routing.setRoute(FeatureRoute(account: .soniox, model: "stt-rt-v5"), for: .dropSmart)
         routing.setRoute(FeatureRoute(account: .openRouter, model: "google/gemini-3.8-flash"), for: .dropSmartCleanup)
-        routing.initializeSmartDecisionIfNeeded()
+        routing.retireSmartDecisionIfNeeded()
         let stub = NoNetwork(list: [])
         let vm = APIAndModelsViewModel(routing: routing, keys: keys,
             catalogs: ModelCatalogStore(fileURL: file, fetcher: stub), checks: ModelCheckStore(defaults: defaults),
             keyStatuses: KeyStatusStore(defaults: defaults), keyChecker: stub, probe: stub, endpoints: stub)
-        let sections = vm.sections(for: .dropSmartDecision)
-        XCTAssertEqual(Set(sections.flatMap(\.options).map(\.model)), ["typesafe/jev-1.14", "gpt-6-luna"])
+        let sections = vm.sections(for: .dropSmartCleanup)
+        XCTAssertFalse(sections.flatMap(\.options).contains { $0.model.hasPrefix("typesafe/jev-") })
+        XCTAssertFalse(vm.rows.contains { $0.feature == .dropSmartDecision })
         for dark in [false, true] {
             for width in [600.0, 900.0] {
                 try await render(APIAndModelsView(viewModel: vm, focusedFeature: .constant(nil),
