@@ -236,7 +236,8 @@ final class OpenCodeProviderTests: XCTestCase {
         var mapper = OpenCodeEventMapper()
         XCTAssertTrue(mapper.map(line: #"{"type":"step_finish","part":{"reason":"tool-calls"}}"#).isEmpty)
         let text = #"{"type":"text","sessionID":"ses_a","part":{"id":"part_1","text":"First"}}"#
-        XCTAssertFalse(mapper.map(line: text).isEmpty)
+        XCTAssertTrue(mapper.map(line: text).isEmpty)
+        XCTAssertEqual(mapper.answer, "First")
         XCTAssertTrue(mapper.map(line: text).isEmpty)
         _ = mapper.map(line: #"{"type":"text","part":{"id":"part_2","text":"Second"}}"#)
         XCTAssertEqual(mapper.answer, "First\n\nSecond")

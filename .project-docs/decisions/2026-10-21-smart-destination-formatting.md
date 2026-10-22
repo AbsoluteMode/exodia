@@ -38,7 +38,7 @@ sources:
   - type: url
     reference: https://code.visualstudio.com/docs/languages/markdown
     confirmed_at: 2026-10-21
-related: [2026-10-21-smart-editor-prompt.md, 2026-10-21-smart-decisions.md]
+related: [2026-10-21-smart-editor-prompt.md, 2026-10-21-smart-decisions.md, 2026-10-22-smart-editor-pass.md]
 ---
 
 # Destination formatting

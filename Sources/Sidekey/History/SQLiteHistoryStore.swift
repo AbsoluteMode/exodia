@@ -32,6 +32,7 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
     )
 
     private var handle: OpaquePointer?
+    private let path: String
     private let queue = DispatchQueue(label: "com.rootwise.sidekey.history")
 
     init(path: String) throws {
@@ -43,8 +44,15 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
             if let db { sqlite3_close(db) }
             throw Error.openFailed(message)
         }
+        self.path = path
         self.handle = db
         try exec("PRAGMA journal_mode=WAL;")
+        // Every delete on this connection (cap eviction, agent trimming,
+        // Delete…) zeroes the row's bytes and the pages it frees. The system
+        // library's default, FAST, leaves freed overflow pages, such as a
+        // long evicted copy, readable in the file.
+        // WHY: .project-docs/decisions/2026-10-22-history-free-page-scrub.md
+        try exec("PRAGMA secure_delete = ON;")
         try migrate()
     }
 
@@ -128,6 +136,15 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
                 ON clipboard_entries(created_at DESC);
         """)
 
+        // Completed one-time maintenance (name -> version). Kept in the
+        // database itself so the record travels with the file: a beta build
+        // shares this file, and a restored older copy has its own state.
+        try exec("""
+            CREATE TABLE IF NOT EXISTS history_maintenance (
+                name TEXT PRIMARY KEY,
+                version INTEGER NOT NULL
+            );
+        """)
     }
 
     private func existingColumnNames(table: String) throws -> Set<String> {
@@ -679,8 +696,9 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
     /// goes first: when it cannot be removed the row stays and the entry
     /// remains listed for a retry, instead of leaving an unlisted copy on
     /// disk. A missing sidecar counts as removed. The row is erased with
-    /// `secure_delete`, then the WAL is checkpointed and truncated, so the
-    /// copied bytes do not linger in free pages or the write-ahead log.
+    /// the connection's `secure_delete`, then the WAL is checkpointed and
+    /// truncated, so the copied bytes do not linger in free pages or the
+    /// write-ahead log.
     /// WHY: .project-docs/decisions/2026-10-22-clipboard-entry-delete.md
     @discardableResult
     func deleteClipboardEntry(id: Int64, assetsDirectory: URL) throws -> Bool {
@@ -693,12 +711,10 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
             case .image(let image):
                 try Self.removeSidecarIfPresent(image.sidecarURL(in: assetsDirectory))
             }
-            try withSecureDelete {
-                let stmt = try prepare("DELETE FROM clipboard_entries WHERE id = ?;")
-                defer { sqlite3_finalize(stmt) }
-                sqlite3_bind_int64(stmt, 1, id)
-                try step(stmt)
-            }
+            let stmt = try prepare("DELETE FROM clipboard_entries WHERE id = ?;")
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_int64(stmt, 1, id)
+            try step(stmt)
             // Best effort: a reader on another connection can keep frames in
             // the WAL until its next checkpoint; the row itself is gone.
             sqlite3_wal_checkpoint_v2(handle, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
@@ -746,26 +762,6 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
         }
     }
 
-    /// Runs `body` with `PRAGMA secure_delete` on, then restores the
-    /// connection's previous mode (OFF, ON or FAST). Call only on `queue`.
-    private func withSecureDelete(_ body: () throws -> Void) throws {
-        let stmt = try prepare("PRAGMA secure_delete;")
-        let previous: Int32
-        do {
-            defer { sqlite3_finalize(stmt) }
-            guard sqlite3_step(stmt) == SQLITE_ROW else {
-                throw Error.stepFailed(lastErrorMessage())
-            }
-            previous = sqlite3_column_int(stmt, 0)
-        }
-        try exec("PRAGMA secure_delete = ON;")
-        defer {
-            let mode = previous == 2 ? "FAST" : (previous == 0 ? "OFF" : "ON")
-            try? exec("PRAGMA secure_delete = \(mode);")
-        }
-        try body()
-    }
-
     // MARK: - Drop / agent cap enforcement (Strip feature)
 
     /// Strip-feature cap for `drop_entries`: keep the newest `maxRows`,
@@ -793,6 +789,126 @@ final class SQLiteHistoryStore: HistoryStore, @unchecked Sendable {
             sqlite3_bind_int(stmt, 1, Int32(maxRows))
             try step(stmt)
         }
+    }
+
+    // MARK: - One-time free-page scrub
+
+    enum FreePageScrubOutcome: Equatable, Sendable {
+        /// This file already had the current scrub version.
+        case alreadyScrubbed
+        /// `VACUUM` rewrote the file, which shrank by `freedBytes`.
+        case scrubbed(freedBytes: Int64)
+        /// Too little free disk space for VACUUM's copies; nothing changed.
+        case skippedLowDiskSpace
+        /// Another connection kept the WAL from being checkpointed and
+        /// truncated; the version is not recorded.
+        case checkpointIncomplete
+
+        var logDescription: String {
+            switch self {
+            case .alreadyScrubbed: return "already_scrubbed"
+            case .scrubbed(let freedBytes): return "scrubbed freed_bytes=\(freedBytes)"
+            case .skippedLowDiskSpace: return "skipped_low_disk_space"
+            case .checkpointIncomplete: return "checkpoint_incomplete"
+            }
+        }
+    }
+
+    static let freePageScrubName = "free_page_scrub"
+    static let freePageScrubVersion: Int64 = 1
+
+    /// Rewrites the database once with `VACUUM`, dropping the free pages and
+    /// leftover cell bytes that deletes made before `secure_delete` was on
+    /// (cap evictions, agent trimming, B-tree rebalancing) left readable in
+    /// the file. Every row stays, ids and AUTOINCREMENT counters included.
+    /// The WAL is then checkpointed and truncated, and only a completed pass
+    /// records the version, so a failed or skipped pass runs again on the
+    /// next launch. It holds the store queue while it runs (about 0.2 s for
+    /// a 150 MB file with 48 MB of rows), so call it off the main thread.
+    /// WHY: .project-docs/decisions/2026-10-22-history-free-page-scrub.md
+    func scrubFreePagesIfNeeded(
+        availableCapacity: (URL) -> Int64? = SQLiteHistoryStore.volumeAvailableCapacity
+    ) throws -> FreePageScrubOutcome {
+        try queue.sync {
+            if try maintenanceVersion(Self.freePageScrubName) >= Self.freePageScrubVersion {
+                return .alreadyScrubbed
+            }
+            let pageSize = try pragmaInt("page_size")
+            let pagesBefore = try pragmaInt("page_count")
+            let liveBytes = (pagesBefore - (try pragmaInt("freelist_count"))) * pageSize
+            if let directory = databaseDirectory,
+               let available = availableCapacity(directory),
+               available < Self.freePageScrubRequiredBytes(liveBytes: liveBytes) {
+                return .skippedLowDiskSpace
+            }
+            try exec("VACUUM;")
+            let rc = sqlite3_wal_checkpoint_v2(handle, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+            guard rc == SQLITE_OK else { return .checkpointIncomplete }
+            try setMaintenanceVersion(Self.freePageScrubName, Self.freePageScrubVersion)
+            return .scrubbed(freedBytes: (pagesBefore - (try pragmaInt("page_count"))) * pageSize)
+        }
+    }
+
+    /// Runs `scrubFreePagesIfNeeded()` on a utility queue, so launch and
+    /// the main thread never wait for the VACUUM itself.
+    func scrubFreePagesInBackground(
+        completion: @escaping @Sendable (Result<FreePageScrubOutcome, Swift.Error>) -> Void
+    ) {
+        DispatchQueue.global(qos: .utility).async {
+            completion(Result { try self.scrubFreePagesIfNeeded() })
+        }
+    }
+
+    /// VACUUM writes a temporary copy of the live pages, then the same pages
+    /// again through the WAL before the old file shrinks. The margin keeps
+    /// it from taking a nearly full volume's last space.
+    static func freePageScrubRequiredBytes(liveBytes: Int64) -> Int64 {
+        liveBytes * 2 + 64 * 1024 * 1024
+    }
+
+    static func volumeAvailableCapacity(_ directory: URL) -> Int64? {
+        let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage
+    }
+
+    private var databaseDirectory: URL? {
+        guard !path.isEmpty, path != ":memory:" else { return nil }
+        return URL(fileURLWithPath: path).deletingLastPathComponent()
+    }
+
+    /// Call only on `queue`.
+    private func maintenanceVersion(_ name: String) throws -> Int64 {
+        let stmt = try prepare("SELECT version FROM history_maintenance WHERE name = ?;")
+        defer { sqlite3_finalize(stmt) }
+        try bindText(stmt, index: 1, value: name)
+        let rc = sqlite3_step(stmt)
+        if rc == SQLITE_DONE { return 0 }
+        guard rc == SQLITE_ROW else {
+            throw Error.stepFailed(lastErrorMessage())
+        }
+        return sqlite3_column_int64(stmt, 0)
+    }
+
+    /// Call only on `queue`.
+    private func setMaintenanceVersion(_ name: String, _ version: Int64) throws {
+        let stmt = try prepare("""
+            INSERT INTO history_maintenance (name, version) VALUES (?, ?)
+            ON CONFLICT(name) DO UPDATE SET version = excluded.version;
+        """)
+        defer { sqlite3_finalize(stmt) }
+        try bindText(stmt, index: 1, value: name)
+        sqlite3_bind_int64(stmt, 2, version)
+        try step(stmt)
+    }
+
+    /// Reads an integer `PRAGMA` such as `page_count`. Call only on `queue`.
+    private func pragmaInt(_ name: String) throws -> Int64 {
+        let stmt = try prepare("PRAGMA \(name);")
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW else {
+            throw Error.stepFailed(lastErrorMessage())
+        }
+        return sqlite3_column_int64(stmt, 0)
     }
 
     // MARK: - File URL JSON encoding

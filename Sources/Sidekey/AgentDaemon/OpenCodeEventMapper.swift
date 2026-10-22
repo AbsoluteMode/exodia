@@ -3,6 +3,7 @@ import Foundation
 /// `opencode run --format json` emits complete text/tool parts, one JSON line
 /// at a time. step_finish can mean "tool-calls", so only process exit finalizes
 /// a turn. This prevents losing the answer after a tool execution.
+// WHY: .project-docs/decisions/2026-10-22-agent-answers-and-screen.md
 struct OpenCodeEventMapper {
     private(set) var sessionID: String?
     private(set) var answer = ""
@@ -28,8 +29,12 @@ struct OpenCodeEventMapper {
             if let id = part["id"] as? String, !seenParts.insert(id).inserted { return [] }
             if !answer.isEmpty { answer += "\n\n" }
             answer += text
-            return [.summaryDelta(text: text), .finalAnswer(text: answer)]
+            // Keep complete parts here until successful exit. Feeding raw
+            // action JSON into the store's narration fallback would leak it
+            // back into an actions-only answer with no prose.
+            return []
         case "tool_use":
+            answer = ""
             let tool = part["tool"] as? String ?? "tool"
             let label: String
             switch tool {
@@ -41,7 +46,11 @@ struct OpenCodeEventMapper {
             default: label = "Using a tool"
             }
             return [.toolExecuting(tool: tool, label: label)]
+        case "step_finish":
+            if part["reason"] as? String == "tool-calls" { answer = "" }
+            return []
         case "step_start":
+            answer = ""
             return [.statusNarration(text: "Working…")]
         case "error":
             failed = true
@@ -56,5 +65,13 @@ struct OpenCodeEventMapper {
         default:
             return []
         }
+    }
+
+    func finalEvents() -> [AgentSSEEvent] {
+        guard let extraction = AgentUsefulLinksExtractor.extract(from: answer) else {
+            return [.finalAnswer(text: answer), .done(sources: [])]
+        }
+        return [.finalAnswer(text: extraction.answer),
+                .blockComplete(.usefulActions(extraction.block)), .done(sources: [])]
     }
 }

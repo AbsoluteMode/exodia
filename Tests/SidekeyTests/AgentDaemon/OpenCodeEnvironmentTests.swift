@@ -2,6 +2,22 @@ import XCTest
 @testable import Sidekey
 
 final class OpenCodeEnvironmentTests: XCTestCase {
+    func testScreenToolIsAvailableWithoutCaseOrCommandPermission() throws {
+        let command = ["/Applications/Whytap.app/Contents/Helpers/whytap", "app", "screen-mcp"]
+        let env = try OpenCodeEnvironment.make(workingDirectory: try temporaryDirectory(), model: "fixture/model",
+            key: nil, allowActions: false, screenMCPCommand: command, inherited: [:])
+        let json = try config(env)
+        let mcp = try XCTUnwrap(json["mcp"] as? [String: [String: Any]])
+        XCTAssertEqual(mcp["screen"]?["command"] as? [String], command)
+        XCTAssertEqual(mcp["screen"]?["timeout"] as? Int, 15_000)
+        XCTAssertNil(mcp["case"])
+        let permission = try XCTUnwrap(json["permission"] as? [String: String])
+        XCTAssertEqual(permission["*"], "deny")
+        XCTAssertEqual(permission["screen_*"], "allow")
+        XCTAssertEqual(permission["execute"], "allow")
+        XCTAssertNil(permission["bash"])
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

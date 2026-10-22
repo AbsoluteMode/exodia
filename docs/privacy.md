@@ -30,6 +30,15 @@ is a verifiable claim rather than a slogan.
   backups already uploaded: archives made before 2026-10-21 contain the
   History database, and restoring one brings its entries back. Time Machine
   and other copies of your disk are not changed either.
+  Every removal from the History database also overwrites the removed bytes:
+  copies pushed out by the 50-entry limit, older dictations and agent chats,
+  and Delete…. Earlier versions removed entries without overwriting them, so
+  pieces of old copies could stay readable in the database's unused space.
+  Whytap therefore rewrites each History database once (SQLite `VACUUM`),
+  in the background after launch. Every entry is kept. When the disk lacks
+  room for its temporary copy (about twice the size of the kept entries), it
+  waits for a later launch. This cleans the files themselves; it is not a
+  forensic wipe of the SSD, snapshots or backups.
 - API keys you enter in Settings → API & Models ("Your key") are stored in the
   macOS Keychain under the app's own service name (`com.rootwise.sidekey`).
   Key values are never shown again after saving and are never written to
@@ -183,3 +192,13 @@ blur and Copy text use on-device Vision; no provider receives the screenshot.
 Exports contain flattened edited pixels. Clipboard copies may enter ordinary
 clipboard history. OCR and blur do not guarantee irreversible anonymization;
 check the visible result. See [screenshots](screenshots.md).
+
+The built-in agent also has a separate screen tool. When a request needs visible
+screen context, it captures one frame from the island's selected display (or an
+explicit display ID) with Whytap's Screen Recording permission. A bounded JPEG
+image is returned through local MCP to the selected agent model/provider. It is
+not copied to the clipboard or saved by the capture tool; OpenCode's local
+conversation history and the provider's normal retention can include the image.
+There is no automatic capture on every question and no mouse/keyboard control.
+A model must accept image input to interpret the screenshot; no substitute model
+is selected automatically.

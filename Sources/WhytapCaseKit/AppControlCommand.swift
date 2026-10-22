@@ -28,8 +28,8 @@ public final class AppControlCommand {
     public func run(args: [String], readLine: () -> String? = { Swift.readLine() }, write: @escaping (String) -> Void = {
         FileHandle.standardOutput.write(Data(($0 + "\n").utf8))
     }) -> Int32 {
-        if args == ["mcp"] {
-            let server = AppControlMCPServer(cancellableCall: { self.call($0, cancellation: $1) })
+        if args == ["mcp"] || args == ["screen-mcp"] {
+            let server = AppControlMCPServer(screenOnly: args == ["screen-mcp"], cancellableCall: { self.call($0, cancellation: $1) })
             server.run(readLine: readLine, write: write)
             return 0
         }

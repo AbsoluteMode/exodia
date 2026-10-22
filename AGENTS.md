@@ -112,18 +112,18 @@ Voice flow (Drop / dictation):
             OpenRouter, OpenAI or Anthropic with the user's key / a custom OpenAI-compatible
             server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
             The mode is captured at take start:
-            Fast bypasses AI text processing. Smart first uses dropSmartDecision
-            (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
-            default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
-            A valid needs-cleanup probability <= 0.40 for exact OpenRouter
-            typesafe/jev-1.14 (<= 0.05 for other routes) skips editing and uses
-            Fast's verbatim output/filter path without changing the take's mode
-            or speech route. Translation always edits. Missing decision setup,
-            uncertainty, refusal or the 2s deadline keeps the selected cleanup
-            route. Cleanup errors/empty results never silently paste raw speech.
-            Decision models are excluded from LLM/agent pickers. WHY:
-            .project-docs/decisions/2026-10-21-smart-decisions.md,
-            .project-docs/decisions/2026-10-21-smart-decision-calibration.md
+            Fast bypasses AI text processing. Smart makes one request to the
+            selected cleanup model: a reserved whole-response pass marker keeps
+            the transcript verbatim with plain delivery; otherwise use the edited
+            message. Synonyms, word order and minor polish alone should pass;
+            concrete errors and useful long-message structure still edit.
+            Translation cannot pass. Failed, empty, malformed or cancelled
+            responses retain strict Retry behavior. The separate Jev/OpenAI
+            Decision stage and settings row are removed; migration4 retires only
+            that route, preserving all other model/provider choices and keys.
+            The old feature ID remains for historical usage decoding only;
+            Decision-only catalog entries stay excluded from text/agent pickers.
+            WHY: .project-docs/decisions/2026-10-22-smart-editor-pass.md
             Smart failures retain the transcript in memory and show Retry with
             the original mode and target; configuration errors open API & Models on
             the Drop Smart cleanup row.
@@ -942,6 +942,26 @@ security controls, user content, recording, shell execution or quit are exposed.
 Guide: docs/customization/app-control.md. WHY:
 .project-docs/decisions/2026-10-21-app-control-plugin.md
 
+Agent answers: OpenCode keeps pre-tool narration hidden and publishes the final
+answer plus parsed `useful.actions` only after successful process exit, matching
+the other agent adapters. A folder answer gives the verified absolute path in
+a copyable code fence and a path action for open/insert. Every turn reinforces
+language, 1–2 short sentences for simple requests, essential caveats and actions;
+detailed answers remain available when requested. The neutral workspace's
+memory is retained, and native sessions resume within the existing 15-minute
+window. This is not a clean context on every question.
+The built-in OpenCode agent gets a separate `screen` MCP server via the bundled
+helper's `app screen-mcp` command, independent of Case registration and the
+command/edit action switch. Its only tool, `whytap_capture_screen`, takes one
+requested display frame through `AgentScreenCapture` under the app's Screen
+Recording permission. The default is the island-selected display, not NSScreen.main.
+It returns JPEG media (long edge <=1920, <=2 MB) with a 10s deadline, cancellation
+and a busy guard. No screenshot file, clipboard write or input tap is created.
+The image can enter OpenCode history and the selected model/provider; image
+input support is required, with no provider/model fallback. The settings MCP
+server does not advertise or accept screen tools. Screen content is untrusted
+evidence. WHY: .project-docs/decisions/2026-10-22-agent-answers-and-screen.md
+
 Clipboard history retains the newest 50 local entries across launch, quit and
 sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
 the oldest excess rows and their image sidecars; the current History feed shows
@@ -953,7 +973,14 @@ removes the image sidecar, then the row with secure_delete and a truncating WAL
 checkpoint, in one store-queue hop; a sidecar that cannot be removed keeps the
 row listed. History key monitors ignore keys while a modal alert is open.
 Uploaded backups are unchanged (pre-2026-10-21 archives restore History). WHY:
-.project-docs/decisions/2026-10-22-clipboard-entry-delete.md Startup seeds only the current
+.project-docs/decisions/2026-10-22-clipboard-entry-delete.md
+The History connection sets secure_delete=ON, so cap evictions, agent trimming
+and Delete… zero freed bytes and pages. After store setup,
+scrubFreePagesInBackground VACUUMs each database file once off main (version in
+its own history_maintenance table, so a restored older copy is scrubbed again),
+keeping every row and id, then truncates the WAL. Too little space (2x live rows
++ 64 MB) or an incomplete checkpoint records nothing and retries next launch.
+WHY: .project-docs/decisions/2026-10-22-history-free-page-scrub.md Startup seeds only the current
 pasteboard change counter; dictation write/restore suppression remains. Before
 replacing a running older binary with the old quit purge, preserve local
 clipboard data privately and restore only clipboard rows/assets after quit.

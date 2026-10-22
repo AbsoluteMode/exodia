@@ -69,6 +69,8 @@ struct AgentRunOptions: Equatable {
     var openCodeProvider: OpenCodeModelProvider
     /// `<helper> case mcp` when the built-in agent is registered in Case.
     var caseMCPCommand: [String]?
+    /// App-owned screen capture; independent of Case registration.
+    var screenMCPCommand: [String]?
     /// OpenRouter endpoint tag the agent's model is pinned to; `nil` is Auto.
     var openRouterProvider: String?
 
@@ -77,6 +79,7 @@ struct AgentRunOptions: Equatable {
          openCodeModelSpec: OpenCodeModelSpec? = nil,
          openCodeProvider: OpenCodeModelProvider = .openRouter,
          caseMCPCommand: [String]? = nil,
+         screenMCPCommand: [String]? = nil,
          openRouterProvider: String? = nil) {
         self.model = model
         self.effort = effort
@@ -86,6 +89,7 @@ struct AgentRunOptions: Equatable {
         self.openCodeModelSpec = openCodeModelSpec
         self.openCodeProvider = openCodeProvider
         self.caseMCPCommand = caseMCPCommand
+        self.screenMCPCommand = screenMCPCommand
         self.openRouterProvider = openRouterProvider
     }
 }

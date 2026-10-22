@@ -50,7 +50,7 @@ struct AIRoutingMigration {
             routing.completeMigration(routes: routes, servers: servers.stored)
         }
         routing.separateSubtitleTranslationIfNeeded()
-        routing.initializeSmartDecisionIfNeeded()
+        routing.retireSmartDecisionIfNeeded()
     }
 
     // MARK: - Routes
