@@ -9,6 +9,15 @@ canonical_for: [agent-runtime, agent-web-search, agent-workspace]
 verified_at: 2026-10-22
 sources:
   - type: user-confirmed
+    reference: On 2026-10-22 the user requested the selected model author's logo instead of the generic star while speaking to Agent, with inexpensive OpenRouter artwork refresh. They explicitly chose the existing voice mark rather than model-list decoration.
+    confirmed_at: 2026-10-22
+  - type: repository
+    reference: Sources/Sidekey/AgentDaemon/AgentModelBrand.swift
+    confirmed_at: 2026-10-22
+  - type: repository
+    reference: Sources/Sidekey/AgentDaemon/AgentModelIconStore.swift
+    confirmed_at: 2026-10-22
+  - type: user-confirmed
     reference: On 2026-10-22 the user corrected the Tavily setup location; all API keys belong in API & Models rather than Agents. Keep the existing credential while moving the form.
     confirmed_at: 2026-10-22
   - type: user-confirmed
@@ -30,6 +39,41 @@ related: [../project.md, 2026-10-22-agent-answers-and-screen.md]
 ---
 
 # Decision
+
+## Voice model mark
+
+The existing 16 pt voice ticker slot shows the selected model's author instead
+of the generic native Agent sparkle. Direct OpenAI/Anthropic routes use their
+own marks; OpenRouter routes use the author namespace, never the hosting provider
+pin. Supported artwork covers OpenAI, Anthropic, Gemini, DeepSeek, Qwen, Mistral,
+Cohere and Perplexity. Unknown authors and Auto retain the OpenRouter mark;
+missing routes retain the native fallback. Google voice search and Drop marks
+keep their own existing source semantics. No model, route or key changes.
+
+PDF fallback artwork is bundled and prewarmed, so recording never waits for
+network or cache reads. The optional icon task refreshes only the displayed
+author's public OpenRouter image, without a key, cookies, audio or prompt.
+Each mark revalidates at most weekly with ETag when available, deduplicates
+concurrent requests, and persists a small disposable cache across launches.
+Responses are bounded to 256 KiB and 4 seconds; failures keep usable artwork
+and back off for six hours in the running process. Cache I/O runs off the main
+actor, as does network byte collection; small NSImage decode/render work remains
+on the main actor. Cancelled/obsolete view loads cannot replace a new model's mark.
+There are no model calls or frontend-provider-registry requests for artwork.
+
+Source snapshots in `Resources/UsefulLinkIcons/model-*` were fetched on
+2026-10-22 from `https://openrouter.ai/images/icons/`: OpenAI.svg, Anthropic.svg,
+GoogleGemini.svg, DeepSeek.png, Qwen.png, Mistral.png, Cohere.png and Perplexity.svg.
+Their PDFs preserve the mark's aspect ratio; Anthropic's known rounded tile is
+removed and its monogram cropped for the small slot (unknown replacement SVG
+layouts keep the bundled fallback). Perplexity's contour uses a 3-unit stroke
+for legibility at 15 pt, identically for bundled and refreshed artwork.
+Island rendering uses a neutral
+monochrome alpha mask. These are third-party brand identifiers, not Whytap-owned
+marks. Static image paths are not a documented versioned logo API, so bundled
+fallbacks remain authoritative when OpenRouter changes or refuses a path.
+
+## Native runtime
 
 Run Whytap Agent inside the app, reusing the controller, voice flow, island,
 provider routing and Keychain. OpenCode is no longer started for built-in

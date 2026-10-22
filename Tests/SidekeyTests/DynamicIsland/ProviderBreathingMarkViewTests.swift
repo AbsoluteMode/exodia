@@ -154,13 +154,14 @@ final class ProviderBreathingMarkViewTests: XCTestCase {
     /// Every brand the island ticker can show is flattened to the white tint,
     /// whatever colors its asset or symbol has: a skipped `.sourceAtop` wash
     /// leaves the dark source glyph, which vanishes on the black island. The
-    /// wash composites white at 0.72 alpha, so a tinted opaque pixel has no
-    /// channel below 0.72 and stays neutral.
+    /// legacy wash preserves its existing slight color; model-author marks use
+    /// neutral 72% white through source alpha, including colorful remote artwork.
     func testEveryIslandBrandRendersWhiteTintedMark() throws {
         let brands: [TranscriptionProviderBrand] =
             BYOKProvider.allCases.map(TranscriptionProviderBrand.byok)
             + CLIProviderID.allCases.map(TranscriptionProviderBrand.agent)
             + [.google, .openRouter, .customLLM]
+            + AgentModelBrand.allCases.map { TranscriptionProviderBrand(assetName: $0.assetName, label: $0.label) }
 
         for brand in brands {
             let image = try XCTUnwrap(
@@ -192,6 +193,21 @@ final class ProviderBreathingMarkViewTests: XCTestCase {
             return nil
         }
         return NSBitmapImageRep(cgImage: cg)
+    }
+
+    func testGoogleVoiceSearchRetainsItsExistingColorWash() throws {
+        let image = try XCTUnwrap(ProviderBreathingMarkView.markImageForTesting(brand: .google))
+        let rep = try XCTUnwrap(bitmap(from: image))
+        var coloredPixels = 0
+        for x in 0..<rep.pixelsWide {
+            for y in 0..<rep.pixelsHigh {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), c.alphaComponent > 0.95 else { continue }
+                if max(c.redComponent, c.greenComponent, c.blueComponent) - min(c.redComponent, c.greenComponent, c.blueComponent) > 0.08 {
+                    coloredPixels += 1
+                }
+            }
+        }
+        XCTAssertGreaterThan(coloredPixels, 0, "The model-only mask must not repaint the existing Google search mark")
     }
 
     private func projectRoot() throws -> URL {

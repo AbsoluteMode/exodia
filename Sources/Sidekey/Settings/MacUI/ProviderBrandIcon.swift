@@ -66,7 +66,7 @@ enum ProviderBrandIconAsset {
         "claude-code",
         "google",
         "openrouter",
-    ]
+    ] + AgentModelBrand.allCases.map(\.assetName)
     static let prewarmedPointSizes: [CGFloat] = [15, 18]
 
     @discardableResult
