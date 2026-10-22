@@ -46,8 +46,8 @@
       "focused_test_filter": "CloudRemovalTests|LocalPathLoggingInvariantTests|KeychainStoreTests"
     },
     "agent": {
-      "entry_points": ["Sources/Sidekey/Agent/AgentController.swift", "Sources/Sidekey/AgentDaemon/OpenCodeProvider.swift", "Sources/Sidekey/AgentDaemon/OpenCodeEnvironment.swift", "Sources/Sidekey/AgentDaemon/OpenCodeInstaller.swift", "Sources/Sidekey/Settings/AgentModeView.swift", "Sources/Sidekey/Customization/WhytapCustomizationContext.swift"],
-      "contract": "OpenCode plus user-selected OpenRouter model; Keychain key in child environment; local memory and sessions in the neutral agent workspace; actions allowed by default."
+      "entry_points": ["Sources/Sidekey/Agent/AgentController.swift", "Sources/Sidekey/AgentDaemon/NativeAgentProvider.swift", "Sources/Sidekey/AgentDaemon/NativeAgentModel.swift", "Sources/Sidekey/AgentDaemon/NativeAgentTools.swift", "Sources/Sidekey/AgentDaemon/TavilySearch.swift", "Sources/Sidekey/Settings/AgentModeView.swift", "Sources/Sidekey/Customization/WhytapCustomizationContext.swift"],
+      "contract": "Native selected OpenRouter/OpenAI/Anthropic model and local tool loop; provider keys only in HTTPS requests; Tavily search; bounded neutral workspace memory/context; file edits and commands allowed by default, enforced off when disabled."
     },
     "notifications": {
       "guide": "docs/customization/notifications.md",

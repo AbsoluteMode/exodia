@@ -51,8 +51,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                     return await ClaudeCodeProvider().probe()
                 case .codex:
                     return await CodexProvider().probe()
-                case .opencode:
-                    return await OpenCodeProvider().probe()
+                case .opencode, .native:
+                    return await NativeAgentProvider().probe()
                 }
             },
             notify: { notice in
@@ -180,6 +180,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
         case .opencode: return "OpenCode"
+        case .native: return "Whytap Agent"
         }
     }
 
@@ -189,6 +190,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return "Install Claude Code, sign in, then press Connect again. See docs.claude.com/claude-code."
         case .codex:
             return "Install Codex, run `codex login`, then press Connect again. See developers.openai.com/codex."
+        case .native:
+            return "Whytap Agent is included in the app. Choose a model in API & Models."
         case .opencode:
             return "Install OpenCode in Settings → Agents, then press Connect."
         }
@@ -200,6 +203,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return "Open a terminal, run `claude`, log in, then press Connect again."
         case .codex:
             return "Open a terminal, run `codex login`, sign in, then press Connect again."
+        case .native:
+            return "Add the selected provider’s key in Settings → API & Models, then connect."
         case .opencode:
             return "Add your OpenRouter key in Settings → API & Models, then press Connect."
         }

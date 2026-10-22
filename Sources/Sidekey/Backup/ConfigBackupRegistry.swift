@@ -70,7 +70,7 @@ enum ConfigBackupRegistry {
 
     static let credentialAccounts: Set<String> = Set(
         ["openAI", "selfHosted", "deepgram", "soniox", "elevenLabs"].map { "byok." + $0 + ".api_key" }
-        + ["byok.openrouter.llm_api_key", "byok.custom_llm.api_key", "byok.anthropic.api_key", "byok.openai.llm_api_key"])
+        + ["byok.openrouter.llm_api_key", "byok.custom_llm.api_key", "byok.anthropic.api_key", "byok.openai.llm_api_key", TavilySearch.keychainAccount])
 
     /// No Keychain enumeration or caller-controlled account names. Only server
     /// IDs registered in the routing document add accounts to the export.

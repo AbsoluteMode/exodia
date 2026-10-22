@@ -16,7 +16,7 @@ final class AgentProviderStoreTests: XCTestCase {
         let defaults = UserDefaults(suiteName: #function)!
         defaults.removePersistentDomain(forName: #function)
         AgentProviderStore(defaults: defaults).markConnected(.opencode)
-        XCTAssertEqual(AgentProviderStore(defaults: defaults).activeProvider, .opencode)
+        XCTAssertEqual(AgentProviderStore(defaults: defaults).activeProvider, .native)
     }
 
     func testLegacyConnectionRequiresExplicitOpenCodeSetup() {

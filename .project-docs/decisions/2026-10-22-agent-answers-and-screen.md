@@ -20,10 +20,14 @@ sources:
   - type: repository
     reference: Sources/WhytapCaseKit/AppControlMCPServer.swift
     confirmed_at: 2026-10-22
-related: [2026-10-21-app-control-plugin.md, 2026-10-21-opencode-v2.md]
+related: [2026-10-22-native-agent.md, 2026-10-21-app-control-plugin.md, 2026-10-21-opencode-v2.md]
 ---
 
 # Decision
+
+The [native runtime decision](2026-10-22-native-agent.md) supersedes built-in
+OpenCode dispatch and MCP discovery below. The compact-answer/action contract
+and app-owned capture service remain; historical OpenCode adapters stay compatible.
 
 OpenCode previously concatenated all text parts and sent the trailing
 `useful.actions` JSON straight into prose. Claude/Codex already used the shared

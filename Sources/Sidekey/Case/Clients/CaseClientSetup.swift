@@ -18,7 +18,7 @@ enum CaseKnownClient: String, CaseIterable, Equatable {
         case .claudeCode: return "Claude Code"
         case .codex: return "Codex"
         case .cursor: return "Cursor"
-        case .builtInOpenCode: return "OpenCode"
+        case .builtInOpenCode: return "Whytap Agent"
         }
     }
 
@@ -93,7 +93,7 @@ final class CaseClientSetup: CaseClientConfiguring {
                 .codex: CodexCaseConnector(home: home),
                 .cursor: CursorCaseConnector(home: home),
             ],
-            builtInAgentAvailable: { OpenCodeBinaryLocator().locate() != nil })
+            builtInAgentAvailable: { true })
     }
 
     func detectInstalledClients() async -> [CaseKnownClient] {

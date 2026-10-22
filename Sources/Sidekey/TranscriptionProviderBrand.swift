@@ -45,6 +45,8 @@ struct TranscriptionProviderBrand: Equatable, Sendable {
             return TranscriptionProviderBrand(assetName: "codex", label: "Codex")
         case .claude:
             return TranscriptionProviderBrand(assetName: "claude-code", label: "Claude Code")
+        case .native:
+            return TranscriptionProviderBrand(systemName: "sparkle", label: "Whytap Agent")
         case .opencode:
             return TranscriptionProviderBrand(systemName: "terminal", label: "OpenCode")
         }

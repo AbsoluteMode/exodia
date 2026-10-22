@@ -4,6 +4,7 @@ enum CLIProviderID: String, Codable, CaseIterable {
     case claude
     case codex
     case opencode
+    case native
 }
 
 /// Result of a Connect probe.

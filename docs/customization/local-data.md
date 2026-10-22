@@ -12,17 +12,16 @@ new account system, hosted service or second copy of the user's knowledge.
 | Meeting notes and checkpoints | `Meetings/MeetingsStore.swift`, `Meetings/MeetingFinalizeManifest.swift` | `Application Support/Sidekey/Meetings/`; staged audio only while recording and processing (24 h after a failure), durable processing state |
 | Case snippets | `Case/CaseVaultStore.swift` | AES-GCM encrypted file under `Application Support/<bundle ID>/`, Keychain encryption key, backup before save |
 | Case vault v2 and AI broker | `Case/CaseVaultStore.swift`, `Case/Broker/` | Schema v2 (projects, secrets with `projectID`, app registrations) in the same encrypted file; v1 migrates losslessly and an older build reports `needsNewerApp`. The broker listens on a Unix socket `case-broker.sock` (fallback `cb.sock`) in `Application Support/<bundle ID>/` (directory 0700, socket 0600); the decrypted payload stays in memory for it until quit. Values reach a command only through its environment |
-| Agent memory and sessions | `AgentDaemon/AgentDaemonWorkingDirectory.swift`, `AgentDaemon/AgentSessionStore.swift` | `Application Support/whytap/agent/` with AGENTS.md, sessions.json and isolated OpenCode runtime data |
+| Agent memory and sessions | `AgentDaemon/AgentDaemonWorkingDirectory.swift`, `AgentDaemon/AgentSessionStore.swift` | `Application Support/whytap/agent/` with AGENTS.md, sessions.json and bounded native-conversation.json; old OpenCode data remains unused |
 
 Paths in the code column start at `Sources/Sidekey/`. Application Support is the
 current macOS user's directory. Whytap retains the historical `Sidekey`, `whytap`
 and `Whytap` store names to preserve existing keys, notes and memory. Do not
 rename them without an explicit migration and recovery path.
 
-The app's agent uses OpenCode and the user's chosen OpenRouter model. Actions are
+The app's native agent calls the selected OpenRouter, OpenAI or Anthropic model directly; Tavily search has its own Keychain key. Actions are
 enabled by default so implementation and review can edit files and run tests;
-the user may disable them in Settings. Per-project memory and session separation
-is not a filesystem sandbox. Source customization can use any coding harness.
+the user may disable them in Settings. The dedicated neutral workspace is not a filesystem sandbox. Source customization can use any coding harness.
 
 Tests should inject temporary directories, UserDefaults suites, fake credentials
 and provider adapters. They must not need the user's API keys, SSH connections,

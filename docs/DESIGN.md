@@ -1206,3 +1206,25 @@ Assumptions: daily browsing is sufficient for the compact entry; event editing
 and a month grid are not added to Hover. The explicit current-day requirement
 supersedes the former window presentation. See
 `.project-docs/decisions/2026-10-21-calendar-hover.md`.
+
+## Agents: native runtime and Tavily (2026-10-22)
+
+- Keep the existing macOS Settings card/row typography and spacing. The selected
+  model, workspace and connection precede optional web search setup; no runtime
+  installation card remains. Reason: the agent is now built in.
+- Tavily uses a secure empty replacement field, Connected/Not connected status,
+  Get API key, Save key and Remove key. Saving shows progress, disables mutations
+  and reports success/failure inline; failed validation retains the existing key.
+  Reason: search credentials are independent of model inference.
+- All buttons use MacButton hover/press/focus/disabled feedback. The key field
+  highlights its full border on hover and keyboard focus; disabled has reduced
+  opacity and no active hover. Native secure text editing supplies press/focus
+  behavior. Reason: every interactive target must visibly respond.
+- Open folder exposes the permanent app-data workspace; the action switch says
+  Allow file edits and commands. Reason: describe current behavior while approve
+  and bypass modes remain future work. Context reset after 15 minutes means no
+  reuse, not timed deletion of the last local conversation file.
+- Verification uses offscreen native views in light/dark at compact/roomy sizes,
+  plus fixture save/error/disabled states. No animated transitions were added, so
+  reduced motion follows the existing shell without extra movement. Real key
+  acceptance and native Screen Recording remain installed-app checks.

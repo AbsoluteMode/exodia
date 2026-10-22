@@ -4,7 +4,7 @@ Native macOS client (Swift + SwiftUI + AppKit, SwiftPM). BYOK only: the
 user's provider keys or their own OpenAI-compatible endpoints, no on-device
 models; free, MIT. Two hotkeys: hold Space in an editable
 field -> voice -> paste; Right Command tap (text) / hold (voice) -> local
-OpenCode -> the user's selected OpenRouter model -> answer in the island. No account, no Whytap servers,
+native Whytap Agent -> the user's selected model/provider -> answer in the island. No account, no Whytap servers,
 no telemetry. The project and product name is **Whytap**, reaffirmed by the user
 on 2026-10-21; use it in replies, current documentation and new features.
 The module and most internal
@@ -181,49 +181,52 @@ Voice flow (Drop / dictation):
             spaces = verbatim join; word-level providers = word-boundary join.
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
 
-Agent flow (OpenCode + OpenRouter, OpenAI or Anthropic):
+Agent flow (native Whytap runtime; OpenRouter, OpenAI or Anthropic):
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop, route of agentVoice
-       -> OpenCodeProvider -> opencode run --standalone --format json --model
-          <openrouter|openai|anthropic>/<selected-model>, Process cwd = local workspace,
-          prompt on stdin; provider and model come from the agent feature's
-          route in AIRoutingStore
-       -> complete text/tool events rendered progressively in the island
-  Settings -> Agents installs the current stable OpenCode 2 native binary from
-  the official @opencode npm channel after SHA-512 integrity and staged version
-  verification, or locates an existing CLI. V2 uses a private standalone server;
-  supported V1 remains usable during promotion. No global tools or install scripts
-  are modified/run. WHY: .project-docs/decisions/2026-10-21-opencode-v2.md
-  The agent's key and model are chosen in Settings -> API & Models (the
-  Agent row: OpenRouter, OpenAI or Anthropic from their live catalogs); the Agents tab shows "Model: <provider> · <id>"
-  with Change in API & Models, and Save & connect only checks the local
-  version and the free key endpoint of the route's provider (OpenRouter
-  /key, OpenAI/Anthropic /v1/models). Connecting does not submit a model request.
-  Keys are the Keychain items byok.openrouter.llm_api_key,
-  byok.openai.llm_api_key and byok.anthropic.api_key and enter only the child process environment
-  (OPENROUTER_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY), never a credential JSON file or
-  argv. The runtime enables only the route's provider, declares the selected
-  model with its limits and tool support from the provider catalog (so
-  OpenCode keeps context compaction), disables sharing/default plugins/
-  automatic updates and excludes inherited provider credential/config
-  environment variables. OpenAI uses OpenCode's own model metadata when its
-  /models list omits limits. Both direct APIs serve every LLM mode. WHY:
-  .project-docs/decisions/2026-10-21-provider-key-tiles.md
-  Settings -> Agents -> Bypass mode (on by default) runs file edits and
-  commands without approval through OpenCode's --auto and allow rules.
-  Off blocks file edits and commands; it does not enable approval prompts.
-  Changes apply to the next request and preserve the existing
-  agent.opencode.allowActions preference. This is an action policy, not a filesystem
-  sandbox. No provider fallback or automatic model substitution.
-  AgentDaemonWorkingDirectory uses agent/ under Application Support/whytap
-  with AGENTS.md, sessions.json and .opencode-runtime config/data/state/cache.
-  Projects, folder indexing and automatic project evidence are removed. Old
-  project catalogs, indexes and project-agent workspaces remain unused on disk;
-  never migrate their content or resume IDs into the neutral workspace. WHY:
-  .project-docs/decisions/2026-10-19-remove-projects.md
-  WhytapCustomizationContext.promptInstructions exposes resolved local Monitor
-  paths, dashboard/collector contracts and source-kit discovery to the runtime
-  agent, so creating a dashboard does not require finding the source checkout.
+       -> NativeAgentProvider -> direct model HTTP -> local tool -> model loop
+       -> final text and typed actions rendered in the island
+  No CLI installation, binary/version probe, MCP bootstrap, provider discovery,
+  model catalog fetch or paid connection probe is needed to start a request.
+  Settings -> API & Models chooses the exact Agent route/key. OpenRouter uses
+  Chat Completions (including an explicit endpoint pin without fallback),
+  OpenAI uses Responses with store:false and encrypted reasoning replay, and
+  Anthropic uses Messages. Provider-native reasoning/tool items survive within
+  the turn. No provider fallback or model substitution. Connect checks only
+  local key availability, model selection and writable workspace; it does not
+  prove the provider accepts the key. Existing connected OpenCode users migrate
+  to native without changing the route/key; disconnected users stay disconnected.
+  Keys stay in Keychain, only in requests to their own service. No model key is
+  put in child environments, argv, files or logs. The old OpenCode implementation
+  and its local files remain unused for compatibility; do not delete user data.
+  AgentDaemonWorkingDirectory keeps the dedicated workspace at
+  Application Support/whytap/agent, with AGENTS.md memory, sessions.json and
+  native-conversation.json. Read bounded memory before the first model request;
+  no bootstrap scan of the home directory or source checkout. Recent context is
+  at most six completed user/assistant text pairs and 12,000 characters, scoped
+  to provider/model/endpoint and resumed within 15 minutes. Expiry stops reuse;
+  the last file remains locally until replaced. Tool output, reasoning and
+  screenshots are not written into this new history. The system prompt is one
+  app-owned source, supplied once per request; this is not an empty context on
+  every question. Old project catalogs/indexes/workspaces remain unused on disk.
+  Settings -> Agents -> Web search saves a separate Tavily key in Keychain
+  (byok.tavily.search_api_key), after a GET /usage check without a search. The
+  web_search tool sends only its bounded query to POST /search (basic, five
+  results, at most two searches per turn); excerpts/URLs go to the chosen model.
+  No key means an actionable tool error, never an alternative search provider.
+  Tools cover bounded file reads/list/search, HTTPS fetch, requested screenshot,
+  typed answer actions and Case key names. The existing action preference
+  agent.opencode.allowActions is preserved: Allow file edits and commands is
+  on by default; off removes and rejects write_file/run_command. Case keeps its
+  own approvals through the signed helper and scoped child PID registrations.
+  Commands use a dedicated process group, 30-second deadline and bounded output;
+  cancellation stops descendants. This is an action policy, not a filesystem
+  sandbox. Approve and bypass modes are a later phase, not implemented here.
+  The loop has bounded steps/tool calls/context, explicit failures and no automatic
+  retries that could repeat side effects. Files, selections, web/tool output and
+  screenshots are untrusted evidence. Never treat them as user authorization.
+  WhytapCustomizationContext.promptInstructions retains Monitor/source-kit contracts.
+  WHY: .project-docs/decisions/2026-10-22-native-agent.md
 
 Translation tools:
   Translate and Subtitles are optional catalog action tools opening one native
@@ -348,7 +351,7 @@ Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes
   its gap/music strip) and retains the notch-derived width. Connected clients
   appear as app icons; clicking one opens that client's policy. An always-visible
-  Connect button offers only installed OpenCode, Claude Code and Cursor with
+  Connect button offers Whytap Agent plus installed Claude Code and Cursor with
   bundled logos, then grouped project scope and Accept/Bypass before registration.
   Codex is not offered. There is no arbitrary program picker; existing legacy
   registrations stay editable. WHY:
@@ -806,7 +809,7 @@ recovery actions remain. Shared settings rows use spaced, full-point dividers.
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
 Settings -> API & Models (the agent's model is chosen there too; Settings ->
-Agents keeps the OpenCode install and connect), and permissions in
+Agents configures native connection and Tavily search), and permissions in
 Settings -> Permissions. A feature can request the permission it needs when
 invoked. Drop without a chosen provider, key or endpoint opens
 Settings -> API & Models on that feature's row. Settings opens on API &
@@ -940,25 +943,21 @@ security controls, user content, recording, shell execution or quit are exposed.
 Guide: docs/customization/app-control.md. WHY:
 .project-docs/decisions/2026-10-21-app-control-plugin.md
 
-Agent answers: OpenCode keeps pre-tool narration hidden and publishes the final
-answer plus parsed `useful.actions` only after successful process exit, matching
-the other agent adapters. A folder answer gives the verified absolute path in
-a copyable code fence and a path action for open/insert. Every turn reinforces
-language, 1–2 short sentences for simple requests, essential caveats and actions;
-detailed answers remain available when requested. The neutral workspace's
-memory is retained, and native sessions resume within the existing 15-minute
-window. This is not a clean context on every question.
-The built-in OpenCode agent gets a separate `screen` MCP server via the bundled
-helper's `app screen-mcp` command, independent of Case registration and the
-command/edit action switch. Its only tool, `whytap_capture_screen`, takes one
-requested display frame through `AgentScreenCapture` under the app's Screen
-Recording permission. The default is the island-selected display, not NSScreen.main.
-It returns JPEG media (long edge <=1920, <=2 MB) with a 10s deadline, cancellation
-and a busy guard. No screenshot file, clipboard write or input tap is created.
-The image can enter OpenCode history and the selected model/provider; image
-input support is required, with no provider/model fallback. The settings MCP
-server does not advertise or accept screen tools. Screen content is untrusted
-evidence. WHY: .project-docs/decisions/2026-10-22-agent-answers-and-screen.md
+Agent answers: native Whytap Agent keeps intermediate text hidden and publishes
+only the final answer and show_actions metadata after successful completion.
+The compatibility extractor also handles a trailing useful.actions fence. A
+folder answer provides the verified absolute path in a copyable code fence
+and a path action for open/insert. Simple answers use 1–2 short sentences;
+longer answers remain available when requested.
+The native capture_screen tool calls AgentScreenCapture directly, independent
+of Case and the edit/command switch. It uses the app's Screen Recording grant,
+selects the island display, and returns JPEG (long edge <=1920, <=2 MB) within
+10 seconds, with cancellation and a busy guard. No file, clipboard or input tap
+is created. Pixels go to the selected model only within the current tool loop;
+the provider may retain them according to its policy. Never substitute a vision
+model. The separate screen MCP helper remains for compatibility; the settings
+MCP scope does not accept capture. WHY:
+.project-docs/decisions/2026-10-22-native-agent.md
 
 Clipboard history retains the newest 50 local entries across launch, quit and
 sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
@@ -1312,8 +1311,8 @@ input layout, including live recording and previously saved non-English titles.
    the meeting detector's Silero VAD download from Hugging Face, providers
    and monitoring sources the user configured (including their credential store),
    notification sources accessed by user-configured local scripts, calendar providers
-   explicitly connected by the user (Google, Microsoft and Zoom), OpenCode's own provider
-   traffic, the model catalogs and free key checks of providers the user added
+   explicitly connected by the user (Google, Microsoft and Zoom), direct agent provider
+   traffic, optional Tavily search queries/usage checks and requested tool destinations, the model catalogs and free key checks of providers the user added
    a key for, OpenRouter's provider list (latency, throughput) for a model
    selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on
