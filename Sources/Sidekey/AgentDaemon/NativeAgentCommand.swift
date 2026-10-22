@@ -13,6 +13,8 @@ final class NativeAgentCommand: @unchecked Sendable {
     private var finished = false
     private var interrupted = false
     private var truncated = false
+    private var outputEnded = false
+    private var exitSuffix: String?
 
     func run(command: String, directory: URL, helper: URL?, timeout: Duration = .seconds(30)) async -> String {
         await withTaskCancellationHandler {
@@ -24,7 +26,13 @@ final class NativeAgentCommand: @unchecked Sendable {
                     + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]).joined(separator: ":")
                 output.fileHandleForReading.readabilityHandler = { [weak self] handle in
                     let chunk = handle.availableData
-                    guard !chunk.isEmpty, let self else { return }
+                    guard let self else { return }
+                    if chunk.isEmpty {
+                        let suffix = self.lock.withLock { self.outputEnded = true; return self.exitSuffix }
+                        handle.readabilityHandler = nil
+                        if let suffix { self.finish(suffix) }
+                        return
+                    }
                     self.lock.withLock {
                         let room = max(0, 32_000 - self.data.count)
                         self.data.append(chunk.prefix(room))
@@ -41,15 +49,21 @@ final class NativeAgentCommand: @unchecked Sendable {
                     try? gate.fileHandleForReading.close()
                     try? output.fileHandleForWriting.close()
                     DispatchQueue.global().async { [self] in
+                        // Observe exit without reaping: retaining the leader PID
+                        // prevents its group ID being reused before descendant cleanup.
+                        var info = siginfo_t()
+                        while waitid(P_PID, id_t(child), &info, WEXITED | WNOWAIT) == -1 && errno == EINTR {}
+                        kill(-child, SIGKILL)
                         var status: Int32 = 0
                         while waitpid(child, &status, 0) == -1 && errno == EINTR {}
-                        // Stop any descendant that outlived its shell. Tools are
-                        // bounded jobs; persistent services need a separate facility.
-                        kill(-child, SIGTERM)
-                        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { [self] in
-                            let suffix = lock.withLock { interrupted ? "\n[Command stopped]" : "\n[Exit \((status >> 8) & 0xff)]" }
-                            finish(suffix)
+                        lock.withLock { pid = 0 }
+                        CaseBuiltInAgentProcesses.shared.remove(child)
+                        let suffix = lock.withLock {
+                            let text = interrupted ? "\n[Command stopped]" : "\n[Exit \((status >> 8) & 0xff)]"
+                            exitSuffix = text
+                            return outputEnded ? text : nil
                         }
+                        if let suffix { finish(suffix) }
                     }
                     Task { [weak self] in
                         try? await Task.sleep(for: timeout)

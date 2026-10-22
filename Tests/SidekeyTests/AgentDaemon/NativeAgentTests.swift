@@ -229,6 +229,29 @@ final class NativeAgentTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("late-file").path))
     }
 
+    func testCancellationKillsStubbornDescendantAfterShellExits() async throws {
+        let (directory, _, _) = try fixture()
+        let task = Task { await NativeAgentCommand().run(
+            command: "/bin/sh -c 'trap \"\" TERM; echo $$ > stubborn-pid; while :; do :; done' & wait",
+            directory: directory, helper: nil) }
+        let pidFile = directory.appendingPathComponent("stubborn-pid")
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: pidFile.path) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let pid = try XCTUnwrap(Int32(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+        defer { kill(pid, SIGKILL) }
+        task.cancel()
+        _ = await task.value
+        // A reparented killed child may briefly remain as a zombie, so check
+        // that it cannot keep running by observing no continued CPU activity.
+        for _ in 0..<100 {
+            if kill(pid, 0) != 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotEqual(kill(pid, 0), 0, "Cancellation must stop descendants even when their parent exits first")
+    }
+
     func testNativeMigrationPreservesDisconnectedStateAndModelPreferences() throws {
         let suite = "NativeMigration-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

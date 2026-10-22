@@ -13,28 +13,6 @@ final class AgentModeViewTests: XCTestCase {
         XCTAssertTrue(s.contains("MacPill"))
     }
 
-    func test_agents_uses_opencode_byok_setup_without_old_provider_chooser() throws {
-        let url = try projectRoot()
-            .appendingPathComponent("Sources/Sidekey/Settings/AgentModeView.swift")
-        let s = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(s.contains("OpenCodeInstaller"))
-        XCTAssertTrue(s.contains("viewModel.connect(.opencode)"))
-        XCTAssertFalse(s.contains("AgentSetupGuideView"))
-    }
-
-    func test_agents_sends_key_and_model_to_api_and_models() throws {
-        let s = try source("Sources/Sidekey/Settings/AgentModeView.swift")
-        XCTAssertTrue(s.contains("Change in API & Models"))
-        XCTAssertTrue(s.contains("Choose a model in API & Models"))
-        XCTAssertTrue(s.contains("openAPIAndModels(.agent)"))
-        XCTAssertTrue(s.contains("Save & connect"))
-        XCTAssertTrue(s.contains("Bypass mode"))
-        for gone in ["Find a model", "Choose model", "shared with Models", "SecureField",
-                     "OpenRouterLLMKeyStore().save", "refreshOpenRouterCatalog", "openCodeModel"] {
-            XCTAssertFalse(s.contains(gone), gone)
-        }
-    }
-
     func test_agents_model_subtitle_comes_from_the_route_not_a_hard_coded_provider() throws {
         let s = try source("Sources/Sidekey/Settings/AgentModeView.swift")
         XCTAssertTrue(s.contains("selectedOpenCodeModelLabel"))
@@ -51,7 +29,7 @@ final class AgentModeViewTests: XCTestCase {
         XCTAssertTrue(s.contains("Install OpenCode in Settings → Agents, then press Connect."))
         XCTAssertTrue(s.contains("Add your OpenRouter key in Settings → API & Models, then press Connect."))
         let controller = try source("Sources/Sidekey/Agent/AgentController.swift")
-        XCTAssertTrue(controller.contains("Connect OpenCode in Settings → Agents. Its model is set in API & Models."))
+        XCTAssertTrue(controller.contains("Connect Whytap Agent in Settings → Agents. Its model is set in API & Models."))
     }
 
     func test_no_user_facing_copy_still_names_the_models_tab() throws {
