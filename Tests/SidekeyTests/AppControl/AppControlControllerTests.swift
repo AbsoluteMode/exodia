@@ -96,6 +96,21 @@ final class AppControlControllerTests: XCTestCase {
         XCTAssertEqual(calls, 0)
     }
 
+    func test_retired_decision_feature_cannot_be_selected_or_listed() async throws {
+        let e = try env()
+        let response = await e.controller.handle(AppControlRequest("list_models", arguments: ["feature": .string("dropSmartDecision")]))
+        XCTAssertFalse(response.ok)
+        XCTAssertEqual(response.data.object?["code"], .string("invalid_arguments"))
+        let attempted = await e.controller.handle(AppControlRequest("set_model", arguments: [
+            "feature": .string("dropSmartDecision"), "account": .string("openRouter"),
+            "model": .string("typesafe/jev-1.14"), "expected": .null
+        ]))
+        XCTAssertFalse(attempted.ok)
+        XCTAssertEqual(attempted.data.object?["code"], .string("invalid_arguments"))
+        let calls = await e.probe.calls
+        XCTAssertEqual(calls, 0)
+    }
+
     func test_model_change_resets_pin_preserves_speech_and_persists_in_app_store() async throws {
         let e = try env()
         let response = await e.controller.handle(pick())

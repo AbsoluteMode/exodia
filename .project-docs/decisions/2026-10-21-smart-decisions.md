@@ -3,7 +3,7 @@ id: smart-decisions-2026-10-21
 type: decision
 title: Use a Decision model before Smart text editing
 summary: Smart uses Jev 1.14 through OpenRouter by default to decide whether text needs editing, with an explicit OpenAI Decisions alternative. Uncertainty keeps full Smart processing.
-status: confirmed
+status: stale
 tags: [drop, smart, fast, decision, jev, openrouter, openai]
 canonical_for: [smart-decision-routing]
 verified_at: 2026-10-21
@@ -11,8 +11,8 @@ sources:
   - type: user-confirmed
     reference: 2026-10-21 Smart Decision chat; user specified openrouter typesafe/jev-1.14, required it inside Smart by default, and identified Decision as a separate model type.
     confirmed_at: 2026-10-21
-  - type: repository
-    reference: Sources/Sidekey/AIRouting/SmartTextDecision.swift
+  - type: commit
+    reference: f69be0ea12700064254fb444f598953d4def6761 (historical Sources/Sidekey/AIRouting/SmartTextDecision.swift)
     confirmed_at: 2026-10-21
   - type: repository
     reference: Sources/Sidekey/PostProcessor.swift
@@ -23,10 +23,15 @@ sources:
   - type: url
     reference: https://developers.openai.com/api/docs/guides/decisions
     confirmed_at: 2026-10-21
-related: [2026-10-19-strict-drop-modes.md, 2026-10-21-smart-decision-calibration.md, 2026-10-21-smart-destination-formatting.md]
+related: [2026-10-19-strict-drop-modes.md, 2026-10-21-smart-decision-calibration.md, 2026-10-21-smart-destination-formatting.md, 2026-10-22-smart-editor-pass.md]
 ---
 
 # Smart Decision routing
+
+Historical decision, superseded on 2026-10-22 by
+[one editor request with a pass verdict](2026-10-22-smart-editor-pass.md).
+The user removed the separate Jev/OpenAI Decision stage; the implementation
+and observations below describe the earlier behavior.
 
 ## Context
 

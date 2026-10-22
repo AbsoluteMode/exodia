@@ -50,7 +50,7 @@ struct FeatureGroup: Equatable, Identifiable {
     /// beside the LLM route that processes its text.
     static let layout: [(title: String, features: [AIFeature])] = [
         ("Drop Fast", [.dropFast]),
-        ("Drop Smart", [.dropSmart, .dropSmartDecision, .dropSmartCleanup]),
+        ("Drop Smart", [.dropSmart, .dropSmartCleanup]),
         ("Meetings", [.meetings, .meetingNotes]),
         ("Agent", [.agent]),
         ("Agent voice", [.agentVoice]),
@@ -260,7 +260,7 @@ final class APIAndModelsViewModel: ObservableObject {
     }
 
     func featuresUsing(_ account: ProviderAccount) -> [AIFeature] {
-        AIFeature.allCases.filter { routing.route(for: $0)?.account == account }
+        AIFeature.activeCases.filter { routing.route(for: $0)?.account == account }
     }
 
     /// Deletes the key (and a server's entry) and un-sets the features that ran
@@ -308,6 +308,7 @@ final class APIAndModelsViewModel: ObservableObject {
     /// asking to check it again, so a stored failure never bans it for good.
     @discardableResult
     func select(model: String, account: ProviderAccount, for feature: AIFeature) async -> Bool {
+        guard feature.isActive else { return false }
         guard !checking.contains(feature) else { return false }
         // Re-picking the current model keeps its provider; a new model starts on Auto.
         let current = routing.route(for: feature)
@@ -406,7 +407,7 @@ final class APIAndModelsViewModel: ObservableObject {
     /// first keyed built-in provider with a recommended model. An empty
     /// proposal is not shown.
     func proposeSetup(for account: ProviderAccount) {
-        let unset = AIFeature.allCases.filter { resolver.status(for: $0) == .notSet }
+        let unset = AIFeature.activeCases.filter { resolver.status(for: $0) == .notSet }
         let items = unset.compactMap { feature in
             ModelRegistry.recommended(for: feature, kind: account.kind)
                 .map { AssignItem(feature: feature, account: account, model: $0) }
@@ -544,7 +545,7 @@ final class APIAndModelsViewModel: ObservableObject {
 
     private func recompute() {
         let chips = keyedAccounts().map(chip(for:))
-        let rows = AIFeature.allCases.map(row(for:))
+        let rows = AIFeature.activeCases.map(row(for:))
         let groups = resolver.aliasGroups()
         let unset = rows.filter { $0.status == .notSet }.count
         let banner: String?
@@ -568,7 +569,7 @@ final class APIAndModelsViewModel: ObservableObject {
             status: resolver.status(for: feature),
             isChecking: checking.contains(feature),
             message: messages[feature] ?? route.flatMap(languageWarning(for:)),
-            provider: feature == .dropSmartDecision ? nil : route.flatMap(providerChoice(for:)),
+            provider: route.flatMap(providerChoice(for:)),
             modelSummary: route?.model ?? "Choose a model"
         )
     }

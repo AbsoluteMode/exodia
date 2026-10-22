@@ -20,10 +20,15 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/PostProcessorOpenRouterTests.swift
     confirmed_at: 2026-10-21
-related: [2026-10-19-strict-drop-modes.md, 2026-10-21-smart-destination-formatting.md, 2026-10-21-smart-decision-calibration.md]
+related: [2026-10-19-strict-drop-modes.md, 2026-10-21-smart-destination-formatting.md, 2026-10-21-smart-decision-calibration.md, 2026-10-22-smart-editor-pass.md]
 ---
 
 # Smart message editing
+
+The conservative editing contract remains. On 2026-10-22 it gained the
+[single-request pass protocol](2026-10-22-smart-editor-pass.md), replacing the
+independent Jev classifier. The hash and nineteen evaluations below describe
+the preceding conservative prompt before that protocol was added.
 
 ## Context
 

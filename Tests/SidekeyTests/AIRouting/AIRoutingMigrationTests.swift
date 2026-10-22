@@ -388,7 +388,7 @@ final class AIRoutingMigrationTests: XCTestCase {
         try env.keys.save("openrouter-key", account: Account.openRouter)
         migrate(env, appleSilicon: true)
         let afterFirstRun = env.routing.state
-        XCTAssertEqual(afterFirstRun.routes.count, 9)
+        XCTAssertEqual(afterFirstRun.routes.count, 8)
         XCTAssertNil(env.routing.route(for: .translation))
         XCTAssertNil(env.routing.route(for: .subtitlesAudio))
 
