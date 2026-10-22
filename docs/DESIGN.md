@@ -192,6 +192,8 @@ The chosen direction is the user's tile-to-inline-form request.
   anchored to the visible panel instead of scrolled content, and announces it
   to accessibility. Repeating Save resets the notice lifetime; the notice never
   captures clicks or shifts fields/buttons. Existing keys are never read back.
+  A failed Tavily deletion uses "Couldn’t remove key" in the same brief notice,
+  so a storage failure is not described as a rejected credential.
   Add-key entry points in Models/API hints open this same API keys surface.
 - OpenAI and Anthropic are ordinary LLM providers for all text modes. Adding a
   key never assigns routes silently; model selection retains its own synthetic
@@ -1219,7 +1221,7 @@ supersedes the former window presentation. See
 ## Agents: native runtime and Tavily (2026-10-22)
 
 - Keep the existing macOS Settings card/row typography and spacing. The selected
-  model, workspace and connection precede optional web search setup; no runtime
+  model, workspace and connection stay together; no runtime
   installation card remains. Reason: the agent is now built in.
 - Tavily belongs in API & Models → API keys, alongside every other API key.
   The user corrected its original Agents placement on October 22. Its search tile

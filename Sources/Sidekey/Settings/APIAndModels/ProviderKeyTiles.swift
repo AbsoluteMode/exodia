@@ -12,15 +12,18 @@ struct ProviderKeyTiles: View {
 
     @ObservedObject var viewModel: APIAndModelsViewModel
     @StateObject private var tavily: TavilySettings
+    let onRemoveFailure: () -> Void
     let onSaveResult: (Bool) -> Void
     @State private var expanded: Target?
     @State private var busy = false
     @FocusState private var focused: Target?
 
     init(viewModel: APIAndModelsViewModel, initiallyExpanded: Target? = nil,
-         tavily: TavilySettings? = nil, onSaveResult: @escaping (Bool) -> Void = { _ in }) {
+         tavily: TavilySettings? = nil, onRemoveFailure: @escaping () -> Void = {},
+         onSaveResult: @escaping (Bool) -> Void = { _ in }) {
         self.viewModel = viewModel
         self.onSaveResult = onSaveResult
+        self.onRemoveFailure = onRemoveFailure
         _tavily = StateObject(wrappedValue: tavily ?? viewModel.makeTavilySettings())
         _expanded = State(initialValue: initiallyExpanded)
     }
@@ -39,7 +42,7 @@ struct ProviderKeyTiles: View {
             ForEach(items, id: \.self) { target in tile(target) }
             if let expanded {
                 if expanded == .tavily {
-                    TavilyKeyForm(settings: tavily, onSaveResult: onSaveResult, onClose: close)
+                    TavilyKeyForm(settings: tavily, onSaveResult: onSaveResult, onRemoveFailure: onRemoveFailure, onClose: close)
                 } else if let kind = kind(expanded) {
                     ProviderKeyForm(viewModel: viewModel, kind: kind, account: account(expanded),
                                 onBusyChanged: { busy = $0 }, onSaveResult: onSaveResult, onClose: close)
@@ -58,7 +61,7 @@ struct ProviderKeyTiles: View {
         let provider = kind(target)
         let chip = account(target).flatMap { account in viewModel.chips.first { $0.account == account } }
         let title = target == .tavily ? "Tavily" : chip?.title ?? (provider == .openAICompatible ? "Custom server" : provider?.displayName ?? "")
-        let status = target == .tavily ? (tavily.configured ? "Connected" : "Add API key") : chip?.statusText ?? "Add API key"
+        let status = target == .tavily ? (tavily.configured ? "Key saved" : "Add API key") : chip?.statusText ?? "Add API key"
         let hasKey = target == .tavily ? tavily.configured : chip != nil
         let selected = expanded == target
         return Button {
@@ -261,12 +264,13 @@ struct ProviderKeyForm: View {
 
 struct ProviderKeySaveNotice: View {
     let accepted: Bool
+    var failureText = "Key not accepted"
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: accepted ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .foregroundStyle(accepted ? MacSettingsTheme.green : MacSettingsTheme.red)
                 .accessibilityHidden(true)
-            Text(accepted ? "Key accepted" : "Key not accepted")
+            Text(accepted ? "Key accepted" : failureText)
                 .foregroundStyle(MacSettingsTheme.text)
         }
         .font(.system(size: 12, weight: .medium))

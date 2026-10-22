@@ -6,6 +6,7 @@ import SwiftUI
 struct TavilyKeyForm: View {
     @ObservedObject var settings: TavilySettings
     var onSaveResult: (Bool) -> Void = { _ in }
+    var onRemoveFailure: () -> Void = {}
     let onClose: () -> Void
     @State private var saveTask: Task<Void, Never>?
     @FocusState private var keyFocused: Bool
@@ -23,7 +24,7 @@ struct TavilyKeyForm: View {
             HStack(spacing: 10) {
                 APIModelAction(title: "Remove", style: .danger, isEnabled: settings.configured) {
                     settings.remove()
-                    if settings.messageIsError { onSaveResult(false) }
+                    if settings.messageIsError { onRemoveFailure() }
                     else { onClose() }
                 }
                 Spacer(minLength: 0)

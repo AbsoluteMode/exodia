@@ -16,6 +16,7 @@ struct APIAndModelsView: View {
     private struct KeyNotice: Identifiable {
         let id = UUID()
         let accepted: Bool
+        var failureText = "Key not accepted"
     }
     @State private var keyNotice: KeyNotice?
     @State private var activeSheet: ActiveSheet?
@@ -99,13 +100,13 @@ struct APIAndModelsView: View {
         .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(MacSettingsTheme.sepStrong, lineWidth: 0.5) }
         .overlay(alignment: .bottom) {
             if let keyNotice {
-                ProviderKeySaveNotice(accepted: keyNotice.accepted).padding(.bottom, 16)
+                ProviderKeySaveNotice(accepted: keyNotice.accepted, failureText: keyNotice.failureText).padding(.bottom, 16)
             }
         }
         .task(id: keyNotice?.id) {
             guard let keyNotice else { return }
             NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
-                                 userInfo: [.announcement: keyNotice.accepted ? "Key accepted" : "Key not accepted",
+                                 userInfo: [.announcement: keyNotice.accepted ? "Key accepted" : keyNotice.failureText,
                                             .priority: NSAccessibilityPriorityLevel.medium.rawValue])
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled else { return }
@@ -188,7 +189,10 @@ struct APIAndModelsView: View {
     private var keysBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             MacGroupTitle(title: "API keys")
-            ProviderKeyTiles(viewModel: viewModel) { keyNotice = KeyNotice(accepted: $0) }
+            ProviderKeyTiles(viewModel: viewModel,
+                onRemoveFailure: { keyNotice = KeyNotice(accepted: false, failureText: "Couldn’t remove key") }) {
+                    keyNotice = KeyNotice(accepted: $0)
+                }
         }
     }
 
