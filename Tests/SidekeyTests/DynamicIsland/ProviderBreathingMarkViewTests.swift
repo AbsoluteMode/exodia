@@ -154,8 +154,8 @@ final class ProviderBreathingMarkViewTests: XCTestCase {
     /// Every brand the island ticker can show is flattened to the white tint,
     /// whatever colors its asset or symbol has: a skipped `.sourceAtop` wash
     /// leaves the dark source glyph, which vanishes on the black island. The
-    /// mask uses neutral 72% white through the source alpha, so opaque pixels
-    /// remain neutral even when remote source artwork is colorful.
+    /// legacy wash preserves its existing slight color; model-author marks use
+    /// neutral 72% white through source alpha, including colorful remote artwork.
     func testEveryIslandBrandRendersWhiteTintedMark() throws {
         let brands: [TranscriptionProviderBrand] =
             BYOKProvider.allCases.map(TranscriptionProviderBrand.byok)
