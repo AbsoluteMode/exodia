@@ -34,7 +34,7 @@ enum CalendarConnectionReadiness: Equatable {
         let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clientID.isEmpty else { return .setupRequired }
         let registered = CalendarClientConfiguration.registered(provider, info: info)
-        // Source users can configure their own native client in Advanced setup.
+        // Development harnesses can explicitly supply their own native client.
         // It is independent of Whytap's shared public registration.
         if registered?.clientID != clientID { return .available }
         return shared(provider, configuration: registered)
@@ -52,7 +52,7 @@ enum CalendarConnectionReadiness: Equatable {
     var message: String? {
         switch self {
         case .available: return nil
-        case .setupRequired: return "This build has no registered calendar client. Use a configured build or supply your own registration in Calendar → Connect → Advanced app setup."
+        case .setupRequired: return "This build has no registered calendar client. Install a configured build to connect this calendar."
         case .awaitingGoogleVerification: return "Google verification is not complete. New connections will be available after approval."
         case .awaitingZoomPublication: return "Zoom publication is not complete. New connections will be available after approval."
         }

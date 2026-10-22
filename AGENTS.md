@@ -64,6 +64,12 @@ feature sessions with regular checked integration and one working application.
   ready, merged, pending and verified-running states, source SHA, included
   features and 1–3 acceptance steps. Report what actually runs and what to
   check after promotion. A merge alone does not update the running app.
+- Bound developer backups: after a successful promotion retain one previous
+  signed working app, remove obsolete app copies under the builder lock, and
+  create full data snapshots only for actual migrations. Remove obsolete data
+  reserves after migration preservation/recovery checks pass. Preserve every
+  coding session, its work and unfinished rollback; follow the shared process's
+  retention section. User-controlled Automatic backup is a separate setting.
 - Before integration/app actions, fetch and reread current `origin/main`'s
   guidance even in older worktrees. Resolve technical overlaps from accepted
   requirements; report incompatible product choices or unresolved risks.
@@ -879,8 +885,10 @@ full truncated titles. Drafts survive closing; saved Toolbox slots remain unchan
 Calendar opens a 350pt inline Hover agenda on today. Tile, search, assigned hotkey
 and whytap://tool/calendar use the same surface; reopening resets to today.
 Day navigation, full event details, feed selection and Connect stay in Hover.
-Connect uses the same provider authorization as Settings → Integrations, without
-a Whytap account. Toolbox uses the same inline entry; there are no runtime
+Connect starts the provider browser or macOS permission prompt directly, using
+the same CalendarConnectionFlow as Settings → Integrations. No intermediate
+form, account-name field, Advanced app setup or Whytap account is shown.
+Unavailability/errors stay inline; progress and Cancel remain on the source list. Toolbox uses the same inline entry; there are no runtime
 PlannerWindowController calls. CalendarConnectionFlow keeps permission work alive
 through temporary Hover hiding. Only Hover-owned connections pin its menu;
 Settings connections do not. Repeat opens preserve an active connection.
@@ -901,11 +909,11 @@ latest token, and restored sign-in can require reconnecting. No
 shared OAuth registrations are created by the app itself; the owner supplies
 registered native clients during packaging through configure-calendar-clients.py.
 Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calendar
-and Zoom Calendar separately, with feature permissions and scoped connect sheets.
+and Zoom Calendar separately, with feature permissions and direct provider authorization.
 Shared Google and Zoom clients cannot start new browser sign-in until actual
 provider approval is recorded by the publicAccessApproved packaging string.
-Missing or malformed approval remains closed; independent source-user clients
-remain available in Advanced setup. Connection activity is shared across Settings
+Missing or malformed approval remains closed; source users
+can supply independent native clients at build time. Connection activity is shared across Settings
 and Hover, serializes sign-in, and defers restore/update restart until completion.
 Backup work, staged restore and pending maintenance also block new connection
 changes so restore cannot overwrite a newly connected account.

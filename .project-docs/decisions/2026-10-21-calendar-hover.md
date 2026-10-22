@@ -9,6 +9,9 @@ canonical_for: [calendar-presentation]
 verified_at: 2026-10-22
 sources:
   - type: user-confirmed
+    reference: On 2026-10-22 the user clarified that Connect must start authorization directly and that the intermediate connection form, account-name field and Advanced app setup must not exist.
+    confirmed_at: 2026-10-22
+  - type: user-confirmed
     reference: On 2026-10-22 the user requested that calendar provider selection retain Connect and omit the explanatory and technical status information shown in their screenshot.
     confirmed_at: 2026-10-22
   - type: user-confirmed
@@ -35,14 +38,19 @@ calendar connection, never registration or sign-in to Whytap.
 
 Provider selection shows each calendar's name and **Connect** as one compact,
 clickable row. Introductory copy, status subtitles and disclosure chevrons are
-omitted. Provider-specific permissions and unavailable-connection reasons remain
-in the next connection screen; public-approval gates are unchanged.
+omitted. Clicking Connect starts provider authorization directly, without an
+intermediate form. Unavailable-connection reasons/errors stay inline on this
+list; public-approval gates are unchanged. While connecting, the row shows a
+spinner, additional Connect actions are disabled and Cancel remains available.
 
-Connect reuses CalendarConnectView, its PKCE/state validation, public-approval
+Connect reuses CalendarConnectionFlow, its PKCE/state validation, public-approval
 gates, Keychain storage and serialized connection lease. Settings → Integrations
 offers the same providers. Feed visibility and local tasks/events keep their
-existing storage and backup formats. Advanced app setup remains collapsed in
-Hover for source users' own registrations; Settings cards do not expose it.
+existing storage and backup formats. Account-name and Advanced app setup forms
+are removed from both Hover and Integrations; the build supplies the native
+client and accounts receive distinct provider-based names automatically. Settings retains
+permission descriptions, disconnection and Calendar privacy. Source users
+configure native clients at build time.
 
 Polling fetches the selected day only, on opening/day/account/refresh changes
 and once per minute while visible. Native calendar-change notifications refresh
@@ -52,10 +60,11 @@ connected sources, including events spanning midnight and all-day events.
 
 The menu survives pointer exit. Outside click/Escape dismisses it, except during
 its own provider permission flow so switching to the browser cannot cancel OAuth.
-Settings permission flows do not pin Hover. CalendarConnectionFlow owns the
+Settings permission flows do not pin Hover. Closing their retained Settings
+window cancels the operation; closing an unrelated window does not. CalendarConnectionFlow owns the
 operation independently of the view: meeting/agent priority can temporarily hide
 Hover without cancelling it. Repeating Calendar while connecting resumes that
-screen. Success returns to the agenda, activating Hover only if it is visible;
+source list. Success returns to the agenda, activating Hover only if it is visible;
 errors remain available for retry. Explicit Back/Cancel ends the operation.
 Explicit Cancel/Back can cancel a connection. The menu reacquires keyboard focus
 when the connection finishes. All buttons/rows have full-area hover, press,

@@ -5,7 +5,7 @@ import SwiftUI
 // WHY: .project-docs/decisions/2026-10-21-calendar-hover.md
 @MainActor
 final class CalendarHoverModel: ObservableObject {
-    enum Page: Equatable { case agenda, sources, providers, connect(CalendarProvider), event(String) }
+    enum Page: Equatable { case agenda, sources, providers, event(String) }
     static let shared = CalendarHoverModel(store: .shared, connections: .shared,
         activityChanged: { AppState.shared.calendarHoverActive = $0 },
         connectionActivityChanged: { AppState.shared.calendarHoverConnectionActive = $0 })
@@ -44,6 +44,15 @@ final class CalendarHoverModel: ObservableObject {
     }
     func dayChanged() { if followingToday { today() } }
     func refresh() { refreshToken += 1 }
+    @discardableResult
+    func connect(_ provider: CalendarProvider, info: [String: Any]?, onSuccess: @escaping () -> Void = {}) -> Bool {
+        guard !connectionFlow.working else { return false }
+        page = .providers
+        if provider == .apple && connections.appleEnabled { page = .sources; return false }
+        return connectionFlow.startRegistered(provider: provider, info: info) { [self] in
+            page = .agenda; refresh(); onSuccess()
+        }
+    }
     var isToday: Bool { Calendar.current.isDate(selectedDay, inSameDayAs: now()) }
     var interval: DateInterval { Calendar.current.dateInterval(of: .day, for: selectedDay)! }
 
@@ -85,17 +94,7 @@ struct CalendarHoverView: View {
     var body: some View {
         VStack(spacing: 8) {
             header
-            if case .connect(let provider) = model.page {
-                CalendarConnectView(connections: connections, provider: provider, allowsProviderSelection: false,
-                    configurationInfo: configurationInfo, compact: true, allowsAdvancedSetup: true,
-                    flow: model.connectionFlow, keepsFlowOnDisappear: true, onClose: {
-                        model.page = .agenda; model.refresh()
-                        if model.visible { NSApp.activate(ignoringOtherApps: true) }
-                    })
-                    .id(provider)
-            } else {
-                content
-            }
+            content
         }
         .padding(12).frame(height: Self.contentHeight)
         .foregroundStyle(.white.opacity(0.96))
@@ -109,6 +108,11 @@ struct CalendarHoverView: View {
         }
         .onChange(of: connections.accounts) { _, _ in model.refresh() }
         .onChange(of: connections.appleEnabled) { _, _ in model.refresh() }
+        .onChange(of: connectionFlow.error) { _, error in
+            guard let error else { return }
+            NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                userInfo: [.announcement: error, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)
             .debounce(for: .milliseconds(400), scheduler: RunLoop.main)) { _ in
                 guard liveUpdates else { return }
@@ -123,8 +127,7 @@ struct CalendarHoverView: View {
         HStack(spacing: 6) {
             CalendarHoverButton {
                 if model.page == .agenda { onBack() }
-                else if case .connect = model.page { connectionFlow.cancel(); model.page = .providers }
-                else { model.page = .agenda }
+                else { connectionFlow.cancel(); model.page = .agenda }
             } label: { Image(systemName: "chevron.left").frame(width: 26, height: 26) }
                 .accessibilityLabel(model.page == .agenda ? "Back to tools" : "Back to calendar")
             Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
@@ -147,7 +150,7 @@ struct CalendarHoverView: View {
         switch model.page {
         case .agenda, .event: return "Calendar"
         case .sources: return "Calendars"
-        case .providers, .connect: return "Connect"
+        case .providers: return "Connect"
         }
     }
 
@@ -157,7 +160,6 @@ struct CalendarHoverView: View {
         case .sources: sources
         case .providers: providers
         case .event(let id): details(id)
-        case .connect: EmptyView()
         }
     }
 
@@ -186,7 +188,7 @@ struct CalendarHoverView: View {
             }
             if !connections.errors.isEmpty || store.errorMessage != nil || connectionFlow.error != nil {
                 CalendarHoverButton {
-                    if connectionFlow.error != nil, let provider = connectionFlow.lastProvider { model.page = .connect(provider) }
+                    if connectionFlow.error != nil { model.page = .providers }
                     else { model.page = .sources }
                 } label: {
                     Label("Some calendars need attention", systemImage: "exclamationmark.triangle")
@@ -232,13 +234,31 @@ struct CalendarHoverView: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach([CalendarProvider.google, .microsoft, .apple, .zoom]) { provider in
                     CalendarHoverButton {
-                        model.page = provider == .apple && connections.appleEnabled ? .sources : .connect(provider)
+                        model.connect(provider, info: configurationInfo) {
+                            if model.visible { NSApp.activate(ignoringOtherApps: true) }
+                        }
                     } label: {
                         HStack(spacing: 8) {
                             Text(provider.integrationTitle).font(.system(size: 12, weight: .semibold))
                             Spacer(minLength: 2)
-                            Text("Connect").font(.system(size: 11, weight: .medium))
+                            if connectionFlow.working && connectionFlow.lastProvider == provider {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("Connect").font(.system(size: 11, weight: .medium))
+                            }
                         }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .disabled(connections.isConnecting)
+                    .accessibilityLabel(connectionFlow.working && connectionFlow.lastProvider == provider
+                        ? "Connecting \(provider.integrationTitle)" : "Connect \(provider.integrationTitle)")
+                    if connectionFlow.lastProvider == provider, let error = connectionFlow.error {
+                        Text(error).font(.system(size: 11)).foregroundStyle(MacSettingsTheme.orange)
+                            .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 10)
+                    }
+                }
+                if connectionFlow.working {
+                    CalendarHoverButton { connectionFlow.cancel() } label: {
+                        Text("Cancel").font(.system(size: 11)).padding(8)
                     }
                 }
             }.padding(3)
