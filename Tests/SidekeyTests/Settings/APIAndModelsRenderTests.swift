@@ -251,7 +251,53 @@ final class APIAndModelsRenderTests: XCTestCase {
         )
     }
 
-    private func render<V: View>(_ view: V, size: NSSize, dark: Bool = true, to url: URL) async throws {
+    func test_render_tavily_api_keys() async throws {
+        guard let output = ProcessInfo.processInfo.environment["EXODIA_APIMODELS_RENDER_DIR"] else {
+            throw XCTSkip("set EXODIA_APIMODELS_RENDER_DIR to write the pictures")
+        }
+        let directory = URL(fileURLWithPath: output, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let catalog = directory.appendingPathComponent("tavily-catalog.json")
+        try Data("{}".utf8).write(to: catalog)
+        defer { try? FileManager.default.removeItem(at: catalog) }
+        let routing = AIRoutingStore(defaults: defaults)
+        let box = InMemoryTokenStore.Box()
+        let keys = ProviderKeyStore(makeStore: { InMemoryTokenStore(account: $0, box: box) })
+        let offline = NoNetwork(list: [])
+        let vm = APIAndModelsViewModel(routing: routing, keys: keys,
+            catalogs: ModelCatalogStore(fileURL: catalog, fetcher: offline), checks: ModelCheckStore(defaults: defaults),
+            keyStatuses: KeyStatusStore(defaults: defaults), keyChecker: offline, probe: offline, endpoints: offline)
+        for connected in [false, true] {
+            if connected { try keys.save("existing-fixture-key", account: TavilySearch.keychainAccount) }
+            else { try keys.delete(account: TavilySearch.keychainAccount) }
+            for dark in [false, true] {
+                for width in [560.0, 760.0] {
+                    let settings = vm.makeTavilySettings()
+                    XCTAssertEqual(settings.configured, connected, "The moved form uses the same credential account")
+                    if connected { settings.draftKey = "fixture-replacement" }
+                    try await render(ProviderKeyTiles(viewModel: vm, initiallyExpanded: .tavily, tavily: settings)
+                        .padding(18), size: NSSize(width: width, height: 850), dark: dark,
+                        to: directory.appendingPathComponent("tavily-keys-\(connected ? "connected" : "new")-\(dark ? "dark" : "light")-\(Int(width)).png"),
+                        inspect: { window in
+                            settings.draftKey = "fixture-draft"
+                            let unrelated = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: true)
+                            unrelated.isReleasedWhenClosed = false
+                            unrelated.close()
+                            XCTAssertFalse(settings.draftKey.isEmpty)
+                            window.close()
+                            XCTAssertTrue(settings.draftKey.isEmpty)
+                            XCTAssertNil(settings.message)
+                        })
+                }
+            }
+        }
+    }
+
+    private func render<V: View>(_ view: V, size: NSSize, dark: Bool = true, to url: URL,
+                                 inspect: ((NSWindow) -> Void)? = nil) async throws {
         let host = NSHostingView(rootView: view.background(MacSettingsTheme.bgContent)
             .environment(\.colorScheme, dark ? .dark : .light))
         host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -269,5 +315,6 @@ final class APIAndModelsRenderTests: XCTestCase {
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
         XCTAssertFalse(window.isVisible)
         XCTAssertFalse(window.isKeyWindow)
+        inspect?(window)
     }
 }

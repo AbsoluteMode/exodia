@@ -217,7 +217,7 @@ Agent flow (native Whytap runtime; OpenRouter, OpenAI or Anthropic):
   screenshots are not written into this new history. The system prompt is one
   app-owned source, supplied once per request; this is not an empty context on
   every question. Old project catalogs/indexes/workspaces remain unused on disk.
-  Settings -> Agents -> Web search saves a separate Tavily key in Keychain
+  Settings -> API & Models -> API keys saves a separate Tavily key in Keychain
   (byok.tavily.search_api_key), after a GET /usage check without a search. The
   web_search tool sends only its bounded query to POST /search (basic, five
   results, at most two searches per turn); excerpts/URLs go to the chosen model.
@@ -778,8 +778,8 @@ links, including Tavily web search for Agent (1,000 monthly search credits,
 basic search costs one credit, no card required). It distinguishes starter
 credit, monthly allowance and paid-plan benefits. Dates are per-card: Tavily
 October 22, 2026; the four earlier offers October 19, 2026. The odd final card spans
-two columns; narrow surfaces use one column. Add model API key opens the
-existing API-key form; Tavily points to Agents -> Web search, not model routing.
+two columns; narrow surfaces use one column. Add API key opens the
+existing API-key form. Tavily has its own search tile there, without model routing.
 Opening hints never checks balances or changes routes. WHY:
 .project-docs/decisions/2026-10-19-api-hints.md
 
@@ -824,7 +824,7 @@ recovery actions remain. Shared settings rows use spaced, full-point dividers.
 First run: no sign-in and no onboarding wizard. Launch and reopen show the
 island immediately. Configure provider keys and endpoints in
 Settings -> API & Models (the agent's model is chosen there too; Settings ->
-Agents configures native connection and Tavily search), and permissions in
+Agents configures native connection and action settings), and permissions in
 Settings -> Permissions. A feature can request the permission it needs when
 invoked. Drop without a chosen provider, key or endpoint opens
 Settings -> API & Models on that feature's row. Settings opens on API &

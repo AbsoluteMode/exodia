@@ -116,7 +116,7 @@ struct APIHintsView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Model keys: add below, then choose a model in Models. Tavily web search: connect in Agents → Web search.")
+            Text("Add keys in API keys. Choose language and speech models in Models; Tavily provides web search for Agent.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(MacSettingsTheme.text2)
 
@@ -127,7 +127,7 @@ struct APIHintsView: View {
                 .font(.system(size: 10.5))
                 .foregroundStyle(MacSettingsTheme.text2)
                 Spacer(minLength: 16)
-                MacButton(title: "Add model API key", style: .default, action: onAddKey)
+                MacButton(title: "Add API key", style: .default, action: onAddKey)
                 if !embedded {
                     MacButton(title: "Done", style: .primary, action: onClose)
                         .keyboardShortcut(.defaultAction)
@@ -194,7 +194,7 @@ struct APIHintsView: View {
             assetName: nil,
             allowance: "1,000",
             cadence: "free search credits each month",
-            detail: "Web search for Agent. No card required. One basic search uses one credit. Connect the key in Agents → Web search.",
+            detail: "Web search for Agent. No card required. One basic search uses one credit. Add the Tavily key in API keys.",
             url: URL(string: "https://www.tavily.com/pricing")!,
             checkedDate: "October 22, 2026"
         ),

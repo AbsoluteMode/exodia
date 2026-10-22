@@ -118,6 +118,8 @@ final class APIAndModelsViewModel: ObservableObject {
 
     private let routing: AIRoutingStore
     private let keys: ProviderKeyStore
+
+    func makeTavilySettings() -> TavilySettings { TavilySettings(keys: keys) }
     private let catalogs: ModelCatalogStore
     private let checks: ModelCheckStore
     private let keyStatuses: KeyStatusStore
