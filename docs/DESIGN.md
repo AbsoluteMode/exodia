@@ -1174,7 +1174,11 @@ The user can inspect an event or connect another provider without losing Hover.
 - Connect stays in the header. Google, Outlook, Apple and Zoom lead to the same
   CalendarConnectView authorization used by Integrations. Advanced registration
   fields are collapsed in Hover and hidden from normal Integrations sheets.
-- Pending Google/Zoom approval stays visible and prevents real authorization.
+- Provider selection shows only each calendar's name and Connect in a compact
+  row. The user requested this simplification on 2026-10-22: introductory copy,
+  connection-status subtitles and disclosure chevrons add noise before selection.
+  The whole row retains its existing hover, pressed and keyboard-focus feedback.
+- Pending Google/Zoom approval appears after provider selection and prevents real authorization.
   Empty, loading, disconnected, stale/error and busy states retain a path back.
 - All rows and header actions use a full-target rounded highlight (6% normal,
   15% hover, 23% pressed white), 1.5pt focus outline and 42% disabled opacity.

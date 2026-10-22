@@ -230,20 +230,14 @@ struct CalendarHoverView: View {
     private var providers: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Choose a calendar source. No Whytap account needed.")
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
                 ForEach([CalendarProvider.google, .microsoft, .apple, .zoom]) { provider in
                     CalendarHoverButton {
                         model.page = provider == .apple && connections.appleEnabled ? .sources : .connect(provider)
                     } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text(provider.integrationTitle).font(.system(size: 12, weight: .semibold))
-                                Spacer(minLength: 2)
-                                Image(systemName: "chevron.right").font(.system(size: 10))
-                            }
-                            Text(providerStatus(provider))
-                                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.76))
+                        HStack(spacing: 8) {
+                            Text(provider.integrationTitle).font(.system(size: 12, weight: .semibold))
+                            Spacer(minLength: 2)
+                            Text("Connect").font(.system(size: 11, weight: .medium))
                         }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -288,13 +282,6 @@ struct CalendarHoverView: View {
                     set: { connections.setVisible($0, feedID: id) }))
             }
             .disabled(connections.connectionBlockReason != nil || connections.isConnecting)
-    }
-
-    private func providerStatus(_ provider: CalendarProvider) -> String {
-        if provider == .apple && connections.appleEnabled { return "Connected" }
-        if connections.accounts.contains(where: { $0.provider == provider }) { return "Connected · Add another account" }
-        return CalendarConnectionReadiness.shared(provider,
-            configuration: CalendarClientConfiguration.registered(provider, info: configurationInfo)).status
     }
 
     @ViewBuilder private func details(_ id: String) -> some View {
