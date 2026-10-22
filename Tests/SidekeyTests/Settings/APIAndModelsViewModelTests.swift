@@ -680,7 +680,7 @@ final class APIAndModelsProviderTests: XCTestCase {
     func test_groups_pair_speech_with_its_llm_and_cover_every_feature_once() throws {
         let (vm, _, _, _) = try make()
         let features = vm.groups.flatMap { $0.rows.map(\.feature) }
-        XCTAssertEqual(features.sorted { $0.rawValue < $1.rawValue }, AIFeature.allCases.sorted { $0.rawValue < $1.rawValue })
+        XCTAssertEqual(features.sorted { $0.rawValue < $1.rawValue }, AIFeature.activeCases.sorted { $0.rawValue < $1.rawValue })
         XCTAssertEqual(vm.groups.map(\.title), ["Drop Fast", "Drop Smart", "Meetings", "Agent", "Agent voice", "Voice search", "Translation", "Subtitles"])
         XCTAssertEqual(vm.groups.first { $0.title == "Drop Smart" }?.rows.map(\.feature), [.dropSmart, .dropSmartCleanup])
         XCTAssertEqual(vm.groups.first { $0.title == "Meetings" }?.rows.map(\.feature), [.meetings, .meetingNotes])
