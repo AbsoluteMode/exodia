@@ -272,7 +272,8 @@ Meeting Notes:
           (including the retired Local route) the meeting is marked failed
           with `MeetingsCoordinator.processorNotConfiguredMessage` and its
           audio stays staged; a `MeetingFinalizeManifest` re-dispatches it
-          later with the language captured at Stop time. A recording without
+          later with the language captured at Stop time, for at most 24 hours
+          after the last chunk. A recording without
           speech is not a failure: a completed Soniox job without segments
           stores a "No speech detected" note without the LLM and releases the
           staged audio, so it is never retried. Model failures remain errors.
@@ -288,9 +289,20 @@ Meeting Notes:
   note are gone, so a failed Delete leaves the meeting listed with its note.
   A note save that lands after Delete writes nothing (MeetingsStore.update
   checks the row first). Launch recovery frees the whole staged directory of
-  a meeting that already has a note, and keeps the audio when the note is
-  missing. Remote Soniox resources are not cleaned by Delete. WHY:
+  a stored meeting, including a ready row whose note is missing. Remote Soniox
+  resources are not cleaned by Delete. WHY:
   .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
+  Audio is kept only while it can still become a note. Launch and full wake
+  (also with Meeting Notes off) first run releaseUnneededStagedRecordings: a
+  failed recording goes 24 h after its last chunk (failedRecordingRetention;
+  the meeting stays failed with recordingExpiredMessage and is never
+  retried), a UUID-named directory without manifest.json 1 h after its last
+  write (24 h with an undecodable manifest). An expired Reconnect part sets
+  its meeting ready again when the note exists and no other part is pending.
+  The active or still-starting recording, a live Reconnect part and
+  recordings being processed are skipped; file work runs off the main thread.
+  Restored older archives' parked recordings count as manifest-less. WHY:
+  .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
   Manual start: Option M (configurable) or the Record hover tile; both
   converge in MeetingsCoordinator.toggleManualRecording(). With the
   Meeting Notes capability off, the manual start shows the nudge as an
@@ -317,7 +329,9 @@ Meeting Notes:
 
   Internal opt-in research (no Settings controls): the local
   sidekey.meetings.liveTestCapture flag adds a separate Soniox stt-rt-v5 stream
-  only when Meetings uses Soniox. Preserve its explicitly chosen value. It saves
+  only when Meetings uses Soniox, and only in source dev builds (9999 / -dev);
+  packaged builds ignore it and remove Sidekey/meeting-assistant-tests at
+  launch. Preserve its explicitly chosen value. It saves
   private aligned source PCM, signal activity, final diarized tokens and receipt
   times under Sidekey/meeting-assistant-tests. Normal notes remain unchanged;
   no automatic suggestions are enabled. The independent 100ms test mixer uses
@@ -327,7 +341,8 @@ Meeting Notes:
   overlap or an opposing source. Meeting mic capture keeps its quiet-input boost
   with a peak limiter and gradual gain release. Guide: docs/meeting-assistant-testing.md. WHY:
   .project-docs/decisions/2026-10-20-meeting-source-noise-floor.md,
-  .project-docs/decisions/2026-10-19-live-meeting-test-capture.md
+  .project-docs/decisions/2026-10-19-live-meeting-test-capture.md,
+  .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
 
 Case secrets manager:
   The Case drawer has a 320 pt content viewport (the outer hit band includes

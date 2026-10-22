@@ -106,9 +106,25 @@ final class MeetingsCoordinator {
     }
 
     /// Shown on a meeting row when a recording finished but no provider is
-    /// chosen to process it. The staged audio is kept and re-dispatched later.
+    /// chosen to process it. The staged audio is kept for retries for up to
+    /// `failedRecordingRetention`.
     static let processorNotConfiguredMessage =
         "Choose models for Meetings and Meeting notes in Settings > API & Models to process this meeting."
+
+    /// Shown on a meeting whose note still failed when its audio expired.
+    static let recordingExpiredMessage =
+        "The recording was deleted after 24 hours without a finished note."
+
+    /// Whytap keeps meeting audio only while it can still become a note: a
+    /// recording whose processing still fails this long after its last chunk
+    /// is deleted, and nothing retries it.
+    /// WHY: .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+    nonisolated static let failedRecordingRetention: TimeInterval = 24 * 60 * 60
+
+    /// A staged directory without a manifest has no recovery path. It goes
+    /// once nothing has written to it for this long; the margin covers a
+    /// recording that is still being written or just stopping.
+    nonisolated static let unmanagedRecordingGrace: TimeInterval = 60 * 60
 
     // MARK: - Stage 4 recorder factory + active recorder
 
@@ -170,6 +186,10 @@ final class MeetingsCoordinator {
     /// silent reconnect) from slipping past the nil-`activeRecorder`
     /// guard in that window.
     private var recorderStartInFlight = false
+    /// The recording whose recorder is still starting. Its staging directory
+    /// exists before `activeRecorder` is set, while the microphone start may
+    /// wait for the user's permission answer.
+    private var startingRecorderId: UUID?
 
     private var pendingReconnect: PendingReconnect?
     private var pendingReconnectExpiryTask: Task<Void, Never>?
@@ -406,9 +426,9 @@ final class MeetingsCoordinator {
     ///
     /// Idempotent — running it twice is a no-op once the staging dir is
     /// fully drained. Failures are logged but do not throw to the caller;
-    /// pending recordings survive the next launch.
+    /// pending recordings survive the next launch. Audio that is no longer
+    /// needed is released even with Meeting Notes switched off.
     func resumePendingProcessingOnLaunch() {
-        guard config.isEnabled else { return }
         let previous = launchRecoveryTask
         launchRecoveryTask = Task { [weak self] in
             await previous?.value
@@ -789,7 +809,11 @@ final class MeetingsCoordinator {
         // a second recorder that later fights this one over coordinator
         // ownership.
         recorderStartInFlight = true
-        defer { recorderStartInFlight = false }
+        startingRecorderId = meetingId
+        defer {
+            recorderStartInFlight = false
+            startingRecorderId = nil
+        }
         guard let factory = recorderFactory,
               let recorder = factory(meetingId) else {
             os_log(
@@ -1239,7 +1263,8 @@ final class MeetingsCoordinator {
 
         // No provider is configured: the recording stays staged (manifest +
         // chunks) and is retried on the next launch once the user has set up
-        // BYOK keys in Settings -> API & Models.
+        // BYOK keys in Settings -> API & Models, for at most
+        // `failedRecordingRetention`.
         os_log(
             "handleFinalizedEvent no processor configured (meetingId: %{public}@) — recording kept for later",
             log: Self.log, type: .error,
@@ -1299,7 +1324,9 @@ final class MeetingsCoordinator {
     /// `internal` so the durability tests can await it directly. Wired
     /// into the launch flow by `resumePendingProcessingOnLaunch`.
     func recoverFinalizeManifestsOnLaunch() async {
-        guard config.isEnabled, let stagingRoot = recorderStagingRoot else { return }
+        guard let stagingRoot = recorderStagingRoot else { return }
+        await releaseUnneededStagedRecordings(in: stagingRoot)
+        guard config.isEnabled else { return }
         let entries = manifestStore.scan(stagingRoot: stagingRoot)
         guard !entries.isEmpty else { return }
 
@@ -1334,7 +1361,7 @@ final class MeetingsCoordinator {
             }
             if entry.manifest.continuation == nil,
                await restoreReadyLocalMeetingIfPresent(meetingId: entry.manifest.recorderMeetingId) {
-                await releaseStagedRecording(of: entry.manifest.recorderMeetingId, in: dir)
+                releaseStagedRecording(in: dir)
                 continue
             }
             // Recovered recordings never re-nudge for reconnect: they are
@@ -1611,16 +1638,11 @@ final class MeetingsCoordinator {
 
     /// Frees the staged recording of a meeting that is already stored. The
     /// processors remove it right after the insert, so what is still here
-    /// belongs to a run that stopped in between. It goes only together with a
-    /// durable note: a ready row without a note keeps its audio, the only
-    /// source left, and just loses its stale manifest.
-    /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md
-    private func releaseStagedRecording(of meetingId: UUID, in dir: URL) async {
-        guard let store = meetingsStore,
-              ((try? await store.markdown(id: meetingId)) ?? nil) != nil else {
-            manifestStore.delete(in: dir)
-            return
-        }
+    /// belongs to a run that stopped in between. A ready row without a note
+    /// loses it too: no audio is kept once processing is over.
+    /// WHY: .project-docs/decisions/2026-10-18-delete-meeting-and-staged-audio.md,
+    /// .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+    private func releaseStagedRecording(in dir: URL) {
         do {
             try FileManager.default.removeItem(at: dir)
             os_log(
@@ -1636,6 +1658,171 @@ final class MeetingsCoordinator {
             )
             manifestStore.delete(in: dir)
         }
+    }
+
+    // MARK: - Staged audio retention
+
+    /// Meeting audio stays on disk only while it can still become a note.
+    /// A directory without a decodable manifest has no recovery path and goes
+    /// once nothing wrote to it for `unmanagedRecordingGrace`
+    /// (`failedRecordingRetention` when an unreadable manifest is present).
+    /// A recording whose note still failed `failedRecordingRetention` after
+    /// its last chunk is deleted, and its meeting keeps a failure saying so.
+    /// The active recording, a live Reconnect part, recordings being processed
+    /// and directories not named by a recording id are never touched.
+    /// WHY: .project-docs/decisions/2026-10-22-no-retained-meeting-audio.md
+    private func releaseUnneededStagedRecordings(in stagingRoot: URL) async {
+        let current = now()
+        let manifests = manifestStore
+        // Listing, dating and removal stay off the main thread; what a
+        // recording uses is checked here, again after every suspension.
+        let found = await Task.detached(priority: .utility) {
+            Self.releasableStagedRecordings(in: stagingRoot, at: current, manifestStore: manifests)
+        }.value
+
+        let unmanaged = found.unmanaged.filter { dir in
+            UUID(uuidString: dir.lastPathComponent).map { !isStagedRecordingInUse($0) } ?? false
+        }
+        if !unmanaged.isEmpty {
+            let removed = await Self.removeDirectories(unmanaged)
+            os_log(
+                "released staged recordings without a manifest (removed: %{public}d, candidates: %{public}d)",
+                log: Self.log, type: .info,
+                removed, unmanaged.count
+            )
+        }
+
+        var changedRows = false
+        for entry in found.expired {
+            if await expireStagedRecording(entry) { changedRows = true }
+        }
+        if changedRows { refreshOpenWindowIfNeeded() }
+    }
+
+    /// Deletes one recording whose retry window is over and settles its
+    /// meeting: a committed recording or a Reconnect part of a meeting that
+    /// keeps its note leaves that meeting ready; anything else stays failed
+    /// with `recordingExpiredMessage`. Returns whether a row changed.
+    private func expireStagedRecording(_ entry: MeetingFinalizeManifestStore.Entry) async -> Bool {
+        let recordingId = entry.manifest.recorderMeetingId
+        guard !isStagedRecordingInUse(recordingId) else { return false }
+        let target = entry.manifest.continuation?.meetingId ?? recordingId
+        let committed = (try? await meetingsStore?.hasProcessedRecording(recordingId)) == true
+        guard !isStagedRecordingInUse(recordingId),
+              await Self.removeDirectories([entry.dir]) == 1 else { return false }
+        os_log(
+            "expired staged recording removed (dir: %{public}@, committed: %{public}d)",
+            log: Self.log, type: .info,
+            entry.dir.lastPathComponent, committed ? 1 : 0
+        )
+        var keepsNote = false
+        if !committed, entry.manifest.continuation != nil {
+            keepsNote = ((try? await meetingsStore?.markdown(id: target)) ?? nil) != nil
+                && !hasContinuationWork(for: target)
+        }
+        let ready = committed || keepsNote
+        // The store never moves `.ready` back, so a stored note stays ready.
+        let updated = try? await meetingsStore?.updateProgress(
+            id: target,
+            status: ready ? .ready : .failed,
+            failureReason: ready ? nil : Self.recordingExpiredMessage
+        )
+        return updated == true
+    }
+
+    /// Whether another part of `meetingId` is recording, queued, processing or
+    /// still staged, so its status belongs to that part.
+    private func hasContinuationWork(for meetingId: UUID) -> Bool {
+        if activeReconnect?.continuation.meetingId == meetingId || processingTails[meetingId] != nil {
+            return true
+        }
+        guard let stagingRoot = recorderStagingRoot else { return false }
+        return manifestStore.scan(stagingRoot: stagingRoot)
+            .contains { $0.manifest.continuation?.meetingId == meetingId }
+    }
+
+    private func isStagedRecordingInUse(_ id: UUID) -> Bool {
+        id == activeRecorder?.meetingId || id == startingRecorderId
+            || id == activeReconnect?.recordingId || processingTasks[id] != nil
+    }
+
+    /// UUID-named directories nothing can process any more (no decodable
+    /// manifest, quiet for `unmanagedRecordingGrace`, or for
+    /// `failedRecordingRetention` with an undecodable one) and recordings
+    /// whose newest chunk is older than `failedRecordingRetention`.
+    nonisolated static func releasableStagedRecordings(
+        in stagingRoot: URL,
+        at current: Date,
+        manifestStore: MeetingFinalizeManifestStore
+    ) -> (unmanaged: [URL], expired: [MeetingFinalizeManifestStore.Entry]) {
+        let dirs = (try? FileManager.default.contentsOfDirectory(
+            at: stagingRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        guard !dirs.isEmpty else { return ([], []) }
+        var managed: [String: MeetingFinalizeManifestStore.Entry] = [:]
+        for entry in manifestStore.scan(stagingRoot: stagingRoot) {
+            managed[entry.dir.lastPathComponent] = entry
+        }
+        var unmanaged: [URL] = []
+        var expired: [MeetingFinalizeManifestStore.Entry] = []
+        for dir in dirs {
+            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
+                  UUID(uuidString: dir.lastPathComponent) != nil else { continue }
+            if let entry = managed[dir.lastPathComponent] {
+                if let written = lastRecordedWrite(in: dir),
+                   current.timeIntervalSince(written) >= failedRecordingRetention {
+                    expired.append(entry)
+                }
+            } else {
+                let window = manifestStore.manifestExists(in: dir)
+                    ? failedRecordingRetention : unmanagedRecordingGrace
+                if let written = lastWrite(in: dir), current.timeIntervalSince(written) >= window {
+                    unmanaged.append(dir)
+                }
+            }
+        }
+        return (unmanaged, expired)
+    }
+
+    /// Removes the directories off the main thread; returns how many went.
+    private nonisolated static func removeDirectories(_ dirs: [URL]) async -> Int {
+        await Task.detached(priority: .utility) {
+            dirs.filter { (try? FileManager.default.removeItem(at: $0)) != nil }.count
+        }.value
+    }
+
+    /// When the recording's audio was last written: its newest chunk, which
+    /// retries never rewrite (they rewrite the manifest and the Soniox
+    /// checkpoint). Without chunks, the newest entry of the directory.
+    nonisolated static func lastRecordedWrite(in dir: URL) -> Date? {
+        let chunks = modificationDates(in: dir).filter {
+            $0.key.hasPrefix("chunk-") && $0.key.hasSuffix(".wav")
+        }
+        return chunks.values.max() ?? lastWrite(in: dir)
+    }
+
+    /// The newest modification of the directory itself or any direct entry;
+    /// `nil` when the directory cannot be read, which keeps it.
+    nonisolated static func lastWrite(in dir: URL) -> Date? {
+        guard let own = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate else { return nil }
+        return max(own, modificationDates(in: dir).values.max() ?? own)
+    }
+
+    private nonisolated static func modificationDates(in dir: URL) -> [String: Date] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        var dates: [String: Date] = [:]
+        for url in urls {
+            if let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+                dates[url.lastPathComponent] = date
+            }
+        }
+        return dates
     }
 
     // MARK: - Edit persistence
