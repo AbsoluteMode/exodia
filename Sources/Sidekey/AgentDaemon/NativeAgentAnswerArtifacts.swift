@@ -109,7 +109,7 @@ enum NativeAgentAnswerArtifacts {
                 guard let match else { return }
                 if candidates.count >= 100 { stop.pointee = true; return }
                 let alreadyCovered = overlaps(match.range, excluded + occupied)
-                occupied.append(match.range)
+                if match.url?.isFileURL != true { occupied.append(match.range) }
                 guard !alreadyCovered, let detected = match.url,
                       let scheme = detected.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return }
                 var raw = ns.substring(with: match.range)

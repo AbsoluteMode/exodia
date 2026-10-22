@@ -81,4 +81,9 @@ final class NativeAgentAnswerArtifactsTests: XCTestCase {
         XCTAssertEqual(items, [explicit])
         XCTAssertEqual(NativeAgentAnswerArtifacts.collect(from: "https://example.com/guide https://example.com/guide/")?.items.count, 2)
     }
+
+    func testQuotedFileURLKeepsSpacesAndLiteralPercentEncodingInTheFilename() throws {
+        let items = try XCTUnwrap(NativeAgentAnswerArtifacts.collect(from: "Файл: \"file:///Users/test/My%20Project/report%2520final.pdf\".")).items
+        XCTAssertEqual(items.map(\.insertText), ["/Users/test/My Project/report%20final.pdf"])
+    }
 }
