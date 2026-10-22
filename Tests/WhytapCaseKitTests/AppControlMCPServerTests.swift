@@ -2,6 +2,35 @@ import XCTest
 @testable import WhytapCaseKit
 
 final class AppControlMCPServerTests: XCTestCase {
+    func testScreenServerExposesOnlyCaptureAndReturnsImageContent() throws {
+        let server = AppControlMCPServer(screenOnly: true) { request in
+            XCTAssertEqual(request, AppControlRequest("capture_screen"))
+            return .success(.object(["image": .string("aW1hZ2U="), "mimeType": .string("image/jpeg"), "width": .int(32)]))
+        }
+        let listing = try XCTUnwrap(server.handle(line: #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#))
+        XCTAssertTrue(listing.contains("whytap_capture_screen"))
+        XCTAssertFalse(listing.contains("whytap_set_model"))
+        let reply = try XCTUnwrap(server.handle(line: #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"whytap_capture_screen"}}"#))
+        let json = try JSONDecoder().decode(AppControlValue.self, from: Data(reply.utf8))
+        guard case .array(let content) = json.object?["result"]?.object?["content"] else { return XCTFail("Missing content") }
+        XCTAssertEqual(content.count, 2)
+        XCTAssertEqual(content[1].object?["type"], .string("image"))
+        XCTAssertEqual(content[1].object?["data"], .string("aW1hZ2U="))
+        XCTAssertFalse(content[0].object?["text"]?.string?.contains("aW1hZ2U=") == true)
+        XCTAssertNil(json.object?["result"]?.object?["structuredContent"], "Do not duplicate image bytes into text/context")
+    }
+
+    func testScreenAndSettingsToolsCannotCrossScopes() throws {
+        for screenOnly in [true, false] {
+            let server = AppControlMCPServer(screenOnly: screenOnly) { _ in XCTFail("Wrong scope"); return .success(.null) }
+            let name = screenOnly ? "whytap_set_setting" : "whytap_capture_screen"
+            let request: AppControlValue = .object(["jsonrpc": .string("2.0"), "id": .int(1), "method": .string("tools/call"),
+                "params": .object(["name": .string(name)])])
+            let reply = try XCTUnwrap(server.handle(line: String(decoding: try JSONEncoder().encode(request), as: UTF8.self)))
+            XCTAssertTrue(reply.contains("Unknown tool"))
+        }
+    }
+
     private final class Client: CaseBrokerCalling {
         var requests: [CaseBrokerRequest] = []
         func send(_ request: CaseBrokerRequest) throws -> CaseBrokerResponse {

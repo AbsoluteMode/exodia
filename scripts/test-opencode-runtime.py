@@ -10,20 +10,50 @@ import json
 import os
 from pathlib import Path
 import signal
+import sys
 import subprocess
 import tempfile
 import threading
 import time
+
+SCREEN_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQckkDAAFYAM11wf4aAAAAAElFTkSuQmCC"
+
+
+def screen_server():
+    """Synthetic MCP pixels only; never accesses a real screen or the app."""
+    for line in sys.stdin:
+        request = json.loads(line)
+        if os.environ.get("WHYTAP_FIXTURE_MCP_LOG"):
+            with open(os.environ["WHYTAP_FIXTURE_MCP_LOG"], "a") as log:
+                log.write(json.dumps({"method": request.get("method"), "params": request.get("params")}) + "\n")
+        if "id" not in request:
+            continue
+        method = request.get("method")
+        if method == "initialize":
+            result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
+                      "serverInfo": {"name": "screen-fixture", "version": "1"}}
+        elif method == "tools/list":
+            result = {"tools": [{"name": "whytap_capture_screen", "description": "Return synthetic fixture pixels",
+                                "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+                                "annotations": {"readOnlyHint": True, "destructiveHint": False}}]}
+        elif method == "tools/call":
+            assert request["params"]["name"] == "whytap_capture_screen"
+            result = {"content": [{"type": "image", "mimeType": "image/png", "data": SCREEN_IMAGE}], "isError": False}
+        else:
+            result = {}
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--legacy-binary", type=Path)
+    parser.add_argument("--screen-fixture", action="store_true", help="Check MCP image delivery using synthetic pixels")
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
     legacy = args.legacy_binary.resolve(strict=True) if args.legacy_binary else None
     requests = []
+    screen_requested = []
     failure = []
     fixture_key = "whytap-disposable-runtime-fixture"
     with tempfile.TemporaryDirectory(prefix="whytap-opencode-fixture-") as temporary:
@@ -46,15 +76,29 @@ def main():
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
                     self.end_headers()
-                    if len(requests) == 1:
+                    if (args.screen_fixture and not screen_requested) or (not args.screen_fixture and len(requests) == 1):
+                        if args.screen_fixture:
+                            time.sleep(0.4)  # Model latency lets V2 finish its asynchronous MCP registration.
                         names = {t["function"]["name"] for t in body.get("tools", [])}
-                        assert "read" in names, "read-only policy must expose read"
-                        read_tool = next(t["function"] for t in body["tools"] if t["function"]["name"] == "read")
-                        fields = read_tool["parameters"].get("properties", {})
+                        # V2 admits its first prompt before MCP registration.
+                        # A tool boundary carries the catalog update into the
+                        # next request; real models discover the same update.
+                        discovered = "tools.screen.whytap_capture_screen" in json.dumps(body["messages"])
+                        use_screen = args.screen_fixture and (discovered or "screen_whytap_capture_screen" in names)
+                        assert len(requests) <= 3, "screen catalog did not become available"
+                        tool_name = ("screen_whytap_capture_screen" if "screen_whytap_capture_screen" in names else "execute") if use_screen else "read"
+                        assert tool_name in names, (tool_name, sorted(names))
+                        tool = next(t["function"] for t in body["tools"] if t["function"]["name"] == tool_name)
+                        fields = tool["parameters"].get("properties", {})
                         path_key = "filePath" if "filePath" in fields else "path"
                         delta = {"role": "assistant", "tool_calls": [{"index": 0,
-                            "id": "call_fixture", "type": "function", "function": {
-                                "name": "read", "arguments": json.dumps({path_key: str(fixture.resolve())})}}]}
+                            "id": f"call_fixture_{len(requests)}", "type": "function", "function": {
+                                "name": tool_name, "arguments": json.dumps(
+                                    {"code": "console.log(await tools.screen.whytap_capture_screen({}));"}
+                                    if use_screen and tool_name == "execute" else
+                                    {} if use_screen else {path_key: str(fixture.resolve())})}}]}
+                        if use_screen:
+                            screen_requested.append(True)
                         finish = "tool_calls"
                     else:
                         delta = {"role": "assistant", "content": "fixture answer"}
@@ -91,6 +135,12 @@ def main():
                         "limit": {"context": 128000, "output": 4096},
                         "options": {"provider": {"order": ["fixture-pin"], "allow_fallbacks": False}}}}}}}
             env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
+            if args.screen_fixture:
+                env["WHYTAP_FIXTURE_MCP_LOG"] = str(root / "screen-calls.jsonl")
+                config["mcp"] = {"screen": {"type": "local", "command": [sys.executable, str(Path(__file__).resolve()), "--mcp-screen-server"], "enabled": True}}
+                config["permission"]["screen_*"] = "allow"
+                config["permission"]["execute"] = "allow"
+                env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
 
             def run(executable, prompt, session=None):
                 version = subprocess.run([str(executable), "--version"], cwd=root, env=env,
@@ -121,12 +171,24 @@ def main():
                 return version, events
 
             first_version, first = run(legacy or binary, "First synthetic fixture")
-            assert len(requests) == 2, "one read tool call followed by the answer"
-            assert any(e.get("type") == "tool_use" and e.get("part", {}).get("tool") == "read" for e in first)
-            assert "synthetic-read-fixture" in json.dumps(requests[1]["messages"]), [(m.get("role"), m.get("content")) for m in requests[1]["messages"] if m.get("role") == "tool"]
+            assert not failure, failure
+            completed_count = len(requests)
+            assert (2 <= completed_count <= 4) if args.screen_fixture else completed_count == 2, "tool call(s) followed by the answer"
+            expected_tool = "screen_whytap_capture_screen" if args.screen_fixture else "read"
+            # V2's JSON run stream omits MCP tool_use events. The final model
+            # request must still contain the actual MCP image, not a text label.
+            if not args.screen_fixture:
+                assert any(e.get("type") == "tool_use" and e.get("part", {}).get("tool") == expected_tool for e in first)
+            if args.screen_fixture:
+                calls = (root / "screen-calls.jsonl").read_text()
+                assert '"tools/call"' in calls, "screen MCP tool was not invoked"
+                assert SCREEN_IMAGE in json.dumps(requests[-1]["messages"]), "MCP image must reach the selected model as media"
+                assert '"image_url"' in json.dumps(requests[-1]["messages"])
+            else:
+                assert "synthetic-read-fixture" in json.dumps(requests[1]["messages"])
             session = next(e["sessionID"] for e in first if e.get("sessionID"))
             second_version, second = run(binary, "Second synthetic fixture", session)
-            assert len(requests) == 3
+            assert len(requests) == completed_count + 1
             history = json.dumps(requests[-1]["messages"])
             assert "First synthetic fixture" in history and "Second synthetic fixture" in history
             assert all(e.get("sessionID", session) == session for e in second)
@@ -136,11 +198,15 @@ def main():
                     assert fixture_key.encode() not in path.read_bytes(), "provider key persisted in runtime fixture"
             print(json.dumps({"status": "passed", "first_version": first_version,
                 "second_version": second_version, "local_model_requests": len(requests),
-                "read_tool": True, "resumed_history": True, "persisted_key": False}))
+                "read_tool": not args.screen_fixture, "screen_image": args.screen_fixture,
+                "resumed_history": True, "persisted_key": False}))
         finally:
             server.shutdown()
             server.server_close()
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--mcp-screen-server"]:
+        screen_server()
+    else:
+        main()

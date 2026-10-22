@@ -23,7 +23,7 @@ sources:
   - type: repository
     reference: plugins/whytap/mcp.json
     confirmed_at: 2026-10-21
-related: [../processes/local-customization.md]
+related: [../processes/local-customization.md, 2026-10-22-agent-answers-and-screen.md]
 ---
 
 ## Context

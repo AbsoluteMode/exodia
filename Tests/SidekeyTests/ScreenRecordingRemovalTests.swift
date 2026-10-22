@@ -48,6 +48,9 @@ final class ScreenRecordingRemovalTests: XCTestCase {
             // WHY: .project-docs/decisions/2026-10-20-screenshot-toolbar.md
             // The user explicitly added screenshots; launch/orb/meetings still must not prompt.
             if url.path.hasSuffix("/Screenshots/ScreenshotCoordinator.swift") { return nil }
+            // WHY: .project-docs/decisions/2026-10-22-agent-answers-and-screen.md
+            // Requested agent frames use the same app-owned TCC boundary.
+            if url.path.hasSuffix("/Agent/AgentScreenCapture.swift") { return nil }
             if url.lastPathComponent == "PermissionsHelper.swift" { return nil }
             guard let source = try? String(contentsOf: url, encoding: .utf8) else { return nil }
             let hits = forbidden.filter { source.contains($0) }
@@ -71,6 +74,7 @@ final class ScreenRecordingRemovalTests: XCTestCase {
         ]
         let offenders = try appSourceFiles().compactMap { url -> String? in
             if url.path.hasSuffix("/Screenshots/ScreenshotCoordinator.swift") { return nil }
+            if url.path.hasSuffix("/Agent/AgentScreenCapture.swift") { return nil }
             guard let source = try? String(contentsOf: url, encoding: .utf8) else { return nil }
             let hits = forbidden.filter { source.contains($0) }
             guard !hits.isEmpty else { return nil }
@@ -88,6 +92,17 @@ final class ScreenRecordingRemovalTests: XCTestCase {
         let source = try String(contentsOf: file, encoding: .utf8)
         XCTAssertTrue(source.contains("SCScreenshotManager.captureImage("))
         XCTAssertTrue(source.contains("func start()"))
+        XCTAssertFalse(source.contains("SCStream("))
+        XCTAssertFalse(source.contains(".startCapture("))
+        XCTAssertFalse(source.contains("SCStreamOutput"))
+    }
+
+    func testAgentScreenToolUsesStillImagesOnlyAfterInvocation() throws {
+        let file = try XCTUnwrap(try appSourceFiles().first { $0.path.hasSuffix("/Agent/AgentScreenCapture.swift") })
+        let source = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(source.contains("SCScreenshotManager.captureImage("))
+        XCTAssertTrue(source.contains("func handle("))
+        XCTAssertTrue(source.contains("guard permission()"))
         XCTAssertFalse(source.contains("SCStream("))
         XCTAssertFalse(source.contains(".startCapture("))
         XCTAssertFalse(source.contains("SCStreamOutput"))

@@ -169,6 +169,7 @@ final class OpenCodeProvider: CLIProvider {
                                                    key: key, allowActions: options.allowActions,
                                                    modelSpec: options.openCodeModelSpec,
                                                    caseMCPCommand: options.caseMCPCommand,
+                                                   screenMCPCommand: options.screenMCPCommand,
                                                    openRouterProvider: options.openRouterProvider)
             } catch {
                 return fail("workspace_error", "Couldn’t create the local OpenCode workspace.")
@@ -197,7 +198,7 @@ final class OpenCodeProvider: CLIProvider {
                     if mapper.answer.isEmpty {
                         continuation.yield(.error(code: "empty_response", message: "OpenCode returned no answer. Try another model or repeat the request.", retryable: true))
                     } else {
-                        continuation.yield(.done(sources: []))
+                        mapper.finalEvents().forEach { continuation.yield($0) }
                     }
                 }
                 continuation.finish()

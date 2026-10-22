@@ -11,6 +11,7 @@ enum OpenCodeEnvironment {
                      key: String?, allowActions: Bool,
                      modelSpec: OpenCodeModelSpec? = nil,
                      caseMCPCommand: [String]? = nil,
+                     screenMCPCommand: [String]? = nil,
                      openRouterProvider: String? = nil,
                      inherited: [String: String] = ProcessInfo.processInfo.environment) throws -> [String: String] {
         var env = inherited.filter { name, _ in
@@ -44,6 +45,12 @@ enum OpenCodeEnvironment {
         // Case MCP only lists project and key names, so it stays usable with
         // actions off; running commands still follows the bash permission.
         if caseMCPCommand != nil { permissions["case_*"] = "allow" }
+        if screenMCPCommand != nil {
+            permissions["screen_*"] = "allow"
+            // V2 exposes MCP through Code Mode. Nested tools still enforce
+            // the command/edit policy; Code Mode has no direct filesystem.
+            permissions["execute"] = "allow"
+        }
         var declaration: [String: Any] = modelSpec.map {
             ["tool_call": $0.toolCall, "reasoning": $0.reasoning,
              "limit": ["context": $0.contextLimit, "output": $0.outputLimit]]
@@ -60,11 +67,14 @@ enum OpenCodeEnvironment {
             "provider": [id: ["options": ["apiKey": "{env:\(provider.keyEnvironmentName)}"],
                               "models": [normalized: declaration]]]
         ]
-        // Present only while the built-in agent is registered in Case; the
-        // entry holds the helper path, never a value or token.
-        if let caseMCPCommand {
-            config["mcp"] = ["case": ["type": "local", "command": caseMCPCommand, "enabled": true]]
+        // Case requires registration; screen capture is independent. Entries
+        // hold bundled helper paths, never credential values or tokens.
+        var mcp: [String: Any] = [:]
+        if let caseMCPCommand { mcp["case"] = ["type": "local", "command": caseMCPCommand, "enabled": true] }
+        if let screenMCPCommand {
+            mcp["screen"] = ["type": "local", "command": screenMCPCommand, "enabled": true, "timeout": 15_000]
         }
+        if !mcp.isEmpty { config["mcp"] = mcp }
         if provider == .openAI, modelSpec == nil {
             // /v1/models does not report limits. Let OpenCode use its own model
             // metadata instead of overriding it with an empty declaration.
