@@ -108,6 +108,11 @@ struct CalendarHoverView: View {
         }
         .onChange(of: connections.accounts) { _, _ in model.refresh() }
         .onChange(of: connections.appleEnabled) { _, _ in model.refresh() }
+        .onChange(of: connectionFlow.error) { _, error in
+            guard let error else { return }
+            NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                userInfo: [.announcement: error, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)
             .debounce(for: .milliseconds(400), scheduler: RunLoop.main)) { _ in
                 guard liveUpdates else { return }
@@ -244,7 +249,8 @@ struct CalendarHoverView: View {
                         }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .disabled(connections.isConnecting)
-                    .accessibilityLabel("Connect \(provider.integrationTitle)")
+                    .accessibilityLabel(connectionFlow.working && connectionFlow.lastProvider == provider
+                        ? "Connecting \(provider.integrationTitle)" : "Connect \(provider.integrationTitle)")
                     if connectionFlow.lastProvider == provider, let error = connectionFlow.error {
                         Text(error).font(.system(size: 11)).foregroundStyle(MacSettingsTheme.orange)
                             .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 10)

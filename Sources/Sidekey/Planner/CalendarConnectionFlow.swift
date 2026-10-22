@@ -76,7 +76,7 @@ final class CalendarConnectionFlow: ObservableObject {
                         try Task.checkCancellation()
                         let name = label.trimmingCharacters(in: .whitespacesAndNewlines)
                         try connections.add(ConnectedCalendarAccount(id: id, provider: provider,
-                            label: name.isEmpty ? provider.title : String(name.prefix(120))))
+                            label: name.isEmpty ? defaultLabel(provider) : String(name.prefix(120))))
                     } catch { try? await connections.oauth.disconnect(id); throw error }
                 }
                 try Task.checkCancellation()
@@ -88,5 +88,13 @@ final class CalendarConnectionFlow: ObservableObject {
             }
         }
         return true
+    }
+
+    private func defaultLabel(_ provider: CalendarProvider) -> String {
+        let names = Set(connections.accounts.filter { $0.provider == provider }.map(\.label))
+        if !names.contains(provider.title) { return provider.title }
+        var suffix = 2
+        while names.contains("\(provider.title) · \(suffix)") { suffix += 1 }
+        return "\(provider.title) · \(suffix)"
     }
 }

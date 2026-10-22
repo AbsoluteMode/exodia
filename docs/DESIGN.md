@@ -768,18 +768,18 @@ feature, add an account or disconnect an existing one.
   Sign-in completion/cancellation releases restart/restore
   deferral. Why: Settings and Planner must share one connection flow.
 - A backup operation, staged restore or pending backup maintenance also blocks
-  new calendar connection changes, with a reason above the cards and in the sheet.
+  new calendar connection changes, with a reason above the cards and inline after an attempted connection.
   Why: restored account metadata must not overwrite a newly connected account.
 - Disconnect uses a native confirmation alert and keeps original provider events.
   Corrupt connection metadata stays preserved with a visible error. Long labels
   and permission/error text wrap. Why: recovery must not silently discard accounts.
-- Scoped Integrations and connect-sheet buttons/links share full-area hover,
+- Scoped Integrations buttons/links share full-area hover,
   pressed and 2pt keyboard focus feedback. Disabled controls dim and ignore hover
   and press. Only color transitions animate (80–100ms), with no animation under
   Reduce Motion. Why: the user requires visible interaction feedback consistently.
 
-Offscreen synthetic fixtures cover 500/739/1059pt, both appearances, scoped
-provider sheets, pending states, busy/long account labels, malformed metadata
+Offscreen synthetic fixtures cover 500/739/1059pt, both appearances, direct
+connection progress/cancellation and inline errors, pending states, long account labels, malformed metadata
 and forced normal/hover/press/focus/disabled surfaces. Reduced Motion is injected
 into the same control rendering used by the native environment. These fixtures
 do not prove physical keyboard navigation, live browser consent or system alerts.
@@ -1197,7 +1197,11 @@ The user can inspect an event or connect another provider without losing Hover.
   do not pin Hover. Permission work lives in CalendarConnectionFlow outside the
   view, so temporary meeting/agent priority and repeat opens do not cancel it.
   Success returns to the agenda without stealing focus from a priority surface;
-  errors retain a retry path. Explicit Cancel/Back cancels it.
+  errors retain a retry path and announce changes to accessibility clients.
+  Connecting rows have an explicit Connecting accessibility label. Explicit
+  Cancel/Back cancels it. Settings listens to its own retained window closing,
+  so closing another window does not cancel authorization. Repeated accounts
+  receive distinct provider-based names automatically, without another form.
   Source events and local archive data keep their current formats.
 
 Verification: synthetic NSHostingView fixtures at 310/360/500pt cover the agenda,

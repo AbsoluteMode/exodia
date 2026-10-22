@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsCalendarIntegrationsView: View {
@@ -38,7 +39,33 @@ struct SettingsCalendarIntegrationsView: View {
             IntegrationLink(title: "Calendar privacy", destination: URL(string: "https://whytap.ai/calendar-privacy/")!)
                 .font(.system(size: 11))
         }
+        .background(CalendarConnectionWindowClose(onClose: flow.cancel).frame(width: 0, height: 0))
         .onDisappear { flow.cancel() }
+        .onChange(of: flow.error) { _, error in
+            guard let error else { return }
+            NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                userInfo: [.announcement: error, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
+    }
+}
+
+/// Settings retains its root view when its window closes; onDisappear alone is insufficient.
+private struct CalendarConnectionWindowClose: NSViewRepresentable {
+    let onClose: () -> Void
+    func makeNSView(context: Context) -> Observer { Observer() }
+    func updateNSView(_ view: Observer, context: Context) { view.onClose = onClose }
+
+    final class Observer: NSView {
+        var onClose: (() -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
+            if let window {
+                NotificationCenter.default.addObserver(self, selector: #selector(windowClosing(_:)),
+                    name: NSWindow.willCloseNotification, object: window)
+            }
+        }
+        @objc private func windowClosing(_ notification: Notification) { onClose?() }
     }
 }
 

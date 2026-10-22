@@ -900,11 +900,11 @@ latest token, and restored sign-in can require reconnecting. No
 shared OAuth registrations are created by the app itself; the owner supplies
 registered native clients during packaging through configure-calendar-clients.py.
 Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calendar
-and Zoom Calendar separately, with feature permissions and scoped connect sheets.
+and Zoom Calendar separately, with feature permissions and direct provider authorization.
 Shared Google and Zoom clients cannot start new browser sign-in until actual
 provider approval is recorded by the publicAccessApproved packaging string.
-Missing or malformed approval remains closed; independent source-user clients
-remain available in Advanced setup. Connection activity is shared across Settings
+Missing or malformed approval remains closed; source users
+can supply independent native clients at build time. Connection activity is shared across Settings
 and Hover, serializes sign-in, and defers restore/update restart until completion.
 Backup work, staged restore and pending maintenance also block new connection
 changes so restore cannot overwrite a newly connected account.

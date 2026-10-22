@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class CalendarIntegrationRenderTests: XCTestCase {
-    func testOffscreenCalendarIntegrationStates() throws {
+    func testOffscreenCalendarIntegrationStates() async throws {
         guard let output = ProcessInfo.processInfo.environment["WHYTAP_CALENDAR_INTEGRATIONS_RENDER_DIR"] else {
             throw XCTSkip("Set WHYTAP_CALENDAR_INTEGRATIONS_RENDER_DIR for offscreen integration fixtures.")
         }
@@ -47,6 +47,31 @@ final class CalendarIntegrationRenderTests: XCTestCase {
         let damaged = CalendarConnections(defaults: defaults)
         try render(SettingsCalendarIntegrationsView(connections: damaged, readiness: pending).padding(24),
             size: NSSize(width: 500, height: 1000), dark: true, to: destination.appendingPathComponent("preserved-error.png"))
+        connections.endConnecting()
+        let info: [String: Any] = ["WhytapCalendarOAuthClients": ["google": ["clientID": "fixture"], "microsoft": ["clientID": "fixture"]]]
+        for dark in [false, true] {
+            for width in [500.0, 739.0, 1059.0] {
+                let authorization = AsyncThrowingStream<(code: String, redirect: String), Error>.makeStream()
+                let flow = CalendarConnectionFlow(connections: connections, authorize: { _, _, _, _ in
+                    var iterator = authorization.stream.makeAsyncIterator()
+                    guard let result = try await iterator.next() else { throw CancellationError() }
+                    return result
+                })
+                defer { authorization.continuation.finish(); flow.cancel() }
+                XCTAssertTrue(flow.startRegistered(provider: .microsoft, info: info))
+                XCTAssertTrue(flow.working)
+                try render(SettingsCalendarIntegrationsView(connections: connections, readiness: pending,
+                    configurationInfo: info, flow: flow).padding(24), size: NSSize(width: width, height: 1000), dark: dark,
+                    to: destination.appendingPathComponent("direct-connecting-\(Int(width))-\(dark).png"))
+                flow.cancel()
+                for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
+                XCTAssertFalse(flow.working)
+                XCTAssertFalse(flow.startRegistered(provider: .google, info: info))
+                try render(SettingsCalendarIntegrationsView(connections: connections, readiness: pending,
+                    configurationInfo: info, flow: flow).padding(24), size: NSSize(width: width, height: 1000), dark: dark,
+                    to: destination.appendingPathComponent("direct-error-\(Int(width))-\(dark).png"))
+            }
+        }
     }
 
     private func interactionStates(reduceMotion: Bool = false) -> some View {

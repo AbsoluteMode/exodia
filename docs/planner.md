@@ -100,7 +100,8 @@ account controls and direct provider authorization. Google and Zoom show
 their pending review/publication state and do not start new shared-client sign-in
 before public approval. Existing accounts can still be disconnected. Hover keeps
 feed selection and its compact source list; Connect starts the provider browser
-or macOS prompt directly, without an intermediate form or account-name field.
+or macOS prompt directly, without an intermediate form or account-name field. Repeated accounts receive
+distinct provider-based names automatically.
 
 Use **Whytap** as the application name and public consent-screen brand.
 

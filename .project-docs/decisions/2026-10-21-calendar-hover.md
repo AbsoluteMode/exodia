@@ -48,7 +48,7 @@ gates, Keychain storage and serialized connection lease. Settings → Integratio
 offers the same providers. Feed visibility and local tasks/events keep their
 existing storage and backup formats. Account-name and Advanced app setup forms
 are removed from both Hover and Integrations; the build supplies the native
-client and the account receives its provider name by default. Settings retains
+client and accounts receive distinct provider-based names automatically. Settings retains
 permission descriptions, disconnection and Calendar privacy. Source users
 configure native clients at build time.
 
@@ -60,7 +60,8 @@ connected sources, including events spanning midnight and all-day events.
 
 The menu survives pointer exit. Outside click/Escape dismisses it, except during
 its own provider permission flow so switching to the browser cannot cancel OAuth.
-Settings permission flows do not pin Hover. CalendarConnectionFlow owns the
+Settings permission flows do not pin Hover. Closing their retained Settings
+window cancels the operation; closing an unrelated window does not. CalendarConnectionFlow owns the
 operation independently of the view: meeting/agent priority can temporarily hide
 Hover without cancelling it. Repeating Calendar while connecting resumes that
 source list. Success returns to the agenda, activating Hover only if it is visible;

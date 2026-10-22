@@ -217,6 +217,7 @@ final class CalendarHoverTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 500, height: 800),
             styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false; window.contentView = host
+        defer { window.contentView = nil; window.close() }
         host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30))
         XCTAssertTrue(flow.startRegistered(provider: .microsoft, info: info))
         try await Task.sleep(for: .milliseconds(30))
@@ -224,11 +225,37 @@ final class CalendarHoverTests: XCTestCase {
         XCTAssertFalse(otherFlow.startRegistered(provider: .microsoft, info: info))
         XCTAssertFalse(otherFlow.working)
         XCTAssertTrue(flow.working)
-        window.contentView = nil; window.close()
+        let unrelated = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: true)
+        unrelated.isReleasedWhenClosed = false; unrelated.close()
+        await Task.yield()
+        XCTAssertTrue(flow.working, "Closing another window must not cancel Settings sign-in")
+        window.close()
         for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertFalse(flow.working); XCTAssertFalse(connections.isConnecting)
         XCTAssertTrue(connections.accounts.isEmpty); XCTAssertNil(flow.error)
         XCTAssertFalse(window.isVisible || window.isKeyWindow)
+    }
+
+    func testDirectConnectionsAutomaticallyDistinguishAccountsWithoutAnExtraForm() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlannerURLProtocol.self]
+        let http = CalendarHTTP(session: URLSession(configuration: configuration))
+        let credentials = PlannerMemoryCredentials()
+        let connections = CalendarConnections(defaults: defaults,
+            oauth: CalendarOAuthClient(http: http, storage: credentials), http: http)
+        let flow = CalendarConnectionFlow(connections: connections, authorize: { _, _, _, _ in
+            (code: "fixture-code", redirect: "http://localhost:8080/callback")
+        })
+        PlannerURLProtocol.handler = { _ in (200, ["access_token": "fixture-access", "refresh_token": "fixture-refresh", "expires_in": 3600, "token_type": "Bearer"]) }
+        let info: [String: Any] = ["WhytapCalendarOAuthClients": ["microsoft": ["clientID": "fixture"]]]
+        for _ in 0..<2 {
+            XCTAssertTrue(flow.startRegistered(provider: .microsoft, info: info))
+            for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertFalse(flow.working); XCTAssertNil(flow.error)
+        }
+        XCTAssertEqual(connections.accounts.map(\.label), [CalendarProvider.microsoft.title, "\(CalendarProvider.microsoft.title) · 2"])
+        XCTAssertEqual(credentials.saveCount, 2)
+        XCTAssertEqual(Set(connections.accounts.map(\.id)).count, 2)
     }
 
     func testExplicitCancelReleasesConnectionAndSettingsFlowDoesNotBelongToHover() async throws {
