@@ -96,18 +96,21 @@ any supported source remain joinable.
 
 Settings → **Integrations** lists **Google Calendar**, **Outlook Calendar**,
 **Apple Calendar** and **Zoom Calendar** with separate permission descriptions,
-account controls and provider-specific connection sheets. Google and Zoom show
+account controls and direct provider authorization. Google and Zoom show
 their pending review/publication state and do not start new shared-client sign-in
-before public approval. Existing accounts can still be disconnected. Calendar keeps feed selection and collapsed Advanced app setup inside Hover
-for source users’ own clients.
+before public approval. Existing accounts can still be disconnected. Hover keeps
+feed selection and its compact source list; Connect starts the provider browser
+or macOS prompt directly, without an intermediate form or account-name field. Repeated accounts receive
+distinct provider-based names automatically.
 
 Use **Whytap** as the application name and public consent-screen brand.
 
 The application owner registers native OAuth clients once. Packaged client
 configuration is loaded from WhytapCalendarOAuthClients in the app Info.plist;
-ordinary users choose an account and sign in. Advanced app setup allows a source
-user to supply their own client. A build without a registered client still needs
-that setup; it does not pretend to have a working shared sign-in.
+ordinary users choose an account in the provider browser and sign in. Source
+users supply their own client at build time. A build without a registered client
+shows an inline unavailable reason; it does not open an app-setup form or pretend
+to have a working shared sign-in.
 Live consent, organizational restrictions and provider-account compatibility
 require acceptance with real accounts. Fixture tests do not prove live sign-in.
 Provider registration and public verification remain separate external steps.
@@ -116,12 +119,12 @@ For shared Google and Zoom clients, `publicAccessApproved` must be the string
 approval. An absent, false or malformed value keeps new sign-in blocked in both
 Integrations and Hover. Microsoft does not use this Google/Zoom review gate;
 its organizational restrictions still apply. Source users can supply an
-independent native client in Advanced app setup.
+independent native client at build time.
 
 Public integration information is available at
 [whytap.ai/planner](https://whytap.ai/planner/), with a separate
 [calendar privacy notice](https://whytap.ai/calendar-privacy/) linked from the
-connection sheet. The pages describe the feature as being prepared and do not
+Integrations settings. The pages describe the feature as being prepared and do not
 claim provider approval or a generally available release.
 
 1. **Google Cloud:** enable Calendar API, configure the consent screen and create

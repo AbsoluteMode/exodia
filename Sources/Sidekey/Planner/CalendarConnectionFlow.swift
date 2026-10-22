@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The permission operation outlives an inline view temporarily hidden by a
-/// meeting/agent surface. Explicit Cancel ends it; Settings sheets cancel on close.
+/// meeting/agent surface. Explicit Cancel ends it; leaving Settings cancels its flow.
 @MainActor
 final class CalendarConnectionFlow: ObservableObject {
     typealias Authorization = (CalendarProvider, String, String, String) async throws -> (code: String, redirect: String)
@@ -21,6 +21,29 @@ final class CalendarConnectionFlow: ObservableObject {
 
     func clearError() { error = nil }
     func cancel() { error = nil; task?.cancel(); browser?.cancel() }
+
+    /// Ordinary Connect goes straight to the provider, using this build's registration.
+    @discardableResult
+    func startRegistered(provider: CalendarProvider, info: [String: Any]? = Bundle.main.infoDictionary,
+                         onSuccess: @escaping () -> Void = {}) -> Bool {
+        guard !working else { return false }
+        lastProvider = provider; error = nil
+        let configuration = CalendarClientConfiguration.registered(provider, info: info)
+        if let message = CalendarConnectionReadiness.shared(provider, configuration: configuration).message {
+            error = message; return false
+        }
+        if provider != .apple, let message = connections.accountConnectionIssue {
+            error = message; return false
+        }
+        if let message = connections.connectionBlockReason {
+            error = message; return false
+        }
+        guard !connections.isConnecting else {
+            error = "Finish the calendar connection already open."; return false
+        }
+        return start(provider: provider, clientID: configuration?.clientID ?? "",
+            secret: configuration?.clientSecret ?? "", label: "", info: info, onSuccess: onSuccess)
+    }
 
     @discardableResult
     func start(provider: CalendarProvider, clientID: String, secret: String, label: String,
@@ -53,7 +76,7 @@ final class CalendarConnectionFlow: ObservableObject {
                         try Task.checkCancellation()
                         let name = label.trimmingCharacters(in: .whitespacesAndNewlines)
                         try connections.add(ConnectedCalendarAccount(id: id, provider: provider,
-                            label: name.isEmpty ? provider.title : String(name.prefix(120))))
+                            label: name.isEmpty ? defaultLabel(provider) : String(name.prefix(120))))
                     } catch { try? await connections.oauth.disconnect(id); throw error }
                 }
                 try Task.checkCancellation()
@@ -65,5 +88,13 @@ final class CalendarConnectionFlow: ObservableObject {
             }
         }
         return true
+    }
+
+    private func defaultLabel(_ provider: CalendarProvider) -> String {
+        let names = Set(connections.accounts.filter { $0.provider == provider }.map(\.label))
+        if !names.contains(provider.title) { return provider.title }
+        var suffix = 2
+        while names.contains("\(provider.title) · \(suffix)") { suffix += 1 }
+        return "\(provider.title) · \(suffix)"
     }
 }

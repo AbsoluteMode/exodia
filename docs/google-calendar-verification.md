@@ -50,11 +50,13 @@ URL. Do not copy private meetings into the recording.
    the owner's review recording, must not be edited out to simulate approval.
 3. Complete consent for the dedicated account and return to Whytap. This is a
    review test; do not enable the public packaging approval flag for it. If the
-   public gate is already installed, the designated builder must prepare an
-   owner-only review package without bundled Google client configuration. The
-   owner can supply the existing project client in Hover → Calendar → Connect → Advanced app setup for this
-   recording; do not change its ID or distribute that package publicly. Keep
-   the normal one-app, signature, data and safe-restart checks.
+   public gate is already installed, an owner-only development recording path
+   must first be prepared and reviewed with the designated builder. Normal
+   Hover/Integrations no longer has an Advanced app setup form. The recording
+   path must use the existing project client and real authorization without
+   enabling public approval or changing the client ID; it is not a public
+   distribution. That development path is pending, not supplied by this guide.
+   Keep the normal one-app, signature, data and safe-restart checks.
 4. Show the subscribed calendar names in **Calendars**, hide/show a feed, then
    show **Design review** in the daily agenda. Open its inline details to
    demonstrate times, location and meeting/original link. These actions show
