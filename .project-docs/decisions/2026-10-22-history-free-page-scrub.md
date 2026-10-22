@@ -145,4 +145,4 @@ SSD's physical blocks are not changed: this cleans the file's contents, not
 every copy of the disk. A WAL reused after the scrub can still hold older
 frames until they are overwritten.
 
-2026-10-22 · PR: pending
+2026-10-22 · PR: https://github.com/AbsoluteMode/whytap/pull/212
