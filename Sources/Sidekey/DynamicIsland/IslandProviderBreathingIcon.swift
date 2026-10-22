@@ -36,16 +36,25 @@ final class ProviderBreathingMarkView: NSView {
     /// layout (`ProviderBrandIcon(size: 15)` inside a 16pt frame).
     private static let slotSide: CGFloat = 16
     private static let markSide: CGFloat = 15
-    private static let markColor = NSColor.white.withAlphaComponent(0.72)
 
     private(set) var brand: TranscriptionProviderBrand
     private(set) var reduceMotion: Bool
     private let markLayer = CALayer()
+    private(set) var modelImage: NSImage?
+    private var modelImageTask: Task<Void, Never>?
+    private let iconLoader: @MainActor (AgentModelBrand) async -> NSImage?
 
-    init(brand: TranscriptionProviderBrand, reduceMotion: Bool) {
+    init(brand: TranscriptionProviderBrand, reduceMotion: Bool,
+         iconLoader: @escaping @MainActor (AgentModelBrand) async -> NSImage? = {
+             await AgentModelIconStore.shared.image(for: $0)
+         }) {
         self.brand = brand
         self.reduceMotion = reduceMotion
+        self.iconLoader = iconLoader
         super.init(frame: NSRect(x: 0, y: 0, width: Self.slotSide, height: Self.slotSide))
+        setAccessibilityElement(true)
+        setAccessibilityRole(.image)
+        setAccessibilityLabel(brand.label)
         wantsLayer = true
         // The scale peak (1.08) pokes past the 16pt slot by a fraction of a
         // point — let it, like SwiftUI's scaleEffect did.
@@ -55,10 +64,13 @@ final class ProviderBreathingMarkView: NSView {
         layoutMarkLayer()
         reloadContents()
         applyMotionState()
+        loadModelImage()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    deinit { modelImageTask?.cancel() }
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: Self.slotSide, height: Self.slotSide)
@@ -67,7 +79,10 @@ final class ProviderBreathingMarkView: NSView {
     func apply(brand: TranscriptionProviderBrand, reduceMotion: Bool) {
         if brand != self.brand {
             self.brand = brand
+            setAccessibilityLabel(brand.label)
+            modelImage = nil
             reloadContents()
+            loadModelImage()
         }
         if reduceMotion != self.reduceMotion {
             self.reduceMotion = reduceMotion
@@ -106,7 +121,7 @@ final class ProviderBreathingMarkView: NSView {
         let scale = window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor
             ?? 2
-        let image = Self.markImage(for: brand)
+        let image = Self.markImage(for: brand, image: modelImage)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         markLayer.contentsScale = scale
@@ -150,12 +165,24 @@ final class ProviderBreathingMarkView: NSView {
         markLayer.add(pulse, forKey: Self.breathingAnimationKey)
     }
 
-    /// Mark bitmap for the breathing ticker, flattened to the monochrome white
-    /// tint the way SwiftUI's `.renderingMode(.template).foregroundStyle(...)`
-    /// did.
-    private static func markImage(for brand: TranscriptionProviderBrand) -> NSImage? {
+    /// Start optional artwork work after the bundled mark is already visible.
+    private func loadModelImage() {
+        modelImageTask?.cancel()
+        guard let modelBrand = brand.modelBrand else { return }
+        let loader = iconLoader
+        modelImageTask = Task { [weak self] in
+            let image = await loader(modelBrand)
+            guard !Task.isCancelled, let self, self.brand.modelBrand == modelBrand else { return }
+            self.modelImage = image
+            self.reloadContents()
+        }
+    }
+
+    /// Flatten source alpha to neutral white, including colorful remote marks.
+    private static func markImage(for brand: TranscriptionProviderBrand, image: NSImage? = nil) -> NSImage? {
         let base: NSImage?
-        if let assetName = brand.assetName {
+        if let image { base = image }
+        else if let assetName = brand.assetName {
             base = ProviderBrandIconAsset.image(named: assetName, pointSize: markSide)
         } else if let systemName = brand.systemName {
             base = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)?
@@ -184,7 +211,7 @@ final class ProviderBreathingMarkView: NSView {
             operation: .sourceOver,
             fraction: 1
         )
-        markColor.set()
+        NSColor(white: 0.72, alpha: 1).set()
         NSRect(origin: .zero, size: canvas).fill(using: .sourceAtop)
         rendered.unlockFocus()
         return rendered

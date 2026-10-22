@@ -188,6 +188,15 @@ Voice flow (Drop / dictation):
             WHY: docs/decisions/2026-07-22-hub-token-join-and-batch-recovery-deadline.md
 
 Agent flow (native Whytap runtime; OpenRouter, OpenAI or Anthropic):
+  The Agent voice ticker shows the selected model author's bundled mark instead
+  of the generic star; OpenRouter's hosting-provider pin does not change authorship.
+  OpenAI, Anthropic, Gemini, DeepSeek, Qwen, Mistral, Cohere and Perplexity have
+  prewarmed fallbacks. Unknown/Auto OpenRouter authors use the OpenRouter mark.
+  A separate bounded task refreshes public OpenRouter artwork weekly with ETag,
+  without keys/content/model requests; recording never waits for it. Cache I/O
+  is off the main actor, failed refreshes retain usable artwork, and stale view
+  loads cannot overwrite a new model. Existing geometry, breathing and reduced
+  motion remain. WHY: .project-docs/decisions/2026-10-22-native-agent.md
   User -> Right Command tap (text) / hold (voice) -> RightCmdGestureMonitor
        -> voice: the same STT factory as Drop, route of agentVoice
        -> NativeAgentProvider -> direct model HTTP -> local tool -> model loop
@@ -1335,7 +1344,8 @@ input layout, including live recording and previously saved non-English titles.
    and monitoring sources the user configured (including their credential store),
    notification sources accessed by user-configured local scripts, calendar providers
    explicitly connected by the user (Google, Microsoft and Zoom), direct agent provider
-   traffic, optional Tavily search queries/usage checks and requested tool destinations, the model catalogs and free key checks of providers the user added
+   traffic, public OpenRouter model-author artwork (without keys or user content),
+   optional Tavily search queries/usage checks and requested tool destinations, the model catalogs and free key checks of providers the user added
    a key for, OpenRouter's provider list (latency, throughput) for a model
    selected on an OpenRouter route, synthetic model probes (silence or a one-word prompt, never user
    audio or text) sent only to that provider when a model is picked or on

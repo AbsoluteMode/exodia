@@ -1,5 +1,38 @@
 # Interface decisions
 
+## Agent voice model mark — 2026-10-22
+
+The user speaks to the agent and wants to recognize the selected model's author.
+First keep the transcript legible; the small mark identifies who will answer.
+They explicitly chose the existing star beside the voice ticker, not new UI in
+the model list. Keep the 15 pt mark in the 16 pt slot, existing gaps and capsule
+measurements. The mark is an accessible labelled image, not a button.
+
+- Model-author identity follows the exact Agent route, independent of an
+  OpenRouter hosting-provider pin. Google search and Drop keep their own marks.
+  Unknown/Auto OpenRouter authors use the existing router mark rather than a
+  guessed company logo. No routes or preferences change.
+- Bundled prewarmed artwork is immediate. Optional background cache refresh has
+  no spinner, error banner or layout change; failed/offline refresh keeps usable
+  artwork. A completed old download cannot replace a newly selected model.
+  Reason: a decorative asset must not delay voice capture or change the task.
+- Flatten logos to neutral 72% white using source alpha, preserving source aspect
+  ratio. On black, the opaque mark has 10.54:1 contrast; the existing pulse's
+  dimmest frame remains 3.91:1. Reason: colored source artwork must remain legible
+  in the black voice capsule and must not become differently tinted company marks.
+- Keep the existing Core Animation pulse (scale 0.94–1.08 and opacity 0.58–0.96,
+  1.15 s autoreversing). Reduce Motion removes scaling/pulsing and parks at 0.78
+  opacity (6.51:1 for opaque mark pixels). There is no new animation, focus stop,
+  hover target or keyboard action.
+
+Verification uses native offscreen voice fixtures at 180/280/400 pt, both
+appearances and Cyrillic transcript text; component tests cover pulse/reduced
+motion, author selection, stale-download rejection and warm/offline cache paths.
+Physical voice, system Reduce Motion and VoiceOver remain installed-app acceptance.
+Assumption: the supported author marks are recognizable at 15 pt; the user can
+confirm that in the installed voice ticker. Static OpenRouter image paths may
+change; bundled fallbacks protect the voice experience.
+
 ## Screenshot tool squares and arrow hints — 2026-10-21
 
 The person comes to annotate a region and configure four quick tools without

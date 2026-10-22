@@ -78,7 +78,7 @@ final class IslandAgentFlowStore: ObservableObject {
     private let responseStore: AskResponseStore
     private let dropProviderBrand: @MainActor () -> TranscriptionProviderBrand?
     private let dropCleanupBrand: @MainActor () -> TranscriptionProviderBrand?
-    /// Brand for the user's active agent CLI (Codex / Claude Code), shown in the
+    /// Model-author mark for the native agent (legacy CLI mark otherwise), shown in the
     /// breathing provider logo during AGENT voice (Right Cmd hold). Injected so
     /// tests can supply a fake active provider; the default reads the shared
     /// `AgentProviderStore`. Returns nil when no CLI is connected.
@@ -117,7 +117,9 @@ final class IslandAgentFlowStore: ObservableObject {
             TranscriptionProviderBrand.currentDropCleanup()
         },
         agentProviderBrand: @escaping @MainActor () -> TranscriptionProviderBrand? = {
-            AgentProviderStore.shared.activeProvider.map(TranscriptionProviderBrand.agent)
+            AgentProviderStore.shared.activeProvider.map {
+                TranscriptionProviderBrand.agent($0, route: AIRoutingStore.shared.route(for: .agent))
+            }
         }
     ) {
         self.responseStore = responseStore
@@ -330,11 +332,10 @@ final class IslandAgentFlowStore: ObservableObject {
         case .voiceRecording:
             // Breathing provider logo resolves by recording SOURCE: Google
             // search (R-Option hold) shows the Google mark; otherwise the
-            // active agent CLI (Codex / Claude Code, R-Cmd hold). The Google
+            // native agent's selected model author (R-Cmd hold). The Google
             // flag is set AFTER the phase change and re-runs `recompute()` via
             // `setActiveSourceIsGoogle`, so this branch re-resolves to `.google`
-            // once the flag flips. `agentProviderBrand()` is nil when no CLI is
-            // connected (no logo, same as drop's local mode).
+            // once the flag flips. `agentProviderBrand()` is nil when no agent is connected.
             recordingProviderBrand = activeSourceIsGoogle
                 ? TranscriptionProviderBrand.google
                 : agentProviderBrand()
