@@ -2,12 +2,18 @@
 id: agent-answers-and-screen-2026-10-22
 type: decision
 title: Compact actionable agent answers and requested screen context
-summary: Parse OpenCode action blocks, reinforce concise replies on resumed turns, and expose one app-owned screenshot tool.
+summary: Preserve keyboard action cards for native final links and paths, parse compatibility metadata, and provide compact answers and requested screen context.
 status: confirmed
 tags: [agent, opencode, actions, answers, screenshots, privacy, mcp]
 canonical_for: [agent-answer-actions, agent-screen-context]
 verified_at: 2026-10-22
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-22 the user reported that a native agent answer showed its source as a plain URL instead of the former keyboard-action artifact and requested restoring cards for links and found files.
+    confirmed_at: 2026-10-22
+  - type: repository
+    reference: Sources/Sidekey/AgentDaemon/NativeAgentAnswerArtifacts.swift
+    confirmed_at: 2026-10-22
   - type: user-confirmed
     reference: On 2026-10-22 the user reported raw useful.actions JSON instead of folder actions, requested compact precise replies, and asked to give the agent screenshot capability.
     confirmed_at: 2026-10-22
@@ -28,6 +34,31 @@ related: [2026-10-22-native-agent.md, 2026-10-21-app-control-plugin.md, 2026-10-
 The [native runtime decision](2026-10-22-native-agent.md) supersedes built-in
 OpenCode dispatch and MCP discovery below. The compact-answer/action contract
 and app-owned capture service remain; historical OpenCode adapters stay compatible.
+
+## Native answer artifacts
+
+The native final-answer path previously emitted cards only when the model called
+show_actions or returned a trailing compatibility fence. The renderer, selection
+state and configured insert/open/next/previous hotkeys were still present; a
+plain source URL did not activate them. Do not depend solely on model compliance.
+
+After successful completion, NativeAgentAnswerArtifacts promotes final HTTP(S)
+links and absolute/tilde paths into the same useful.actions block. Explicit
+metadata takes priority; repeated destinations collapse and the existing 20-item
+limit remains. Root URL identity normalizes host case and an empty path to /,
+without merging distinct /guide and /guide/ resources. Markdown labels and
+balanced destination parentheses, standalone URLs in code spans, emphasis,
+quoted/code-span paths with spaces and path-only fences are supported. Ordinary
+code/config fences (backticks or tildes, including unclosed fences) and inline
+commands with option arguments are excluded. Bare paths use
+known local root forms without guessing where space-containing prose ends.
+The scan is bounded to 32,000 characters and performs no network/file I/O or extra
+model requests. Path formatting does not verify filesystem existence or source
+facts. Existing prose/citations stay intact; the model is also instructed to put
+sources and returned files in compact cards. Nothing is opened or inserted
+until the user uses the existing card control or configured shortcut.
+
+## Compatibility adapters
 
 OpenCode previously concatenated all text parts and sent the trailing
 `useful.actions` JSON straight into prose. Claude/Codex already used the shared

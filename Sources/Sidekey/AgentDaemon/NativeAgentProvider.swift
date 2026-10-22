@@ -110,6 +110,7 @@ final class NativeAgentProvider: CLIProvider {
                     text = extracted.answer
                     actions = Self.merging(actions, extracted.block)
                 }
+                actions = NativeAgentAnswerArtifacts.collect(from: text, existing: actions)
                 guard !text.isEmpty || actions?.items.isEmpty == false else { throw NativeAgentError.message("The model returned an empty answer. Try again.") }
                 // Persist only after a complete successful turn. A disk error must
                 // not hide a valid answer or repeat any actions.
@@ -145,9 +146,7 @@ final class NativeAgentProvider: CLIProvider {
     }
 
     private static func merging(_ existing: UsefulActionsBlock?, _ incoming: UsefulActionsBlock) -> UsefulActionsBlock {
-        var items = existing?.items ?? []
-        for item in incoming.items where !items.contains(item) { items.append(item) }
-        return UsefulActionsBlock(items: items)
+        NativeAgentAnswerArtifacts.merging(existing, incoming)
     }
 
     static let systemPrompt = """
@@ -168,8 +167,10 @@ final class NativeAgentProvider: CLIProvider {
     Capture the screen only if this request needs visible screen context. Images go to this
     selected model. If capture/image input is unavailable, report it; never guess what is visible.
     When returning a path, verify the best match, put its absolute value in a plain code fence
-    for copying, and call show_actions with a path item to open it. For useful links or snippets,
-    call show_actions with link/copy items as appropriate. Use descriptions in the user’s
+    for copying, and call show_actions with a path item to open it. Always call show_actions
+    for every link you cite and every file/folder you return, so the user gets the existing
+    keyboard-selectable cards with insert/open actions. Use copy items for snippets.
+    Keep the prose short; put sources into cards instead of a long URL list. Use descriptions in the user’s
     language. Actions are UI metadata: never print useful.actions JSON in the answer.
     Use Case key names via case_list_keys. If actions are enabled, `whytap case run -p PROJECT
     --only KEY 'command'` executes with scoped secrets under existing Case approvals. Never

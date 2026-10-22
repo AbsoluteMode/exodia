@@ -66,6 +66,30 @@ final class NativeAgentTests: XCTestCase {
         XCTAssertFalse(saved.contains("Prefer Russian"), "Memory is supplied once, not duplicated into history")
     }
 
+    func testPlainFinalLinksAndFoundFoldersEmitKeyboardActionsWithoutExtraModelCalls() async throws {
+        let (directory, keys, http) = try fixture()
+        try keys.save("key", account: OpenRouterLLMKeyStore.account)
+        let folder = directory.appendingPathComponent("My Project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let answer = "Источник: https://example.com/source\nПапка: `\(folder.path)`"
+        StubURLProtocol.handler = { _ in self.serve(self.router(["role": "assistant", "content": answer])) }
+        let provider = NativeAgentProvider(keys: keys, http: http, workspace: { directory }, usageSink: { _ in })
+        var items: [ActionItem] = []
+        var final: String?
+        for await event in provider.run(prompt: "Find the source and folder", resumeSessionID: nil, options: .init(model: "model", allowActions: false)) {
+            if case .blockComplete(.usefulActions(let block)) = event { items = block.items }
+            if case .finalAnswer(let text) = event { final = text }
+        }
+        XCTAssertEqual(StubURLProtocol.capturedRequests.count, 1, "Artifact presentation must not need another model or tool request")
+        XCTAssertEqual(final, answer)
+        XCTAssertEqual(items.map(\.insertText), ["https://example.com/source", folder.path])
+        let selection = UsefulLinksSelectionState(items: items)
+        XCTAssertTrue(selection.selectedItemSupportsOpen)
+        selection.selectNext()
+        XCTAssertEqual(selection.selectedItem?.openTarget?.path, folder.path)
+        XCTAssertEqual(selection.selectedItem?.insertText, folder.path)
+    }
+
     func testOpenAIResponsesRetainsReasoningAndCallIDAndReturnsImage() async throws {
         let (_, _, http) = try fixture()
         var count = 0

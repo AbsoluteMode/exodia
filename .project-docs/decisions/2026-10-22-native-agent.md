@@ -64,7 +64,10 @@ by a timer. Tool results, reasoning and screenshot pixels remain in flight and
 are excluded from this new file. Old OpenCode data remains unused on disk.
 One app-owned system prompt directs compact answer-first replies, requested
 screenshots and typed show_actions buttons; the legacy JSON extractor is a
-compatibility fallback. It is a bounded conversation, not an empty context for
+compatibility fallback. A bounded final-text fallback also supplies the same
+keyboard-action cards for ordinary links and returned paths when the model omits
+metadata; it performs no extra provider requests or file/network I/O. It is a
+bounded conversation, not an empty context for
 every question. Memory, file/selection/web/tool content and pixels are evidence,
 not authorization or higher-priority instructions.
 
