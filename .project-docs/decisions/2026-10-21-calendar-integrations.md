@@ -6,8 +6,11 @@ summary: Integrations lists each calendar feature and its permissions, while una
 status: confirmed
 tags: [calendar, integrations, google, outlook, apple, zoom, oauth, verification]
 canonical_for: [calendar-integration-entry, public-calendar-approval]
-verified_at: 2026-10-21
+verified_at: 2026-10-22
 sources:
+  - type: user-confirmed
+    reference: 2026-10-22 chat; clarified that Connect should directly start provider authorization with no intermediate connection form or app setup.
+    confirmed_at: 2026-10-22
   - type: user-confirmed
     reference: 2026-10-21 chat; requested calendar feature connections in Integrations, included Zoom, and rejected the Google unverified-app warning for public use.
     confirmed_at: 2026-10-21
@@ -24,10 +27,11 @@ related: [2026-10-19-planner.md, 2026-10-21-calendar-hover.md]
 
 Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calendar
 and Zoom Calendar separately. Each entry describes the actual calendar access,
-shows its connection or approval state, and opens a provider-specific sheet.
-Ordinary users do not enter OAuth client configuration. The later
-[Calendar in Hover decision](2026-10-21-calendar-hover.md) moves Calendar's feed
-controls and advanced source-user client setup into Hover.
+shows its connection or approval state, and starts provider authorization directly.
+There is no intermediate connection sheet, account-name field or app setup.
+The [Calendar in Hover decision](2026-10-21-calendar-hover.md) owns the compact
+source list and feed controls. Source users supply native client configuration
+when building; ordinary users do not enter OAuth client configuration.
 
 Registration and production publishing status are not evidence of provider
 approval. Shared Google and Zoom clients require an explicit packaging approval
@@ -45,8 +49,8 @@ An active connection flow defers Sparkle restart and backup restore, including
 when the originating window closes; ordinary backups remain available.
 Conversely, backup work, a staged restore or pending maintenance blocks new
 connection changes until it finishes, so restored metadata cannot erase a new
-account. The native-client editor clears a previous client's desktop secret
-when its ID changes.
+account. The retained development-only native-client editor clears a previous client's
+desktop secret when its ID changes; normal Hover/Integrations do not open it.
 
 ## Why
 

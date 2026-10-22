@@ -755,16 +755,17 @@ feature, add an account or disconnect an existing one.
   Apple Calendar and Zoom Calendar. Each provider has one grouped card with a
   13pt title, 11pt status, 12pt permission copy and account actions. Why: separate
   capabilities must not imply access to unrelated email, recordings or transcripts.
-- Connect opens a sheet fixed to the chosen provider; ordinary Settings users
-  see no client IDs or provider selector. Planner retains Advanced setup for
-  independent source-user clients. Why: a feature connection is a user task;
+- Connect starts the provider browser/macOS prompt directly; there is no
+  intermediate sheet, account-name field or Advanced setup. Native client
+  configuration belongs to the build. Why: a feature connection is a user task;
   app registration is an owner task.
 - Pending Google verification and Zoom publication are visible before interaction.
   Their shared-client action is disabled; existing accounts retain Disconnect.
   Why: the user explicitly rejected sending public users through Google's warning.
 - While browser sign-in is active, all additional connect actions are disabled
   and its provider shows progress. Cancel closes the browser receiver; failures
-  stay with the sheet. Sign-in completion/cancellation releases restart/restore
+  stay inline on the provider card. Leaving Integrations cancels its flow.
+  Sign-in completion/cancellation releases restart/restore
   deferral. Why: Settings and Planner must share one connection flow.
 - A backup operation, staged restore or pending backup maintenance also blocks
   new calendar connection changes, with a reason above the cards and in the sheet.
@@ -1172,13 +1173,17 @@ The user can inspect an event or connect another provider without losing Hover.
   source and a disclosure chevron. Full title/notes/location are in inline
   scrollable details. Why: longer content must be readable without a window.
 - Connect stays in the header. Google, Outlook, Apple and Zoom lead to the same
-  CalendarConnectView authorization used by Integrations. Advanced registration
-  fields are collapsed in Hover and hidden from normal Integrations sheets.
+  CalendarConnectionFlow authorization used by Integrations. Connect immediately
+  opens the provider browser or macOS permission prompt. The user clarified on
+  2026-10-22 that there must be no intermediate form, account-name field or
+  Advanced setup. The build supplies native client configuration.
 - Provider selection shows only each calendar's name and Connect in a compact
   row. The user requested this simplification on 2026-10-22: introductory copy,
   connection-status subtitles and disclosure chevrons add noise before selection.
   The whole row retains its existing hover, pressed and keyboard-focus feedback.
-- Pending Google/Zoom approval appears after provider selection and prevents real authorization.
+- Pending Google/Zoom approval prevents authorization and appears inline after
+  Connect; no additional page is opened. The active row shows progress, all
+  further connections are disabled, and Cancel is available on the source list.
   Empty, loading, disconnected, stale/error and busy states retain a path back.
 - All rows and header actions use a full-target rounded highlight (6% normal,
   15% hover, 23% pressed white), 1.5pt focus outline and 42% disabled opacity.
@@ -1196,7 +1201,7 @@ The user can inspect an event or connect another provider without losing Hover.
   Source events and local archive data keep their current formats.
 
 Verification: synthetic NSHostingView fixtures at 310/360/500pt cover the agenda,
-long event list, details, providers, pending Google, Outlook/Apple connections,
+long event list, details, providers, inline pending Google, direct connections,
 feed selection and a busy connection. A separate fixture disables animations.
 These fixtures use temporary stores, fake credentials and no network. Physical
 hover/keyboard/VoiceOver, system Reduce Motion and live provider consent remain

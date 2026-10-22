@@ -5,7 +5,16 @@ struct SettingsCalendarIntegrationsView: View {
     var readiness: (CalendarProvider) -> CalendarConnectionReadiness = {
         .shared($0, configuration: CalendarClientConfiguration.registered($0))
     }
-    @State private var connectingProvider: CalendarProvider?
+    @StateObject private var flow: CalendarConnectionFlow
+    private let configurationInfo: [String: Any]?
+
+    init(connections: CalendarConnections,
+         readiness: @escaping (CalendarProvider) -> CalendarConnectionReadiness = {
+             .shared($0, configuration: CalendarClientConfiguration.registered($0))
+         }, configurationInfo: [String: Any]? = Bundle.main.infoDictionary, flow: CalendarConnectionFlow? = nil) {
+        self.connections = connections; self.readiness = readiness; self.configurationInfo = configurationInfo
+        self._flow = StateObject(wrappedValue: flow ?? CalendarConnectionFlow(connections: connections))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,12 +32,13 @@ struct SettingsCalendarIntegrationsView: View {
             }
             ForEach([CalendarProvider.google, .microsoft, .apple, .zoom]) { provider in
                 CalendarIntegrationCard(provider: provider, connections: connections,
-                    readiness: readiness(provider), onConnect: { connectingProvider = provider })
+                    readiness: readiness(provider), flow: flow,
+                    onConnect: { flow.startRegistered(provider: provider, info: configurationInfo) })
             }
+            IntegrationLink(title: "Calendar privacy", destination: URL(string: "https://whytap.ai/calendar-privacy/")!)
+                .font(.system(size: 11))
         }
-        .sheet(item: $connectingProvider) { provider in
-            CalendarConnectView(connections: connections, provider: provider, allowsProviderSelection: false)
-        }
+        .onDisappear { flow.cancel() }
     }
 }
 
@@ -36,6 +46,7 @@ private struct CalendarIntegrationCard: View {
     let provider: CalendarProvider
     @ObservedObject var connections: CalendarConnections
     let readiness: CalendarConnectionReadiness
+    @ObservedObject var flow: CalendarConnectionFlow
     private var available: Bool { readiness == .available }
     let onConnect: () -> Void
     @State private var removing: ConnectedCalendarAccount?
@@ -64,7 +75,9 @@ private struct CalendarIntegrationCard: View {
                         Text(status).font(.system(size: 11)).foregroundStyle(MacSettingsTheme.text2)
                     }
                     Spacer(minLength: 8)
-                    if provider == .apple && connected {
+                    if flow.working && flow.lastProvider == provider {
+                        IntegrationAction(title: "Cancel") { flow.cancel() }
+                    } else if provider == .apple && connected {
                         IntegrationAction(title: "Disconnect", enabled: !busy) { confirmAppleDisconnect() }
                     } else {
                         IntegrationAction(title: actionTitle,
@@ -98,6 +111,10 @@ private struct CalendarIntegrationCard: View {
                     }
                 }
                 if let error { Text(error).font(.system(size: 12)).foregroundStyle(MacSettingsTheme.orange) }
+                if flow.lastProvider == provider, let error = flow.error {
+                    Text(error).font(.system(size: 12)).foregroundStyle(MacSettingsTheme.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }.padding(14)
         }
         .alert("Disconnect \(provider.integrationTitle)?", isPresented: Binding(

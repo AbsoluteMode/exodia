@@ -25,13 +25,6 @@ final class CalendarIntegrationRenderTests: XCTestCase {
                     size: NSSize(width: width, height: 800), dark: dark,
                     to: destination.appendingPathComponent("pending-\(Int(width))-\(dark).png"))
             }
-            for provider in [CalendarProvider.google, .microsoft, .apple, .zoom] {
-                let info: [String: Any] = ["WhytapCalendarOAuthClients": [provider.rawValue: ["clientID": "fixture"]]]
-                try render(CalendarConnectView(connections: connections, provider: provider,
-                    allowsProviderSelection: false, configurationInfo: info),
-                    size: NSSize(width: 480, height: 420), dark: dark,
-                    to: destination.appendingPathComponent("connect-\(provider.rawValue)-\(dark).png"))
-            }
             try render(interactionStates(), size: NSSize(width: 680, height: 320), dark: dark,
                 to: destination.appendingPathComponent("interaction-states-\(dark).png"))
             try render(interactionStates(reduceMotion: true),

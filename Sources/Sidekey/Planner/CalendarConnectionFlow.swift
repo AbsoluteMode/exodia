@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The permission operation outlives an inline view temporarily hidden by a
-/// meeting/agent surface. Explicit Cancel ends it; Settings sheets cancel on close.
+/// meeting/agent surface. Explicit Cancel ends it; leaving Settings cancels its flow.
 @MainActor
 final class CalendarConnectionFlow: ObservableObject {
     typealias Authorization = (CalendarProvider, String, String, String) async throws -> (code: String, redirect: String)
@@ -21,6 +21,29 @@ final class CalendarConnectionFlow: ObservableObject {
 
     func clearError() { error = nil }
     func cancel() { error = nil; task?.cancel(); browser?.cancel() }
+
+    /// Ordinary Connect goes straight to the provider, using this build's registration.
+    @discardableResult
+    func startRegistered(provider: CalendarProvider, info: [String: Any]? = Bundle.main.infoDictionary,
+                         onSuccess: @escaping () -> Void = {}) -> Bool {
+        guard !working else { return false }
+        lastProvider = provider; error = nil
+        let configuration = CalendarClientConfiguration.registered(provider, info: info)
+        if let message = CalendarConnectionReadiness.shared(provider, configuration: configuration).message {
+            error = message; return false
+        }
+        if provider != .apple, let message = connections.accountConnectionIssue {
+            error = message; return false
+        }
+        if let message = connections.connectionBlockReason {
+            error = message; return false
+        }
+        guard !connections.isConnecting else {
+            error = "Finish the calendar connection already open."; return false
+        }
+        return start(provider: provider, clientID: configuration?.clientID ?? "",
+            secret: configuration?.clientSecret ?? "", label: "", info: info, onSuccess: onSuccess)
+    }
 
     @discardableResult
     func start(provider: CalendarProvider, clientID: String, secret: String, label: String,

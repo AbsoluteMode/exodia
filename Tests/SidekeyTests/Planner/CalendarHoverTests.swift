@@ -139,14 +139,15 @@ final class CalendarHoverTests: XCTestCase {
             connections: connections, now: { self.day }, connectionFlow: flow)
         let info: [String: Any] = ["WhytapCalendarOAuthClients": ["microsoft": ["clientID": "fixture"]]]
         var completed = 0
-        model.begin(); model.page = .connect(.microsoft)
-        XCTAssertTrue(flow.start(provider: .microsoft, clientID: "fixture", secret: "", label: "Synthetic Outlook",
-            info: info, onSuccess: { completed += 1; model.page = .agenda }))
+        model.begin()
+        XCTAssertTrue(model.connect(.microsoft, info: info, onSuccess: { completed += 1 }))
+        XCTAssertFalse(model.connect(.google, info: info), "A second click must not start or replace the active flow")
+        XCTAssertEqual(flow.lastProvider, .microsoft)
         model.openToday()
-        XCTAssertEqual(model.page, .connect(.microsoft), "A repeated hotkey must retain the active connection")
+        XCTAssertEqual(model.page, .providers, "Connection starts without an intermediate form")
         _ = NSApplication.shared
-        let host = NSHostingView(rootView: CalendarConnectView(connections: connections, provider: .microsoft,
-            allowsProviderSelection: false, configurationInfo: info, compact: true, flow: flow, keepsFlowOnDisappear: true))
+        let host = NSHostingView(rootView: CalendarHoverView(model: model, liveUpdates: false,
+            configurationInfo: info, onBack: {}))
         let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 310, height: 350),
             styleMask: .borderless, backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false; window.contentView = host
@@ -155,17 +156,79 @@ final class CalendarHoverTests: XCTestCase {
         model.end(); model.begin()
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertTrue(flow.working); XCTAssertTrue(connections.isConnecting)
-        XCTAssertEqual(model.page, .connect(.microsoft))
+        XCTAssertEqual(model.page, .providers)
         XCTAssertFalse(window.isVisible || window.isKeyWindow)
+        if let output = ProcessInfo.processInfo.environment["WHYTAP_CALENDAR_HOVER_RENDER_DIR"] {
+            try FileManager.default.createDirectory(at: URL(fileURLWithPath: output), withIntermediateDirectories: true)
+            for width: CGFloat in [310, 360, 500] {
+                try await render(model, page: .providers, name: "connecting", width: width, info: info,
+                    destination: URL(fileURLWithPath: output))
+            }
+        }
         PlannerURLProtocol.handler = { _ in (200, ["access_token": "fixture-access", "refresh_token": "fixture-refresh", "expires_in": 3600, "token_type": "Bearer"]) }
         pending.continuation.yield((code: "fixture-code", redirect: "http://localhost:8080/callback"))
         pending.continuation.finish()
         for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertFalse(flow.working); XCTAssertFalse(connections.isConnecting)
         XCTAssertEqual(completed, 1); XCTAssertEqual(activity, [true, false])
-        XCTAssertEqual(connections.accounts.map(\.label), ["Synthetic Outlook"])
+        XCTAssertEqual(connections.accounts.map(\.label), [CalendarProvider.microsoft.title])
         XCTAssertEqual(credentials.saveCount, 1)
         XCTAssertNil(flow.error)
+    }
+
+    func testDirectConnectBlocksUnapprovedAndMissingClientsWithoutOpeningAuthorization() async throws {
+        let connections = CalendarConnections(defaults: defaults)
+        var authorizations = 0
+        let flow = CalendarConnectionFlow(connections: connections, authorize: { _, _, _, _ in
+            authorizations += 1; throw CalendarConnectionError.denied
+        })
+        let model = CalendarHoverModel(store: PlannerStore(url: directory.appendingPathComponent("planner.json")),
+            connections: connections, connectionFlow: flow)
+        for provider in [CalendarProvider.google, .zoom, .microsoft] {
+            let info: [String: Any] = ["WhytapCalendarOAuthClients": [provider.rawValue: ["clientID": "fixture"]]]
+            XCTAssertFalse(model.connect(provider, info: provider == .microsoft ? [:] : info))
+            XCTAssertEqual(model.page, .providers)
+            XCTAssertNotNil(flow.error)
+            XCTAssertFalse(flow.working); XCTAssertFalse(connections.isConnecting)
+        }
+        await Task.yield()
+        XCTAssertEqual(authorizations, 0); XCTAssertTrue(connections.accounts.isEmpty)
+        let approved: [String: Any] = ["WhytapCalendarOAuthClients": ["google": ["clientID": "fixture", "publicAccessApproved": "true"]]]
+        XCTAssertTrue(model.connect(.google, info: approved))
+        for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(authorizations, 1)
+        XCTAssertEqual(flow.error, CalendarConnectionError.denied.localizedDescription)
+        XCTAssertTrue(connections.accounts.isEmpty); XCTAssertFalse(connections.isConnecting)
+    }
+
+    func testSettingsDirectConnectionCancelsWhenItsViewCloses() async throws {
+        _ = NSApplication.shared
+        let connections = CalendarConnections(defaults: defaults)
+        let pending = AsyncThrowingStream<(code: String, redirect: String), Error>.makeStream()
+        let flow = CalendarConnectionFlow(connections: connections, authorize: { _, _, _, _ in
+            var iterator = pending.stream.makeAsyncIterator()
+            guard let result = try await iterator.next() else { throw CancellationError() }
+            return result
+        })
+        defer { pending.continuation.finish(); flow.cancel() }
+        let info: [String: Any] = ["WhytapCalendarOAuthClients": ["microsoft": ["clientID": "fixture"]]]
+        let host = NSHostingView(rootView: SettingsCalendarIntegrationsView(connections: connections,
+            readiness: { _ in .available }, configurationInfo: info, flow: flow))
+        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 500, height: 800),
+            styleMask: .borderless, backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(flow.startRegistered(provider: .microsoft, info: info))
+        try await Task.sleep(for: .milliseconds(30))
+        let otherFlow = CalendarConnectionFlow(connections: connections)
+        XCTAssertFalse(otherFlow.startRegistered(provider: .microsoft, info: info))
+        XCTAssertFalse(otherFlow.working)
+        XCTAssertTrue(flow.working)
+        window.contentView = nil; window.close()
+        for _ in 0..<100 where flow.working { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertFalse(flow.working); XCTAssertFalse(connections.isConnecting)
+        XCTAssertTrue(connections.accounts.isEmpty); XCTAssertNil(flow.error)
+        XCTAssertFalse(window.isVisible || window.isKeyWindow)
     }
 
     func testExplicitCancelReleasesConnectionAndSettingsFlowDoesNotBelongToHover() async throws {
@@ -213,11 +276,12 @@ final class CalendarHoverTests: XCTestCase {
         let info: [String: Any] = ["WhytapCalendarOAuthClients": [
             "google": ["clientID": "fixture"], "microsoft": ["clientID": "fixture"]]]
         for width: CGFloat in [310, 360, 500] {
+            model.connectionFlow.clearError()
             try await render(model, page: .agenda, name: "empty", width: width, info: info, destination: destination)
             try await render(model, page: .providers, name: "providers", width: width, info: info, destination: destination)
-            try await render(model, page: .connect(.google), name: "google-pending", width: width, info: info, destination: destination)
-            try await render(model, page: .connect(.microsoft), name: "outlook-connect", width: width, info: info, destination: destination)
-            try await render(model, page: .connect(.apple), name: "apple-connect", width: width, info: info, destination: destination)
+            XCTAssertFalse(model.connect(.google, info: info))
+            try await render(model, page: .providers, name: "google-pending", width: width, info: info, destination: destination)
+            model.connectionFlow.clearError()
         }
         for index in 0..<10 {
             let event = PlannerEvent(title: index == 0 ? "Очень длинное название встречи — обсуждение запуска календаря и следующих шагов с командой" : "Meeting \(index)",
@@ -233,7 +297,7 @@ final class CalendarHoverTests: XCTestCase {
             try await render(model, page: .sources, name: "sources", width: width, info: info, destination: destination)
         }
         XCTAssertTrue(model.connections.beginConnecting(provider: .microsoft))
-        try await render(model, page: .connect(.microsoft), name: "busy", width: 310, info: info, destination: destination)
+        try await render(model, page: .providers, name: "busy", width: 310, info: info, destination: destination)
         model.connections.endConnecting()
         try await render(model, page: .agenda, name: "reduced-motion", width: 310, info: info, destination: destination, reduceMotion: true)
     }

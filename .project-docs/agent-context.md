@@ -876,8 +876,10 @@ full truncated titles. Drafts survive closing; saved Toolbox slots remain unchan
 Calendar opens a 350pt inline Hover agenda on today. Tile, search, assigned hotkey
 and whytap://tool/calendar use the same surface; reopening resets to today.
 Day navigation, full event details, feed selection and Connect stay in Hover.
-Connect uses the same provider authorization as Settings → Integrations, without
-a Whytap account. Toolbox uses the same inline entry; there are no runtime
+Connect starts the provider browser or macOS permission prompt directly, using
+the same CalendarConnectionFlow as Settings → Integrations. No intermediate
+form, account-name field, Advanced app setup or Whytap account is shown.
+Unavailability/errors stay inline; progress and Cancel remain on the source list. Toolbox uses the same inline entry; there are no runtime
 PlannerWindowController calls. CalendarConnectionFlow keeps permission work alive
 through temporary Hover hiding. Only Hover-owned connections pin its menu;
 Settings connections do not. Repeat opens preserve an active connection.
