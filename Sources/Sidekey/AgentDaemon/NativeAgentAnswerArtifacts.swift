@@ -6,7 +6,7 @@ import Foundation
 enum NativeAgentAnswerArtifacts {
     static func merging(_ existing: UsefulActionsBlock?, _ incoming: UsefulActionsBlock) -> UsefulActionsBlock {
         var seen = Set<String>()
-        let items = ((existing?.items ?? []) + incoming.items).filter { seen.insert($0.insertText).inserted }
+        let items = ((existing?.items ?? []) + incoming.items).filter { seen.insert(identity($0)).inserted }
         return UsefulActionsBlock(items: items)
     }
 
@@ -27,52 +27,102 @@ enum NativeAgentAnswerArtifacts {
         func path(_ raw: String, decodePercent: Bool = false) -> ActionItem? {
             var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if value.hasPrefix("<"), value.hasSuffix(">") { value = String(value.dropFirst().dropLast()) }
-            if decodePercent { value = value.removingPercentEncoding ?? value }
             if value.hasPrefix("file://"), let url = URL(string: value),
                url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost" { value = url.path }
+            else if decodePercent { value = value.removingPercentEncoding ?? value }
             if value.hasPrefix("~/") { value = homeDirectory + String(value.dropFirst()) }
             guard value.hasPrefix("/"), !value.hasPrefix("//"),
                   !value.contains("://"), !value.contains(where: { $0.isNewline }),
-                  !value.contains(" && "), !value.contains(" | "), !value.contains("; ") else { return nil }
+                  !value.contains(" && "), !value.contains(" | "), !value.contains("; "),
+                  value.range(of: #"\s--?[A-Za-z]"#, options: .regularExpression) == nil else { return nil }
             let name = (value as NSString).lastPathComponent
             return .path(path: value, description: name.isEmpty ? value : name)
         }
         // Code/config examples aren't source links. A fence containing only a
         // path/URL remains a copyable value and can also get its usual card.
-        for fence in matches(#"(?s)```([^\n`]*)\n(.*?)```"#) {
-            excluded.append(fence.range)
-            let language = ns.substring(with: fence.range(at: 1)).trimmingCharacters(in: .whitespaces).lowercased()
-            guard ["", "text", "plaintext", "path"].contains(language) else { continue }
-            let body = ns.substring(with: fence.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
-            if let item = path(body) { candidates.append((fence.range, item)) }
-            else if let url = webURL(body) { candidates.append((fence.range, link(url))) }
+        for opening in matches(#"(?m)^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)\n"#) {
+            guard !overlaps(opening.range, excluded) else { continue }
+            let marker = ns.substring(with: opening.range(at: 1))
+            let pattern = #"(?m)^[ \t]{0,3}"# + NSRegularExpression.escapedPattern(for: String(marker.prefix(1)))
+                + "{\(marker.count),}" + #"[ \t]*\r?$"#
+            let bodyStart = NSMaxRange(opening.range)
+            let closing = (try? NSRegularExpression(pattern: pattern))?
+                .firstMatch(in: text, range: NSRange(location: bodyStart, length: ns.length - bodyStart))
+            let bodyEnd = closing?.range.location ?? ns.length
+            let fence = NSRange(location: opening.range.location,
+                                length: (closing.map { NSMaxRange($0.range) } ?? ns.length) - opening.range.location)
+            excluded.append(fence)
+            let language = ns.substring(with: opening.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard closing != nil, ["", "text", "plaintext", "path"].contains(language) else { continue }
+            let body = ns.substring(with: NSRange(location: bodyStart, length: bodyEnd - bodyStart))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let item = path(body) { candidates.append((fence, item)) }
+            else if let url = webURL(body) { candidates.append((fence, link(url))) }
         }
-        let markdown = matches(#"\[([^\]\r\n]{1,120})\]\(([^)\r\n]+)\)"#)
-            .filter { !overlaps($0.range, excluded) }
-        for match in markdown {
-            var target = ns.substring(with: match.range(at: 2))
+        // A code span is either a single returned value or code, never a set
+        // of links found inside a shell command. Handle it before detection.
+        for span in matches(#"(?<!`)(`+)([^`\r\n]+)\1(?!`)"#) {
+            guard !overlaps(span.range, excluded) else { continue }
+            excluded.append(span.range)
+            let value = ns.substring(with: span.range(at: 2))
+            if let url = webURL(value) { candidates.append((span.range, link(url))) }
+            else if let item = path(value) { candidates.append((span.range, item)) }
+        }
+        for opening in matches(#"\[([^\]\r\n]{1,120})\]\("#) {
+            guard !overlaps(opening.range, excluded + occupied) else { continue }
+            let start = NSMaxRange(opening.range)
+            var index = start, depth = 1
+            var end: Int?
+            var angle = false
+            var quote: unichar?
+            // Match the actual Markdown delimiter, not the first ')' in a
+            // Wikipedia-style target. Quotes/angle targets may contain ')'.
+            while index < ns.length {
+                let char = ns.character(at: index)
+                if char == 10 || char == 13 { break }
+                if char == 92 { index += 2; continue }
+                if let active = quote { if char == active { quote = nil } }
+                else if angle { if char == 62 { angle = false } }
+                else if char == 60 { angle = true }
+                else if (char == 34 || char == 39), index > start,
+                        (ns.character(at: index - 1) == 32 || ns.character(at: index - 1) == 9) { quote = char }
+                else if char == 40 { depth += 1 }
+                else if char == 41 { depth -= 1; if depth == 0 { end = index; break } }
+                index += 1
+            }
+            guard let end else { continue }
+            let range = NSRange(location: opening.range.location, length: end + 1 - opening.range.location)
+            occupied.append(range)
+            var target = ns.substring(with: NSRange(location: start, length: end - start))
             if let title = target.range(of: #"\s+["'][^"']*["']$"#, options: .regularExpression) {
                 target.removeSubrange(title)
             }
-            if let item = path(target, decodePercent: true) {
-                candidates.append((match.range, item)); occupied.append(match.range)
-            }
+            target = target.trimmingCharacters(in: .whitespaces)
+            if target.hasPrefix("<"), target.hasSuffix(">") { target = String(target.dropFirst().dropLast()) }
+            target = target.replacingOccurrences(of: "\\(", with: "(").replacingOccurrences(of: "\\)", with: ")")
+            if let url = webURL(target) {
+                candidates.append((range, link(url, label: ns.substring(with: opening.range(at: 1)))))
+            } else if let item = path(target, decodePercent: true) { candidates.append((range, item)) }
         }
         if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
             detector.enumerateMatches(in: text, range: full) { match, _, stop in
                 guard let match else { return }
                 if candidates.count >= 100 { stop.pointee = true; return }
+                let alreadyCovered = overlaps(match.range, excluded + occupied)
                 occupied.append(match.range)
-                guard !overlaps(match.range, excluded), let detected = match.url,
-                      let url = webURL(detected.absoluteString) else { return }
-                let label = markdown.first { NSIntersectionRange($0.range, match.range) == match.range }
-                    .map { ns.substring(with: $0.range(at: 1)) }
-                candidates.append((match.range, link(url, label: label)))
+                guard !alreadyCovered, let detected = match.url,
+                      let scheme = detected.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return }
+                var raw = ns.substring(with: match.range)
+                let prefix = ns.substring(to: match.range.location)
+                let wrapping = String(prefix.reversed().prefix { "*_~".contains($0) }.reversed())
+                if !wrapping.isEmpty, raw.hasSuffix(String(wrapping.reversed())) { raw = String(raw.dropLast(wrapping.count)) }
+                let target = raw.lowercased().hasPrefix("\(scheme)://") ? raw : "\(scheme)://" + raw
+                if let url = webURL(target) { candidates.append((match.range, link(url))) }
             }
         }
-        for match in matches(#"`([^`\r\n]+)`|["“«]((?:/|~/)[^"”»\r\n]+)["”»]"#) {
+        for match in matches(#"["“«]((?:/|~/|file://)[^"”»\r\n]+)["”»]"#) {
             guard !overlaps(match.range, excluded + occupied) else { continue }
-            let range = match.range(at: match.range(at: 1).location == NSNotFound ? 2 : 1)
+            let range = match.range(at: 1)
             if let item = path(ns.substring(with: range)) {
                 candidates.append((match.range, item)); occupied.append(match.range)
             }
@@ -87,7 +137,7 @@ enum NativeAgentAnswerArtifacts {
         }
         var seen = Set<String>()
         let inferred = candidates.sorted { $0.0.location < $1.0.location }.map(\.1)
-            .filter { seen.insert($0.insertText).inserted }
+            .filter { seen.insert(identity($0)).inserted }
         let block = merging(existing, UsefulActionsBlock(items: inferred))
         return block.items.isEmpty ? nil : block
     }
@@ -98,6 +148,13 @@ enum NativeAgentAnswerArtifacts {
               ["http", "https"].contains(scheme), url.host?.isEmpty == false,
               url.user == nil, url.password == nil else { return nil }
         return url
+    }
+
+    private static func identity(_ item: ActionItem) -> String {
+        guard let url = webURL(item.insertText), var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return item.insertText }
+        parts.scheme = parts.scheme?.lowercased(); parts.host = parts.host?.lowercased()
+        if parts.percentEncodedPath.isEmpty { parts.percentEncodedPath = "/" }
+        return parts.string ?? item.insertText
     }
 
     private static func link(_ url: URL, label: String? = nil) -> ActionItem {

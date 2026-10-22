@@ -52,4 +52,33 @@ final class NativeAgentAnswerArtifactsTests: XCTestCase {
         XCTAssertEqual(NativeAgentAnswerArtifacts.collect(from: urls)?.items.count, UsefulActionsBlock.maxItems)
         XCTAssertNil(NativeAgentAnswerArtifacts.collect(from: String(repeating: "a", count: 32_001) + " https://example.com/after-limit"))
     }
+
+    func testInlineCodeAndEmphasisDoNotAlterURLTargets() throws {
+        let url = "https://www.espn.com/nba/scoreboard"
+        for text in ["Источник: `\(url)`", "Источник: **\(url)**", "Источник: _\(url)_", "Источник: ~~\(url)~~"] {
+            XCTAssertEqual(NativeAgentAnswerArtifacts.collect(from: text)?.items.map(\.insertText), [url], text)
+        }
+        XCTAssertNil(NativeAgentAnswerArtifacts.collect(from: "Run `curl https://api.example.com/v1/x`"))
+    }
+
+    func testMarkdownURLsWithBalancedParenthesesKeepLabelAndTarget() throws {
+        let url = "https://en.wikipedia.org/wiki/Swift_(programming_language)"
+        let items = try XCTUnwrap(NativeAgentAnswerArtifacts.collect(from: "See [Swift](\(url)).")).items
+        XCTAssertEqual(items.map(\.insertText), [url])
+        XCTAssertEqual(items.first?.description, "Swift")
+    }
+
+    func testInlineCommandArgumentsAndUnclosedOrTildeCodeStayCode() {
+        for text in ["`/usr/bin/python3 -m venv`", "`/Applications/Xcode.app --args -X`",
+                     "```bash\nrm -rf /Users/test/tmp/build", "~~~sh\ncat ~/.ssh/config\n~~~"] {
+            XCTAssertNil(NativeAgentAnswerArtifacts.collect(from: text, homeDirectory: "/Users/test"), text)
+        }
+    }
+
+    func testRootURLSlashAndHostCaseDeduplicateWithoutMergingDifferentResourcePaths() throws {
+        let explicit = ActionItem.link(url: URL(string: "https://ESPN.com")!, description: "ESPN", provider: nil)
+        let items = try XCTUnwrap(NativeAgentAnswerArtifacts.collect(from: "https://espn.com/", existing: .init(items: [explicit]))).items
+        XCTAssertEqual(items, [explicit])
+        XCTAssertEqual(NativeAgentAnswerArtifacts.collect(from: "https://example.com/guide https://example.com/guide/")?.items.count, 2)
+    }
 }

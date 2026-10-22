@@ -45,8 +45,12 @@ plain source URL did not activate them. Do not depend solely on model compliance
 After successful completion, NativeAgentAnswerArtifacts promotes final HTTP(S)
 links and absolute/tilde paths into the same useful.actions block. Explicit
 metadata takes priority; repeated destinations collapse and the existing 20-item
-limit remains. Markdown labels, quoted/code-span paths with spaces and path-only
-fences are supported. Ordinary code/config fences are excluded. Bare paths use
+limit remains. Root URL identity normalizes host case and an empty path to /,
+without merging distinct /guide and /guide/ resources. Markdown labels and
+balanced destination parentheses, standalone URLs in code spans, emphasis,
+quoted/code-span paths with spaces and path-only fences are supported. Ordinary
+code/config fences (backticks or tildes, including unclosed fences) and inline
+commands with option arguments are excluded. Bare paths use
 known local root forms without guessing where space-containing prose ends.
 The scan is bounded to 32,000 characters and performs no network/file I/O or extra
 model requests. Path formatting does not verify filesystem existence or source
