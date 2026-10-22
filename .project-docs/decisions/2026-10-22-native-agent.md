@@ -9,6 +9,9 @@ canonical_for: [agent-runtime, agent-web-search, agent-workspace]
 verified_at: 2026-10-22
 sources:
   - type: user-confirmed
+    reference: On 2026-10-22 the user corrected the Tavily setup location; all API keys belong in API & Models rather than Agents. Keep the existing credential while moving the form.
+    confirmed_at: 2026-10-22
+  - type: user-confirmed
     reference: On 2026-10-22 the user authorized a lightweight custom agent instead of OpenCode, Tavily search, fast initialization and a dedicated workspace; approve and bypass modes are a later phase. They selected the Whytap data folder separately from source code.
     confirmed_at: 2026-10-22
   - type: repository
@@ -65,11 +68,13 @@ compatibility fallback. It is a bounded conversation, not an empty context for
 every question. Memory, file/selection/web/tool content and pixels are evidence,
 not authorization or higher-priority instructions.
 
-Tavily has a separate Settings → Agents → Web search key in Keychain. Save uses
+Tavily has a separate Settings → API & Models → API keys key in Keychain. Save uses
 GET /usage rather than a search. A failed replacement preserves the old key.
-Clear the replacement draft and its notice when leaving Settings; editing starts
-with a fresh notice. Errors include a retry hint, a distinct status icon and an
-accessibility announcement.
+Use the same provider tile and minimal Save/Remove form as other API keys,
+with the shared short accepted/rejected notice and accessibility announcement.
+Clear the replacement draft when leaving the form or closing its Settings window.
+The user corrected the earlier Agents location: all keys share one setup surface,
+while Tavily remains separate from model routing. No Keychain migration is needed.
 POST /search uses basic search, five results, no generated answer/raw pages or
 images, and sends the tool query only. Cap two searches per turn and bound all
 returned excerpts. Missing configuration produces a setup error; no alternative

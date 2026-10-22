@@ -435,7 +435,7 @@ final class NativeAgentTests: XCTestCase {
         guard let output = ProcessInfo.processInfo.environment["WHYTAP_NATIVE_AGENT_RENDER_DIR"] else {
             throw XCTSkip("Set WHYTAP_NATIVE_AGENT_RENDER_DIR for native Settings review images")
         }
-        let (directory, keys, http) = try fixture()
+        let (directory, _, _) = try fixture()
         let suite = "AgentRender-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -448,18 +448,11 @@ final class NativeAgentTests: XCTestCase {
         let destination = URL(fileURLWithPath: output)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         for connected in [false, true] {
-            if connected { try keys.save("fixture-key", account: TavilySearch.keychainAccount) }
-            else { try keys.delete(account: TavilySearch.keychainAccount) }
+            if connected { store.markConnected(.native) } else { store.disconnect() }
             for dark in [false, true] {
                 for width in [560.0, 760.0] {
-                    let tavily = TavilySettings(keys: keys, search: .init(http: http))
-                    if connected {
-                        StubURLProtocol.handler = { _ in (401, [:], Data()) }
-                        tavily.draftKey = "bad-fixture-key"
-                        await tavily.save()
-                    }
                     let view = AgentModeView(viewModel: model, settings: settings, store: store, agentEnabled: { true },
-                                             onAgentToggle: { _ in }, openAPIAndModels: { _ in }, tavily: tavily)
+                                             onAgentToggle: { _ in }, openAPIAndModels: { _ in })
                         .background(MacSettingsTheme.bgContent)
                         .environment(\.colorScheme, dark ? .dark : .light)
                     let host = NSHostingView(rootView: view)
@@ -474,18 +467,10 @@ final class NativeAgentTests: XCTestCase {
                     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
                     let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                     host.cacheDisplay(in: host.bounds, to: bitmap)
-                    let name = "agents-\(connected ? "connected-error" : "empty")-\(dark ? "dark" : "light")-\(Int(width)).png"
+                    let name = "agents-\(connected ? "connected" : "disconnected")-\(dark ? "dark" : "light")-\(Int(width)).png"
                     try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: destination.appendingPathComponent(name))
                     XCTAssertFalse(window.isVisible); XCTAssertFalse(window.isKeyWindow)
-                    if connected {
-                        let unrelated = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: true)
-                        unrelated.isReleasedWhenClosed = false
-                        unrelated.close()
-                        XCTAssertFalse(tavily.draftKey.isEmpty, "Closing another window must not discard this draft")
-                    }
                     window.close()
-                    XCTAssertTrue(tavily.draftKey.isEmpty)
-                    XCTAssertNil(tavily.message)
                     window.contentView = nil
                 }
             }

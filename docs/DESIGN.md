@@ -192,6 +192,8 @@ The chosen direction is the user's tile-to-inline-form request.
   anchored to the visible panel instead of scrolled content, and announces it
   to accessibility. Repeating Save resets the notice lifetime; the notice never
   captures clicks or shifts fields/buttons. Existing keys are never read back.
+  A failed Tavily deletion uses "Couldn’t remove key" in the same brief notice,
+  so a storage failure is not described as a rejected credential.
   Add-key entry points in Models/API hints open this same API keys surface.
 - OpenAI and Anthropic are ordinary LLM providers for all text modes. Adding a
   key never assigns routes silently; model selection retains its own synthetic
@@ -1219,20 +1221,16 @@ supersedes the former window presentation. See
 ## Agents: native runtime and Tavily (2026-10-22)
 
 - Keep the existing macOS Settings card/row typography and spacing. The selected
-  model, workspace and connection precede optional web search setup; no runtime
+  model, workspace and connection stay together; no runtime
   installation card remains. Reason: the agent is now built in.
-- Tavily uses a secure empty replacement field, Connected/Not connected status,
-  Get API key, Save key and Remove key. Saving shows progress, disables mutations
-  and reports success/failure inline; failed validation retains the existing key.
-  Error/success icons distinguish the notice, errors include a retry hint, and
-  changes request an accessibility announcement. Editing the draft, leaving the
-  tab or closing its Settings window clears both draft notice and stale error;
-  closing an unrelated window does not discard this draft.
-  Reason: search credentials are independent of model inference.
-- All buttons use MacButton hover/press/focus/disabled feedback. The key field
-  highlights its full border on hover and keyboard focus; disabled has reduced
-  opacity and no active hover. Native secure text editing supplies press/focus
-  behavior. Reason: every interactive target must visibly respond.
+- Tavily belongs in API & Models → API keys, alongside every other API key.
+  The user corrected its original Agents placement on October 22. Its search tile
+  uses the existing provider grid and minimal secure Save/Remove form; the shared
+  accepted/rejected notice is announced without adding a model route. Its saved
+  Keychain account remains unchanged, and failed replacement retains that key.
+  Leaving the form or closing its own Settings window clears the draft.
+- Key tiles and form actions retain the shared APIModel hover/press/focus/disabled
+  feedback and secure native field; saving disables competing tile/form actions.
 - Open folder exposes the permanent app-data workspace; the action switch says
   Allow file edits and commands. Reason: describe current behavior while approve
   and bypass modes remain future work. Context reset after 15 minutes means no
@@ -1253,8 +1251,8 @@ supersedes the former window presentation. See
   half-row or hide the last provider.
 - Show verification dates on each card: existing offers retain October 19, Tavily
   uses October 22. Reason: adding one verified offer does not reverify the rest.
-- Separate model-key setup from Tavily's Agents → Web search location in the
-  footer. Use MacButton interaction surfaces for full link/button hover, pressed,
+- Point all key setup, including Tavily, to API & Models → API keys.
+  Use MacButton interaction surfaces for full link/button hover, pressed,
   focus and disabled feedback without layout shifts or added animation.
 - Check light/dark native offscreen layouts, narrow/wide, embedded/standalone and
   scroll extremes. Physical pointer/keyboard/VoiceOver acceptance remains pending;
