@@ -20,7 +20,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/History/ClipboardEntryDeletionTests.swift
     confirmed_at: 2026-10-22
-related: [2026-10-18-clipboard-retention.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-21-backup-essentials-only.md, 2026-10-18-delete-meeting-and-staged-audio.md]
+related: [2026-10-18-clipboard-retention.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-21-backup-essentials-only.md, 2026-10-18-delete-meeting-and-staged-audio.md, 2026-10-22-history-free-page-scrub.md]
 ---
 
 # Delete one clipboard history entry
@@ -47,8 +47,9 @@ files themselves are not touched.
 
 `SQLiteHistoryStore.deleteClipboardEntry(id:assetsDirectory:)` runs in one hop
 on the store's serial queue: look up the row, remove an image's sidecar, delete
-the row with `PRAGMA secure_delete` on (the connection's previous mode is
-restored), then `sqlite3_wal_checkpoint_v2(..., TRUNCATE)`. It returns
+the row with `PRAGMA secure_delete` on (since the
+[free-page scrub](2026-10-22-history-free-page-scrub.md) the connection keeps
+it on for every delete), then `sqlite3_wal_checkpoint_v2(..., TRUNCATE)`. It returns
 `false` when the row is already gone. After a removal the hover/Toolbox lists
 reload and `HistoryStripController.contentRevision` re-renders the strip; the
 strip also drops a hover or expanded view of that copy.
@@ -100,7 +101,8 @@ separate.
   deliberate decision; one wrong row should not cost the rest.
 - `secure_delete` for the whole connection or a `VACUUM`: wider behavior and
   I/O change than this fix needs; old free pages from earlier evictions are not
-  scrubbed by this change.
+  scrubbed by this change. Both were adopted afterwards by the
+  [free-page scrub](2026-10-22-history-free-page-scrub.md).
 - Clearing the system pasteboard when its content matches: a separate action
   the user did not ask for.
 - SwiftUI `confirmationDialog` (Notify's hover panel): meeting delete's
@@ -115,7 +117,8 @@ Encrypted backups already uploaded are not changed. Archives made before
 2026-10-21 contain the History database, and restoring one brings its entries
 back, including deleted ones. Time Machine, APFS snapshots and other disk
 copies are outside the app. Earlier versions of the row that SQLite may have
-left in pages freed by past evictions are not scrubbed. The truncating checkpoint is
+left in pages freed by past evictions are not scrubbed by this change; the
+[free-page scrub](2026-10-22-history-free-page-scrub.md) handles them. The truncating checkpoint is
 best effort: another active SQLite reader can postpone WAL cleanup, even after
 the row is deleted. This is per-entry removal, not a forensic disk wipe.
 

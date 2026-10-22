@@ -30,6 +30,15 @@ is a verifiable claim rather than a slogan.
   backups already uploaded: archives made before 2026-10-21 contain the
   History database, and restoring one brings its entries back. Time Machine
   and other copies of your disk are not changed either.
+  Every removal from the History database also overwrites the removed bytes:
+  copies pushed out by the 50-entry limit, older dictations and agent chats,
+  and Delete…. Earlier versions removed entries without overwriting them, so
+  pieces of old copies could stay readable in the database's unused space.
+  Whytap therefore rewrites each History database once (SQLite `VACUUM`),
+  in the background after launch. Every entry is kept. When the disk lacks
+  room for its temporary copy (about twice the size of the kept entries), it
+  waits for a later launch. This cleans the files themselves; it is not a
+  forensic wipe of the SSD, snapshots or backups.
 - API keys you enter in Settings → API & Models ("Your key") are stored in the
   macOS Keychain under the app's own service name (`com.rootwise.sidekey`).
   Key values are never shown again after saving and are never written to
