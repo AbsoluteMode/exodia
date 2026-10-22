@@ -64,6 +64,12 @@ feature sessions with regular checked integration and one working application.
   ready, merged, pending and verified-running states, source SHA, included
   features and 1–3 acceptance steps. Report what actually runs and what to
   check after promotion. A merge alone does not update the running app.
+- Bound developer backups: after a successful promotion retain one previous
+  signed working app, remove obsolete app copies under the builder lock, and
+  create full data snapshots only for actual migrations. Remove obsolete data
+  reserves after migration preservation/recovery checks pass. Preserve every
+  coding session, its work and unfinished rollback; follow the shared process's
+  retention section. User-controlled Automatic backup is a separate setting.
 - Before integration/app actions, fetch and reread current `origin/main`'s
   guidance even in older worktrees. Resolve technical overlaps from accepted
   requirements; report incompatible product choices or unresolved risks.
