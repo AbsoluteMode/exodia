@@ -1215,3 +1215,23 @@ Assumptions: daily browsing is sufficient for the compact entry; event editing
 and a month grid are not added to Hover. The explicit current-day requirement
 supersedes the former window presentation. See
 `.project-docs/decisions/2026-10-21-calendar-hover.md`.
+
+## API hints: Tavily search (2026-10-22)
+
+- Keep the existing offer cards, typography and semantic colors; add Tavily as
+  web search for Agent with a neutral globe symbol. Reason: a search API should
+  not appear as another LLM model.
+- Lay out all offers dynamically: two columns from 560pt, with the odd final
+  card spanning both; below 560pt use one column. Keep the offer grid scrollable
+  and footer controls outside it. Reason: five offers must not leave an empty
+  half-row or hide the last provider.
+- Show verification dates on each card: existing offers retain October19, Tavily
+  uses October22. Reason: adding one verified offer does not reverify the rest.
+- Separate model-key setup from Tavily's Agents → Web search location in the
+  footer. Use MacButton interaction surfaces for full link/button hover, pressed,
+  focus and disabled feedback without layout shifts or added animation.
+- Check light/dark native offscreen layouts, narrow/wide, embedded/standalone and
+  scroll extremes. Physical pointer/keyboard/VoiceOver acceptance remains pending;
+  no external-engine review is claimed.
+  Link/card contrast is 5.59:1 light and 4.92:1 dark; date/card contrast is
+  6.62:1 light and 6.84:1 dark using the shared semantic tokens.
