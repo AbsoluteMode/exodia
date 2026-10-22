@@ -305,8 +305,8 @@ struct APIAndModelsView: View {
                     ForEach(group.rows) { row in
                         pickers(for: row, paired: paired)
                     }
-                    if group.rows.contains(where: { $0.feature == .dropSmartDecision }) {
-                        Text("Decision checks whether text needs editing. Clean text takes the Fast path; uncertain results keep Smart processing.")
+                    if group.title == "Drop Smart" {
+                        Text("The text model keeps ready messages unchanged and edits only when corrections or structure are useful.")
                             .font(.system(size: 11.5))
                             .foregroundStyle(MacSettingsTheme.text2)
                             .fixedSize(horizontal: false, vertical: true)

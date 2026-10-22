@@ -54,7 +54,7 @@ final class AppControlController {
         switch request.operation {
         case "get_state":
             guard args.isEmpty else { return invalid() }
-            let features = AIFeature.allCases.map { feature in
+            let features = AIFeature.activeCases.map { feature in
                 AppControlValue.object(["feature": .string(feature.rawValue), "title": .string(feature.title),
                                         "mode": .string(feature.mode.rawValue), "route": routeValue(feature)])
             }
@@ -181,7 +181,8 @@ final class AppControlController {
                         "provider": route.provider.map(AppControlValue.string) ?? .null])
     }
     private func feature(_ args: [String: AppControlValue]) -> AIFeature? {
-        args["feature"]?.string.flatMap(AIFeature.init(rawValue:))
+        guard let feature = args["feature"]?.string.flatMap(AIFeature.init(rawValue:)), feature.isActive else { return nil }
+        return feature
     }
     private func only(_ args: [String: AppControlValue], _ keys: Set<String>) -> Bool { Set(args.keys).isSubset(of: keys) }
     private func validID(_ text: String) -> Bool {

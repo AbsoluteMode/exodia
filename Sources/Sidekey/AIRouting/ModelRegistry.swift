@@ -4,8 +4,7 @@ import Foundation
 /// recorded-audio model of a provider whose real-time route names a streaming
 /// model. Anything the user picks lives in a `FeatureRoute`.
 enum ModelRegistry {
-    /// Pinned decision defaults; a user's explicit choice lives in FeatureRoute.
-    static let smartDecisionModel = "typesafe/jev-1.14"
+    /// Catalog capability metadata only; the separate Decision route is retired.
     static let openAIDecisionModel = "gpt-6-luna"
 
     /// Soniox async (file) transcription, the batch counterpart of `stt-rt-*`.
@@ -51,8 +50,6 @@ extension ModelRegistry {
     }
 
     static let models: [RegistryModel] = [
-        RegistryModel(kind: .openRouter, id: smartDecisionModel, uses: [.decision], diarization: false),
-        RegistryModel(kind: .openAI, id: openAIDecisionModel, uses: [.decision], diarization: false),
         RegistryModel(kind: .soniox, id: "stt-rt-v5", uses: [.realtimeSTT], diarization: false),
         RegistryModel(kind: .soniox, id: sonioxRecordedModel, uses: [.asyncSTT], diarization: true),
         RegistryModel(kind: .deepgram, id: "nova-3", uses: [.realtimeSTT], diarization: false),
@@ -97,7 +94,7 @@ extension ModelRegistry {
             }
         case .openRouter:
             switch feature {
-            case .dropSmartDecision: return smartDecisionModel
+            case .dropSmartDecision: return nil
             case .dropSmartCleanup, .meetingNotes, .translation, .subtitlesTranslation: return "google/gemini-3.8-flash"
             case .agent: return "anthropic/claude-sonnet-5.5"
             case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
@@ -110,7 +107,6 @@ extension ModelRegistry {
             case .dropFast, .dropSmart, .meetings, .agentVoice, .voiceSearch, .subtitlesAudio: return nil
             }
         case .openAI:
-            if feature == .dropSmartDecision { return openAIDecisionModel }
             // The authenticated live catalog is the source of available IDs.
             return nil
         case .openAICompatible:
@@ -127,13 +123,7 @@ extension ModelRegistry {
     /// Why the app cannot run a model it can see in a catalog, or `nil`.
     static func knownUnsupportedReason(_ id: String, kind: AIProviderKind, use: ModelUse) -> String? {
         if use == .decision {
-            switch kind {
-            case .openRouter:
-                return id == smartDecisionModel ? nil : "not a supported decision model"
-            case .openAI:
-                return id == openAIDecisionModel ? nil : "not supported by OpenAI Decisions API"
-            default: return "no decision API adapter"
-            }
+            return "separate Decision processing is retired"
         }
         if kind == .openRouter, id.hasPrefix("typesafe/jev-"), id != "typesafe/jev-router" {
             return "decision model, does not generate text"

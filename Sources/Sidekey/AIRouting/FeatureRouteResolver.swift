@@ -75,6 +75,7 @@ struct FeatureRouteResolver {
     /// The same rules for a route that is not stored (a candidate being
     /// checked before the user picks it).
     func resolve(_ route: FeatureRoute, for feature: AIFeature) throws -> ResolvedRoute {
+        guard feature.isActive else { throw FeatureRouteError.notSet(feature) }
         let model = route.model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !model.isEmpty else { throw FeatureRouteError.notSet(feature) }
 

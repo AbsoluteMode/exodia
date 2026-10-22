@@ -3,7 +3,7 @@ id: smart-decision-calibration-2026-10-21
 type: decision
 title: Calibrate Jev routing against actual dictation benefit
 summary: Measure explicit structural-edit instructions with a model-specific 0.40 routing cutoff; optional rewriting is not evidence that editing was useful.
-status: observed
+status: stale
 tags: [smart, decision, jev, calibration, dictation, context, telegram]
 canonical_for: [smart-decision-calibration]
 verified_at: 2026-10-21
@@ -14,16 +14,20 @@ sources:
   - type: user-confirmed
     reference: 2026-10-21 same chat; future Smart behavior should adapt to the destination application and its supported formatting, particularly Telegram.
     confirmed_at: 2026-10-21
-  - type: repository
-    reference: Sources/Sidekey/AIRouting/SmartTextDecision.swift
+  - type: commit
+    reference: f69be0ea12700064254fb444f598953d4def6761 (historical Sources/Sidekey/AIRouting/SmartTextDecision.swift)
     confirmed_at: 2026-10-21
   - type: url
     reference: https://docs.typesafe.ai/primitives/noul
     confirmed_at: 2026-10-21
-related: [2026-10-21-smart-decisions.md, 2026-10-21-smart-editor-prompt.md]
+related: [2026-10-21-smart-decisions.md, 2026-10-21-smart-editor-prompt.md, 2026-10-22-smart-editor-pass.md]
 ---
 
 # Jev routing calibration
+
+Historical measurements. On 2026-10-22 the user replaced the independent
+classifier with [the editor's pass response](2026-10-22-smart-editor-pass.md).
+No Jev prompt/cutoff below is part of the current Smart runtime.
 
 ## Observation and method
 

@@ -112,18 +112,18 @@ Voice flow (Drop / dictation):
             OpenRouter, OpenAI or Anthropic with the user's key / a custom OpenAI-compatible
             server (Ollama, LM Studio, vLLM) through DirectLLMRouteResolver.
             The mode is captured at take start:
-            Fast bypasses AI text processing. Smart first uses dropSmartDecision
-            (Decision type, not LLM): typesafe/jev-1.14 through OpenRouter by
-            default, or gpt-6-luna through OpenAI Decisions when explicitly picked.
-            A valid needs-cleanup probability <= 0.40 for exact OpenRouter
-            typesafe/jev-1.14 (<= 0.05 for other routes) skips editing and uses
-            Fast's verbatim output/filter path without changing the take's mode
-            or speech route. Translation always edits. Missing decision setup,
-            uncertainty, refusal or the 2s deadline keeps the selected cleanup
-            route. Cleanup errors/empty results never silently paste raw speech.
-            Decision models are excluded from LLM/agent pickers. WHY:
-            .project-docs/decisions/2026-10-21-smart-decisions.md,
-            .project-docs/decisions/2026-10-21-smart-decision-calibration.md
+            Fast bypasses AI text processing. Smart makes one request to the
+            selected cleanup model: a reserved whole-response pass marker keeps
+            the transcript verbatim with plain delivery; otherwise use the edited
+            message. Synonyms, word order and minor polish alone should pass;
+            concrete errors and useful long-message structure still edit.
+            Translation cannot pass. Failed, empty, malformed or cancelled
+            responses retain strict Retry behavior. The separate Jev/OpenAI
+            Decision stage and settings row are removed; migration4 retires only
+            that route, preserving all other model/provider choices and keys.
+            The old feature ID remains for historical usage decoding only;
+            Decision-only catalog entries stay excluded from text/agent pickers.
+            WHY: .project-docs/decisions/2026-10-22-smart-editor-pass.md
             Smart failures retain the transcript in memory and show Retry with
             the original mode and target; configuration errors open API & Models on
             the Drop Smart cleanup row.
