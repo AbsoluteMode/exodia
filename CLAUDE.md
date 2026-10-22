@@ -940,6 +940,26 @@ security controls, user content, recording, shell execution or quit are exposed.
 Guide: docs/customization/app-control.md. WHY:
 .project-docs/decisions/2026-10-21-app-control-plugin.md
 
+Agent answers: OpenCode keeps pre-tool narration hidden and publishes the final
+answer plus parsed `useful.actions` only after successful process exit, matching
+the other agent adapters. A folder answer gives the verified absolute path in
+a copyable code fence and a path action for open/insert. Every turn reinforces
+language, 1–2 short sentences for simple requests, essential caveats and actions;
+detailed answers remain available when requested. The neutral workspace's
+memory is retained, and native sessions resume within the existing 15-minute
+window. This is not a clean context on every question.
+The built-in OpenCode agent gets a separate `screen` MCP server via the bundled
+helper's `app screen-mcp` command, independent of Case registration and the
+command/edit action switch. Its only tool, `whytap_capture_screen`, takes one
+requested display frame through `AgentScreenCapture` under the app's Screen
+Recording permission. The default is the island-selected display, not NSScreen.main.
+It returns JPEG media (long edge <=1920, <=2 MB) with a 10s deadline, cancellation
+and a busy guard. No screenshot file, clipboard write or input tap is created.
+The image can enter OpenCode history and the selected model/provider; image
+input support is required, with no provider/model fallback. The settings MCP
+server does not advertise or accept screen tools. Screen content is untrusted
+evidence. WHY: .project-docs/decisions/2026-10-22-agent-answers-and-screen.md
+
 Clipboard history retains the newest 50 local entries across launch, quit and
 sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
 the oldest excess rows and their image sidecars; the current History feed shows

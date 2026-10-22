@@ -192,3 +192,13 @@ blur and Copy text use on-device Vision; no provider receives the screenshot.
 Exports contain flattened edited pixels. Clipboard copies may enter ordinary
 clipboard history. OCR and blur do not guarantee irreversible anonymization;
 check the visible result. See [screenshots](screenshots.md).
+
+The built-in agent also has a separate screen tool. When a request needs visible
+screen context, it captures one frame from the island's selected display (or an
+explicit display ID) with Whytap's Screen Recording permission. A bounded JPEG
+image is returned through local MCP to the selected agent model/provider. It is
+not copied to the clipboard or saved by the capture tool; OpenCode's local
+conversation history and the provider's normal retention can include the image.
+There is no automatic capture on every question and no mouse/keyboard control.
+A model must accept image input to interpret the screenshot; no substitute model
+is selected automatically.

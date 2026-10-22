@@ -19,12 +19,14 @@ final class AppControlController {
     private let idle: IslandIdlePreferences
     private let identity: AppBuildIdentity
     private let activity: () -> AppControlValue
+    private let screenCapture: AgentScreenCapture
     private var mutating = false
 
     init(routing: AIRoutingStore? = nil, models: APIAndModelsViewModel? = nil,
          preferences: UserPreferencesCache? = nil, languages: PrivacyPreferences? = nil,
          idle: IslandIdlePreferences? = nil, identity: AppBuildIdentity = .current,
-         activity: (() -> AppControlValue)? = nil) {
+         activity: (() -> AppControlValue)? = nil, screenCapture: AgentScreenCapture? = nil) {
+        self.screenCapture = screenCapture ?? AgentScreenCapture()
         self.routing = routing ?? .shared
         // Reading status/settings must not read Keychain or initialize model
         // discovery. Model tools construct the view model only when needed.
@@ -52,6 +54,8 @@ final class AppControlController {
         }
         defer { if writes { mutating = false } }
         switch request.operation {
+        case "capture_screen":
+            return await screenCapture.handle(args)
         case "get_state":
             guard args.isEmpty else { return invalid() }
             let features = AIFeature.activeCases.map { feature in

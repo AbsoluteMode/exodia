@@ -262,6 +262,10 @@ final class AgentControllerTests: XCTestCase {
         XCTAssertFalse(prompt.contains("AGENTS.md in your working directory is your memory"))
         XCTAssertFalse(prompt.contains("You are Whytap"))
         XCTAssertTrue(prompt.contains("Reply in the language of the user's latest request"))
+        XCTAssertTrue(prompt.contains("normally 1–2 short"))
+        XCTAssertTrue(prompt.contains("path in a plain code fence for copying"))
+        XCTAssertTrue(prompt.contains("\"useful.actions\""))
+        XCTAssertTrue(prompt.contains("whytap_capture_screen"))
         XCTAssertTrue(prompt.hasSuffix("снова привет"))
         // The resume id is the stored one, confirming this turn is a resume.
         XCTAssertEqual(agentClient.calls.first?.resumeSessionID, "existing-claude-session")
