@@ -17,6 +17,14 @@ is a verifiable claim rather than a slogan.
   evict the oldest excess entries and their images. It does not import the
   existing pasteboard payload on launch.
   History → Clipboard displays the latest 20 retained copies with scrolling.
+  To remove one entry, right-click it in History and choose Delete…; only a
+  click on Delete in the confirmation removes it. Its saved image goes with it; for a copied file list
+  only the entry is removed, never the files. SQLite overwrites the deleted
+  row and folds its write-ahead log back into the database, so the copy is
+  not left readable in those files. Deleting does not change encrypted
+  backups already uploaded: archives made before 2026-10-21 contain the
+  History database, and restoring one brings its entries back. Time Machine
+  and other copies of your disk are not changed either.
 - API keys you enter in Settings → API & Models ("Your key") are stored in the
   macOS Keychain under the app's own service name (`com.rootwise.sidekey`).
   Key values are never shown again after saving and are never written to
