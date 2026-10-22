@@ -6,8 +6,11 @@ summary: Isolate feature work, serialize checked main integration and update one
 status: confirmed
 tags: [development, agents, worktrees, integration, main, build, rollback, queue]
 canonical_for: [parallel-development, shared-working-application]
-verified_at: 2026-10-21
+verified_at: 2026-10-22
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-22 the user requested urgent disk cleanup, required all coding sessions to survive, authorized removing other cleanup candidates and questioned accumulating developer backups.
+    confirmed_at: 2026-10-22
   - type: user-confirmed
     reference: On 2026-10-21 the user approved moving the working app and releases from the community certificate to the Developer ID team UVBKCN5PPV, the one approved signing-identity migration.
     confirmed_at: 2026-10-21
@@ -329,6 +332,31 @@ than claiming an authoritative in-process meeting status. A future reliable
 runtime signal may strengthen this gate; it must not invent an idle result.
 The decision and standing authorization are recorded in
 [meeting-aware builder refresh](../decisions/2026-10-20-meeting-aware-builder-refresh.md).
+
+## Local build backup retention
+
+Developer rollback files must not grow into a permanent archive of every
+promotion. After a verified successful promotion, keep one signed rollback
+bundle for the immediately previous working build. Remove older developer app
+copies and the redundant parked original after checking that the retained
+rollback bundle is valid. A pending candidate or unfinished rollback may retain
+the files it still needs; do not prune another live operation's files.
+
+Do not make full user-data snapshots for ordinary code-only updates. A real
+data migration still requires a consistent backup before mutation. Retain that
+snapshot until the migration's preservation and recovery checks have passed;
+then remove obsolete developer snapshots, capture work directories and duplicate
+data reserves. The builder performs this maintenance under its existing lock,
+records what it removed, and updates receipt references to the retained rollback.
+Do not use a timer or file age alone to decide that a migration is complete.
+
+The user's 2026-10-22 cleanup authorization prioritizes preserving every coding
+session and its work. Never prune session histories, session databases, source
+worktrees or uncommitted changes as build-backup maintenance. Live application
+stores, unfinished restore journals, signing material, and archives required for
+the currently published release are outside this cleanup. The application's
+user-controlled Automatic backup setting and remote backups are separate and
+are not changed by this developer retention policy.
 
 ## Build receipt and acceptance
 
