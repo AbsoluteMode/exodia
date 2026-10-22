@@ -962,7 +962,13 @@ Guide: docs/customization/app-control.md. WHY:
 
 Agent answers: native Whytap Agent keeps intermediate text hidden and publishes
 only the final answer and show_actions metadata after successful completion.
-The compatibility extractor also handles a trailing useful.actions fence. A
+The compatibility extractor also handles a trailing useful.actions fence.
+NativeAgentAnswerArtifacts also turns ordinary final HTTP(S) links and returned
+absolute/tilde paths into the same keyboard-action cards if the model omits
+show_actions. Explicit metadata wins; destinations deduplicate and cap at 20.
+The fallback scans at most 32,000 characters, skips ordinary code/config fences,
+and does no network/file I/O or extra model call. It formats returned paths,
+not verifies their existence; nothing opens or inserts before user interaction. A
 folder answer provides the verified absolute path in a copyable code fence
 and a path action for open/insert. Simple answers use 1–2 short sentences;
 longer answers remain available when requested.

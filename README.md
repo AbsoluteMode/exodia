@@ -93,6 +93,10 @@ Choose the **Agent** model and add its OpenRouter, OpenAI or Anthropic key in
 built into Whytap. Connect prepares the local workspace and checks that a key
 is present; model requests are billed by your provider.
 
+Links and returned file/folder paths appear as action cards with the existing
+keyboard shortcuts for selection, insertion and opening, even when the model
+returns them as ordinary text.
+
 For web search, add a **Tavily** key in **Settings → API & Models → API keys**.
 Saving checks the key without running a search. Search queries go to Tavily;
 results go to your selected model.
