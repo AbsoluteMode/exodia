@@ -115,6 +115,8 @@ Encrypted backups already uploaded are not changed. Archives made before
 2026-10-21 contain the History database, and restoring one brings its entries
 back, including deleted ones. Time Machine, APFS snapshots and other disk
 copies are outside the app. Earlier versions of the row that SQLite may have
-left in pages freed by past evictions are not scrubbed.
+left in pages freed by past evictions are not scrubbed. The truncating checkpoint is
+best effort: another active SQLite reader can postpone WAL cleanup, even after
+the row is deleted. This is per-entry removal, not a forensic disk wipe.
 
 2026-10-22 · PR: https://github.com/AbsoluteMode/whytap/pull/206

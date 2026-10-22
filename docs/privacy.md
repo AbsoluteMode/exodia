@@ -15,7 +15,9 @@ is a verifiable claim rather than a slogan.
   Clipboard keeps up to 50 recent text, image and file-path entries across
   restarts, with image attachments stored beside the database. New copies
   evict the oldest excess entries and their images. It does not import the
-  existing pasteboard payload on launch.
+  existing pasteboard payload on launch. Copies that the source app marks
+  concealed, transient or auto-generated (password managers, text expanders,
+  Whytap's recovery code) are never recorded.
   History → Clipboard displays the latest 20 retained copies with scrolling.
   To remove one entry, right-click it in History and choose Delete…; only a
   click on Delete in the confirmation removes it. Its saved image goes with it; for a copied file list

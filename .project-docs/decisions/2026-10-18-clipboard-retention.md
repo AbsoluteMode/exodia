@@ -32,7 +32,7 @@ sources:
   - type: trace
     reference: /tmp/exodia-clipboard-retention-focused.log, 55 tests with 0 failures in 0.114 seconds.
     confirmed_at: 2026-10-18
-related: [../project.md, 2026-10-18-toolbox-drag-feedback.md]
+related: [../project.md, 2026-10-18-toolbox-drag-feedback.md, 2026-10-21-clipboard-privacy-markers.md, 2026-10-22-clipboard-entry-delete.md]
 ---
 
 # Clipboard retention
