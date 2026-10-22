@@ -21,19 +21,23 @@ struct APIHintsView: View {
             .padding(24)
             .padding(.bottom, 2)
 
-            ScrollView {
-                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                    GridRow {
-                        offerCard(Self.hints[0])
-                        offerCard(Self.hints[1])
+            GeometryReader { geometry in
+                let columns = geometry.size.width >= 560 ? 2 : 1
+                ScrollView {
+                    Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                        ForEach(Array(stride(from: 0, to: Self.hints.count, by: columns)), id: \.self) { index in
+                            GridRow {
+                                offerCard(Self.hints[index])
+                                    .gridCellColumns(index + 1 == Self.hints.count ? columns : 1)
+                                if columns == 2, index + 1 < Self.hints.count {
+                                    offerCard(Self.hints[index + 1])
+                                }
+                            }
+                        }
                     }
-                    GridRow {
-                        offerCard(Self.hints[2])
-                        offerCard(Self.hints[3])
-                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 16)
             }
 
             footer
@@ -45,9 +49,18 @@ struct APIHintsView: View {
     private func offerCard(_ hint: Hint) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
-                ProviderBrandIcon(assetName: hint.assetName, size: 18, color: MacSettingsTheme.text)
-                    .frame(width: 32, height: 32)
-                    .background(MacSettingsTheme.hover, in: RoundedRectangle(cornerRadius: 8))
+                Group {
+                    if let assetName = hint.assetName {
+                        ProviderBrandIcon(assetName: assetName, size: 18, color: MacSettingsTheme.text)
+                    } else {
+                        Image(systemName: "globe")
+                            .font(.system(size: 18))
+                            .foregroundStyle(MacSettingsTheme.text)
+                    }
+                }
+                .frame(width: 32, height: 32)
+                .accessibilityHidden(true)
+                .background(MacSettingsTheme.hover, in: RoundedRectangle(cornerRadius: 8))
                 Text(hint.provider)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(MacSettingsTheme.text)
@@ -82,16 +95,14 @@ struct APIHintsView: View {
 
             Spacer(minLength: 16)
 
-            Link(destination: hint.url) {
-                HStack(spacing: 4) {
-                    Text("View offer")
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9, weight: .semibold))
-                }
-                .font(.system(size: 11.5, weight: .medium))
+            HStack(alignment: .center, spacing: 8) {
+                OfferLink(provider: hint.provider, url: hint.url)
+                Spacer(minLength: 0)
             }
-            .accessibilityLabel("\(hint.provider) offer details")
-            .accessibilityHint("Opens the provider's website in your browser")
+            Text("Checked \(hint.checkedDate)")
+                .font(.system(size: 10.5))
+                .foregroundStyle(MacSettingsTheme.text2)
+                .padding(.top, 7)
         }
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 220, maxHeight: .infinity, alignment: .topLeading)
@@ -105,23 +116,20 @@ struct APIHintsView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Add a provider key, then choose its model for a feature in Models.")
+            Text("Model keys: add below, then choose a model in Models. Tavily web search: connect in Agents → Web search.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(MacSettingsTheme.text2)
 
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Checked October 19, 2026")
                     Text("Provider terms, limits and billing settings apply.")
                 }
                 .font(.system(size: 10.5))
                 .foregroundStyle(MacSettingsTheme.text2)
                 Spacer(minLength: 16)
-                Button("Add API key", action: onAddKey)
-                    .buttonStyle(.bordered)
+                MacButton(title: "Add model API key", style: .default, action: onAddKey)
                 if !embedded {
-                    Button("Done", action: onClose)
-                        .buttonStyle(.borderedProminent)
+                    MacButton(title: "Done", style: .primary, action: onClose)
                         .keyboardShortcut(.defaultAction)
                 }
             }
@@ -137,12 +145,13 @@ struct APIHintsView: View {
 
     private struct Hint {
         let provider: String
-        let assetName: String
+        let assetName: String?
         let allowance: String
         let cadence: String
         let detail: String
         let url: URL
         var requiresPaidPlan = false
+        var checkedDate = "October 19, 2026"
     }
 
     // Keep amounts and the visible verification date together when refreshing offers.
@@ -180,5 +189,40 @@ struct APIHintsView: View {
             url: URL(string: "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans")!,
             requiresPaidPlan: true
         ),
+        Hint(
+            provider: "Tavily",
+            assetName: nil,
+            allowance: "1,000",
+            cadence: "free search credits each month",
+            detail: "Web search for Agent. No card required. One basic search uses one credit. Connect the key in Agents → Web search.",
+            url: URL(string: "https://www.tavily.com/pricing")!,
+            checkedDate: "October 22, 2026"
+        ),
     ]
+
+    private struct OfferLink: View {
+        let provider: String
+        let url: URL
+        @Environment(\.isEnabled) private var enabled
+        @FocusState private var focused: Bool
+
+        var body: some View {
+            Link(destination: url) {
+                HStack(spacing: 4) {
+                    Text("View offer")
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(MacSettingsTheme.accent)
+                .padding(.horizontal, 7).padding(.vertical, 5)
+            }
+            .buttonStyle(MacButtonInteractionStyle(background: .clear,
+                highlight: MacSettingsTheme.accent, outline: MacSettingsTheme.accent, focused: focused))
+            .focused($focused)
+            .opacity(enabled ? 1 : 0.42)
+            .accessibilityLabel("\(provider) offer details")
+            .accessibilityHint("Opens the provider's website in your browser")
+        }
+    }
 }

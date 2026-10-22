@@ -773,10 +773,14 @@ totals show +. OpenCode's computed step prices remain estimates.
 Tracking starts with this update; synthetic model checks are excluded. WHY:
 .project-docs/decisions/2026-10-20-feature-costs.md
 
-API hints: the fourth tab contains four provider offer cards with brand marks,
-allowances and official links. It distinguishes starter credit, monthly allowance
-and paid-plan benefits. Add API key switches to API keys and opens the existing
-form. Opening hints never checks balances or changes routes. WHY:
+API hints: the fourth tab contains five offer cards with allowances and official
+links, including Tavily web search for Agent (1,000 monthly search credits,
+basic search costs one credit, no card required). It distinguishes starter
+credit, monthly allowance and paid-plan benefits. Dates are per-card: Tavily
+October 22, 2026; the four earlier offers October 19, 2026. The odd final card spans
+two columns; narrow surfaces use one column. Add model API key opens the
+existing API-key form; Tavily points to Agents -> Web search, not model routing.
+Opening hints never checks balances or changes routes. WHY:
 .project-docs/decisions/2026-10-19-api-hints.md
 
 Model selection uses ModelPicker: a searchable native popover sharing the 30 pt
