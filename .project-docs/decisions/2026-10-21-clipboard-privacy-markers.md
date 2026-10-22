@@ -26,7 +26,7 @@ sources:
   - type: repository
     reference: Tests/SidekeyTests/Backup/BackupViewModelTests.swift
     confirmed_at: 2026-10-21
-related: [2026-10-18-clipboard-retention.md, 2026-10-19-config-backup.md, 2026-10-21-backup-essentials-only.md]
+related: [2026-10-18-clipboard-retention.md, 2026-10-19-config-backup.md, 2026-10-21-backup-essentials-only.md, 2026-10-22-clipboard-entry-delete.md]
 ---
 
 # Clipboard privacy markers

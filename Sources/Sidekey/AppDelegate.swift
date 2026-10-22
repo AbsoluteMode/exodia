@@ -748,6 +748,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openClipboard: actions.openClipboard,
             historyCards: actions.historyCards,
             copyHistoryCard: actions.copyHistoryCard,
+            deleteHistoryCard: actions.deleteHistoryCard,
             toggleMeetingRecord: actions.toggleMeetingRecord,
             openScreenshot: actions.openScreenshot,
             openHoverPanel: { [weak self] panel in self?.show(.hoverPanel(panel)) },
@@ -1075,7 +1076,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 feed: feed,
                 assetsDirectory: assets,
                 toast: copiedToastController,
-                autoPasteEngine: autoPasteEngine
+                autoPasteEngine: autoPasteEngine,
+                deleteCard: { [weak self] card in
+                    await self?.deleteHistoryCard(card) ?? false
+                }
             )
             self.historyStripPanel = strip
         }
@@ -1142,6 +1146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             pasteHistoryCard: { [weak self] card in
                 self?.pasteHistoryCardFromIsland(card)
+            },
+            deleteHistoryCard: { [weak self] card in
+                await self?.deleteHistoryCard(card) ?? false
             },
             historyPasteTargetName: { [weak self] in
                 self?.historyStripController?.targetAppName
@@ -1883,6 +1890,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         controller.writeCardToPasteboard(card, assetsDirectory: assets)
         copiedToastController?.show()
+    }
+
+    /// Delete… on a clipboard row in any History surface. The ⌥V strip
+    /// reads the feed on every render, so a revision bump refreshes it even
+    /// when the request came from the island or Toolbox.
+    /// WHY: .project-docs/decisions/2026-10-22-clipboard-entry-delete.md
+    private func deleteHistoryCard(_ card: HistoryStripCard) async -> Bool {
+        guard let store = historyStore, let assets = assetsDirectory else { return false }
+        let outcome = await ClipboardEntryDeletion(store: store, assetsDirectory: assets).delete(card)
+        guard outcome.removesEntry else { return false }
+        historyStripController?.clipboardEntryRemoved(card)
+        return true
     }
 
     private func pasteHistoryCardFromIsland(_ card: HistoryStripCard) {

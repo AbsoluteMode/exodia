@@ -929,7 +929,14 @@ Clipboard history retains the newest 50 local entries across launch, quit and
 sleep/wake. Do not reintroduce automatic lifecycle wipes. New copies evict only
 the oldest excess rows and their image sidecars; the current History feed shows
 20 clipboard entries in a scrollable five-row viewport (Agent/Drop keep 10),
-without deleting other retained rows. Startup seeds only the current
+without deleting other retained rows. A clipboard row's context menu offers
+Delete… in hover History, Toolbox History and the ⌥V strip; ClipboardEntryDeletion
+asks Cancel-first like meeting delete and never quotes the copy. deleteClipboardEntry
+removes the image sidecar, then the row with secure_delete and a truncating WAL
+checkpoint, in one store-queue hop; a sidecar that cannot be removed keeps the
+row listed. History key monitors ignore keys while a modal alert is open.
+Uploaded backups are unchanged (pre-2026-10-21 archives restore History). WHY:
+.project-docs/decisions/2026-10-22-clipboard-entry-delete.md Startup seeds only the current
 pasteboard change counter; dictation write/restore suppression remains. Before
 replacing a running older binary with the old quit purge, preserve local
 clipboard data privately and restore only clipboard rows/assets after quit.
