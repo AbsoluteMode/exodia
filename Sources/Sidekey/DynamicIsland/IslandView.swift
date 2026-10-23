@@ -1253,6 +1253,7 @@ struct IslandView: View {
                             onOpenCalendar: actions.openCalendar,
                             onOpenTranslate: actions.openTranslate,
                             onOpenSubtitles: actions.openSubtitles,
+                            onOpenMeetingAssistant: actions.openMeetingAssistant,
                             onOpenScreenshot: actions.openScreenshot,
                             onOpenHelp: actions.openHelp,
                             onQuit: actions.quitApplication,
@@ -2563,6 +2564,7 @@ private struct IslandDropModeHoverPanel: View {
     var onOpenCalendar: () -> Void = {}
     var onOpenTranslate: () -> Void = {}
     var onOpenSubtitles: () -> Void = {}
+    var onOpenMeetingAssistant: () -> Void = {}
     var onOpenScreenshot: () -> Void = {}
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
@@ -2914,6 +2916,7 @@ private struct IslandDropModeHoverPanel: View {
         case .openCalendar: onOpenCalendar()
         case .openTranslate: onOpenTranslate()
         case .openSubtitles: onOpenSubtitles()
+        case .openMeetingAssistant: onOpenMeetingAssistant()
         case .openScreenshot: onOpenScreenshot()
         case .quit: onQuit()
         case .openPanel(let panel):

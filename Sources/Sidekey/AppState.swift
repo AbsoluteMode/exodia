@@ -37,6 +37,8 @@ final class AppState: ObservableObject {
     @Published var agentPhase: AgentPhase = .idle
     /// Visible translation work (including unsent input) or an active session.
     @Published var translationActive = false
+    @Published var meetingAssistantActive = false
+    @Published var meetingAssistantEditing = false
     /// A screenshot selection/editor, including in-flight local OCR and unsaved edits.
     @Published var screenshotActive = false
     /// Hold the existing hover state only until explicit capture has frozen its pixels.

@@ -22,6 +22,7 @@ struct NativeAgentModel {
     var messages: [[String: Any]]
     var http = NativeAgentHTTP()
     var usageSink: (AIUsageEvent) -> Void = AIUsageRecorder.record
+    var usageFeature: AIFeature = .agent
 
     init(options: AgentRunOptions, key: String, system: String, history: [NativeAgentConversation.Pair], prompt: String,
          http: NativeAgentHTTP = NativeAgentHTTP(), usageSink: @escaping (AIUsageEvent) -> Void = AIUsageRecorder.record) {
@@ -69,16 +70,21 @@ struct NativeAgentModel {
             request = try NativeAgentHTTP.request(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!, key: key, body: body)
             request.setValue("Whytap", forHTTPHeaderField: "X-Title")
         }
+        if tools.isEmpty, let data = request.httpBody,
+           var body = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            body.removeValue(forKey: "tools")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
         let response: [String: Any]
         do { response = try await http.json(request) }
         catch {
-            usageSink(.init(context: .init(feature: .agent, account: options.openCodeProvider.account, model: model),
+            usageSink(.init(context: .init(feature: usageFeature, account: options.openCodeProvider.account, model: model),
                                         currency: .usd, amount: nil, basis: .unavailable))
             throw error
         }
         let usage = response["usage"] as? [String: Any]
         let cost = options.openCodeProvider == .openRouter ? AIUsageNumber.nonnegative(usage?["cost"]) : nil
-        usageSink(.init(context: .init(feature: .agent, account: options.openCodeProvider.account, model: model),
+        usageSink(.init(context: .init(feature: usageFeature, account: options.openCodeProvider.account, model: model),
                                     currency: .usd, amount: cost, basis: cost == nil ? .unavailable : .reported))
         return try accept(response)
     }

@@ -775,3 +775,16 @@ Settings → API & Models → API keys содержит ключ Tavily в Keych
 без платного поиска. Поиск отправляет только запрос и возвращает до пяти результатов.
 Существующее разрешение редактирования/команд сохраняется; approve и bypass —
 следующий этап. См. [решение](../.project-docs/decisions/2026-10-22-native-agent.md).
+
+
+### Meeting Assistant pilot
+
+The approved native right-hand module offers a ready Space picker, plain input,
+up to five current questions, twenty answered roots and six removable screenshot
+attachments. Replies contain a conclusion, structured points and two follow-ups;
+conversation survives collapse. Listening starts explicitly and extracts questions
+from bounded system-audio transcription without retaining audio or starting Notes.
+Speech and answer models have separate initially unset routes in API & Models.
+Coding agents prepare Spaces; the user selects them. Runtime repository access
+is read-only and constrained to declared scopes. Database adapters are not yet
+connected. See [pilot usage and Space contract](meeting-assistant.md).
