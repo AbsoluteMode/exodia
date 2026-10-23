@@ -1337,10 +1337,14 @@ Only the controls hover shows it; agent, nudge, approval and other inline panels
 preempt it. Hover reveals a control, never capture permission.
 
 The wand is 15pt in a fixed 28pt target, within a 36pt trailing extension of the
-same black island. The timer, Stop and drawer keep their original positions and
-height. Native hit routing claims exactly this visible extension while shown.
+same black island. This is a temporary secondary-action wing: the base compact
+island and drawer retain matched compactWidth, while the visible upper right
+edge extends by 36pt. This geometry is an implementation assumption for the
+latest requested placement, not a separate user approval of a wider drawer.
+The timer, Stop and drawer keep their original positions and height. Native hit routing claims exactly this visible extension while shown.
 The measured first-mouse target is only the icon, with separate hover, pressed,
-keyboard-focus and disabled feedback. Off is white at 52% opacity; listening
+keyboard-focus and disabled feedback. Its overlay owns a hover signal that holds an already
+open drawer without reopening it after collapse. Off is white at 52% opacity; listening
 is white/ice blue with a soft blue halo. Connecting uses a static partial outline
 and stays cancellable; stopping dims and disables the control. The active halo
 breathes gently over 3.2s without moving or scaling the glyph/target. Reduce Motion
@@ -1354,9 +1358,11 @@ A separate metadata-only probe stops an observed recognized call after 15s of
 inactivity; brief reconnects cancel the stop. Manual unrecognized calls require
 explicit Stop. Long mute/seamless call switches remain heuristic limitations.
 
-Verification uses native darkAqua render fixtures at 310/312/354pt with the live
-recording slot, four magic phases, hover/press/focus/disabled drawing surfaces,
-and unchanged drawer components. Reduced-motion fixture uses the live static
+Verification uses component-composition darkAqua fixtures at 310/312/354pt:
+the live recording slot, real IslandCameraSurface with its trailing extension,
+four magic phases, hover/press/focus/disabled drawing surfaces and unchanged
+drawer components. These are offscreen compositions, not whole-window or
+physical pointer/extension-animation evidence. Reduced-motion fixture uses the live static
 branch. Pure geometry and fake-provider tests cover first mouse, scoped press
 cancellation, context end, preparation and repeated/cancelled starts. Physical
 pointer/keyboard/VoiceOver, native glass, actual calls and screen sharing remain

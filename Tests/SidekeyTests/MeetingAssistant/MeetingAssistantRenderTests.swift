@@ -79,7 +79,11 @@ final class MeetingAssistantRenderTests: XCTestCase {
             IslandMeetingAssistantControl(state: .init(available: true, phase: phase), setEnabled: { _ in }, reduceMotionOverride: true)
                 .frame(width: IslandMeetingAssistantPlacement.extensionWidth)
         }
-        .frame(height: 38).background(.black, in: RoundedRectangle(cornerRadius: 18))
+        .frame(height: 38).background(alignment: .leading) {
+            IslandCameraSurface(compactWidth: width, compactHeight: 38, meetingSuggestionActive: false,
+                trailingExtension: IslandMeetingAssistantPlacement.extensionWidth, animatesWidthChange: false)
+                .frame(width: width + IslandMeetingAssistantPlacement.extensionWidth, height: 38)
+        }
     }
     private func hoverComposition(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {

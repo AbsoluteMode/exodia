@@ -9,7 +9,10 @@ while listening, outlined while connecting, and disabled during audio cleanup.
 Reveal it once routes and a ready Space are configured and Notes is recording;
 keep it available during an explicitly active Assistant session without Notes.
 The fixed 28pt target occupies a 36pt extension of the existing black island;
-it never displaces the timer or grows the drawer. Other inline hover panels and
+it never displaces the timer or grows the drawer. Treat this as a secondary-action
+wing, like an active agent wing, while the base island/drawer remain matched.
+The visible upper right edge temporarily differs by 36pt; this is the chosen
+implementation of the latest placement request, pending normal live UI acceptance. Other inline hover panels and
 higher-priority agent/nudge/approval surfaces hide it. Tool/search/link activation
 stays show-only. The icon and module Listen/Stop share one model; stop releases
 audio and extraction without losing answers. Pending starts are cancellable and
@@ -28,7 +31,9 @@ calendar data, call URLs or additional model requests are used for this control.
 
 The icon has its own measured first-mouse target independent of tool/search rows.
 The visible black extension and native mouse region use the same 36pt geometry;
-both disappear on collapse. Hover/press/focus feedback covers the full 28pt target,
+both disappear on collapse. The overlay has its own hover signal to keep an
+already-open drawer alive even when it occludes the underlying tracking area;
+a lingering signal never reopens a closed drawer. Hover/press/focus feedback covers the full 28pt target,
 and disabled cleanup has no active highlight. State changes cancel only an old
 icon press, preserving unrelated held tool clicks. Idle stop never invents cleanup;
 repeated active stop keeps the real release gate. The 3.2s breathing halo changes

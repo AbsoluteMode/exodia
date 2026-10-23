@@ -270,7 +270,9 @@ Meeting Assistant pilot:
   the panel using the existing Other setting. Guide: docs/meeting-assistant.md.
   Once both routes and a Space are configured, hover reveals a magic icon right
   of the recording timer (also during a manually active Assistant session). It is
-  translucent off, softly glowing while listening, and shares Listen/Stop state. It is never a saved auto-join preference.
+  translucent off, softly glowing while listening, and shares Listen/Stop state.
+  This secondary action uses a temporary 36pt right wing; base compactWidth and
+  drawer stay matched, so their right edges temporarily differ while it is shown. It is never a saved auto-join preference.
   Startup and hover opening only prepare metadata. An independently observed recognized meeting
   context ending for 15s stops capture; initial/unrecognized manual sessions
   need explicit stop. This mic-activity heuristic cannot identify every call.

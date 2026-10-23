@@ -257,6 +257,7 @@ struct IslandView: View {
     @StateObject private var wingReveal = IslandWingRevealCoordinator()
 
     @State private var pillHovering = false
+    @State private var meetingAssistantHovering = false
     /// Hover over the rendered hover panel (Row-1 + Row-2 tile grid). Only
     /// meaningful once expansion has already happened; lets the cursor
     /// travel from the pill down into the panel without dismissing.
@@ -305,9 +306,7 @@ struct IslandView: View {
     ) -> CGFloat {
         let base: CGFloat
         switch mode {
-        case .controls:
-            base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
-        case .monitor, .notifications:
+        case .controls, .monitor, .notifications:
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .tasks:
             base = IslandDropModeControl.detachedPanelGap + TodoHoverView.contentHeight
@@ -426,6 +425,7 @@ struct IslandView: View {
         let next = Self.mouseHoldsDrawer(
             pillHovering: pillHovering,
             panelHovering: panelHovering,
+            meetingAssistantHovering: meetingAssistantHovering,
             wasExpanded: mouseExpanded,
             glance: hoverPanelGlance,
             interactionHeld: holdsHoverMenu,
@@ -474,11 +474,11 @@ struct IslandView: View {
 
     /// A glance opened without the pointer crossing the pill, so reaching its strip from below
     /// counts as entering the drawer rather than as the drawer's fading band.
-    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool,
+    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, meetingAssistantHovering: Bool = false, wasExpanded: Bool,
                                  glance: Bool, interactionHeld: Bool = false, screenshotPreparing: Bool = false) -> Bool {
         if screenshotPreparing { return wasExpanded }
         return interactionHeld || IslandHoverGate.mouseExpanded(
-            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance
+            pillHovering: pillHovering, panelHovering: panelHovering || meetingAssistantHovering, wasExpanded: wasExpanded || glance
         )
     }
 
@@ -1341,6 +1341,7 @@ struct IslandView: View {
                     hitBridge: hoverHitBridge, hitContext: hoverHitBridge.context)
                     .frame(width: IslandMeetingAssistantPlacement.extensionWidth, height: compactHeight)
                     .contentShape(Rectangle())
+                    .onHover { meetingAssistantHovering = $0 }
                     .offset(x: compactWidth)
             }
         }
@@ -1386,7 +1387,9 @@ struct IslandView: View {
         // region to STAY open, so the drawer's fading hover band can't re-open a
         // closed drawer before the cursor reaches the pill.
         .onChange(of: pillHovering) { _, _ in recomputeMouseExpanded() }
+        .onChange(of: meetingAssistantHovering) { _, _ in recomputeMouseExpanded() }
         .onChange(of: showsMeetingAssistantMagic) { _, visible in
+            if !visible { meetingAssistantHovering = false }
             onMeetingAssistantMagicVisibilityChange(visible)
         }
         .onChange(of: appState.meetingAssistantHover) { _, _ in

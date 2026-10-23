@@ -72,6 +72,17 @@ final class MeetingAssistantMeetingScopeTests: XCTestCase {
         }
     }
 
+    func testMagicOverlayKeepsAnOpenDrawerButCannotReopenAClosedOne() {
+        XCTAssertTrue(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false,
+            meetingAssistantHovering: true, wasExpanded: true, glance: false),
+            "The icon owns hover even if its overlay occludes the timer's tracking area")
+        XCTAssertFalse(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false,
+            meetingAssistantHovering: true, wasExpanded: false, glance: false),
+            "An exiting icon must not reopen the drawer")
+        XCTAssertFalse(IslandView.mouseHoldsDrawer(pillHovering: false, panelHovering: false,
+            meetingAssistantHovering: false, wasExpanded: true, glance: false))
+    }
+
     func testNativeMagicHitZoneClaimsOnlyTheVisibleExtension() {
         let compact = CGRect(x: 120, y: 700, width: 312, height: 38)
         let extensionFrame = IslandMeetingAssistantPlacement.frame(beside: compact)
