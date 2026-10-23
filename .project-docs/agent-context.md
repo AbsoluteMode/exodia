@@ -952,7 +952,12 @@ Settings → Integrations lists Google Calendar, Outlook Calendar, Apple Calenda
 and Zoom Calendar separately, with feature permissions and direct provider authorization.
 Shared Google and Zoom clients cannot start new browser sign-in until actual
 provider approval is recorded by the publicAccessApproved packaging string.
-Missing or malformed approval remains closed; source users
+The owner's verification recording has an explicit process-local Google-only
+review opt-in with a maximum two-hour deadline; ordinary launches stay closed,
+and no packaged approval or saved preference changes. The builder owns its
+safe launch; docs/google-calendar-verification.md describes activation. Expiry
+blocks new sign-ins but does not revoke completed grants.
+Missing or malformed approval remains closed outside that review session; source users
 can supply independent native clients at build time. Connection activity is shared across Settings
 and Hover, serializes sign-in, and defers restore/update restart until completion.
 Backup work, staged restore and pending maintenance also block new connection

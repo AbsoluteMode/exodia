@@ -19,13 +19,15 @@ final class AppControlController {
     private let idle: IslandIdlePreferences
     private let identity: AppBuildIdentity
     private let activity: () -> AppControlValue
+    private let googleCalendarReview: () -> Bool
     private let screenCapture: AgentScreenCapture
     private var mutating = false
 
     init(routing: AIRoutingStore? = nil, models: APIAndModelsViewModel? = nil,
          preferences: UserPreferencesCache? = nil, languages: PrivacyPreferences? = nil,
          idle: IslandIdlePreferences? = nil, identity: AppBuildIdentity = .current,
-         activity: (() -> AppControlValue)? = nil, screenCapture: AgentScreenCapture? = nil) {
+         activity: (() -> AppControlValue)? = nil, screenCapture: AgentScreenCapture? = nil,
+         googleCalendarReview: @escaping () -> Bool = { GoogleCalendarReviewSession.current.isActive }) {
         self.screenCapture = screenCapture ?? AgentScreenCapture()
         self.routing = routing ?? .shared
         // Reading status/settings must not read Keychain or initialize model
@@ -35,6 +37,7 @@ final class AppControlController {
         self.languages = languages ?? .shared
         self.idle = idle ?? IslandIdlePreferences()
         self.identity = identity
+        self.googleCalendarReview = googleCalendarReview
         self.activity = activity ?? {
             let state = AppState.shared
             return .object(["drop": .string(String(describing: state.phase)),
@@ -67,6 +70,7 @@ final class AppControlController {
                 "controlVersion": .int(1), "bundleIdentifier": .string(identity.bundleIdentifier),
                 "version": .string(identity.version), "build": .string(identity.build),
                 "sourceRevision": identity.sourceRevision.map(AppControlValue.string) ?? .null,
+                "googleCalendarReviewActive": .bool(googleCalendarReview()),
                 "activity": activity(), "features": .array(features)
             ]))
         case "get_settings":

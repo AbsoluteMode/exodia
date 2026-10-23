@@ -11,12 +11,15 @@ final class CalendarConnectionFlow: ObservableObject {
     private let connections: CalendarConnections
     private let activityChanged: (Bool) -> Void
     private let authorize: Authorization?
+    private let googleReview: () -> Bool
     private var browser: CalendarBrowserSignIn?
     private var task: Task<Void, Never>?
 
     init(connections: CalendarConnections, activityChanged: @escaping (Bool) -> Void = { _ in },
+         googleReview: @escaping () -> Bool = { GoogleCalendarReviewSession.current.isActive },
          authorize: Authorization? = nil) {
         self.connections = connections; self.activityChanged = activityChanged; self.authorize = authorize
+        self.googleReview = googleReview
     }
 
     func clearError() { error = nil }
@@ -29,7 +32,8 @@ final class CalendarConnectionFlow: ObservableObject {
         guard !working else { return false }
         lastProvider = provider; error = nil
         let configuration = CalendarClientConfiguration.registered(provider, info: info)
-        if let message = CalendarConnectionReadiness.shared(provider, configuration: configuration).message {
+        if let message = CalendarConnectionReadiness.shared(provider, configuration: configuration,
+            googleReview: googleReview()).message {
             error = message; return false
         }
         if provider != .apple, let message = connections.accountConnectionIssue {
@@ -49,11 +53,12 @@ final class CalendarConnectionFlow: ObservableObject {
     func start(provider: CalendarProvider, clientID: String, secret: String, label: String,
                info: [String: Any]?, onSuccess: @escaping () -> Void) -> Bool {
         let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !working, CalendarConnectionReadiness.authorization(provider, clientID: clientID, info: info) == .available,
+        guard !working, CalendarConnectionReadiness.authorization(provider, clientID: clientID, info: info,
+                  googleReview: googleReview()) == .available,
               provider == .apple || connections.accountConnectionIssue == nil,
               connections.beginConnecting(provider: provider) else { return false }
         working = true; error = nil; lastProvider = provider; activityChanged(true)
-        let browser = CalendarBrowserSignIn(configurationInfo: info)
+        let browser = CalendarBrowserSignIn(configurationInfo: info, googleReview: googleReview)
         self.browser = browser
         task = Task {
             defer {

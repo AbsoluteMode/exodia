@@ -20,16 +20,18 @@ enum CalendarConnectionReadiness: Equatable {
     case available, setupRequired, awaitingGoogleVerification, awaitingZoomPublication
 
     static func shared(_ provider: CalendarProvider,
-                       configuration: CalendarClientConfiguration?) -> Self {
+                       configuration: CalendarClientConfiguration?,
+                       googleReview: Bool = GoogleCalendarReviewSession.current.isActive) -> Self {
         if provider == .apple { return .available }
         guard let configuration else { return provider == .zoom ? .awaitingZoomPublication : .setupRequired }
-        if provider == .google && !configuration.publicAccessApproved { return .awaitingGoogleVerification }
+        if provider == .google && !configuration.publicAccessApproved && !googleReview { return .awaitingGoogleVerification }
         if provider == .zoom && !configuration.publicAccessApproved { return .awaitingZoomPublication }
         return .available
     }
 
     static func authorization(_ provider: CalendarProvider, clientID: String,
-                              info: [String: Any]? = Bundle.main.infoDictionary) -> Self {
+                              info: [String: Any]? = Bundle.main.infoDictionary,
+                              googleReview: Bool = GoogleCalendarReviewSession.current.isActive) -> Self {
         if provider == .apple { return .available }
         let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clientID.isEmpty else { return .setupRequired }
@@ -37,7 +39,7 @@ enum CalendarConnectionReadiness: Equatable {
         // Development harnesses can explicitly supply their own native client.
         // It is independent of Whytap's shared public registration.
         if registered?.clientID != clientID { return .available }
-        return shared(provider, configuration: registered)
+        return shared(provider, configuration: registered, googleReview: googleReview)
     }
 
     var status: String {
