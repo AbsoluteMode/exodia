@@ -94,10 +94,10 @@ final class CarbonHotkeyMonitor {
     /// filter selection via an in-strip sidebar.
     static let historyUnifiedHotKeyID: UInt32 = 8
     // ID 9 retired twice: first with the ROO-208 trio, then as the bare-Escape
-    // close hotkey — replaced by the PASSIVE `EscapeCloseEventMonitor` (a
-    // Carbon bare-Escape registration swallows the key system-wide).
+    // close hotkey — the answer uses a scoped `EscapeCloseEventMonitor`
+    // session tap instead of a Carbon bare-Escape registration.
     // ID 10 retired with the ROO-208 trio.
-    // WHY: docs/decisions/2026-07-02-escape-close-passive-monitor.md
+    // WHY: docs/decisions/2026-10-23-agent-answer-escape-consumption.md
     static let agentTextHotKeyID: UInt32 = 11
     static let agentVoiceHotKeyID: UInt32 = 12
     /// Feature monitors use a separate ID range; legacy slot IDs 13...17 are retired.
