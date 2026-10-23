@@ -361,6 +361,7 @@ struct HotkeysSettingsView: View {
         shortcutRecorder = HotkeyShortcutRecorder(shortcut: shortcut(for: target))
         recordingContents = initialRecordingContents(for: target)
         recordingTarget = target
+        AppState.shared.hotkeyRecordingActive = true
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
             handleRecordingEvent(event)
         }
@@ -372,6 +373,7 @@ struct HotkeysSettingsView: View {
             self.eventMonitor = nil
         }
         recordingTarget = nil
+        AppState.shared.hotkeyRecordingActive = false
         recordingContents = []
     }
 

@@ -108,6 +108,22 @@ final class EscapeCloseTapLifecycleTests: XCTestCase {
         XCTAssertFalse(tap.send(.keyDown))
     }
 
+    func testSuspendedAnswerLetsDropCancelWithoutTranscribingOnRelease() throws {
+        let tap = FakeEscapeCloseTap()
+        let monitor = EscapeCloseEventMonitor(tap: tap, escapeIsDown: { false })
+        monitor.setOnHotkey { XCTFail("The answer must not take Drop's cancel") }
+        try monitor.start()
+        var drop = SpaceHoldDetector()
+        _ = drop.handle(.spaceKeyDown(isRepeat: false))
+        _ = drop.handle(.thresholdFired)
+        _ = drop.handle(.editableResolved(isEditable: true))
+        XCTAssertEqual(drop.state, .armed)
+        monitor.stop() // The interaction publisher suspends answer ownership.
+        XCTAssertFalse(tap.send(.keyDown))
+        XCTAssertEqual(drop.handle(.escapeKeyDown), [.cancelDrop])
+        XCTAssertFalse(drop.handle(.spaceKeyUp).contains(.stopAndTranscribe))
+    }
+
     func testMissingKeyUpIsCleanedWithoutStealingAnotherPress() async throws {
         let tap = FakeEscapeCloseTap()
         var held = true

@@ -64,7 +64,9 @@ private final class SystemEscapeCloseTap: EscapeCloseTapDriving {
     func install(callback: @escaping CGEventTapCallBack) -> Bool {
         // A library/test host must never install an active global input filter.
         guard Bundle.main.bundleURL.pathExtension == "app" else { return false }
-        return thread.installTap(callback: callback) != nil
+        // Capture/approval taps keep priority, including the interval before
+        // their main-thread activity flag arrives.
+        return thread.installTap(placement: .tailAppendEventTap, callback: callback) != nil
     }
 
     func enable(_ enabled: Bool) { thread.enableTap(enabled) }
@@ -96,6 +98,7 @@ final class EscapeCloseEventMonitor: AgentResponseCloseHotkeyControlling {
     deinit {
         releaseTimer?.invalidate()
         if let session {
+            session.filter.withLock { $0.hideAnswer(); $0.releasePress() }
             activeEscapeCloseTapSession.withLock { if $0 === session { $0 = nil } }
             // TapThread has no actor-bound work; dispose directly at teardown.
             session.dispose()

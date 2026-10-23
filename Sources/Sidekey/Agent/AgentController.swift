@@ -89,6 +89,7 @@ final class AgentController: ObservableObject {
     private let islandLinksSelection: UsefulLinksSelectionState?
     private let closeHotkeyFactory: @MainActor () -> AgentResponseCloseHotkeyControlling
     private let escapeCloseHotkeyFactory: @MainActor () -> AgentResponseCloseHotkeyControlling
+    private let escapeInteractionState: AppState
     private let usefulLinksHotkeyFactory: @MainActor () -> UsefulLinksHotkeyController
     private let hotkeyPreferences: HotkeyPreferences
     /// Owns the ⌥Q close hotkey while the island answer panel is visible.
@@ -287,6 +288,7 @@ final class AgentController: ObservableObject {
         agentLinksSelection: UsefulLinksSelectionState? = nil,
         closeHotkeyFactory: (@MainActor () -> AgentResponseCloseHotkeyControlling)? = nil,
         escapeCloseHotkeyFactory: (@MainActor () -> AgentResponseCloseHotkeyControlling)? = nil,
+        escapeInteractionState: AppState? = nil,
         usefulLinksHotkeyFactory: (@MainActor () -> UsefulLinksHotkeyController)? = nil
     ) {
         let resolvedResponseStore = responseStore ?? AskResponseStore()
@@ -309,6 +311,7 @@ final class AgentController: ObservableObject {
         self.realtimeVoiceEnabled = realtimeVoiceEnabled ?? { streamingVoiceEnabled }
         self.agentVoiceStreamFactory = agentVoiceStreamFactory
         self.islandAgentFlow = islandAgentFlow
+        self.escapeInteractionState = escapeInteractionState ?? AppState.shared
         self.islandLinksSelection = agentLinksSelection
         let resolvedHotkeyPreferences = HotkeyPreferences.shared
         self.hotkeyPreferences = resolvedHotkeyPreferences
@@ -501,13 +504,25 @@ final class AgentController: ObservableObject {
 
         // Only the visible answer owns the first bare Escape, regardless of
         // which app is frontmost. The interceptor drains that press through
-        // key-up, then releases input; other agent phases never arm it.
+        // key-up, then releases input. Capture/approval/shortcut recording
+        // retain Escape priority even when an older answer remains visible.
         // WHY: docs/decisions/2026-10-23-agent-answer-escape-consumption.md
-        escapeCloseLifecycleCancellable = islandAgentFlow.$answerPanelVisible
+        let competingInteraction = Publishers.CombineLatest4(
+            escapeInteractionState.$phase,
+            escapeInteractionState.$screenshotActive,
+            escapeInteractionState.$caseApprovalActive,
+            escapeInteractionState.$hotkeyRecordingActive
+        ).map { phase, screenshot, approval, shortcutRecording in
+            phase != .idle || screenshot || approval || shortcutRecording
+        }
+        escapeCloseLifecycleCancellable = Publishers.CombineLatest(
+            islandAgentFlow.$answerPanelVisible, competingInteraction
+        )
+            .map { answerVisible, competingInteraction in answerVisible && !competingInteraction }
             .removeDuplicates()
-            .sink { [weak self] answerPanelVisible in
+            .sink { [weak self] shouldOwnEscape in
                 guard let self else { return }
-                if answerPanelVisible {
+                if shouldOwnEscape {
                     self.startEscapeCloseHotkey()
                 } else {
                     self.stopEscapeCloseHotkey()

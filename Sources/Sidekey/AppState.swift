@@ -41,6 +41,8 @@ final class AppState: ObservableObject {
     @Published var screenshotActive = false
     /// Hold the existing hover state only until explicit capture has frozen its pixels.
     @Published var screenshotPreparing = false
+    /// A Settings shortcut recorder currently owns bare Escape cancellation.
+    @Published var hotkeyRecordingActive = false
     /// Visible Planner work or a retained unsent task draft.
     @Published var plannerActive = false
     /// Inline To-do visibility or a retained unsent draft.
@@ -251,7 +253,9 @@ final class AppState: ObservableObject {
         nowPlaying = nil
     }
 
-    private init() {}
+    /// Production uses `shared`; isolated controllers/tests may inject a
+    /// transient state without changing the application's shared interaction.
+    init() {}
 
     func setHotkeyModifierKey(_ key: HotkeyModifierKey, held: Bool) {
         switch key {

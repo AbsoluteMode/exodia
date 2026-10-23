@@ -573,7 +573,8 @@ final class AgentControllerStreamingTests: XCTestCase {
             responseStore: store,
             agentEnabled: { true },
             islandAgentFlow: islandFlow,
-            escapeCloseHotkeyFactory: { fakeEscape }
+            escapeCloseHotkeyFactory: { fakeEscape },
+            escapeInteractionState: AppState()
         )
         controller.start()
 
@@ -639,7 +640,8 @@ final class AgentControllerStreamingTests: XCTestCase {
             responseStore: store,
             agentEnabled: { true },
             islandAgentFlow: islandFlow,
-            escapeCloseHotkeyFactory: { fakeEscape }
+            escapeCloseHotkeyFactory: { fakeEscape },
+            escapeInteractionState: AppState()
         )
         controller.start()
 
@@ -686,7 +688,8 @@ final class AgentControllerStreamingTests: XCTestCase {
             streamingVoiceEnabled: true,
             agentVoiceStreamFactory: { fake },
             islandAgentFlow: islandFlow,
-            escapeCloseHotkeyFactory: { fakeEscape }
+            escapeCloseHotkeyFactory: { fakeEscape },
+            escapeInteractionState: AppState()
         )
         controller.start()
         monitor.onSnapshot?(snapshot)
@@ -727,7 +730,8 @@ final class AgentControllerStreamingTests: XCTestCase {
             responseStore: store,
             agentEnabled: { true },
             islandAgentFlow: islandFlow,
-            escapeCloseHotkeyFactory: { fakeEscape }
+            escapeCloseHotkeyFactory: { fakeEscape },
+            escapeInteractionState: AppState()
         )
         controller.start()
         XCTAssertEqual(fakeEscape.startCalls, 0)
@@ -762,7 +766,8 @@ final class AgentControllerStreamingTests: XCTestCase {
             responseStore: store,
             agentEnabled: { true },
             islandAgentFlow: islandFlow,
-            escapeCloseHotkeyFactory: { fakeEscape }
+            escapeCloseHotkeyFactory: { fakeEscape },
+            escapeInteractionState: AppState()
         )
         controller.start()
 
@@ -832,6 +837,78 @@ final class AgentControllerStreamingTests: XCTestCase {
             recorder.activeMonitorCount, 4,
             "two links register the full Insert/Open/Next/Previous family"
         )
+    }
+
+    func testAnswerEscapeYieldsToDropAndModalToolsThenResumes() async {
+        let snapshot = makeSnapshot()
+        let provider = ManualCLIProviderForStreaming()
+        let store = AskResponseStore()
+        let flow = IslandAgentFlowStore(responseStore: store)
+        let escape = FakeCloseHotkey()
+        let interactions = AppState()
+        let controller = AgentController(
+            gestureMonitor: MockGestureMonitorForStreaming(),
+            snapshotProvider: { snapshot }, resolveProvider: { provider },
+            responseStore: store, agentEnabled: { true }, islandAgentFlow: flow,
+            escapeCloseHotkeyFactory: { escape }, escapeInteractionState: interactions
+        )
+        controller.start()
+        controller.submitTextQuery("question", snapshot: snapshot)
+        await waitUntil { provider.calls.count == 1 }
+        provider.continuations.first?.yield(.summaryDelta(text: "answer"))
+        await waitUntil { flow.answerPanelVisible && escape.startCalls == 1 }
+
+        interactions.phase = .recording
+        XCTAssertEqual(escape.stopCalls, 1, "Drop must retain its cancellation Escape")
+        XCTAssertTrue(flow.answerPanelVisible, "Suspension must not dismiss the answer")
+        interactions.phase = .transcribing
+        XCTAssertEqual(escape.startCalls, 1)
+        interactions.phase = .idle
+        XCTAssertEqual(escape.startCalls, 2)
+
+        interactions.screenshotActive = true
+        XCTAssertEqual(escape.stopCalls, 2)
+        interactions.screenshotActive = false
+        XCTAssertEqual(escape.startCalls, 3)
+        interactions.caseApprovalActive = true
+        XCTAssertEqual(escape.stopCalls, 3)
+        interactions.caseApprovalActive = false
+        XCTAssertEqual(escape.startCalls, 4)
+        interactions.hotkeyRecordingActive = true
+        XCTAssertEqual(escape.stopCalls, 4)
+        interactions.hotkeyRecordingActive = false
+        XCTAssertEqual(escape.startCalls, 5)
+
+        escape.fire()
+        await waitUntil { !flow.answerPanelVisible }
+        interactions.phase = .recording
+        interactions.phase = .idle
+        XCTAssertEqual(escape.startCalls, 5, "A dismissed answer must never rearm after Drop")
+    }
+
+    func testAnswerArrivingDuringDropDoesNotArmEscape() async {
+        let snapshot = makeSnapshot()
+        let provider = ManualCLIProviderForStreaming()
+        let store = AskResponseStore()
+        let flow = IslandAgentFlowStore(responseStore: store)
+        let escape = FakeCloseHotkey()
+        let interactions = AppState()
+        interactions.phase = .recording
+        let controller = AgentController(
+            gestureMonitor: MockGestureMonitorForStreaming(),
+            snapshotProvider: { snapshot }, resolveProvider: { provider },
+            responseStore: store, agentEnabled: { true }, islandAgentFlow: flow,
+            escapeCloseHotkeyFactory: { escape }, escapeInteractionState: interactions
+        )
+        controller.start()
+        controller.submitTextQuery("question", snapshot: snapshot)
+        await waitUntil { provider.calls.count == 1 }
+        provider.continuations.first?.yield(.summaryDelta(text: "answer"))
+        await waitUntil { flow.answerPanelVisible }
+        XCTAssertEqual(escape.startCalls, 0)
+        interactions.phase = .idle
+        XCTAssertEqual(escape.startCalls, 1)
+        controller.cancelAgentFlowFromIsland()
     }
 
     // MARK: - Helpers

@@ -1211,7 +1211,8 @@ is separate from the removed app-managed speech/LLM models. Guide:
 - **Accessibility** gates `NSEvent.addGlobalMonitorForEvents`
   (`RightCmdGestureMonitor`; `EscapeCloseEventMonitor` consumes only the first
   bare Escape press for a visible Agent answer, drains its repeats/key-up and
-  releases the next press to the user's app. It stays off in recording,
+  releases the next press to the user's app. It yields during Drop, Screenshot,
+  Case approval and shortcut recording, and stays off in agent recording,
   composing, acting-only and idle states. WHY:
   docs/decisions/2026-10-23-agent-answer-escape-consumption.md), the AX check
   of the focused field (`PasteTargetValidator`) and, empirically, the active
