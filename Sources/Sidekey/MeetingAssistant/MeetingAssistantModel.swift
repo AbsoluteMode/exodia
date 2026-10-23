@@ -317,16 +317,19 @@ final class MeetingAssistantModel: ObservableObject {
         }
     }
     func stopListening(clearContext: Bool = false) {
+        let needsRelease = releasingAudio || audio.active
         startRequested = false
         meetingScope?.stop()
         listeningGeneration = UUID()
         let releaseToken = listeningGeneration
-        releasingAudio = true
+        if needsRelease { releasingAudio = true }
         let cleanup = audio.cancel()
-        Task { [weak self] in
-            await cleanup.value
-            guard let self, self.listeningGeneration == releaseToken else { return }
-            self.mutate { self.releasingAudio = false }
+        if needsRelease {
+            Task { [weak self] in
+                await cleanup.value
+                guard let self, self.listeningGeneration == releaseToken else { return }
+                self.mutate { self.releasingAudio = false }
+            }
         }
         detectionTask?.cancel(); detectionTask = nil; detectionTimer?.cancel(); detectionTimer = nil
         if clearContext { transcript = ""; lastAnalyzed = ""; seen = [] }

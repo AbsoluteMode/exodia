@@ -52,23 +52,66 @@ final class MeetingAssistantRenderTests: XCTestCase {
         }
         let directory = URL(fileURLWithPath: output)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        for scheme in [ColorScheme.light, .dark] {
-            for width in [CGFloat(220), 354] {
-                let host = NSHostingView(rootView: VStack(spacing: 4) {
-                    ForEach(0..<4) { index in
-                        let phase: MeetingAssistantHoverState.Phase = [.off, .connecting, .listening, .stopping][index]
-                        IslandMeetingAssistantControl(state: .init(available: true, phase: phase), setEnabled: { _ in })
-                    }
-                }.padding(.vertical, 8).frame(width: width).background(Color(white: 0.10))
-                    .environment(\.colorScheme, scheme).transaction { $0.disablesAnimations = true })
-                host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
-                host.frame = NSRect(x: 0, y: 0, width: width, height: 204)
-                host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.03))
-                let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-                host.cacheDisplay(in: host.bounds, to: rep)
-                try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent("hover-\(Int(width))-\(scheme == .dark ? "dark" : "light").png"))
+        for width in [CGFloat(220), 310, 312, 354] {
+            try saveHover(VStack(spacing: 4) {
+                ForEach(0..<4) { index in
+                    let phase: MeetingAssistantHoverState.Phase = [.off, .connecting, .listening, .stopping][index]
+                    IslandMeetingAssistantControl(state: .init(available: true, phase: phase), setEnabled: { _ in })
+                }
+            }.padding(.vertical, 8), width: width, height: 204, name: "hover-\(Int(width))-dark", directory: directory)
+            try saveHover(VStack(spacing: 4) {
+                ForEach(0..<4) { index in
+                    IslandMeetingAssistantControl(state: .init(available: true, phase: index == 3 ? .stopping : .off), setEnabled: { _ in })
+                        .background(MeetingAssistantHoverSurface(hovered: index == 0 || index == 3,
+                            pressed: index == 1 || index == 3, focused: index == 2 || index == 3, enabled: index != 3)
+                            .padding(.horizontal, 10))
+                }
+            }.padding(.vertical, 8), width: width, height: 204, name: "hover-feedback-\(Int(width))", directory: directory)
+            if width >= 310 {
+                let height = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 3)
+                    - IslandDropModeControl.detachedPanelGap + IslandMeetingAssistantControl.height
+                try saveHover(hoverComposition(width: width), width: width, height: height,
+                              name: "hover-composition-\(Int(width))", directory: directory)
             }
         }
+    }
+    private func hoverComposition(width: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            IslandHoverSearchField(text: .constant(""), onFocusChange: { _ in }, onCommand: { _ in })
+                .frame(height: IslandHoverToolSearch.fieldHeight)
+                .padding(.horizontal, IslandHoverGlass.usesNativeLiquidGlass ? 8 : 0)
+                .islandHoverInputLens(cornerRadius: IslandHoverToolSearch.fieldHeight / 2)
+                .padding(.horizontal, 10).padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
+            IslandMeetingAssistantControl(state: .init(available: true, phase: .listening), setEnabled: { _ in })
+            HStack(spacing: IslandHoverControlsLayout.columnSpacing) {
+                hoverTile("Record", icon: "record.circle", width: width)
+                hoverTile("Meeting Assistant", icon: "person.wave.2", width: width)
+                hoverTile("Settings", icon: "gearshape", width: width)
+            }
+            .padding(.horizontal, IslandHoverControlsLayout.horizontalInset)
+            .frame(height: IslandHoverControlsLayout.gridHeight(toolCount: 3))
+            Rectangle().fill(.white.opacity(0.10)).frame(height: IslandHoverControlsLayout.dividerHeight)
+            Text("Questions and answers for this meeting")
+                .font(.system(size: 12)).foregroundStyle(.white.opacity(0.76))
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
+                .frame(height: IslandHoverControlsLayout.descriptionHeight)
+        }
+    }
+    private func hoverTile(_ title: String, icon: String, width: CGFloat) -> some View {
+        IslandHoverPanelControl(title: title, systemImage: icon, pdfResource: nil, label: nil,
+            circleSize: IslandHoverPanelControl.iconSize, accessibilityLabel: title,
+            width: (width - IslandHoverControlsLayout.horizontalInset * 2 - IslandHoverControlsLayout.columnSpacing * 2) / 3,
+            action: {})
+    }
+    private func saveHover<V: View>(_ view: V, width: CGFloat, height: CGFloat, name: String, directory: URL) throws {
+        let host = NSHostingView(rootView: view.frame(width: width).background(Color(white: 0.10))
+            .environment(\.colorScheme, .dark).transaction { $0.disablesAnimations = true })
+        host.appearance = NSAppearance(named: .darkAqua) // The real IslandPanel pins darkAqua too.
+        host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+        let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent("\(name).png"))
     }
     private func render(_ model: MeetingAssistantModel, scheme: ColorScheme, name: String, directory: URL) throws {
         let host = NSHostingView(rootView: MeetingAssistantView(model: model, openSettings: { _ in }).environment(\.colorScheme, scheme))

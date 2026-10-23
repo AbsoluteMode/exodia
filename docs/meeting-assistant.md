@@ -22,7 +22,7 @@ saved by this pilot.
 Once both model routes and a ready Space are selected, the hover controls show a
 **Meeting Assistant** switch with **Только эта встреча**. It shares the module's
 Listen/Stop state; connecting can be cancelled, and the short cleanup state is
-disabled. Turning it off stops audio and new question extraction while keeping
+disabled. Newly created Spaces are refreshed when hover opens. Turning it off stops audio and new question extraction while keeping
 answers available. The tool/search/deep link still only opens the module.
 
 This choice stays in memory and is off after close, sleep or restart. When the

@@ -1220,6 +1220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openSubtitles: { [weak self] in self?.openTranslation(.subtitles) },
             openMeetingAssistant: { [weak self] in self?.openMeetingAssistant() },
             setMeetingAssistantEnabled: { [weak self] enabled in self?.ensureMeetingAssistant().setMeetingEnabled(enabled) },
+            prepareMeetingAssistant: { [weak self] in self?.ensureMeetingAssistant().prepare() },
             openScreenshot: { [weak self] in self?.openScreenshot() },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .apiAndModels)

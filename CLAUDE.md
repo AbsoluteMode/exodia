@@ -270,7 +270,7 @@ Meeting Assistant pilot:
   the panel using the existing Other setting. Guide: docs/meeting-assistant.md.
   Once both routes and a Space are configured, a hover session switch shares
   Listen/Stop state with the module. It is never a saved auto-join preference.
-  Startup only prepares metadata. An independently observed recognized meeting
+  Startup and hover opening only prepare metadata. An independently observed recognized meeting
   context ending for 15s stops capture; initial/unrecognized manual sessions
   need explicit stop. This mic-activity heuristic cannot identify every call.
   WHY: docs/decisions/2026-10-24-meeting-assistant-session-switch.md

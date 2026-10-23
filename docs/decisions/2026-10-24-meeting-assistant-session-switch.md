@@ -4,7 +4,7 @@ On 2026-10-24 the user requested a hover switch to force Meeting Assistant on or
 off for one meeting, while the already reviewed pilot is promoted independently.
 
 Expose a compact full-row toggle below hover search after both routes and a
-ready Space are configured. Startup preparation reads metadata only. Show-only
+ready Space are configured. Startup and hover opening refresh metadata only. Show-only
 tool/search/link activation stays unchanged. The row and module Listen/Stop use
 one model; stop releases audio and cancels extraction without losing answers.
 Pending starts are cancellable and revalidate the catalog before opening audio.
@@ -26,3 +26,9 @@ Control geometry and the native hit band grow together, with visible hover,
 pressed, keyboard-focus, connecting and disabled-cleanup states. Native offscreen
 fixtures and fake probes/providers verify these transitions; real call behavior
 remains installed acceptance.
+
+Review polish: idle stop does not enter cleanup; repeated stop retains a real
+cleanup gate. Connection-phase changes cancel only the session-row press, while
+geometry changes still invalidate all measured targets. The 10pt outside inset
+is not clickable. The switch uses shared compact geometry/blue tokens and exposes
+its phase as a VoiceOver value. These changes preserve the same capture consent.

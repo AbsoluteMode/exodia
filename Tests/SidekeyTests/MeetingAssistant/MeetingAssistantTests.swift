@@ -248,4 +248,37 @@ final class MeetingAssistantTests: XCTestCase {
         panel.close()
     }
 
+    func testIdleStopNeverShowsCleanupAndRepeatedActiveStopKeepsItsGate() async throws {
+        let (runner, root, defaults) = try fixture()
+        let source = FixtureSubtitleAudio(), upstream = FixtureSubtitleUpstream()
+        let audio = MeetingAssistantAudio(makeAudio: { source }, open: { upstream })
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner, audio: audio)
+        model.stopListening()
+        XCTAssertFalse(model.releasingAudio); XCTAssertFalse(model.hoverState.visible)
+        model.spaces = [space(root)]; model.selectedSpaceID = "project"
+        model.startListening()
+        XCTAssertTrue(audio.active)
+        model.stopListening(); XCTAssertTrue(model.releasingAudio)
+        model.stopListening(); XCTAssertTrue(model.releasingAudio, "A second stop must retain an existing cleanup gate")
+        try await wait { !model.releasingAudio }
+        model.dismiss()
+        XCTAssertFalse(model.releasingAudio)
+    }
+
+    func testPassiveMetadataRefreshFindsSpaceCreatedAfterStartup() async throws {
+        let (runner, root, defaults) = try fixture()
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner, routesConfigured: { true })
+        model.spaces = [space(root)]; model.selectedSpaceID = "project"
+        let panel = MeetingAssistantPanel(model: model, protected: false, openSettings: { _ in }, activityChanged: { _, _ in })
+        panel.prepare()
+        try await wait { model.spaces.isEmpty }
+        XCTAssertFalse(model.visible); XCTAssertFalse(model.hoverState.visible)
+        try JSONEncoder().encode(space(root)).write(to: root.appendingPathComponent("project.json"))
+        panel.prepare()
+        try await wait { model.hoverState.available }
+        XCTAssertFalse(model.visible); XCTAssertFalse(model.listening)
+        XCTAssertEqual(StubURLProtocol.capturedBodies.count, 0)
+        panel.close()
+    }
+
 }

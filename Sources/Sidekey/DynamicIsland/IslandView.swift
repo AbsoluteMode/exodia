@@ -1480,6 +1480,7 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: isHoverExpanded) { _, expanded in
+            if expanded { actions.prepareMeetingAssistant() }
             hoverHitBridge.setEnabled(expanded && hoverPanelMode == .controls)
             // The AppKit hit band follows keyboard-held search and inline tools too.
             onHoverChange(expanded)
@@ -2744,7 +2745,10 @@ private struct IslandDropModeHoverPanel: View {
         }
         .onChange(of: hoverStore.slots) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
         .onChange(of: mode) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
-        .onChange(of: meetingAssistantState) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
+        .onChange(of: meetingAssistantState) { old, new in
+            if old.visible != new.visible { hoverHitBridge.setContext(hitTargetContext) }
+            else { hoverHitBridge.cancelPress(for: .meetingAssistant) }
+        }
         .onChange(of: searchQuery) { _, _ in
             hoverHitBridge.setSurface(IslandHoverToolSearch.isFiltering(searchQuery) ? .result : .tile)
             hoverHitBridge.setContext(hitTargetContext)
@@ -2791,14 +2795,8 @@ private struct IslandDropModeHoverPanel: View {
             .padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
 
             if meetingAssistantState.visible {
-                if meetingAssistantState.canToggle {
-                    IslandMeetingAssistantControl(state: meetingAssistantState, setEnabled: onSetMeetingAssistantEnabled)
-                        .islandHoverHitTarget(bridge: hoverHitBridge, id: .init(surface: .meetingAssistant, tool: .meetingAssistant),
-                                             context: hitTargetContext, action: { onSetMeetingAssistantEnabled(!meetingAssistantState.isOn) })
-                        .islandHoverHitRegion(bridge: hoverHitBridge, surface: .meetingAssistant)
-                } else {
-                    IslandMeetingAssistantControl(state: meetingAssistantState, setEnabled: onSetMeetingAssistantEnabled)
-                }
+                IslandMeetingAssistantControl(state: meetingAssistantState, setEnabled: onSetMeetingAssistantEnabled,
+                                              hitBridge: hoverHitBridge, hitContext: hitTargetContext)
             }
 
             if IslandHoverToolSearch.isFiltering(searchQuery) {
@@ -2877,7 +2875,7 @@ private struct IslandDropModeHoverPanel: View {
     }
 
     private var hitTargetContext: String {
-        "\(searchQuery)|\(mode)|\(meetingAssistantState)|" + hoverStore.slots.map(\.rawValue).joined(separator: ",")
+        "\(searchQuery)|\(mode)|\(meetingAssistantState.visible)|" + hoverStore.slots.map(\.rawValue).joined(separator: ",")
     }
 
     private var searchMatches: [HoverTool] { IslandHoverToolSearch.results(for: searchQuery) }

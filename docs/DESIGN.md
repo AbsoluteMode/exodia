@@ -1333,8 +1333,8 @@ both routes and a ready Space are configured. Reason: current session state must
 be reachable without finding or reopening its answer window. Tool/search/link
 activation remains show-only; opening a tool is never permission to capture.
 
-The full row is one toggle: Meeting Assistant, a short session/state subtitle,
-and a compact switch. Off says “Только эта встреча”; connecting is cancellable;
+The row has the same 10pt outer inset as search, with its entire inner area as one toggle: Meeting Assistant, a short session/state subtitle,
+and a blue 30×18 switch using MacSwitch compact geometry and shared color tokens. Off says “Только эта встреча”; connecting is cancellable;
 listening and stopping are visible, and stopping is temporarily disabled. Hover
 and press highlight the complete row, keyboard focus adds an outline, disabled
 has no active highlight. Use the existing measured first-mouse bridge with its
@@ -1342,7 +1342,7 @@ own hit region, independent of search results. Grow both the drawer and AppKit
 hit band by the same 44pt; other hover panels keep their geometry.
 
 The switch and the module's Listen/Stop use one model, preserving answers on
-Stop. No persisted auto-join preference is introduced. Passive startup only reads
+Stop. No persisted auto-join preference is introduced. Passive startup and each hover opening only read
 Space/route metadata; it creates no panel, accesses no key and starts no capture.
 A recognized meeting-context end sustained for 15 seconds stops listening;
 brief reconnects cancel that stop. Manual sessions without recognized context
@@ -1352,9 +1352,15 @@ call boundary or distinguish a long mute; real-call acceptance remains pending.
 The switch slides its thumb with a 160ms ease when motion is allowed; reduced
 motion updates immediately. The feedback does not move the click target.
 
-Verification: native offscreen 220pt/354pt rows in light/dark appearances, all four
-states; fake probe/model tests cover no auto-rejoin and cancelled starts. On the
-solid #1a1a1a hover fixture, caption contrast is 10.45:1, thumb/on track 4.50:1,
-on track/background 3.88:1 and off outline/background 4.48:1. Physical keyboard,
-pointer, native glass compositing and OS reduced-motion acceptance remain for
-the installed app; the reduced-motion branch removes the thumb animation.
+Verification: native dark hover rows at 220/310/312/354pt, all four phases, plus
+hover/press/focus/disabled feedback using the live drawing surface. Compositions
+at 310/312/354pt use the native search/control/tool components and shared layout
+metrics. Hover is pinned darkAqua like IslandPanel; duplicate light pictures are
+not separate appearance evidence. The answer module retains light/dark proofs.
+On a solid #1a1a1a fixture, the caption is 10.45:1 and the blue track/white thumb
+is 5.59:1. Physical keyboard/VoiceOver, pointer, native glass compositing and OS
+reduced-motion acceptance remain for the installed app; the reduced-motion
+branch removes the thumb animation. Russian subtitles deliberately follow the
+approved Meeting Assistant module; its feature name stays in English. The probe
+is separate so this switch works with Meeting Notes off, without taking over its
+consumer or lifecycle.

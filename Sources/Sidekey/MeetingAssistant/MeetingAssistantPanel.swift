@@ -39,7 +39,7 @@ final class MeetingAssistantPanel {
     }
     /// Read ready Space metadata without showing a window, keys or capture.
     func prepare() {
-        guard preparation == nil else { return }
+        guard preparation == nil, !model.visible else { return }
         preparationID = UUID(); let token = preparationID
         preparation = Task { [weak self] in
             await self?.model.reloadSpaces()

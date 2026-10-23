@@ -81,6 +81,9 @@ final class IslandHoverHitBridge: ObservableObject {
         tracking.cancel()
         pressedID = nil
     }
+    func cancelPress(for surface: IslandHoverHitTargetID.Surface) {
+        if tracking.captured?.id.surface == surface { cancelPress() }
+    }
 
     func discardSequence() {
         tracking.discardSequence()
