@@ -587,6 +587,15 @@ final class AgentControllerStreamingTests: XCTestCase {
         await waitUntil { islandFlow.answerPanelVisible }
         await waitUntil { fakeEscape.startCalls == 1 }
 
+        // A completed answer still owns the first Escape while it remains
+        // visible, even though the controller has returned to idle.
+        agentClient.continuations.first?.yield(.done(sources: []))
+        agentClient.continuations.first?.finish()
+        await waitUntil { store.streamCompleted }
+        XCTAssertTrue(islandFlow.answerPanelVisible)
+        XCTAssertEqual(fakeEscape.startCalls, 1)
+        XCTAssertEqual(fakeEscape.stopCalls, 0)
+
         // Firing Esc funnels through cancel → idle, tearing the hotkey down.
         fakeEscape.fire()
         await waitUntil { controller.state == .idle }
@@ -603,11 +612,9 @@ final class AgentControllerStreamingTests: XCTestCase {
     /// is an accessory app and the island answer panel is non-activating, so
     /// the app is virtually NEVER frontmost while the user reads an answer.
     /// The Escape-close monitor must therefore register purely off
-    /// `answerPanelVisible` — no app-active gating. (Safe because the monitor
-    /// is passive — it observes Escape without stealing it, so holding it
-    /// while the user works elsewhere can no longer break Escape in other
-    /// apps, which is what the removed frontmost gate existed to prevent.)
-    /// WHY: docs/decisions/2026-07-02-escape-close-passive-monitor.md
+    /// `answerPanelVisible` — no app-active gating. Only the answer's first
+    /// press is consumed; the monitor drains its release, then stops.
+    /// WHY: docs/decisions/2026-10-23-agent-answer-escape-consumption.md
     func testEscapeCloseHotkeyRegistersWhileAnswerPanelVisibleEvenWhenAppNotFrontmost() async throws {
         // Force the shared NSApplication to exist so the controller's default
         // app-active source reads a real, INACTIVE app — the production shape

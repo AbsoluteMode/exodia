@@ -400,3 +400,15 @@ Return requires an explicitly selected area, then copies it and closes, waiting 
 the current stroke, then the capture. Native text
 entry keeps ordinary clipboard editing commands; Return commits the field and
 copies/closes the editor. See [screenshots](screenshots.md).
+
+## Agent answer Escape
+
+The first bare Escape closes the visible Agent answer and is consumed before
+it reaches the frontmost application. Its held repeats and release belong to
+that same press. After the answer closes, the next separate press passes
+through normally. Recording, composing, acting without answer content and idle
+never arm this answer interceptor; modified Escape chords and other keys keep
+their existing behavior. It does not activate Whytap or steal keyboard focus.
+Unavailable Accessibility interception leaves the close button and configured
+Agent close shortcut available, without a passive double-action fallback.
+See [decision](decisions/2026-10-23-agent-answer-escape-consumption.md).

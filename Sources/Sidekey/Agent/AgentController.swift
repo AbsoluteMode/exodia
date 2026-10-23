@@ -99,12 +99,12 @@ final class AgentController: ObservableObject {
     private var responseCloseHotkeyActive = false
     private var answerPanelVisibleCancellable: AnyCancellable?
     private var answerCloseHotkeyPreferencesCancellable: AnyCancellable?
-    /// Owns the fixed bare-Escape close monitor (passive NSEvent observer,
-    /// NOT a Carbon grab). Registered only while the answer panel is visible:
+    /// Owns the fixed bare-Escape answer close interceptor. Registered only
+    /// while the answer panel is visible:
     /// the acting/recording/composing wings have their own Escape semantics
-    /// (gesture cancel, key-window `.onExitCommand`), and a monitor observing
-    /// during those phases would double-handle the key.
-    /// WHY: docs/decisions/2026-07-02-escape-close-passive-monitor.md
+    /// (gesture cancel, key-window `.onExitCommand`). Only a visible answer
+    /// owns the first press.
+    /// WHY: docs/decisions/2026-10-23-agent-answer-escape-consumption.md
     private var escapeCloseHotkey: AgentResponseCloseHotkeyControlling?
     private var escapeCloseHotkeyActive = false
     private var escapeCloseLifecycleCancellable: AnyCancellable?
@@ -499,15 +499,10 @@ final class AgentController: ObservableObject {
                 }
             }
 
-        // Guaranteed-Escape close: observe bare Esc for the whole lifetime of
-        // a visible answer — no app-active gate. whytap is an accessory app
-        // and the island answer panel is non-activating, so the app is
-        // virtually never frontmost while the user reads an answer; gating on
-        // frontmost (#458) turned Esc-close off entirely. Holding the monitor
-        // is safe only because it is PASSIVE (NSEvent monitors, not a Carbon
-        // grab): Escape still reaches the app the user is working in, which is
-        // what the removed gate existed to protect.
-        // WHY: docs/decisions/2026-07-02-escape-close-passive-monitor.md
+        // Only the visible answer owns the first bare Escape, regardless of
+        // which app is frontmost. The interceptor drains that press through
+        // key-up, then releases input; other agent phases never arm it.
+        // WHY: docs/decisions/2026-10-23-agent-answer-escape-consumption.md
         escapeCloseLifecycleCancellable = islandAgentFlow.$answerPanelVisible
             .removeDuplicates()
             .sink { [weak self] answerPanelVisible in
@@ -586,8 +581,7 @@ final class AgentController: ObservableObject {
         } catch {
             // Soft-fail (same contract as ⌥Q + useful-links): log and move
             // on — ⌥Q and the close button still dismiss the panel. (The
-            // passive monitor's start does not actually throw; this arm is
-            // the protocol's contract for the Carbon-backed ⌥Q sibling.)
+            // active tap may be unavailable without Accessibility.)
             os_log(
                 "island escape close hotkey start failed: %{public}@",
                 log: Self.log, type: .error,
@@ -601,9 +595,9 @@ final class AgentController: ObservableObject {
         escapeCloseHotkey?.stop()
         escapeCloseHotkeyActive = false
         // Pairs with `escape_close_registered`: the monitor's lifetime should
-        // exactly track answer-panel visibility, so an unpaired register (or a
-        // long gap) means the lifecycle leaked.
-        // WHY: docs/decisions/2026-07-02-escape-close-passive-monitor.md
+        // track answer-panel visibility; an already consumed press only drains
+        // through its key-up before the native tap is removed.
+        // WHY: docs/decisions/2026-10-23-agent-answer-escape-consumption.md
         os_log("escape_close_unregistered", log: Self.log, type: .default)
     }
 

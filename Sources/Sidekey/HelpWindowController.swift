@@ -78,11 +78,11 @@ enum HelpWindowContent {
             ),
             // Bare Escape is a fixed (non-configurable) close for the agent
             // answer window. While the window is up, Whytap registers a
-            // Carbon Escape hotkey, so the next Escape closes the answer
+            // scoped Escape interceptor, so the first press closes the answer
             // instead of reaching the app underneath.
             HelpHotkeyRowSpec(
                 title: "Close",
-                detail: "Press Escape to close the Agent response window.",
+                detail: "The first Escape closes the visible Agent answer. The next reaches your app.",
                 iconName: "escape",
                 prefix: nil,
                 contents: [.text("Esc")]

@@ -3,6 +3,12 @@
 **Дата:** 2026-07-02
 **Где:** `Sources/Sidekey/Agent/AgentResponseCloseHotkey.swift` (`EscapeCloseEventMonitor`, заменил `CarbonEscapeCloseHotkey`), `Sources/Sidekey/Agent/AgentController.swift` (лайфцикл только по `answerPanelVisible`; `appActivePublisher` удалён), тесты `AgentControllerStreamingTests` + `EscapeCloseEventMonitorTests`.
 
+**Обновление 2026-10-23:** политика двойного действия ниже заменена по прямому
+запросу пользователя: первый Esc при видимом ответе должен закрывать только
+ответ и не отменять работу приложения под ним. Текущий контракт и защита от
+лишнего перехвата — [изолированный Esc ответа](2026-10-23-agent-answer-escape-consumption.md).
+Ниже сохранено историческое решение.
+
 ## Контекст
 
 Регрессия после #458: с открытым ответом агента Escape его не закрывает — вообще, ни в каком сценарии. #458 гейтил регистрацию bare-Escape Carbon-хоткея на `answerPanelVisible && NSApp.isActive` (frontmost-gate), чтобы вылечить рецидивный «Escape пропадает глобально в других приложениях» (Carbon `RegisterEventHotKey` на голый Escape забирает клавишу у всей системы).
