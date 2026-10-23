@@ -119,6 +119,15 @@ enum SelectionFallback {
             return
         }
 
+        // Empty AX text does not imply a hidden selection. Sending Cmd+C
+        // without an enabled Copy command makes AppKit beep (in both Agent
+        // input modes). Unknown/unavailable menus must also skip the probe.
+        // WHY: .project-docs/decisions/2026-10-22-native-agent.md
+        guard env.canCopy(targetPID), env.frontmostPID() == targetPID else {
+            completion(nil)
+            return
+        }
+
         os_log(
             "selection.fallback.started target_pid=%{public}d",
             log: log,
@@ -262,6 +271,7 @@ extension SelectionFallback {
     /// architectural invariant that v1 / v2 broke).
     struct Env {
         let frontmostPID: () -> pid_t
+        let canCopy: (pid_t) -> Bool
         let pasteboardSnapshot: () -> PasteboardSnapshot
         let pasteboardRestore: (PasteboardSnapshot) -> Void
         let setSuppressed: (Bool) -> Void
@@ -288,6 +298,11 @@ extension SelectionFallback {
         static let live = Env(
             frontmostPID: {
                 NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
+            },
+            canCopy: { targetPID in
+                MainActor.assumeIsolated {
+                    SelectionCopyAvailability.isCopyEnabled(targetPID: targetPID)
+                }
             },
             pasteboardSnapshot: Pasteboard.snapshot,
             pasteboardRestore: Pasteboard.restore,
