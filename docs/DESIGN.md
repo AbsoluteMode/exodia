@@ -1296,3 +1296,30 @@ supersedes the former window presentation. See
   UI blockers; physical acceptance remains separate.
   Link/card contrast is 5.59:1 light and 4.92:1 dark; date/card contrast is
   6.62:1 light and 6.84:1 dark using the shared semantic tokens.
+
+
+## Meeting Assistant — approved native pilot, 2026-10-23
+
+The user approved the isolated native design and requested a live pilot inside
+Whytap. Preserve its 354pt right column, slightly dimmed material and single thin
+outline. The project name/arrow selector hugs its content; there is one common
+close control and a plain input with a left caret. Questions appear newest first,
+with older items lower/fainter; Answers is a separate bounded list. Long replies
+scroll inside their body and emphasize the conclusion and important spans.
+
+Two contextual continuations and a free clarification input continue the same
+conversation. Collapse preserves the branch and exposes Return answer. Escape
+in a field releases focus and preserves screenshots. Only editors acquire key
+status, so reading/clicking the module keeps the meeting app's keyboard focus.
+
+Attach screen sits beside the main input. Up to six independently removable
+thumbnails sit directly below it and scroll horizontally. Images stay in memory;
+success removes submitted images, failure/cancellation preserves them for retry.
+A compact explicit Listen/Stop action makes capture state visible. Empty catalog,
+setup errors and listening failures have visible explanations and repair access.
+
+Creation/editing of Spaces belongs to coding agents. The module only chooses
+ready Spaces. A malformed active manifest invalidates context instead of silently
+reusing its former scope. The pilot uses the existing screenshot-protection
+setting. Real sharing exclusion and native call interactions are installed
+acceptance; offscreen renders and test checks do not establish those guarantees.

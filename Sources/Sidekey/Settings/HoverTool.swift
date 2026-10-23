@@ -16,6 +16,7 @@ enum HoverTool: String, CaseIterable, Hashable {
     case hotkeys
     case notes
     case meetingRecord
+    case meetingAssistant
     case monitor
     case brightness
     case tasks
@@ -87,6 +88,9 @@ enum HoverToolRegistry {
             return HoverToolInfo(title: "Notes", sfSymbol: "note.text",
                                  kind: .navigate(.tab(.notes)),
                                  description: "Open meeting notes")
+        case .meetingAssistant:
+            return HoverToolInfo(title: "Meeting Assistant", sfSymbol: "text.bubble", kind: .action,
+                                 description: "Questions and answers during a meeting, scoped to your selected Space")
         case .meetingRecord:
             return HoverToolInfo(title: "Record", sfSymbol: "record.circle", kind: .action,
                                  description: "Start or stop a meeting recording")

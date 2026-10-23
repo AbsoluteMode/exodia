@@ -251,6 +251,25 @@ Agent flow (native Whytap runtime; OpenRouter, OpenAI or Anthropic):
   WhytapCustomizationContext.promptInstructions retains Monitor/source-kit contracts.
   WHY: .project-docs/decisions/2026-10-22-native-agent.md
 
+Meeting Assistant pilot:
+  A passive right-hand module uses the approved native design: ready Space picker,
+  plain input, bounded questions/answers, structured replies, two continuations
+  and up to six explicit screenshot attachments. A Toolbox/search tool and
+  whytap://tool/meetingAssistant only show it; listening starts explicitly.
+  Meeting Assistant and Meeting Assistant audio have independent initially unset
+  routes. A native provider loop uses only scoped read/list/search tools, without
+  the ordinary Agent's workspace/history, shell, writes, network or Case tools.
+  Coding agents create/edit local manifests with scripts/meeting-space.py; users
+  select ready Spaces. Each file is validated independently; descriptor-relative
+  reads reject traversal, symlinks, hidden/credential paths and out-of-scope access.
+  Database declarations remain unavailable metadata in this pilot. Explicit
+  listening sends system audio (not microphone) to the selected realtime route,
+  retains only bounded in-memory finals and extracts questions through the chosen
+  answer model. No audio, transcript, images or conversations are written by this
+  feature. Space changes/edits, close and sleep cancel work; protection recreates
+  the panel using the existing Other setting. Guide: docs/meeting-assistant.md.
+  WHY: docs/decisions/2026-10-23-meeting-assistant-pilot.md
+
 Translation tools:
   Translate and Subtitles are optional catalog action tools opening one native
   floating window (TranslationWindowController). TextTranslationModel cancels
