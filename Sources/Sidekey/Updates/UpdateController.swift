@@ -478,6 +478,9 @@ final class UpdateController: NSObject, ObservableObject {
         if appState.phase != .idle {
             return "Ready. Finish dictation, then choose Restart."
         }
+        if appState.meetingAssistantActive {
+            return "Ready. Close Meeting Assistant, then choose Restart."
+        }
         if appState.translationActive {
             return "Ready. Close the translation window, then choose Restart."
         }
