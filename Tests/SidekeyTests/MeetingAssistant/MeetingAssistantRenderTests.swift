@@ -25,7 +25,7 @@ final class MeetingAssistantRenderTests: XCTestCase {
                                    points: ["Укажи **репозиторий и папки**, которые нужны для встречи.", "Проверь **выбранные модели** речи и ответов."],
                                    followups: [.init(title: "Какие папки включить?"), .init(title: "Как проверить доступ?")])
             model.answerVisible = true
-            model.screenshots = (0..<6).map { _ in .init(image: NSImage(size: NSSize(width: 80, height: 50)), payload: .init(data: Data(), mimeType: "image/jpeg")) }
+            model.screenshots = (0..<6).map { index in .init(image: fixturePhoto(index), payload: .init(data: Data(), mimeType: "image/jpeg")) }
             model.layoutHeight = 1084; model.bodyLimit = 250
             try render(model, scheme: scheme, name: "populated", directory: directory)
             model.layoutHeight = 620; model.bodyLimit = 56
@@ -33,6 +33,18 @@ final class MeetingAssistantRenderTests: XCTestCase {
             model.spaces = []; model.pending = []; model.completed = []; model.selected = nil
             model.answerVisible = false; model.screenshots = []; model.layoutHeight = 1084
         }
+    }
+    private func fixturePhoto(_ index: Int) -> NSImage {
+        let image = NSImage(size: NSSize(width: 320, height: 200))
+        image.lockFocus()
+        NSColor(calibratedWhite: index.isMultiple(of: 2) ? 0.9 : 0.25, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: 320, height: 200).fill()
+        ("ДЕМО \(index + 1)" as NSString).draw(at: NSPoint(x: 22, y: 135), withAttributes: [.font: NSFont.systemFont(ofSize: 28, weight: .bold), .foregroundColor: NSColor.systemBlue])
+        NSColor.systemBlue.withAlphaComponent(0.2).setFill()
+        NSRect(x: 22, y: 100, width: 210, height: 12).fill()
+        NSRect(x: 22, y: 70, width: 165, height: 12).fill()
+        image.unlockFocus()
+        return image
     }
     private func render(_ model: MeetingAssistantModel, scheme: ColorScheme, name: String, directory: URL) throws {
         let host = NSHostingView(rootView: MeetingAssistantView(model: model, openSettings: { _ in }).environment(\.colorScheme, scheme))

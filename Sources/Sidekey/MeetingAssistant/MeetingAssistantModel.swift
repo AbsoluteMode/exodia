@@ -65,6 +65,7 @@ final class MeetingAssistantModel: ObservableObject {
     private let directory: URL
     private let defaults: UserDefaults
     private let runner: MeetingAssistantRunner
+    private let detectionInterval: Duration
     let audio: MeetingAssistantAudio
     private let capture: AgentScreenCapture
     static let screenshotLimit = 6
@@ -76,8 +77,10 @@ final class MeetingAssistantModel: ObservableObject {
     }
 
     init(directory: URL = MeetingSpace.directory, defaults: UserDefaults = .standard,
-         runner: MeetingAssistantRunner? = nil, audio: MeetingAssistantAudio? = nil, capture: AgentScreenCapture? = nil) {
+         runner: MeetingAssistantRunner? = nil, audio: MeetingAssistantAudio? = nil, capture: AgentScreenCapture? = nil,
+         detectionInterval: Duration = .seconds(4)) {
         self.directory = directory; self.defaults = defaults; self.runner = runner ?? MeetingAssistantRunner()
+        self.detectionInterval = detectionInterval
         self.audio = audio ?? MeetingAssistantAudio()
         self.capture = capture ?? AgentScreenCapture(capture: AgentScreenCapture.captureForMeeting)
         selectedSpaceID = defaults.string(forKey: "meetingAssistant.selectedSpace") ?? ""
@@ -109,26 +112,31 @@ final class MeetingAssistantModel: ObservableObject {
         do {
             let catalog = try await Task.detached { try MeetingSpace.load(directory: directory) }.value
             guard !Task.isCancelled else { return }
+            let message = catalog.invalidFiles.isEmpty ? "" : "Некоторые Spaces не загрузились. Попроси Codex или Claude Code проверить каталог."
+            guard catalog.spaces != spaces || message != spaceError else { return }
             let old = currentSpace
             let validIDs = Set(catalog.spaces.map(\.id))
-            sessions = sessions.filter { validIDs.contains($0.key) }
+            let unchangedIDs = Set(spaces.filter { previous in catalog.spaces.contains(previous) }.map(\.id))
+            sessions = sessions.filter { validIDs.contains($0.key) && unchangedIDs.contains($0.key) }
             if let old, catalog.spaces.first(where: { $0.id == old.id }) != old {
-                cancelWork(); stopListening(); sessions.removeValue(forKey: old.id); clearConversation()
+                cancelWork(); stopListening(clearContext: true); sessions.removeValue(forKey: old.id); clearConversation()
             }
             mutate {
                 spaces = catalog.spaces
-                spaceError = catalog.invalidFiles.isEmpty ? "" : "Некоторые Spaces не загрузились. Попроси Codex или Claude Code проверить каталог."
+                spaceError = message
                 if !validIDs.contains(selectedSpaceID) { selectedSpaceID = spaces.first?.id ?? "" }
             }
         } catch {
-            cancelWork(); stopListening()
-            mutate { spaces = []; spaceError = "Не удалось прочитать каталог Spaces. Проверь его через Codex или Claude Code." }
+            let message = "Не удалось прочитать каталог Spaces. Проверь его через Codex или Claude Code."
+            guard !spaces.isEmpty || spaceError != message else { return }
+            cancelWork(); stopListening(clearContext: true)
+            mutate { spaces = []; sessions = [:]; clearConversation(); spaceError = message }
         }
     }
 
     func selectSpace(_ id: String) {
         guard id != selectedSpaceID, spaces.contains(where: { $0.id == id }) else { return }
-        cancelWork(); stopListening()
+        cancelWork(); stopListening(clearContext: true)
         sessions[selectedSpaceID] = Session(pending: pending, completed: completed, selected: selected, root: selectedRootID,
             previous: previous, threads: threads, draft: draft, followup: followupDraft, notice: notice)
         mutate {
@@ -249,7 +257,7 @@ final class MeetingAssistantModel: ObservableObject {
         screenBusy = false; screenshots = []; previewScreenshot = nil
     }
     func dismiss() {
-        cancelWork(); stopListening(); catalogTask?.cancel(); catalogTask = nil
+        cancelWork(); stopListening(clearContext: true); catalogTask?.cancel(); catalogTask = nil
         mutate { visible = false; editing = false; notice = selected?.conclusion.isEmpty == true ? "Ответ отменён. Повтори вопрос." : notice }
     }
     func toggleListening() { listening ? stopListening() : startListening() }
@@ -262,13 +270,13 @@ final class MeetingAssistantModel: ObservableObject {
         audio.start()
         detectionTimer = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(4))
+                try? await Task.sleep(for: self?.detectionInterval ?? .seconds(4))
                 guard !Task.isCancelled else { return }
                 self?.detectQuestions(token: token)
             }
         }
     }
-    func stopListening() {
+    func stopListening(clearContext: Bool = false) {
         listeningGeneration = UUID()
         let releaseToken = listeningGeneration
         releasingAudio = true
@@ -279,7 +287,7 @@ final class MeetingAssistantModel: ObservableObject {
             self.mutate { self.releasingAudio = false }
         }
         detectionTask?.cancel(); detectionTask = nil; detectionTimer?.cancel(); detectionTimer = nil
-        transcript = ""; lastAnalyzed = ""; seen = []
+        if clearContext { transcript = ""; lastAnalyzed = ""; seen = [] }
     }
     private func detectQuestions(token: UUID) {
         guard listening, listeningGeneration == token, detectionTask == nil, busy == nil,
@@ -292,6 +300,7 @@ final class MeetingAssistantModel: ObservableObject {
                 let questions = try await runner.questions(transcript: text, seen: seen)
                 guard !Task.isCancelled, let self, self.listeningGeneration == token else { return }
                 self.mutate {
+                    if self.audioIssue.hasPrefix("Модель не разобрала") { self.audioIssue = "" }
                     for text in questions where !self.seen.contains(where: { $0.caseInsensitiveCompare(text) == .orderedSame }) {
                         self.pending.insert(.init(question: text), at: 0); self.seen.append(text)
                     }
@@ -299,6 +308,10 @@ final class MeetingAssistantModel: ObservableObject {
                 }
             } catch {
                 guard !Task.isCancelled, let self, self.listeningGeneration == token else { return }
+                if error is MeetingQuestionError {
+                    self.mutate { self.audioIssue = "Модель не разобрала последнюю фразу. Слушаю дальше; можно задать вопрос вручную." }
+                    return
+                }
                 self.stopListening()
                 self.mutate { self.audioIssue = "Не удалось выделить вопросы. Проверь модель Meeting Assistant и подключись снова." }
             }

@@ -123,4 +123,74 @@ final class MeetingAssistantTests: XCTestCase {
         XCTAssertEqual(HoverSlotRouter.effect(for: .meetingAssistant), .openMeetingAssistant)
         XCTAssertEqual(WhytapLink.destination(for: .meetingAssistant), .meetingAssistant)
     }
+    func testInactiveManifestEditInvalidatesItsSavedConversationAndUnchangedCatalogDoesNotPublish() async throws {
+        let (runner, root, defaults) = try fixture()
+        var first = space(root)
+        let second = space(root, id: "second")
+        let firstFile = root.appendingPathComponent("project.json")
+        try JSONEncoder().encode(first).write(to: firstFile)
+        try JSONEncoder().encode(second).write(to: root.appendingPathComponent("second.json"))
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner)
+        await model.reloadSpaces()
+        model.completed = [.init(question: "Old question", conclusion: "Old scope")]
+        model.selectSpace("second")
+        first.instructions = "Changed while inactive"
+        try JSONEncoder().encode(first).write(to: firstFile, options: .atomic)
+        await model.reloadSpaces()
+        model.selectSpace("project")
+        XCTAssertTrue(model.completed.isEmpty)
+        try await wait { !model.releasingAudio }
+        var publications = 0
+        model.onChange = { publications += 1 }
+        await model.reloadSpaces()
+        XCTAssertEqual(publications, 0)
+    }
+    func testLiveFinalsBecomeQuestionsAndMalformedDetectionDoesNotStopAudio() async throws {
+        let (runner, root, defaults) = try fixture()
+        let source = FixtureSubtitleAudio(), upstream = FixtureSubtitleUpstream()
+        let audio = MeetingAssistantAudio(makeAudio: { source }, open: { upstream })
+        var calls = 0
+        StubURLProtocol.handler = { _ in
+            calls += 1
+            let text = calls == 1 ? "not JSON" : "```json\n{\"questions\":[\"Какие риски проекта?\"]}\n```"
+            return self.serve(["choices": [["finish_reason": "stop", "message": ["role": "assistant", "content": text]]]])
+        }
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner, audio: audio, detectionInterval: .milliseconds(10))
+        model.spaces = [space(root)]; model.selectedSpaceID = "project"
+        model.startListening(); try await wait { audio.ready }
+        upstream.pair.continuation.yield(.final("Расскажите пожалуйста об основных рисках проекта?"))
+        try await wait { !model.audioIssue.isEmpty }
+        XCTAssertTrue(model.listening); XCTAssertFalse(upstream.closed)
+        upstream.pair.continuation.yield(.final(" И уточните пожалуйста ближайшие шаги."))
+        try await wait { model.pending.count == 1 }
+        XCTAssertEqual(model.pending.first?.question, "Какие риски проекта?")
+        XCTAssertTrue(model.audioIssue.isEmpty)
+        for data in StubURLProtocol.capturedBodies {
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertNil(body["tools"])
+        }
+        model.stopListening(); try await wait { !model.releasingAudio }
+        XCTAssertFalse(model.transcript.isEmpty, "Stop preserves meeting evidence for the pending question")
+        XCTAssertTrue(upstream.closed); XCTAssertGreaterThan(source.stopped, 0)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+        model.dismiss(); XCTAssertTrue(model.transcript.isEmpty)
+    }
+    func testFencedQuestionsAndUsageFeatureAcrossAllProviders() async throws {
+        for account in [ProviderAccount.openRouter, .openAI, .anthropic] {
+            var (runner, _, _) = try fixture(account: account)
+            var events: [AIUsageEvent] = []
+            runner.usageSink = { events.append($0) }
+            StubURLProtocol.handler = { _ in
+                let text = "```json\n{\"questions\":[\"What changed?\"]}\n```"
+                switch account {
+                case .openAI: return self.serve(["status": "completed", "output": [["type": "message", "role": "assistant", "content": [["type": "output_text", "text": text]]]]])
+                case .anthropic: return self.serve(["stop_reason": "end_turn", "content": [["type": "text", "text": text]]])
+                default: return self.serve(["choices": [["finish_reason": "stop", "message": ["role": "assistant", "content": text]]]])
+                }
+            }
+            let questions = try await runner.questions(transcript: "Could you explain what changed?", seen: [])
+            XCTAssertEqual(questions, ["What changed?"])
+            XCTAssertEqual(events.first?.context.feature, .meetingAssistant)
+        }
+    }
 }

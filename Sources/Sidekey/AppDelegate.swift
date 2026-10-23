@@ -1860,8 +1860,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             meetingAssistantPanel = MeetingAssistantPanel(
                 openSettings: { [weak self] feature in self?.openSettingsWindow(tab: .apiAndModels, feature: feature) },
                 activityChanged: { active, editing in
-                    AppState.shared.meetingAssistantActive = active
-                    AppState.shared.meetingAssistantEditing = editing
+                    if AppState.shared.meetingAssistantActive != active { AppState.shared.meetingAssistantActive = active }
+                    if AppState.shared.meetingAssistantEditing != editing { AppState.shared.meetingAssistantEditing = editing }
                 }
             )
         }

@@ -15,7 +15,9 @@ provider/model choice and reports failures without substituting another route.
 through the speech route. Questions extracted from the recent transcript appear
 above older questions; click one for an answer. This does not start recording
 notes or capture your microphone. Close the module or press Stop to end the
-session. Audio, transcript, images and conversations are not saved by this pilot.
+session. Stop preserves recent transcript in memory for pending questions; close
+or changing Space clears it. Audio, transcript, images and conversations are not
+saved by this pilot.
 
 **Прикрепить скрин** captures the island-selected display after the requested
 macOS permission. Up to six thumbnails fit in a horizontal tray. Open one to
@@ -44,7 +46,8 @@ python3 scripts/meeting-space.py validate my-project
 ```
 
 Use an actual user-selected project path. `.` explicitly includes the repository
-root; otherwise scopes are relative paths. The catalog is
+root; otherwise scopes are relative paths. Locations use canonical paths; the CLI
+resolves them before writing, and changing a root to a symlink invalidates it. The catalog is
 `whytap/meeting-spaces/<id>.json` under the user Application Support directory. `--root` changes
 the parent directory for isolated testing only. Writes are serialized and atomic
 and keep one previous manifest. The app refreshes ready Spaces automatically.

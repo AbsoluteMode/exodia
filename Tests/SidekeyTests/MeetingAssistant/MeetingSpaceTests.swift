@@ -66,4 +66,29 @@ final class MeetingSpaceTests: XCTestCase {
         value.sources[0].connection_ref = "postgres://user:password@host/db"
         XCTAssertThrowsError(try MeetingSpace.decode(JSONEncoder().encode(value), fileName: "project.json"))
     }
+    func testLargeMultibyteFilesKeepCompleteUTF8Prefix() throws {
+        let root = try root()
+        let repository = SpaceRepository(source: space(root, scope: ["."]).sources[0])
+        for (index, character) in ["я", "語", "🎧"].enumerated() {
+            let path = "large\(index).txt"
+            let text = "a" + String(repeating: character, count: 20_000)
+            try Data(text.utf8).write(to: root.appendingPathComponent(path))
+            let read = try repository.read(path)
+            XCTAssertTrue(read.contains(character)); XCTAssertTrue(read.contains("сокращён"))
+            XCTAssertFalse(read.contains("�"))
+            XCTAssertTrue(try repository.search(character).contains(path))
+        }
+    }
+    func testReplacedRootCannotAcquireAnotherDirectoryOnReload() throws {
+        let parent = try root(), project = parent.appendingPathComponent("project"), other = parent.appendingPathComponent("other")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let value = space(project, scope: ["."])
+        let data = try JSONEncoder().encode(value)
+        _ = try MeetingSpace.decode(data, fileName: "project.json")
+        try FileManager.default.removeItem(at: project)
+        try FileManager.default.createSymbolicLink(at: project, withDestinationURL: other)
+        XCTAssertThrowsError(try MeetingSpace.decode(data, fileName: "project.json"))
+        XCTAssertThrowsError(try SpaceRepository(source: value.sources[0]).list())
+    }
 }

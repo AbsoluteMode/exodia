@@ -30,7 +30,10 @@ It does not start Meeting Notes, use the microphone or retain audio on disk.
 Provider finals stay in a bounded in-memory rolling context. A bounded periodic
 analysis extracts questions; answers run only on the user's click or submission.
 Stopping, closing, sleep or changing Space cancels work. Provider failures stop
-listening visibly, with no retry or model/provider substitution.
+listening visibly, with no retry or model/provider substitution. Malformed question
+JSON is a recoverable parsing issue: keep listening, show a warning, and analyze
+only after fresh transcript arrives; do not retry the same paid request. Stop
+retains recent evidence for pending questions; close or Space changes clear it.
 
 Screenshots are explicit, exclude Whytap's own application windows, remain in
 RAM and belong to the submitted request snapshot. Successful delivery removes
@@ -42,3 +45,10 @@ Other setting through the same callback used by notification windows.
 Safe tests use fake providers and temporary catalogs. Real call latency,
 question quality, native focus, provider vision and screen-sharing exclusion
 remain installed acceptance, separately from source/build readiness.
+
+
+Compatibility: the new usage feature IDs are forward additions to the existing
+usage store. A retained older binary does not recognize those IDs after the
+pilot first runs. The builder must account for Costs/usage-backup compatibility
+before a binary rollback; installation itself does not rewrite old usage rows.
+No user usage rows are deleted or rewritten to conceal that limitation.

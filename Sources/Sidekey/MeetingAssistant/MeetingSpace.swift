@@ -48,7 +48,11 @@ struct MeetingSpace: Codable, Equatable, Identifiable, Sendable {
                   !source.scope.isEmpty, source.scope.count <= 100 else { throw SpaceAccessError.invalid }
             if source.kind == "repository" {
                 guard let location = source.location, location.hasPrefix("/"), source.connection_ref == nil else { throw SpaceAccessError.invalid }
-                value.sources[index].location = try SpaceRepository.root(location, requireExists: false).path
+                let canonical = try SpaceRepository.root(location, requireExists: false).path
+                // The CLI writes canonical locations. A root replaced by a link
+                // must not silently acquire a new boundary on the next reload.
+                guard location == canonical else { throw SpaceAccessError.denied }
+                value.sources[index].location = canonical
                 for scope in source.scope { _ = try SpaceRepository.components(scope, allowDot: true) }
             } else if source.kind == "database" {
                 guard source.location == nil, let reference = source.connection_ref,
@@ -162,7 +166,16 @@ struct SpaceRepository: Sendable {
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw SpaceAccessError.denied }
         var bytes = [UInt8](repeating: 0, count: 32_001)
         let count = Darwin.read(fd, &bytes, bytes.count)
-        guard count >= 0, !bytes.prefix(count).contains(0), let text = String(bytes: bytes.prefix(min(count, 32_000)), encoding: .utf8) else { throw SpaceAccessError.unavailable }
+        guard count >= 0, !bytes.prefix(count).contains(0) else { throw SpaceAccessError.unavailable }
+        var prefix = bytes.prefix(min(count, 32_000))
+        var decoded = String(bytes: prefix, encoding: .utf8)
+        if count > 32_000 {
+            for _ in 0..<3 where decoded == nil {
+                prefix = prefix.dropLast()
+                decoded = String(bytes: prefix, encoding: .utf8)
+            }
+        }
+        guard let text = decoded else { throw SpaceAccessError.unavailable }
         return text.components(separatedBy: .newlines).enumerated().map { "\($0.offset + 1): \($0.element)" }.joined(separator: "\n")
             + (count > 32_000 ? "\n[Файл сокращён]" : "")
     }

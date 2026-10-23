@@ -40,7 +40,7 @@ installation and quit are outside the application-control server.
 
 Feature IDs are `dropFast`, `dropSmart`, `dropSmartCleanup`, `meetings`,
 `meetingNotes`, `agent`, `agentVoice`, `voiceSearch`, `translation`,
-`subtitlesAudio` and `subtitlesTranslation`. Accounts use the exact ID returned
+`subtitlesAudio`, `subtitlesTranslation`, `meetingAssistant` and `meetingAssistantAudio`. Accounts use the exact ID returned
 by `list_models`: built-in provider IDs or an already configured server ID.
 The application-control server cannot add a provider, change an endpoint URL
 or read a key.

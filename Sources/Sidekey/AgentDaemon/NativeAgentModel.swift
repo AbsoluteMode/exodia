@@ -70,6 +70,11 @@ struct NativeAgentModel {
             request = try NativeAgentHTTP.request(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!, key: key, body: body)
             request.setValue("Whytap", forHTTPHeaderField: "X-Title")
         }
+        if tools.isEmpty, let data = request.httpBody,
+           var body = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            body.removeValue(forKey: "tools")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
         let response: [String: Any]
         do { response = try await http.json(request) }
         catch {

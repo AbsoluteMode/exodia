@@ -23,7 +23,7 @@ def allowed_part(part):
 
 def validate(space):
     if set(space) != {'version','id','name','purpose','instructions','sources'} or type(space['version']) is not int or space['version'] != 1:
-        raise ValueError('Expected the version 1 Space fields; see SPACE_CONTRACT.md.')
+        raise ValueError('Expected the version 1 Space fields; see docs/meeting-assistant.md.')
     require_id(space['id'])
     for key in ['name','purpose','instructions']:
         if not isinstance(space[key],str): raise ValueError(key+' must be text.')
@@ -53,7 +53,7 @@ def validate(space):
             if re.search(r'https://[^/]*@',location): raise ValueError('Do not embed credentials in a repository URL.')
             if any(s!='.' and (s.startswith('/') or any(not allowed_part(p) for p in s.split('/'))) for s in source['scope']): raise ValueError('Repository scopes must stay inside the repository.')
         elif source['kind']=='database':
-            if not isinstance(source.get('connection_ref'),str) or not REF.fullmatch(source['connection_ref']) or 'location' in source:
+            if not isinstance(source.get('connection_ref'),str) or not REF.fullmatch(source['connection_ref']) or 'location' in source or any(len(s)>200 for s in source['scope']):
                 raise ValueError('Database requires a case://, keychain:// or env:// reference, not a connection string.')
         else: raise ValueError('Supported source kinds: repository, database.')
     if len(json.dumps(space).encode())>65536: raise ValueError('Space description is too large.')
