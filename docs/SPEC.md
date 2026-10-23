@@ -779,6 +779,14 @@ Settings → API & Models → API keys содержит ключ Tavily в Keych
 
 ### Meeting Assistant pilot
 
+A configured assistant exposes a hover magic icon to the right of the recording
+timer, translucent when off and softly glowing while listening. It shares
+Listen/Stop state, keeps answers when stopped, and never saves auto-join. A
+recognized meeting-context end sustained for 15 seconds stops listening; manual
+sessions without recognized context need explicit stop. Context detection is a
+mic-activity heuristic, not a unique call identity.
+
+
 The approved native right-hand module offers a ready Space picker, plain input,
 up to five current questions, twenty answered roots and six removable screenshot
 attachments. Replies contain a conclusion, structured points and two follow-ups;

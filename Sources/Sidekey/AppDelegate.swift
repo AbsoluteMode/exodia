@@ -534,6 +534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshRuntimePermissions()
         IslandPanel.shared.show()
         IslandNotificationPanel.shared.show()
+        ensureMeetingAssistant().prepare()
         registerIslandHotkeyActivity()
     }
 
@@ -720,6 +721,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureSettingsDeps(from: IslandPanel.shared.actions)
         IslandPanel.shared.show()
         IslandNotificationPanel.shared.show()
+        ensureMeetingAssistant().prepare()
         installIslandIdleControllerIfNeeded()
         // Post-relaunch "Updated" indicator (variant A): if the previous
         // session installed an update and this is the new binary, surface a
@@ -1217,6 +1219,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openTranslate: { [weak self] in self?.openTranslation(.text) },
             openSubtitles: { [weak self] in self?.openTranslation(.subtitles) },
             openMeetingAssistant: { [weak self] in self?.openMeetingAssistant() },
+            setMeetingAssistantEnabled: { [weak self] enabled in self?.ensureMeetingAssistant().setMeetingEnabled(enabled) },
+            prepareMeetingAssistant: { [weak self] in self?.ensureMeetingAssistant().prepare() },
             openScreenshot: { [weak self] in self?.openScreenshot() },
             openSettings: { [weak self] in
                 self?.openSettingsWindow(tab: .apiAndModels)
@@ -1856,16 +1860,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openMeetingAssistant() {
         registerIslandHotkeyActivity()
+        ensureMeetingAssistant().show()
+    }
+
+    private func ensureMeetingAssistant() -> MeetingAssistantPanel {
         if meetingAssistantPanel == nil {
             meetingAssistantPanel = MeetingAssistantPanel(
                 openSettings: { [weak self] feature in self?.openSettingsWindow(tab: .apiAndModels, feature: feature) },
                 activityChanged: { active, editing in
                     if AppState.shared.meetingAssistantActive != active { AppState.shared.meetingAssistantActive = active }
                     if AppState.shared.meetingAssistantEditing != editing { AppState.shared.meetingAssistantEditing = editing }
+                },
+                hoverChanged: { state in
+                    if AppState.shared.meetingAssistantHover != state { AppState.shared.meetingAssistantHover = state }
                 }
             )
         }
-        meetingAssistantPanel?.show()
+        return meetingAssistantPanel!
     }
 
     private func openTranslation(_ mode: TranslationWindowController.Mode) {

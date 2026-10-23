@@ -193,4 +193,92 @@ final class MeetingAssistantTests: XCTestCase {
             XCTAssertEqual(events.first?.context.feature, .meetingAssistant)
         }
     }
+    func testSessionSwitchUsesValidatedCatalogAndEndDoesNotRejoin() async throws {
+        let (runner, root, defaults) = try fixture()
+        let catalog = root.appendingPathComponent("catalog")
+        try FileManager.default.createDirectory(at: catalog, withIntermediateDirectories: true)
+        try JSONEncoder().encode(space(root)).write(to: catalog.appendingPathComponent("project.json"))
+        let source = FixtureSubtitleAudio(), upstream = FixtureSubtitleUpstream(), probe = MeetingAssistantFixtureProbe()
+        let audio = MeetingAssistantAudio(makeAudio: { source }, open: { upstream })
+        let scope = MeetingAssistantMeetingScope(endGrace: .milliseconds(20), makeProbe: { probe })
+        let model = MeetingAssistantModel(directory: catalog, defaults: defaults, runner: runner, audio: audio,
+            meetingScope: scope, routesConfigured: { true })
+        XCTAssertFalse(model.hoverState.visible)
+        model.setMeetingEnabled(true)
+        XCTAssertTrue(model.startRequested); XCTAssertEqual(source.started, 0, "Validate before capture")
+        try await wait { model.listening && audio.ready }
+        XCTAssertEqual(model.hoverState.phase, .listening)
+        probe.emit(true); probe.emit(false)
+        try await wait { !model.listening && !model.releasingAudio }
+        XCTAssertEqual(model.hoverState.phase, .off); XCTAssertTrue(model.hoverState.visible)
+        XCTAssertTrue(model.audioIssue.contains("выключено"))
+        probe.emit(true)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(source.started, 1, "A subsequent call does not re-enable the assistant")
+        XCTAssertNil(defaults.object(forKey: "meetingAssistant.enabled"), "No saved auto-join preference")
+        model.dismiss()
+    }
+
+    func testTurningOffPendingHoverStartCannotOpenAudioLater() async throws {
+        let (runner, root, defaults) = try fixture()
+        try JSONEncoder().encode(space(root)).write(to: root.appendingPathComponent("project.json"))
+        let source = FixtureSubtitleAudio(), upstream = FixtureSubtitleUpstream()
+        let audio = MeetingAssistantAudio(makeAudio: { source }, open: { upstream })
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner, audio: audio)
+        model.setMeetingEnabled(true); model.setMeetingEnabled(false)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertFalse(model.startRequested); XCTAssertFalse(model.listening); XCTAssertEqual(source.started, 0)
+        model.dismiss()
+    }
+
+    func testStartupPreparationOnlyReadsMetadataWithoutWindowOrCapture() async throws {
+        let (runner, root, defaults) = try fixture()
+        try JSONEncoder().encode(space(root)).write(to: root.appendingPathComponent("project.json"))
+        let source = FixtureSubtitleAudio(), upstream = FixtureSubtitleUpstream()
+        let audio = MeetingAssistantAudio(makeAudio: { source }, open: { upstream })
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner, audio: audio, routesConfigured: { true })
+        var hover = MeetingAssistantHoverState()
+        let panel = MeetingAssistantPanel(model: model, protected: false, openSettings: { _ in }, activityChanged: { _, _ in },
+            hoverChanged: { hover = $0 })
+        panel.prepare()
+        try await wait { hover.available }
+        XCTAssertFalse(model.visible); XCTAssertFalse(model.listening); XCTAssertEqual(source.started, 0)
+        XCTAssertEqual(StubURLProtocol.capturedBodies.count, 0)
+        XCTAssertEqual(hover.phase, .off)
+        panel.close()
+    }
+
+    func testIdleStopNeverShowsCleanupAndRepeatedActiveStopKeepsItsGate() async throws {
+        let (runner, root, defaults) = try fixture()
+        let source = FixtureSubtitleAudio(), upstream = FixtureSubtitleUpstream()
+        let audio = MeetingAssistantAudio(makeAudio: { source }, open: { upstream })
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner, audio: audio)
+        model.stopListening()
+        XCTAssertFalse(model.releasingAudio); XCTAssertFalse(model.hoverState.visible)
+        model.spaces = [space(root)]; model.selectedSpaceID = "project"
+        model.startListening()
+        XCTAssertTrue(audio.active)
+        model.stopListening(); XCTAssertTrue(model.releasingAudio)
+        model.stopListening(); XCTAssertTrue(model.releasingAudio, "A second stop must retain an existing cleanup gate")
+        try await wait { !model.releasingAudio }
+        model.dismiss()
+        XCTAssertFalse(model.releasingAudio)
+    }
+
+    func testPassiveMetadataRefreshFindsSpaceCreatedAfterStartup() async throws {
+        let (runner, root, defaults) = try fixture()
+        let model = MeetingAssistantModel(directory: root, defaults: defaults, runner: runner, routesConfigured: { true })
+        model.spaces = [space(root)]; model.selectedSpaceID = "project"
+        let panel = MeetingAssistantPanel(model: model, protected: false, openSettings: { _ in }, activityChanged: { _, _ in })
+        panel.prepare()
+        try await wait { model.spaces.isEmpty }
+        XCTAssertFalse(model.visible); XCTAssertFalse(model.hoverState.visible)
+        try JSONEncoder().encode(space(root)).write(to: root.appendingPathComponent("project.json"))
+        panel.prepare()
+        try await wait { model.hoverState.available }
+        XCTAssertFalse(model.visible); XCTAssertFalse(model.listening)
+        XCTAssertEqual(StubURLProtocol.capturedBodies.count, 0)
+        panel.close()
+    }
+
 }

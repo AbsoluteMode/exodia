@@ -83,6 +83,58 @@ final class IslandHoverHitBridgeTests: XCTestCase {
     }
 
     @MainActor
+    func testMeetingMagicUsesFirstMouseInToolsAndSearch() throws {
+        for surface in [IslandHoverHitTargetID.Surface.tile, .result] {
+            let bridge = IslandHoverHitBridge()
+            bridge.setEnabled(true); bridge.setSurface(surface); bridge.setContext("session-off")
+            var activations = 0
+            let content = IslandMeetingAssistantControl(state: .init(available: true), setEnabled: { _ in activations += 1 },
+                hitBridge: bridge, hitContext: "session-off").frame(width: 240, height: 44)
+            let host = NSHostingView(rootView: content)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 44),
+                                  styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false; window.contentView = host
+            defer { window.close() }
+            host.frame = NSRect(x: 0, y: 0, width: 240, height: 44)
+            for _ in 0..<3 { host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            XCTAssertFalse(bridge.mouseDown(at: host.convert(NSPoint(x: 5, y: 22), to: nil), in: window, allowed: true),
+                           "Outside the 28pt icon is not clickable")
+            let point = host.convert(NSPoint(x: 120, y: 22), to: nil)
+            XCTAssertTrue(bridge.mouseDown(at: point, in: window, allowed: true))
+            bridge.mouseUp(at: point, in: window, allowed: true)
+            XCTAssertEqual(activations, 1, "Bridge dispatches the magic icon once without opening the show-only tool")
+            XCTAssertTrue(bridge.mouseDown(at: point, in: window, allowed: true))
+            bridge.cancelPress(for: .meetingAssistant)
+            bridge.mouseUp(at: point, in: window, allowed: true)
+            XCTAssertEqual(activations, 1, "A state change cancels an old press")
+        }
+    }
+
+    @MainActor
+    func testAssistantPhaseChangePreservesOtherToolAndSearchPresses() {
+        for surface in [IslandHoverHitTargetID.Surface.tile, .result] {
+            let bridge = IslandHoverHitBridge()
+            bridge.setEnabled(true); bridge.setSurface(surface); bridge.setContext("stable-geometry")
+            var activations = 0
+            let host = NSHostingView(rootView: Color.clear.frame(width: 240, height: 44)
+                .islandHoverHitTarget(bridge: bridge, id: .init(surface: surface, tool: .settings),
+                    context: "stable-geometry", action: { activations += 1 })
+                .islandHoverHitRegion(bridge: bridge, surface: surface))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 44),
+                                  styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false; window.contentView = host
+            defer { window.close() }
+            host.frame = NSRect(x: 0, y: 0, width: 240, height: 44)
+            for _ in 0..<3 { host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            let point = host.convert(NSPoint(x: 100, y: 22), to: nil)
+            XCTAssertTrue(bridge.mouseDown(at: point, in: window, allowed: true))
+            bridge.cancelPress(for: .meetingAssistant)
+            bridge.mouseUp(at: point, in: window, allowed: true)
+            XCTAssertEqual(activations, 1)
+        }
+    }
+
+    @MainActor
     func testInternalFieldEditingEndDoesNotResignBeforeButtonMouseUp() {
         var focusChanges: [Bool] = []
         let field = IslandHoverSearchField(text: .constant("output"),

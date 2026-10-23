@@ -159,6 +159,7 @@ struct IslandView: View {
     /// `IslandPanel` can grow its hit-test band when a tall inline panel
     /// (History) is on screen — and shrink it back on `.controls`.
     let onHoverPanelBandHeightChange: (CGFloat) -> Void
+    let onMeetingAssistantMagicVisibilityChange: (Bool) -> Void
 
     /// Reports the rendered answer card height so `IslandPanel` can size the
     /// answer hit-zone to the visible card (not a fixed reservation that would
@@ -198,6 +199,7 @@ struct IslandView: View {
         onKeyboardFocusRequest: @escaping (Bool) -> Void = { _ in },
         hoverHitBridge: IslandHoverHitBridge? = nil,
         onHoverPanelBandHeightChange: @escaping (CGFloat) -> Void = { _ in },
+        onMeetingAssistantMagicVisibilityChange: @escaping (Bool) -> Void = { _ in },
         onAgentAnswerHeightChange: @escaping (CGFloat) -> Void = { _ in },
         actions: IslandActions? = nil,
         agentFlow: IslandAgentFlowStore? = nil,
@@ -217,6 +219,7 @@ struct IslandView: View {
         self.onKeyboardFocusRequest = onKeyboardFocusRequest
         self._hoverHitBridge = ObservedObject(wrappedValue: hoverHitBridge ?? IslandHoverHitBridge())
         self.onHoverPanelBandHeightChange = onHoverPanelBandHeightChange
+        self.onMeetingAssistantMagicVisibilityChange = onMeetingAssistantMagicVisibilityChange
         self.onAgentAnswerHeightChange = onAgentAnswerHeightChange
         self.cancelAgentFlow = cancelAgentFlow
         self.onAgentKeyboardFocusChange = onAgentKeyboardFocusChange
@@ -254,6 +257,7 @@ struct IslandView: View {
     @StateObject private var wingReveal = IslandWingRevealCoordinator()
 
     @State private var pillHovering = false
+    @State private var meetingAssistantHovering = false
     /// Hover over the rendered hover panel (Row-1 + Row-2 tile grid). Only
     /// meaningful once expansion has already happened; lets the cursor
     /// travel from the pill down into the panel without dismissing.
@@ -327,6 +331,13 @@ struct IslandView: View {
     /// strip insertion at the top of the hover drawer.
     private var showsHoverMusicStrip: Bool {
         isHoverExpanded && hoverNowPlaying != nil
+    }
+
+    private var showsMeetingAssistantMagic: Bool {
+        IslandMeetingAssistantPlacement.isVisible(recording: appState.meetingRecordingActive,
+            assistant: appState.meetingAssistantHover, hoverExpanded: isHoverExpanded,
+            controls: hoverPanelMode == .controls,
+            obscured: agentFlow.isActive || appState.meetingSuggestionActive || appState.caseApprovalActive)
     }
 
     /// Height of the rendered drawer for the current mode.
@@ -414,6 +425,7 @@ struct IslandView: View {
         let next = Self.mouseHoldsDrawer(
             pillHovering: pillHovering,
             panelHovering: panelHovering,
+            meetingAssistantHovering: meetingAssistantHovering,
             wasExpanded: mouseExpanded,
             glance: hoverPanelGlance,
             interactionHeld: holdsHoverMenu,
@@ -462,11 +474,11 @@ struct IslandView: View {
 
     /// A glance opened without the pointer crossing the pill, so reaching its strip from below
     /// counts as entering the drawer rather than as the drawer's fading band.
-    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, wasExpanded: Bool,
+    static func mouseHoldsDrawer(pillHovering: Bool, panelHovering: Bool, meetingAssistantHovering: Bool = false, wasExpanded: Bool,
                                  glance: Bool, interactionHeld: Bool = false, screenshotPreparing: Bool = false) -> Bool {
         if screenshotPreparing { return wasExpanded }
         return interactionHeld || IslandHoverGate.mouseExpanded(
-            pillHovering: pillHovering, panelHovering: panelHovering, wasExpanded: wasExpanded || glance
+            pillHovering: pillHovering, panelHovering: panelHovering || meetingAssistantHovering, wasExpanded: wasExpanded || glance
         )
     }
 
@@ -1012,7 +1024,7 @@ struct IslandView: View {
                         // prompt) squares the bottom so both read as one surface.
                         meetingSuggestionActive: appState.meetingSuggestionActive
                             || appState.caseApprovalActive,
-                        trailingExtension: activeWingExtension,
+                        trailingExtension: max(activeWingExtension, showsMeetingAssistantMagic ? IslandMeetingAssistantPlacement.extensionWidth : 0),
                         // Snap the surface for acting and per-keystroke composer
                         // growth (see `wingSnapsWidth`) so the black wing never
                         // lags behind the text and leaks it past the capsule.
@@ -1029,14 +1041,9 @@ struct IslandView: View {
                         alignment: .leading
                     )
                 }
-                // Hover trigger zone = compact pill rectangle ONLY. The
-                // bottom area (where the hover panel renders once expanded)
-                // is intentionally excluded — see `panelHovering` attached
-                // to the panel itself below. `contentShape(Rectangle())`
-                // forces the hit region to be the rectangular frame instead
-                // of leaking out through the rendered child views' tracking
-                // areas (NSTrackingArea is window-driven, bypassing the
-                // outer NSHostingView's `hitTest:` filter).
+                // One continuous hover region includes the visible magic
+                // extension, so crossing timer -> icon never closes the drawer.
+                .frame(width: compactWidth + (showsMeetingAssistantMagic ? IslandMeetingAssistantPlacement.extensionWidth : 0), alignment: .leading)
                 .contentShape(Rectangle())
                 .onHover { hovering in
                     let next = hovering && IslandHoverPolicy.allowsExpansion(
@@ -1051,6 +1058,7 @@ struct IslandView: View {
                     }
                     pillHovering = next
                 }
+                .frame(width: compactWidth, alignment: .leading)
                 // Agent phase content (waveform / ticker / pulse / text field)
                 // drawn INSIDE the stretched surface. It BEGINS in the right
                 // band (where the passive hints begin — just past the notch
@@ -1326,6 +1334,17 @@ struct IslandView: View {
             height: compactHeight + activeHoverPanelHeight,
             alignment: .top
         )
+        .overlay(alignment: .topLeading) {
+            if showsMeetingAssistantMagic {
+                IslandMeetingAssistantControl(state: appState.meetingAssistantHover,
+                    setEnabled: actions.setMeetingAssistantEnabled,
+                    hitBridge: hoverHitBridge, hitContext: hoverHitBridge.context)
+                    .frame(width: IslandMeetingAssistantPlacement.extensionWidth, height: compactHeight)
+                    .contentShape(Rectangle())
+                    .onHover { meetingAssistantHovering = $0 }
+                    .offset(x: compactWidth)
+            }
+        }
         .coordinateSpace(name: Self.hoverZoneSpace)
         // Preview bubble for the hovered History row. Lives OUTSIDE the
         // clipped drawer (which would cut anything beyond its bounds) and
@@ -1368,6 +1387,14 @@ struct IslandView: View {
         // region to STAY open, so the drawer's fading hover band can't re-open a
         // closed drawer before the cursor reaches the pill.
         .onChange(of: pillHovering) { _, _ in recomputeMouseExpanded() }
+        .onChange(of: meetingAssistantHovering) { _, _ in recomputeMouseExpanded() }
+        .onChange(of: showsMeetingAssistantMagic) { _, visible in
+            if !visible { meetingAssistantHovering = false }
+            onMeetingAssistantMagicVisibilityChange(visible)
+        }
+        .onChange(of: appState.meetingAssistantHover) { _, _ in
+            hoverHitBridge.cancelPress(for: .meetingAssistant)
+        }
         .onChange(of: panelHovering) { _, _ in recomputeMouseExpanded() }
         .onChange(of: appState.screenshotPreparing) { _, preparing in
             guard !preparing else { return }
@@ -1469,6 +1496,7 @@ struct IslandView: View {
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
         .onChange(of: isHoverExpanded) { _, expanded in
+            if expanded { actions.prepareMeetingAssistant() }
             hoverHitBridge.setEnabled(expanded && hoverPanelMode == .controls)
             // The AppKit hit band follows keyboard-held search and inline tools too.
             onHoverChange(expanded)
@@ -2229,7 +2257,7 @@ private struct IslandDropModeStatusActiveBadge: View {
 
 // MARK: - Meeting recording slot
 
-private struct IslandMeetingRecordingSlotView: View {
+struct IslandMeetingRecordingSlotView: View {
     let snapshot: IslandMeetingRecordingSnapshot
     let onStop: () -> Void
 
