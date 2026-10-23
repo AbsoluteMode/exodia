@@ -87,6 +87,7 @@ final class AppControlControllerTests: XCTestCase {
         let state = await e.controller.handle(AppControlRequest("get_state"))
         XCTAssertEqual(state.data.object?["build"], .string("test-42"))
         XCTAssertEqual(state.data.object?["sourceRevision"], .string("fixture-sha"))
+        XCTAssertEqual(state.data.object?["googleCalendarReviewActive"], .bool(GoogleCalendarReviewSession.current.isActive))
         let settings = await e.controller.handle(AppControlRequest("get_settings"))
         let text = String(data: try JSONEncoder().encode([state, settings]), encoding: .utf8)!
         XCTAssertFalse(text.contains("fake-provider-key"))

@@ -66,6 +66,7 @@ final class AppControlController {
                 "controlVersion": .int(1), "bundleIdentifier": .string(identity.bundleIdentifier),
                 "version": .string(identity.version), "build": .string(identity.build),
                 "sourceRevision": identity.sourceRevision.map(AppControlValue.string) ?? .null,
+                "googleCalendarReviewActive": .bool(GoogleCalendarReviewSession.current.isActive),
                 "activity": activity(), "features": .array(features)
             ]))
         case "get_settings":

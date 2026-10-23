@@ -6,8 +6,14 @@ summary: Integrations lists each calendar feature and its permissions, while una
 status: confirmed
 tags: [calendar, integrations, google, outlook, apple, zoom, oauth, verification]
 canonical_for: [calendar-integration-entry, public-calendar-approval]
-verified_at: 2026-10-22
+verified_at: 2026-10-24
 sources:
+  - type: user-confirmed
+    reference: 2026-10-24 chat; the public gate also blocks the owner's real verification demo, which must be reachable without restoring the rejected setup form.
+    confirmed_at: 2026-10-24
+  - type: repository
+    reference: Sources/Sidekey/Planner/GoogleCalendarReviewSession.swift
+    confirmed_at: 2026-10-24
   - type: user-confirmed
     reference: 2026-10-22 chat; clarified that Connect should directly start provider authorization with no intermediate connection form or app setup.
     confirmed_at: 2026-10-22
@@ -39,6 +45,16 @@ flag before new browser sign-in can start, including from Planner. Missing or
 malformed approval stays closed. Existing connections and local events remain
 available; disconnection remains possible. A source user's independent native
 client is separate from Whytap's shared registration.
+
+For the owner's real verification recording, an explicit process-local Google
+review session temporarily permits direct Connect with the same registered
+client. It requires a finite future deadline no more than two hours ahead and
+is disabled on an ordinary launch. It does not change the packaged approval
+flag, grant calendar access, select an account or open Zoom. This developer
+opt-in is not an account-identity restriction. Expiry blocks new sign-ins;
+completed grants remain until disconnected or revoked. The designated builder
+owns the safe one-app launch; no setup form or persistent preference is added.
+The verification guide documents activation and the read-only runtime boolean.
 
 Only set the public approval flag after the actual provider decision. Fixtures,
 branding verification and a published domain do not justify that flag. See
