@@ -82,8 +82,8 @@ struct MeetingAssistantQuestionsView: View {
             MeetingAssistantSpaceSelector(model: model)
             HStack(spacing: 6) {
                 Button { model.toggleListening() } label: {
-                    Label(model.audioConnecting ? "Подключение… · Остановить" : model.listening ? "Слушаю · Остановить" : "Слушать встречу", systemImage: model.listening ? "waveform" : "ear")
-                }.buttonStyle(MeetingAssistantButtonStyle()).disabled(model.currentSpace == nil)
+                    Label(model.releasingAudio ? "Останавливаю…" : model.startRequested || model.audioConnecting ? "Подключение… · Остановить" : model.listening ? "Слушаю · Остановить" : "Слушать встречу", systemImage: model.listening ? "waveform" : "ear")
+                }.buttonStyle(MeetingAssistantButtonStyle()).disabled(model.currentSpace == nil || model.releasingAudio)
                     .help("Системный звук собеседников. Запуск и остановка — вручную.")
                 if !model.answerVisible, model.selected != nil {
                     Button("Вернуть ответ") { model.restoreAnswer() }.buttonStyle(MeetingAssistantButtonStyle())

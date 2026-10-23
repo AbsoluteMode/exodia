@@ -41,6 +41,7 @@ final class MeetingAssistantModel: ObservableObject {
     @Published var spaceError = ""
     @Published var editing = false
     @Published var audioConnecting = false
+    @Published private(set) var startRequested = false
     @Published var listening = false
     @Published var releasingAudio = false
     @Published var audioIssue = ""
@@ -55,6 +56,7 @@ final class MeetingAssistantModel: ObservableObject {
     private var request: Task<Void, Never>?
     private var captureRequest: Task<Void, Never>?
     private var catalogTask: Task<Void, Never>?
+    private var catalogGeneration = UUID()
     private var detectionTask: Task<Void, Never>?
     private var detectionTimer: Task<Void, Never>?
     private var generation = UUID()
@@ -66,6 +68,8 @@ final class MeetingAssistantModel: ObservableObject {
     private let defaults: UserDefaults
     private let runner: MeetingAssistantRunner
     private let detectionInterval: Duration
+    private let meetingScope: MeetingAssistantMeetingScope?
+    private let routesConfigured: @MainActor () -> Bool
     let audio: MeetingAssistantAudio
     private let capture: AgentScreenCapture
     static let screenshotLimit = 6
@@ -78,9 +82,15 @@ final class MeetingAssistantModel: ObservableObject {
 
     init(directory: URL = MeetingSpace.directory, defaults: UserDefaults = .standard,
          runner: MeetingAssistantRunner? = nil, audio: MeetingAssistantAudio? = nil, capture: AgentScreenCapture? = nil,
-         detectionInterval: Duration = .seconds(4)) {
+         detectionInterval: Duration = .seconds(4), meetingScope: MeetingAssistantMeetingScope? = nil,
+         routesConfigured: @escaping @MainActor () -> Bool = {
+             [AIFeature.meetingAssistant, .meetingAssistantAudio].allSatisfy {
+                 AIRoutingStore.shared.route(for: $0)?.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+             }
+         }) {
         self.directory = directory; self.defaults = defaults; self.runner = runner ?? MeetingAssistantRunner()
         self.detectionInterval = detectionInterval
+        self.meetingScope = meetingScope; self.routesConfigured = routesConfigured
         self.audio = audio ?? MeetingAssistantAudio()
         self.capture = capture ?? AgentScreenCapture(capture: AgentScreenCapture.captureForMeeting)
         selectedSpaceID = defaults.string(forKey: "meetingAssistant.selectedSpace") ?? ""
@@ -88,11 +98,21 @@ final class MeetingAssistantModel: ObservableObject {
         self.audio.onState = { [weak self] active, issue in
             guard let self else { return }
             self.mutate { self.listening = active; self.audioConnecting = active && !self.audio.ready; if let issue { self.audioIssue = issue } }
+            if active { self.meetingScope?.begin() } else { self.meetingScope?.stop() }
             if !active { self.detectionTask?.cancel(); self.detectionTask = nil; self.detectionTimer?.cancel(); self.detectionTimer = nil }
+        }
+        self.meetingScope?.onEnd = { [weak self] in
+            guard let self else { return }
+            self.stopListening()
+            self.mutate { self.audioIssue = "Встреча закончилась — слушание выключено." }
         }
     }
 
     var currentSpace: MeetingSpace? { spaces.first { $0.id == selectedSpaceID } }
+    var hoverState: MeetingAssistantHoverState {
+        .init(available: currentSpace != nil && routesConfigured(), phase: releasingAudio ? .stopping :
+                startRequested || audioConnecting ? .connecting : listening ? .listening : .off)
+    }
     var animation: Animation? { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeInOut(duration: 0.25) }
     func mutate(_ action: () -> Void) { withAnimation(animation, action); onChange?() }
 
@@ -108,10 +128,18 @@ final class MeetingAssistantModel: ObservableObject {
     }
 
     func reloadSpaces() async {
+        catalogGeneration = UUID(); let catalogToken = catalogGeneration
+        defer {
+            if startRequested, !Task.isCancelled, catalogGeneration == catalogToken {
+                startRequested = false
+                if visible { startListening() }
+                onChange?()
+            }
+        }
         let directory = self.directory
         do {
             let catalog = try await Task.detached { try MeetingSpace.load(directory: directory) }.value
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, catalogGeneration == catalogToken else { return }
             let message = catalog.invalidFiles.isEmpty ? "" : "Некоторые Spaces не загрузились. Попроси Codex или Claude Code проверить каталог."
             guard catalog.spaces != spaces || message != spaceError else { return }
             let old = currentSpace
@@ -127,6 +155,7 @@ final class MeetingAssistantModel: ObservableObject {
                 if !validIDs.contains(selectedSpaceID) { selectedSpaceID = spaces.first?.id ?? "" }
             }
         } catch {
+            guard !Task.isCancelled, catalogGeneration == catalogToken else { return }
             let message = "Не удалось прочитать каталог Spaces. Проверь его через Codex или Claude Code."
             guard !spaces.isEmpty || spaceError != message else { return }
             cancelWork(); stopListening(clearContext: true)
@@ -260,9 +289,20 @@ final class MeetingAssistantModel: ObservableObject {
         cancelWork(); stopListening(clearContext: true); catalogTask?.cancel(); catalogTask = nil
         mutate { visible = false; editing = false; notice = selected?.conclusion.isEmpty == true ? "Ответ отменён. Повтори вопрос." : notice }
     }
-    func toggleListening() { listening ? stopListening() : startListening() }
+    func toggleListening() { setMeetingEnabled(!listening && !startRequested) }
+    func setMeetingEnabled(_ enabled: Bool) {
+        guard enabled else {
+            if listening || startRequested { stopListening() }
+            return
+        }
+        guard !listening, !startRequested, !releasingAudio else { return }
+        // Revalidate the Space before a hover start, including after the panel
+        // was closed and its catalog watcher stopped. The catalog loop owns it.
+        mutate { startRequested = true }
+        show()
+    }
     func startListening() {
-        guard currentSpace != nil, !listening else { return }
+        guard currentSpace != nil, !listening, !releasingAudio else { return }
         do { _ = try runner.resolve() } catch { mutate { audioIssue = "Настрой модель Meeting Assistant в API & Models." }; return }
         transcript = ""; lastAnalyzed = ""; audioIssue = ""
         seen = (pending + completed).map(\.question)
@@ -277,6 +317,8 @@ final class MeetingAssistantModel: ObservableObject {
         }
     }
     func stopListening(clearContext: Bool = false) {
+        startRequested = false
+        meetingScope?.stop()
         listeningGeneration = UUID()
         let releaseToken = listeningGeneration
         releasingAudio = true

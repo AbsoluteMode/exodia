@@ -19,6 +19,21 @@ session. Stop preserves recent transcript in memory for pending questions; close
 or changing Space clears it. Audio, transcript, images and conversations are not
 saved by this pilot.
 
+Once both model routes and a ready Space are selected, the hover controls show a
+**Meeting Assistant** switch with **Только эта встреча**. It shares the module's
+Listen/Stop state; connecting can be cancelled, and the short cleanup state is
+disabled. Turning it off stops audio and new question extraction while keeping
+answers available. The tool/search/deep link still only opens the module.
+
+This choice stays in memory and is off after close, sleep or restart. When the
+existing metadata-only probe has recognized meeting mic activity and that context
+ends for 15 seconds, listening stops. A brief reconnect cancels the pending stop;
+after a stop, a later meeting never starts listening by itself. No microphone
+samples are captured by the probe. Manual use before a recognized call remains
+possible; in that case use the switch or close the module to stop. Muting a call
+for long enough can look like an end, while calls without a detectable boundary
+cannot be distinguished: this is a context heuristic, not a calendar/call ID.
+
 **Прикрепить скрин** captures the island-selected display after the requested
 macOS permission. Up to six thumbnails fit in a horizontal tray. Open one to
 view it or use its × to remove it. The next submitted request uses a snapshot

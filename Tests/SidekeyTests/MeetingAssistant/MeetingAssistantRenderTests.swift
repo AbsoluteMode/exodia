@@ -46,6 +46,30 @@ final class MeetingAssistantRenderTests: XCTestCase {
         image.unlockFocus()
         return image
     }
+    func testHoverSessionStatesOffscreen() throws {
+        guard let output = ProcessInfo.processInfo.environment["WHYTAP_MEETING_ASSISTANT_RENDER_DIR"] else {
+            throw XCTSkip("Set WHYTap Meeting Assistant render directory for hover images.")
+        }
+        let directory = URL(fileURLWithPath: output)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for scheme in [ColorScheme.light, .dark] {
+            for width in [CGFloat(220), 354] {
+                let host = NSHostingView(rootView: VStack(spacing: 4) {
+                    ForEach(0..<4) { index in
+                        let phase: MeetingAssistantHoverState.Phase = [.off, .connecting, .listening, .stopping][index]
+                        IslandMeetingAssistantControl(state: .init(available: true, phase: phase), setEnabled: { _ in })
+                    }
+                }.padding(.vertical, 8).frame(width: width).background(Color(white: 0.10))
+                    .environment(\.colorScheme, scheme).transaction { $0.disablesAnimations = true })
+                host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 204)
+                host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+                let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent("hover-\(Int(width))-\(scheme == .dark ? "dark" : "light").png"))
+            }
+        }
+    }
     private func render(_ model: MeetingAssistantModel, scheme: ColorScheme, name: String, directory: URL) throws {
         let host = NSHostingView(rootView: MeetingAssistantView(model: model, openSettings: { _ in }).environment(\.colorScheme, scheme))
         host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)

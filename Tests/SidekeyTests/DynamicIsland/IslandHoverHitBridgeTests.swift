@@ -83,6 +83,34 @@ final class IslandHoverHitBridgeTests: XCTestCase {
     }
 
     @MainActor
+    func testMeetingSessionSwitchUsesFirstMouseInToolsAndSearch() throws {
+        for surface in [IslandHoverHitTargetID.Surface.tile, .result] {
+            let bridge = IslandHoverHitBridge()
+            bridge.setEnabled(true); bridge.setSurface(surface); bridge.setContext("session-off")
+            var activations = 0
+            let content = IslandMeetingAssistantControl(state: .init(available: true), setEnabled: { _ in activations += 100 })
+                .islandHoverHitTarget(bridge: bridge, id: .init(surface: .meetingAssistant, tool: .meetingAssistant),
+                                     context: "session-off", action: { activations += 1 })
+                .islandHoverHitRegion(bridge: bridge, surface: .meetingAssistant)
+            let host = NSHostingView(rootView: content)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 44),
+                                  styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false; window.contentView = host
+            defer { window.close() }
+            host.frame = NSRect(x: 0, y: 0, width: 240, height: 44)
+            for _ in 0..<3 { host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            let point = host.convert(NSPoint(x: 100, y: 22), to: nil)
+            XCTAssertTrue(bridge.mouseDown(at: point, in: window, allowed: true))
+            bridge.mouseUp(at: point, in: window, allowed: true)
+            XCTAssertEqual(activations, 1, "Bridge dispatches the switch once without opening the show-only tool")
+            XCTAssertTrue(bridge.mouseDown(at: point, in: window, allowed: true))
+            bridge.setContext("session-connecting")
+            bridge.mouseUp(at: point, in: window, allowed: true)
+            XCTAssertEqual(activations, 1, "A state change cancels an old press")
+        }
+    }
+
+    @MainActor
     func testInternalFieldEditingEndDoesNotResignBeforeButtonMouseUp() {
         var focusChanges: [Bool] = []
         let field = IslandHoverSearchField(text: .constant("output"),

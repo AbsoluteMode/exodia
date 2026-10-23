@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct IslandHoverHitTargetID: Hashable {
-    enum Surface: Hashable { case tile, result }
+    enum Surface: Hashable { case tile, result, meetingAssistant }
     let surface: Surface
     let tool: HoverTool
 }
@@ -126,10 +126,10 @@ final class IslandHoverHitBridge: ObservableObject {
     private func snapshots(in window: NSWindow) -> [IslandHoverHitSnapshot] {
         targets = targets.filter { $0.value.view != nil }
         return targets.values.compactMap { entry in
-            guard let view = entry.view, view.targetID.surface == activeSurface,
+            guard let view = entry.view, view.targetID.surface == activeSurface || view.targetID.surface == .meetingAssistant,
                   view.targetContext == activeContext,
                   view.window === window, !view.isHiddenOrHasHiddenAncestor,
-                  let region = regions[view.targetID.surface]?.view, region.surface == activeSurface,
+                  let region = regions[view.targetID.surface]?.view, region.surface == view.targetID.surface,
                   region.window === window,
                   !region.isHiddenOrHasHiddenAncestor else { return nil }
             let targetFrame = view.convert(view.bounds, to: nil)

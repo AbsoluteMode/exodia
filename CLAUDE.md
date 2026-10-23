@@ -268,6 +268,12 @@ Meeting Assistant pilot:
   answer model. No audio, transcript, images or conversations are written by this
   feature. Space changes/edits, close and sleep cancel work; protection recreates
   the panel using the existing Other setting. Guide: docs/meeting-assistant.md.
+  Once both routes and a Space are configured, a hover session switch shares
+  Listen/Stop state with the module. It is never a saved auto-join preference.
+  Startup only prepares metadata. An independently observed recognized meeting
+  context ending for 15s stops capture; initial/unrecognized manual sessions
+  need explicit stop. This mic-activity heuristic cannot identify every call.
+  WHY: docs/decisions/2026-10-24-meeting-assistant-session-switch.md
   WHY: docs/decisions/2026-10-23-meeting-assistant-pilot.md
 
 Translation tools:

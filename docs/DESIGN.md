@@ -1323,3 +1323,38 @@ ready Spaces. A malformed active manifest invalidates context instead of silentl
 reusing its former scope. The pilot uses the existing screenshot-protection
 setting. Real sharing exclusion and native call interactions are installed
 acceptance; offscreen renders and test checks do not establish those guarantees.
+
+
+## Meeting Assistant — per-meeting hover switch, 2026-10-24
+
+The user requested a forced on/off control for one meeting. Keep the approved
+right-hand module unchanged and add one 44pt row below hover search, only once
+both routes and a ready Space are configured. Reason: current session state must
+be reachable without finding or reopening its answer window. Tool/search/link
+activation remains show-only; opening a tool is never permission to capture.
+
+The full row is one toggle: Meeting Assistant, a short session/state subtitle,
+and a compact switch. Off says “Только эта встреча”; connecting is cancellable;
+listening and stopping are visible, and stopping is temporarily disabled. Hover
+and press highlight the complete row, keyboard focus adds an outline, disabled
+has no active highlight. Use the existing measured first-mouse bridge with its
+own hit region, independent of search results. Grow both the drawer and AppKit
+hit band by the same 44pt; other hover panels keep their geometry.
+
+The switch and the module's Listen/Stop use one model, preserving answers on
+Stop. No persisted auto-join preference is introduced. Passive startup only reads
+Space/route metadata; it creates no panel, accesses no key and starts no capture.
+A recognized meeting-context end sustained for 15 seconds stops listening;
+brief reconnects cancel that stop. Manual sessions without recognized context
+require manual stop. That existing mic-activity heuristic cannot identify every
+call boundary or distinguish a long mute; real-call acceptance remains pending.
+
+The switch slides its thumb with a 160ms ease when motion is allowed; reduced
+motion updates immediately. The feedback does not move the click target.
+
+Verification: native offscreen 220pt/354pt rows in light/dark appearances, all four
+states; fake probe/model tests cover no auto-rejoin and cancelled starts. On the
+solid #1a1a1a hover fixture, caption contrast is 10.45:1, thumb/on track 4.50:1,
+on track/background 3.88:1 and off outline/background 4.48:1. Physical keyboard,
+pointer, native glass compositing and OS reduced-motion acceptance remain for
+the installed app; the reduced-motion branch removes the thumb animation.

@@ -8,18 +8,27 @@ final class MeetingAssistantPanel {
     private var panel: Panel?
     private var observers: [NSObjectProtocol] = []
     private var observation: AnyCancellable?
+    private var routingObservation: AnyCancellable?
+    private var preparation: Task<Void, Never>?
+    private var preparationID = UUID()
     private let openSettings: (AIFeature) -> Void
     private let activityChanged: (Bool, Bool) -> Void
+    private let hoverChanged: (MeetingAssistantHoverState) -> Void
     private var protected: Bool
 
     init(model: MeetingAssistantModel? = nil, protected: Bool? = nil,
-         openSettings: @escaping (AIFeature) -> Void, activityChanged: @escaping (Bool, Bool) -> Void) {
-        self.model = model ?? MeetingAssistantModel()
+         openSettings: @escaping (AIFeature) -> Void, activityChanged: @escaping (Bool, Bool) -> Void,
+         hoverChanged: @escaping (MeetingAssistantHoverState) -> Void = { _ in }) {
+        self.model = model ?? MeetingAssistantModel(meetingScope: MeetingAssistantMeetingScope())
         let protected = protected ?? PrivacyPreferences.shared.screenshotProtectionEnabled
         self.protected = protected; self.openSettings = openSettings; self.activityChanged = activityChanged
+        self.hoverChanged = hoverChanged
         self.model.screenshotProtected = protected
         self.model.onChange = { [weak self] in self?.refresh() }
         observation = self.model.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async { self?.refresh() }
+        }
+        routingObservation = AIRoutingStore.shared.$state.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.refresh() }
         }
         for name in [NSApplication.didChangeScreenParametersNotification, IslandScreenResolver.selectionDidChangeNotification] {
@@ -28,8 +37,19 @@ final class MeetingAssistantPanel {
             })
         }
     }
-    func show() { model.show(); refresh() }
-    func close() { model.dismiss(); panel?.orderOut(nil) }
+    /// Read ready Space metadata without showing a window, keys or capture.
+    func prepare() {
+        guard preparation == nil else { return }
+        preparationID = UUID(); let token = preparationID
+        preparation = Task { [weak self] in
+            await self?.model.reloadSpaces()
+            if self?.preparationID == token { self?.preparation = nil }
+        }
+    }
+    private func cancelPreparation() { preparationID = UUID(); preparation?.cancel(); preparation = nil }
+    func show() { cancelPreparation(); model.show(); refresh() }
+    func close() { cancelPreparation(); model.dismiss(); panel?.orderOut(nil) }
+    func setMeetingEnabled(_ enabled: Bool) { cancelPreparation(); model.setMeetingEnabled(enabled); refresh() }
     func setProtection(_ enabled: Bool) {
         guard enabled != protected else { return }
         protected = enabled; model.screenshotProtected = enabled; model.previewScreenshot = nil
@@ -51,6 +71,7 @@ final class MeetingAssistantPanel {
         return panel
     }
     private func refresh() {
+        hoverChanged(model.hoverState)
         guard model.visible else { panel?.orderOut(nil); activityChanged(model.listening || model.releasingAudio || model.busy != nil, model.editing); return }
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
@@ -70,5 +91,5 @@ final class MeetingAssistantPanel {
         override var needsPanelToBecomeKey: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    deinit { preparation?.cancel(); observers.forEach(NotificationCenter.default.removeObserver) }
 }

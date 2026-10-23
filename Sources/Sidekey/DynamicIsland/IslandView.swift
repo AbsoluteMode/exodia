@@ -298,11 +298,15 @@ struct IslandView: View {
     static func hoverPanelHeight(
         for mode: IslandHoverPanelMode,
         musicActive: Bool,
-        toolCount: Int = HoverLayoutStore.columns
+        toolCount: Int = HoverLayoutStore.columns,
+        meetingAssistantControlVisible: Bool = false
     ) -> CGFloat {
         let base: CGFloat
         switch mode {
-        case .controls, .monitor, .notifications:
+        case .controls:
+            base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
+                + (meetingAssistantControlVisible ? IslandMeetingAssistantControl.height : 0)
+        case .monitor, .notifications:
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .tasks:
             base = IslandDropModeControl.detachedPanelGap + TodoHoverView.contentHeight
@@ -334,7 +338,8 @@ struct IslandView: View {
         Self.hoverPanelHeight(
             for: hoverPanelMode,
             musicActive: hoverNowPlaying != nil,
-            toolCount: hoverStore.slots.count
+            toolCount: hoverStore.slots.count,
+            meetingAssistantControlVisible: appState.meetingAssistantHover.visible
         )
     }
 
@@ -1194,6 +1199,7 @@ struct IslandView: View {
                             selectedLanguage: selectedLanguage,
                             targetLanguage: targetLanguage,
                             meetingRecordingActive: appState.meetingRecordingActive,
+                            meetingAssistantState: appState.meetingAssistantHover,
                             panelMode: $hoverPanelMode,
                             hoverHitBridge: hoverHitBridge,
                             onSearchFocusChange: { focused in
@@ -1254,6 +1260,7 @@ struct IslandView: View {
                             onOpenTranslate: actions.openTranslate,
                             onOpenSubtitles: actions.openSubtitles,
                             onOpenMeetingAssistant: actions.openMeetingAssistant,
+                            onSetMeetingAssistantEnabled: actions.setMeetingAssistantEnabled,
                             onOpenScreenshot: actions.openScreenshot,
                             onOpenHelp: actions.openHelp,
                             onQuit: actions.quitApplication,
@@ -1410,6 +1417,9 @@ struct IslandView: View {
         .onChange(of: hoverStore.slots.count) { _, _ in
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
+        .onChange(of: appState.meetingAssistantHover.visible) { _, _ in
+            onHoverPanelBandHeightChange(activeHoverPanelHeight)
+        }
         .onChange(of: hoverPanelMode) { oldValue, newValue in
             // A logical opening ends immediately, independently of exit animation.
             if oldValue == .tasks { TodoHoverModel.shared.end() }
@@ -1423,7 +1433,8 @@ struct IslandView: View {
                 Self.hoverPanelHeight(
                     for: mode,
                     musicActive: hoverNowPlaying != nil,
-                    toolCount: hoverStore.slots.count
+                    toolCount: hoverStore.slots.count,
+                    meetingAssistantControlVisible: appState.meetingAssistantHover.visible
                 )
             }
             // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
@@ -2530,6 +2541,7 @@ private struct IslandDropModeHoverPanel: View {
     let selectedLanguage: AppLanguage?
     let targetLanguage: AppLanguage?
     let meetingRecordingActive: Bool
+    var meetingAssistantState = MeetingAssistantHoverState()
     @Binding var panelMode: IslandHoverPanelMode
     @ObservedObject var hoverHitBridge: IslandHoverHitBridge
     let onSearchFocusChange: (Bool) -> Void
@@ -2565,6 +2577,7 @@ private struct IslandDropModeHoverPanel: View {
     var onOpenTranslate: () -> Void = {}
     var onOpenSubtitles: () -> Void = {}
     var onOpenMeetingAssistant: () -> Void = {}
+    var onSetMeetingAssistantEnabled: (Bool) -> Void = { _ in }
     var onOpenScreenshot: () -> Void = {}
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
@@ -2731,6 +2744,7 @@ private struct IslandDropModeHoverPanel: View {
         }
         .onChange(of: hoverStore.slots) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
         .onChange(of: mode) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
+        .onChange(of: meetingAssistantState) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
         .onChange(of: searchQuery) { _, _ in
             hoverHitBridge.setSurface(IslandHoverToolSearch.isFiltering(searchQuery) ? .result : .tile)
             hoverHitBridge.setContext(hitTargetContext)
@@ -2775,6 +2789,17 @@ private struct IslandDropModeHoverPanel: View {
             .islandHoverInputLens(cornerRadius: IslandHoverToolSearch.fieldHeight / 2)
             .padding(.horizontal, 10)
             .padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
+
+            if meetingAssistantState.visible {
+                if meetingAssistantState.canToggle {
+                    IslandMeetingAssistantControl(state: meetingAssistantState, setEnabled: onSetMeetingAssistantEnabled)
+                        .islandHoverHitTarget(bridge: hoverHitBridge, id: .init(surface: .meetingAssistant, tool: .meetingAssistant),
+                                             context: hitTargetContext, action: { onSetMeetingAssistantEnabled(!meetingAssistantState.isOn) })
+                        .islandHoverHitRegion(bridge: hoverHitBridge, surface: .meetingAssistant)
+                } else {
+                    IslandMeetingAssistantControl(state: meetingAssistantState, setEnabled: onSetMeetingAssistantEnabled)
+                }
+            }
 
             if IslandHoverToolSearch.isFiltering(searchQuery) {
                 searchResults
@@ -2852,7 +2877,7 @@ private struct IslandDropModeHoverPanel: View {
     }
 
     private var hitTargetContext: String {
-        "\(searchQuery)|\(mode)|" + hoverStore.slots.map(\.rawValue).joined(separator: ",")
+        "\(searchQuery)|\(mode)|\(meetingAssistantState)|" + hoverStore.slots.map(\.rawValue).joined(separator: ",")
     }
 
     private var searchMatches: [HoverTool] { IslandHoverToolSearch.results(for: searchQuery) }
