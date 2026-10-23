@@ -53,7 +53,7 @@ enum SelectionCopyAvailability {
 
     private static func attribute(_ element: AXUIElement, _ name: String, deadline: TimeInterval) -> CFTypeRef? {
         guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
-        AXUIElementSetMessagingTimeout(element, 0.01)
+        guard AXUIElementSetMessagingTimeout(element, 0.01) == .success else { return nil }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
         return value
@@ -61,6 +61,9 @@ enum SelectionCopyAvailability {
 
     private static func children(_ element: AXUIElement, deadline: TimeInterval) -> [AXUIElement]? {
         guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+        // AX timeouts belong to each object; child elements do not inherit
+        // the application's timeout (AXUIElement.h).
+        guard AXUIElementSetMessagingTimeout(element, 0.01) == .success else { return nil }
         var count: CFIndex = 0
         guard AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count) == .success,
               count > 0 else { return nil }
