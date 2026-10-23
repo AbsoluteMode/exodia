@@ -10,12 +10,16 @@ This supersedes the double-action policy in
 
 `AgentController` arms `EscapeCloseEventMonitor` only for
 `IslandAgentFlowStore.answerPanelVisible`, independent of app activation.
-Agent recording, composing, acting without answer content and idle remain
-outside this interceptor. A visible answer also yields during any non-idle
-Drop phase, Screenshot editing/capture, Case approval and Settings shortcut
-recording. Their existing Escape handling keeps priority; the answer is not
-dismissed. If it is still visible after that interaction ends, ownership resumes. No focus change, global Carbon Escape registration or new
-preference is introduced.
+Agent recording, composing, acting without answer content and idle without a
+retained answer remain outside this interceptor. A visible answer also yields
+during Drop recording, Screenshot editing/capture, Case approval and Settings
+shortcut recording. Their existing Escape handling keeps priority; the answer is not
+dismissed. If it is still visible after that interaction ends, ownership resumes.
+Drop transcription, recovery, verification, insertion and retained delivery
+failures do not disable answer Escape: they do not own the capture-cancel key.
+An armed Drop tap still wins by native ordering while its recording/setup flag
+is catching up, independently of the main-thread phase. No focus change,
+global Carbon Escape registration or new preference is introduced.
 
 The answer tap is appended after existing session taps. Drop/Case head taps
 therefore retain cancellation priority even before their main-thread activity

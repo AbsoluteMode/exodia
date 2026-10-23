@@ -862,7 +862,7 @@ final class AgentControllerStreamingTests: XCTestCase {
         XCTAssertEqual(escape.stopCalls, 1, "Drop must retain its cancellation Escape")
         XCTAssertTrue(flow.answerPanelVisible, "Suspension must not dismiss the answer")
         interactions.phase = .transcribing
-        XCTAssertEqual(escape.startCalls, 1)
+        XCTAssertEqual(escape.startCalls, 2, "After recording the visible answer owns Escape again")
         interactions.phase = .idle
         XCTAssertEqual(escape.startCalls, 2)
 
@@ -909,6 +909,35 @@ final class AgentControllerStreamingTests: XCTestCase {
         interactions.phase = .idle
         XCTAssertEqual(escape.startCalls, 1)
         controller.cancelAgentFlowFromIsland()
+    }
+
+    func testDropFailureAndPostRecordingDoNotDisableAnswerEscape() async {
+        let snapshot = makeSnapshot()
+        let provider = ManualCLIProviderForStreaming()
+        let store = AskResponseStore()
+        let flow = IslandAgentFlowStore(responseStore: store)
+        let escape = FakeCloseHotkey()
+        let interactions = AppState()
+        interactions.phase = .deliveryFailed
+        let controller = AgentController(
+            gestureMonitor: MockGestureMonitorForStreaming(),
+            snapshotProvider: { snapshot }, resolveProvider: { provider },
+            responseStore: store, agentEnabled: { true }, islandAgentFlow: flow,
+            escapeCloseHotkeyFactory: { escape }, escapeInteractionState: interactions
+        )
+        controller.start()
+        controller.submitTextQuery("question", snapshot: snapshot)
+        await waitUntil { provider.calls.count == 1 }
+        provider.continuations.first?.yield(.summaryDelta(text: "answer"))
+        await waitUntil { flow.answerPanelVisible }
+        XCTAssertEqual(escape.startCalls, 1, "A retained Drop failure must not expose the foreground app to Escape")
+        for phase in [AppPhase.transcribing, .finishing, .verifying, .inserting, .idle] {
+            interactions.phase = phase
+            XCTAssertEqual(escape.startCalls, 1)
+            XCTAssertEqual(escape.stopCalls, 0)
+        }
+        escape.fire()
+        await waitUntil { !flow.answerPanelVisible }
     }
 
     // MARK: - Helpers

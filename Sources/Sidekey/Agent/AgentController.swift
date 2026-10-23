@@ -506,6 +506,8 @@ final class AgentController: ObservableObject {
         // which app is frontmost. The interceptor drains that press through
         // key-up, then releases input. Capture/approval/shortcut recording
         // retain Escape priority even when an older answer remains visible.
+        // Post-recording/failure phases own no cancel key; the tail tap still
+        // lets an armed Drop tap win before its recording flag arrives.
         // WHY: docs/decisions/2026-10-23-agent-answer-escape-consumption.md
         let competingInteraction = Publishers.CombineLatest4(
             escapeInteractionState.$phase,
@@ -513,7 +515,7 @@ final class AgentController: ObservableObject {
             escapeInteractionState.$caseApprovalActive,
             escapeInteractionState.$hotkeyRecordingActive
         ).map { phase, screenshot, approval, shortcutRecording in
-            phase != .idle || screenshot || approval || shortcutRecording
+            phase == .recording || screenshot || approval || shortcutRecording
         }
         escapeCloseLifecycleCancellable = Publishers.CombineLatest(
             islandAgentFlow.$answerPanelVisible, competingInteraction

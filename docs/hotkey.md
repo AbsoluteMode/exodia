@@ -406,9 +406,9 @@ copies/closes the editor. See [screenshots](screenshots.md).
 The first bare Escape closes the visible Agent answer and is consumed before
 it reaches the frontmost application. Its held repeats and release belong to
 that same press. After the answer closes, the next separate press passes
-through normally. Recording, composing, acting without answer content and idle
+through normally. Recording, composing, acting without answer content and idle without an answer
 never arm this answer interceptor; modified Escape chords and other keys keep
-their existing behavior. Drop, Screenshot, Case approval and shortcut recording
+their existing behavior. Drop recording, Screenshot, Case approval and shortcut recording
 temporarily keep Escape while an answer remains visible; afterwards only a
 still-visible answer rearms. The answer tap follows capture taps in the session
 chain, preserving cancellation even before an activity flag updates. It does
