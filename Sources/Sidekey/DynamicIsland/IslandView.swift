@@ -159,6 +159,7 @@ struct IslandView: View {
     /// `IslandPanel` can grow its hit-test band when a tall inline panel
     /// (History) is on screen — and shrink it back on `.controls`.
     let onHoverPanelBandHeightChange: (CGFloat) -> Void
+    let onMeetingAssistantMagicVisibilityChange: (Bool) -> Void
 
     /// Reports the rendered answer card height so `IslandPanel` can size the
     /// answer hit-zone to the visible card (not a fixed reservation that would
@@ -198,6 +199,7 @@ struct IslandView: View {
         onKeyboardFocusRequest: @escaping (Bool) -> Void = { _ in },
         hoverHitBridge: IslandHoverHitBridge? = nil,
         onHoverPanelBandHeightChange: @escaping (CGFloat) -> Void = { _ in },
+        onMeetingAssistantMagicVisibilityChange: @escaping (Bool) -> Void = { _ in },
         onAgentAnswerHeightChange: @escaping (CGFloat) -> Void = { _ in },
         actions: IslandActions? = nil,
         agentFlow: IslandAgentFlowStore? = nil,
@@ -217,6 +219,7 @@ struct IslandView: View {
         self.onKeyboardFocusRequest = onKeyboardFocusRequest
         self._hoverHitBridge = ObservedObject(wrappedValue: hoverHitBridge ?? IslandHoverHitBridge())
         self.onHoverPanelBandHeightChange = onHoverPanelBandHeightChange
+        self.onMeetingAssistantMagicVisibilityChange = onMeetingAssistantMagicVisibilityChange
         self.onAgentAnswerHeightChange = onAgentAnswerHeightChange
         self.cancelAgentFlow = cancelAgentFlow
         self.onAgentKeyboardFocusChange = onAgentKeyboardFocusChange
@@ -298,14 +301,12 @@ struct IslandView: View {
     static func hoverPanelHeight(
         for mode: IslandHoverPanelMode,
         musicActive: Bool,
-        toolCount: Int = HoverLayoutStore.columns,
-        meetingAssistantControlVisible: Bool = false
+        toolCount: Int = HoverLayoutStore.columns
     ) -> CGFloat {
         let base: CGFloat
         switch mode {
         case .controls:
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
-                + (meetingAssistantControlVisible ? IslandMeetingAssistantControl.height : 0)
         case .monitor, .notifications:
             base = IslandDropModeControl.controlsHoverPanelHeight(toolCount: toolCount)
         case .tasks:
@@ -333,13 +334,19 @@ struct IslandView: View {
         isHoverExpanded && hoverNowPlaying != nil
     }
 
+    private var showsMeetingAssistantMagic: Bool {
+        IslandMeetingAssistantPlacement.isVisible(recording: appState.meetingRecordingActive,
+            assistant: appState.meetingAssistantHover, hoverExpanded: isHoverExpanded,
+            controls: hoverPanelMode == .controls,
+            obscured: agentFlow.isActive || appState.meetingSuggestionActive || appState.caseApprovalActive)
+    }
+
     /// Height of the rendered drawer for the current mode.
     private var visibleHoverPanelHeight: CGFloat {
         Self.hoverPanelHeight(
             for: hoverPanelMode,
             musicActive: hoverNowPlaying != nil,
-            toolCount: hoverStore.slots.count,
-            meetingAssistantControlVisible: appState.meetingAssistantHover.visible
+            toolCount: hoverStore.slots.count
         )
     }
 
@@ -1017,7 +1024,7 @@ struct IslandView: View {
                         // prompt) squares the bottom so both read as one surface.
                         meetingSuggestionActive: appState.meetingSuggestionActive
                             || appState.caseApprovalActive,
-                        trailingExtension: activeWingExtension,
+                        trailingExtension: max(activeWingExtension, showsMeetingAssistantMagic ? IslandMeetingAssistantPlacement.extensionWidth : 0),
                         // Snap the surface for acting and per-keystroke composer
                         // growth (see `wingSnapsWidth`) so the black wing never
                         // lags behind the text and leaks it past the capsule.
@@ -1034,14 +1041,9 @@ struct IslandView: View {
                         alignment: .leading
                     )
                 }
-                // Hover trigger zone = compact pill rectangle ONLY. The
-                // bottom area (where the hover panel renders once expanded)
-                // is intentionally excluded — see `panelHovering` attached
-                // to the panel itself below. `contentShape(Rectangle())`
-                // forces the hit region to be the rectangular frame instead
-                // of leaking out through the rendered child views' tracking
-                // areas (NSTrackingArea is window-driven, bypassing the
-                // outer NSHostingView's `hitTest:` filter).
+                // One continuous hover region includes the visible magic
+                // extension, so crossing timer -> icon never closes the drawer.
+                .frame(width: compactWidth + (showsMeetingAssistantMagic ? IslandMeetingAssistantPlacement.extensionWidth : 0), alignment: .leading)
                 .contentShape(Rectangle())
                 .onHover { hovering in
                     let next = hovering && IslandHoverPolicy.allowsExpansion(
@@ -1056,6 +1058,7 @@ struct IslandView: View {
                     }
                     pillHovering = next
                 }
+                .frame(width: compactWidth, alignment: .leading)
                 // Agent phase content (waveform / ticker / pulse / text field)
                 // drawn INSIDE the stretched surface. It BEGINS in the right
                 // band (where the passive hints begin — just past the notch
@@ -1199,7 +1202,6 @@ struct IslandView: View {
                             selectedLanguage: selectedLanguage,
                             targetLanguage: targetLanguage,
                             meetingRecordingActive: appState.meetingRecordingActive,
-                            meetingAssistantState: appState.meetingAssistantHover,
                             panelMode: $hoverPanelMode,
                             hoverHitBridge: hoverHitBridge,
                             onSearchFocusChange: { focused in
@@ -1260,7 +1262,6 @@ struct IslandView: View {
                             onOpenTranslate: actions.openTranslate,
                             onOpenSubtitles: actions.openSubtitles,
                             onOpenMeetingAssistant: actions.openMeetingAssistant,
-                            onSetMeetingAssistantEnabled: actions.setMeetingAssistantEnabled,
                             onOpenScreenshot: actions.openScreenshot,
                             onOpenHelp: actions.openHelp,
                             onQuit: actions.quitApplication,
@@ -1333,6 +1334,16 @@ struct IslandView: View {
             height: compactHeight + activeHoverPanelHeight,
             alignment: .top
         )
+        .overlay(alignment: .topLeading) {
+            if showsMeetingAssistantMagic {
+                IslandMeetingAssistantControl(state: appState.meetingAssistantHover,
+                    setEnabled: actions.setMeetingAssistantEnabled,
+                    hitBridge: hoverHitBridge, hitContext: hoverHitBridge.context)
+                    .frame(width: IslandMeetingAssistantPlacement.extensionWidth, height: compactHeight)
+                    .contentShape(Rectangle())
+                    .offset(x: compactWidth)
+            }
+        }
         .coordinateSpace(name: Self.hoverZoneSpace)
         // Preview bubble for the hovered History row. Lives OUTSIDE the
         // clipped drawer (which would cut anything beyond its bounds) and
@@ -1375,6 +1386,12 @@ struct IslandView: View {
         // region to STAY open, so the drawer's fading hover band can't re-open a
         // closed drawer before the cursor reaches the pill.
         .onChange(of: pillHovering) { _, _ in recomputeMouseExpanded() }
+        .onChange(of: showsMeetingAssistantMagic) { _, visible in
+            onMeetingAssistantMagicVisibilityChange(visible)
+        }
+        .onChange(of: appState.meetingAssistantHover) { _, _ in
+            hoverHitBridge.cancelPress(for: .meetingAssistant)
+        }
         .onChange(of: panelHovering) { _, _ in recomputeMouseExpanded() }
         .onChange(of: appState.screenshotPreparing) { _, preparing in
             guard !preparing else { return }
@@ -1417,9 +1434,6 @@ struct IslandView: View {
         .onChange(of: hoverStore.slots.count) { _, _ in
             onHoverPanelBandHeightChange(activeHoverPanelHeight)
         }
-        .onChange(of: appState.meetingAssistantHover.visible) { _, _ in
-            onHoverPanelBandHeightChange(activeHoverPanelHeight)
-        }
         .onChange(of: hoverPanelMode) { oldValue, newValue in
             // A logical opening ends immediately, independently of exit animation.
             if oldValue == .tasks { TodoHoverModel.shared.end() }
@@ -1433,8 +1447,7 @@ struct IslandView: View {
                 Self.hoverPanelHeight(
                     for: mode,
                     musicActive: hoverNowPlaying != nil,
-                    toolCount: hoverStore.slots.count,
-                    meetingAssistantControlVisible: appState.meetingAssistantHover.visible
+                    toolCount: hoverStore.slots.count
                 )
             }
             // WHY: .project-docs/decisions/2026-10-18-brightness-tool.md
@@ -2241,7 +2254,7 @@ private struct IslandDropModeStatusActiveBadge: View {
 
 // MARK: - Meeting recording slot
 
-private struct IslandMeetingRecordingSlotView: View {
+struct IslandMeetingRecordingSlotView: View {
     let snapshot: IslandMeetingRecordingSnapshot
     let onStop: () -> Void
 
@@ -2542,7 +2555,6 @@ private struct IslandDropModeHoverPanel: View {
     let selectedLanguage: AppLanguage?
     let targetLanguage: AppLanguage?
     let meetingRecordingActive: Bool
-    var meetingAssistantState = MeetingAssistantHoverState()
     @Binding var panelMode: IslandHoverPanelMode
     @ObservedObject var hoverHitBridge: IslandHoverHitBridge
     let onSearchFocusChange: (Bool) -> Void
@@ -2578,7 +2590,6 @@ private struct IslandDropModeHoverPanel: View {
     var onOpenTranslate: () -> Void = {}
     var onOpenSubtitles: () -> Void = {}
     var onOpenMeetingAssistant: () -> Void = {}
-    var onSetMeetingAssistantEnabled: (Bool) -> Void = { _ in }
     var onOpenScreenshot: () -> Void = {}
     let onOpenHelp: () -> Void
     let onQuit: () -> Void
@@ -2745,10 +2756,6 @@ private struct IslandDropModeHoverPanel: View {
         }
         .onChange(of: hoverStore.slots) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
         .onChange(of: mode) { _, _ in hoverHitBridge.setContext(hitTargetContext) }
-        .onChange(of: meetingAssistantState) { old, new in
-            if old.visible != new.visible { hoverHitBridge.setContext(hitTargetContext) }
-            else { hoverHitBridge.cancelPress(for: .meetingAssistant) }
-        }
         .onChange(of: searchQuery) { _, _ in
             hoverHitBridge.setSurface(IslandHoverToolSearch.isFiltering(searchQuery) ? .result : .tile)
             hoverHitBridge.setContext(hitTargetContext)
@@ -2793,11 +2800,6 @@ private struct IslandDropModeHoverPanel: View {
             .islandHoverInputLens(cornerRadius: IslandHoverToolSearch.fieldHeight / 2)
             .padding(.horizontal, 10)
             .padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
-
-            if meetingAssistantState.visible {
-                IslandMeetingAssistantControl(state: meetingAssistantState, setEnabled: onSetMeetingAssistantEnabled,
-                                              hitBridge: hoverHitBridge, hitContext: hitTargetContext)
-            }
 
             if IslandHoverToolSearch.isFiltering(searchQuery) {
                 searchResults
@@ -2875,7 +2877,7 @@ private struct IslandDropModeHoverPanel: View {
     }
 
     private var hitTargetContext: String {
-        "\(searchQuery)|\(mode)|\(meetingAssistantState.visible)|" + hoverStore.slots.map(\.rawValue).joined(separator: ",")
+        "\(searchQuery)|\(mode)|" + hoverStore.slots.map(\.rawValue).joined(separator: ",")
     }
 
     private var searchMatches: [HoverTool] { IslandHoverToolSearch.results(for: searchQuery) }

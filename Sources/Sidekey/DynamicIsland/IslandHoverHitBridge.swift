@@ -65,7 +65,7 @@ final class IslandHoverHitBridge: ObservableObject {
     private var regions: [IslandHoverHitTargetID.Surface: WeakRegion] = [:]
     private var enabled = false
     private var activeSurface: IslandHoverHitTargetID.Surface = .tile
-    private var activeContext: String?
+    @Published private(set) var context = ""
 
     private struct WeakTarget { weak var view: IslandHoverHitTargetView? }
     private struct WeakRegion { weak var view: IslandHoverHitRegionView? }
@@ -96,7 +96,7 @@ final class IslandHoverHitBridge: ObservableObject {
     }
 
     func setContext(_ context: String) {
-        activeContext = context
+        self.context = context
         cancelPress()
     }
 
@@ -130,7 +130,7 @@ final class IslandHoverHitBridge: ObservableObject {
         targets = targets.filter { $0.value.view != nil }
         return targets.values.compactMap { entry in
             guard let view = entry.view, view.targetID.surface == activeSurface || view.targetID.surface == .meetingAssistant,
-                  view.targetContext == activeContext,
+                  view.targetContext == context,
                   view.window === window, !view.isHiddenOrHasHiddenAncestor,
                   let region = regions[view.targetID.surface]?.view, region.surface == view.targetID.surface,
                   region.window === window,

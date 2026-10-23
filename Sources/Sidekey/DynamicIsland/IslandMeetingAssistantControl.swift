@@ -1,95 +1,83 @@
 import SwiftUI
 
-/// A session control, separate from the show-only tool/search action.
+/// Explicit consent for this meeting; merely revealing this control never listens.
 struct IslandMeetingAssistantControl: View {
-    static let height: CGFloat = 44
+    static let size: CGFloat = 28
     let state: MeetingAssistantHoverState
     let setEnabled: (Bool) -> Void
     var hitBridge: IslandHoverHitBridge? = nil
     var hitContext = ""
+    var reduceMotionOverride: Bool? = nil
+    @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if let hitBridge, state.canToggle {
                 control.islandHoverHitTarget(bridge: hitBridge, id: .init(surface: .meetingAssistant, tool: .meetingAssistant),
-                                             context: hitContext, action: { setEnabled(!state.isOn) })
+                    context: hitContext, action: { setEnabled(!state.isOn) })
                     .islandHoverHitRegion(bridge: hitBridge, surface: .meetingAssistant)
             } else { control }
         }
-        .padding(.horizontal, 10)
-        .frame(height: Self.height)
+        .frame(width: Self.size, height: Self.size)
     }
+
     private var control: some View {
-        Toggle(isOn: Binding(get: { state.isOn }, set: setEnabled)) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Meeting Assistant").font(.system(size: 12, weight: .medium)).foregroundStyle(.white)
-                Text(state.subtitle).font(.system(size: 10)).foregroundStyle(.white.opacity(0.76))
+        Button { setEnabled(!state.isOn) } label: {
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: (reduceMotionOverride ?? reduceMotion) || state.phase != .listening)) { context in
+                MeetingAssistantMagicGlyph(phase: state.phase,
+                    glow: (reduceMotionOverride ?? reduceMotion) ? 0.65 : Self.glow(at: context.date.timeIntervalSinceReferenceDate))
             }
+            .frame(width: Self.size, height: Self.size)
         }
-        .toggleStyle(MeetingAssistantHoverToggleStyle(status: state.subtitle))
+        .buttonStyle(MeetingAssistantMagicFeedback(focused: focused))
+        .focused($focused)
         .disabled(!state.canToggle)
-        .help("Включить или остановить слушание этой встречи. Следующая встреча не включит его автоматически.")
-        .frame(height: Self.height)
+        .help(state.isOn ? "Выключить Meeting Assistant для этой встречи" : "Включить Meeting Assistant для этой встречи")
+        .accessibilityRepresentation {
+            Toggle("Meeting Assistant — только эта встреча", isOn: Binding(get: { state.isOn }, set: setEnabled))
+                .disabled(!state.canToggle)
+                .accessibilityValue(Text("\(state.isOn ? "Включён" : "Выключен"). \(state.subtitle)"))
+        }
+    }
+
+    /// Only the halo breathes; neither the glyph nor its target moves.
+    static func glow(at time: TimeInterval) -> Double { 0.65 + 0.18 * sin(time * .pi * 2 / 3.2) }
+}
+
+struct MeetingAssistantMagicGlyph: View {
+    let phase: MeetingAssistantHoverState.Phase
+    var glow: Double = 0.65
+    private var listening: Bool { phase == .listening }
+    var body: some View {
+        Image(systemName: "wand.and.stars")
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(listening
+                ? LinearGradient(colors: [.white, Color(red: 0.57, green: 0.81, blue: 1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                : LinearGradient(colors: [.white.opacity(phase == .connecting ? 0.85 : 0.52), .white.opacity(phase == .connecting ? 0.85 : 0.52)], startPoint: .top, endPoint: .bottom))
+            .shadow(color: Color(red: 0.30, green: 0.65, blue: 1).opacity(listening ? glow : 0), radius: 5)
+            .shadow(color: Color(red: 0.30, green: 0.65, blue: 1).opacity(listening ? glow * 0.35 : 0), radius: 10)
+            .overlay {
+                if phase == .connecting {
+                    Circle().trim(from: 0.08, to: 0.78).stroke(.white.opacity(0.55), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+                        .frame(width: 24, height: 24)
+                }
+            }
+            .opacity(phase == .stopping ? 0.45 : 1)
+            .accessibilityHidden(true)
     }
 }
 
-private struct MeetingAssistantHoverToggleStyle: ToggleStyle {
-    let status: String
+private struct MeetingAssistantMagicFeedback: ButtonStyle {
+    let focused: Bool
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.islandHoverNativePressed) private var nativePressed
+    @State private var hovered = false
     func makeBody(configuration: Configuration) -> some View {
-        Control(configuration: configuration, status: status)
-    }
-    private struct Control: View {
-        let configuration: ToggleStyleConfiguration
-        let status: String
-        @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.islandHoverNativePressed) private var nativePressed
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-        @FocusState private var focused: Bool
-        var body: some View {
-            Button { configuration.isOn.toggle() } label: {
-                HStack(spacing: 10) {
-                    configuration.label
-                    Spacer(minLength: 0)
-                    Capsule().fill(configuration.isOn ? MacSettingsTheme.accentFill : MacSettingsTheme.switchOff)
-                        .frame(width: MacSwitch.Size.compact.track.width, height: MacSwitch.Size.compact.track.height)
-                        .overlay(Capsule().strokeBorder(MacSettingsTheme.switchBorder, lineWidth: 0.75))
-                        .overlay(alignment: configuration.isOn ? .trailing : .leading) {
-                            Circle().fill(.white).frame(width: MacSwitch.Size.compact.thumb.width, height: MacSwitch.Size.compact.thumb.height)
-                                .padding(MacSwitch.Size.compact.inset)
-                        }
-                        .accessibilityHidden(true)
-                }
-                .padding(.horizontal, 6)
-                .frame(maxWidth: .infinity, minHeight: IslandMeetingAssistantControl.height)
-            }
-            .buttonStyle(Feedback(focused: focused, nativePressed: nativePressed))
-            .focused($focused)
-            .opacity(isEnabled ? 1 : 0.45)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: configuration.isOn)
-            .onMoveCommand { direction in
-                guard isEnabled else { return }
-                if direction == .left { configuration.isOn = false }
-                if direction == .right { configuration.isOn = true }
-            }
-            .accessibilityRepresentation {
-                Toggle("Meeting Assistant — только эта встреча", isOn: configuration.$isOn)
-                    .toggleStyle(.switch).disabled(!isEnabled)
-                    .accessibilityValue(Text("\(configuration.isOn ? "Включён" : "Выключен"). \(status)"))
-            }
-        }
-    }
-    private struct Feedback: ButtonStyle {
-        var focused: Bool
-        var nativePressed: Bool
-        @Environment(\.isEnabled) private var isEnabled
-        @State private var hovered = false
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
-                .contentShape(RoundedRectangle(cornerRadius: 7))
-                .background(MeetingAssistantHoverSurface(hovered: hovered, pressed: configuration.isPressed || nativePressed,
-                                                        focused: focused, enabled: isEnabled))
-                .onHover { hovered = $0 }
-        }
+        configuration.label.contentShape(Rectangle())
+            .background(MeetingAssistantHoverSurface(hovered: hovered, pressed: configuration.isPressed || nativePressed,
+                focused: focused, enabled: enabled))
+            .onHover { hovered = $0 }
     }
 }
 
@@ -100,9 +88,22 @@ struct MeetingAssistantHoverSurface: View {
     var focused = false
     var enabled = true
     var body: some View {
-        RoundedRectangle(cornerRadius: 7)
-            .fill(Color.white.opacity(enabled ? (pressed ? 0.20 : hovered ? 0.10 : 0) : 0))
+        RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(enabled ? (pressed ? 0.22 : hovered ? 0.12 : 0) : 0))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(enabled && focused ? .white.opacity(0.85) : .clear, lineWidth: 1.5))
             .allowsHitTesting(false)
+    }
+}
+
+/// The existing right-agent reservation hosts this small hover-only extension.
+/// Recording geometry and drawer height never move to make room for the icon.
+enum IslandMeetingAssistantPlacement {
+    static let extensionWidth: CGFloat = IslandMeetingAssistantControl.size + 8
+    static func isVisible(recording: Bool, assistant: MeetingAssistantHoverState,
+                          hoverExpanded: Bool, controls: Bool, obscured: Bool) -> Bool {
+        hoverExpanded && controls && !obscured && assistant.visible
+            && (recording || assistant.phase != .off)
+    }
+    static func frame(beside compact: CGRect) -> CGRect {
+        CGRect(x: compact.maxX, y: compact.minY, width: extensionWidth, height: compact.height)
     }
 }

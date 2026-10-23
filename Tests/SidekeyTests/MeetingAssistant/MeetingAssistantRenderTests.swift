@@ -48,53 +48,59 @@ final class MeetingAssistantRenderTests: XCTestCase {
     }
     func testHoverSessionStatesOffscreen() throws {
         guard let output = ProcessInfo.processInfo.environment["WHYTAP_MEETING_ASSISTANT_RENDER_DIR"] else {
-            throw XCTSkip("Set WHYTap Meeting Assistant render directory for hover images.")
+            throw XCTSkip("Set render directory for offscreen magic icon checks.")
         }
         let directory = URL(fileURLWithPath: output)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        for width in [CGFloat(220), 310, 312, 354] {
-            try saveHover(VStack(spacing: 4) {
+        for width in [CGFloat(310), 312, 354] {
+            try saveHover(VStack(spacing: 16) {
                 ForEach(0..<4) { index in
-                    let phase: MeetingAssistantHoverState.Phase = [.off, .connecting, .listening, .stopping][index]
-                    IslandMeetingAssistantControl(state: .init(available: true, phase: phase), setEnabled: { _ in })
+                    self.magicHeader(width: width, phase: [.off, .connecting, .listening, .stopping][index])
                 }
-            }.padding(.vertical, 8), width: width, height: 204, name: "hover-\(Int(width))-dark", directory: directory)
-            try saveHover(VStack(spacing: 4) {
-                ForEach(0..<4) { index in
-                    IslandMeetingAssistantControl(state: .init(available: true, phase: index == 3 ? .stopping : .off), setEnabled: { _ in })
-                        .background(MeetingAssistantHoverSurface(hovered: index == 0 || index == 3,
-                            pressed: index == 1 || index == 3, focused: index == 2 || index == 3, enabled: index != 3)
-                            .padding(.horizontal, 10))
-                }
-            }.padding(.vertical, 8), width: width, height: 204, name: "hover-feedback-\(Int(width))", directory: directory)
-            if width >= 310 {
-                let height = IslandDropModeControl.controlsHoverPanelHeight(toolCount: 3)
-                    - IslandDropModeControl.detachedPanelGap + IslandMeetingAssistantControl.height
-                try saveHover(hoverComposition(width: width), width: width, height: height,
-                              name: "hover-composition-\(Int(width))", directory: directory)
-            }
+            }.padding(.vertical, 12),
+                width: width + 36, height: 224, name: "magic-states-\(Int(width))", directory: directory)
+            try saveHover(hoverComposition(width: width),
+                width: width + 36, height: 244, name: "magic-composition-\(Int(width))", directory: directory)
         }
+        try saveHover(HStack(spacing: 12) {
+            ForEach(0..<4) { index in
+                MeetingAssistantMagicGlyph(phase: index == 3 ? .stopping : .listening)
+                    .frame(width: 28, height: 28)
+                    .background(MeetingAssistantHoverSurface(hovered: index == 0 || index == 3,
+                        pressed: index == 1 || index == 3, focused: index == 2 || index == 3, enabled: index != 3))
+            }
+        }.padding(16), width: 220, height: 60, name: "magic-feedback", directory: directory)
+    }
+    private func magicHeader(width: CGFloat, phase: MeetingAssistantHoverState.Phase) -> some View {
+        HStack(spacing: 0) {
+            Spacer().frame(width: width - IslandFrameLayout.rightSideWidth)
+            IslandMeetingRecordingSlotView(snapshot: .init(duration: 132, levels: [0.2, 0.4, 0.7, 0.4, 0.6, 0.3], isPaused: false), onStop: {})
+                .frame(width: IslandFrameLayout.rightSideWidth)
+            IslandMeetingAssistantControl(state: .init(available: true, phase: phase), setEnabled: { _ in }, reduceMotionOverride: true)
+                .frame(width: IslandMeetingAssistantPlacement.extensionWidth)
+        }
+        .frame(height: 38).background(.black, in: RoundedRectangle(cornerRadius: 18))
     }
     private func hoverComposition(width: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            IslandHoverSearchField(text: .constant(""), onFocusChange: { _ in }, onCommand: { _ in })
-                .frame(height: IslandHoverToolSearch.fieldHeight)
-                .padding(.horizontal, IslandHoverGlass.usesNativeLiquidGlass ? 8 : 0)
-                .islandHoverInputLens(cornerRadius: IslandHoverToolSearch.fieldHeight / 2)
-                .padding(.horizontal, 10).padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
-            IslandMeetingAssistantControl(state: .init(available: true, phase: .listening), setEnabled: { _ in })
-            HStack(spacing: IslandHoverControlsLayout.columnSpacing) {
-                hoverTile("Record", icon: "record.circle", width: width)
-                hoverTile("Meeting Assistant", icon: "person.wave.2", width: width)
-                hoverTile("Settings", icon: "gearshape", width: width)
-            }
-            .padding(.horizontal, IslandHoverControlsLayout.horizontalInset)
-            .frame(height: IslandHoverControlsLayout.gridHeight(toolCount: 3))
-            Rectangle().fill(.white.opacity(0.10)).frame(height: IslandHoverControlsLayout.dividerHeight)
-            Text("Questions and answers for this meeting")
-                .font(.system(size: 12)).foregroundStyle(.white.opacity(0.76))
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
-                .frame(height: IslandHoverControlsLayout.descriptionHeight)
+        VStack(alignment: .leading, spacing: 8) {
+            magicHeader(width: width, phase: .listening)
+            VStack(spacing: 0) {
+                IslandHoverSearchField(text: .constant(""), onFocusChange: { _ in }, onCommand: { _ in })
+                    .frame(height: IslandHoverToolSearch.fieldHeight)
+                    .padding(.horizontal, 10).padding(.vertical, IslandHoverToolSearch.fieldVerticalInset)
+                HStack(spacing: IslandHoverControlsLayout.columnSpacing) {
+                    hoverTile("Record", icon: "record.circle", width: width)
+                    hoverTile("Meeting Assistant", icon: "person.wave.2", width: width)
+                    hoverTile("Settings", icon: "gearshape", width: width)
+                }
+                .padding(.horizontal, IslandHoverControlsLayout.horizontalInset)
+                .frame(height: IslandHoverControlsLayout.gridHeight(toolCount: 3))
+                Rectangle().fill(.white.opacity(0.10)).frame(height: IslandHoverControlsLayout.dividerHeight)
+                Text("Questions and answers for this meeting")
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.76))
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
+                    .frame(height: IslandHoverControlsLayout.descriptionHeight)
+            }.frame(width: width).background(Color(white: 0.10), in: RoundedRectangle(cornerRadius: 18))
         }
     }
     private func hoverTile(_ title: String, icon: String, width: CGFloat) -> some View {
@@ -104,7 +110,7 @@ final class MeetingAssistantRenderTests: XCTestCase {
             action: {})
     }
     private func saveHover<V: View>(_ view: V, width: CGFloat, height: CGFloat, name: String, directory: URL) throws {
-        let host = NSHostingView(rootView: view.frame(width: width).background(Color(white: 0.10))
+        let host = NSHostingView(rootView: view.frame(width: width, height: height, alignment: .top).clipped().background(Color(white: 0.10))
             .environment(\.colorScheme, .dark).transaction { $0.disablesAnimations = true })
         host.appearance = NSAppearance(named: .darkAqua) // The real IslandPanel pins darkAqua too.
         host.frame = NSRect(x: 0, y: 0, width: width, height: height)

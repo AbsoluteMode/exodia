@@ -59,19 +59,37 @@ final class MeetingAssistantMeetingScopeTests: XCTestCase {
         XCTAssertTrue(stopping.visible); XCTAssertFalse(stopping.canToggle); XCTAssertFalse(stopping.isOn)
     }
 
-    func testHoverRowIsIncludedInOnlyTheControlsHitBand() {
-        for count in [1, 5, 13, 25] {
-            for music in [false, true] {
-                let off = IslandView.hoverPanelHeight(for: .controls, musicActive: music, toolCount: count)
-                XCTAssertEqual(IslandView.hoverPanelHeight(for: .controls, musicActive: music, toolCount: count,
-                    meetingAssistantControlVisible: true), off + IslandMeetingAssistantControl.height)
-                for mode in [IslandHoverPanelMode.monitor, .history, .calendar, .notifications] {
-                    XCTAssertEqual(IslandView.hoverPanelHeight(for: mode, musicActive: music, toolCount: count,
-                        meetingAssistantControlVisible: true), IslandView.hoverPanelHeight(for: mode, musicActive: music, toolCount: count))
-                }
-            }
+    func testMagicIsOnlyRevealedBesideRecordingOrAnExplicitActiveSession() {
+        let ready = MeetingAssistantHoverState(available: true)
+        XCTAssertTrue(IslandMeetingAssistantPlacement.isVisible(recording: true, assistant: ready, hoverExpanded: true, controls: true, obscured: false))
+        XCTAssertFalse(IslandMeetingAssistantPlacement.isVisible(recording: false, assistant: ready, hoverExpanded: true, controls: true, obscured: false))
+        XCTAssertFalse(IslandMeetingAssistantPlacement.isVisible(recording: true, assistant: ready, hoverExpanded: false, controls: true, obscured: false))
+        XCTAssertFalse(IslandMeetingAssistantPlacement.isVisible(recording: true, assistant: ready, hoverExpanded: true, controls: false, obscured: false))
+        XCTAssertFalse(IslandMeetingAssistantPlacement.isVisible(recording: true, assistant: ready, hoverExpanded: true, controls: true, obscured: true))
+        XCTAssertFalse(IslandMeetingAssistantPlacement.isVisible(recording: true, assistant: .init(), hoverExpanded: true, controls: true, obscured: false))
+        for phase in [MeetingAssistantHoverState.Phase.connecting, .listening, .stopping] {
+            XCTAssertTrue(IslandMeetingAssistantPlacement.isVisible(recording: false, assistant: .init(phase: phase), hoverExpanded: true, controls: true, obscured: false))
         }
     }
+
+    func testNativeMagicHitZoneClaimsOnlyTheVisibleExtension() {
+        let compact = CGRect(x: 120, y: 700, width: 312, height: 38)
+        let extensionFrame = IslandMeetingAssistantPlacement.frame(beside: compact)
+        XCTAssertEqual(extensionFrame, CGRect(x: 432, y: 700, width: 36, height: 38))
+        func frames(_ visible: Bool, _ expanded: Bool = true, _ hidden: Bool = false) -> [CGRect] {
+            IslandPanelMouseEventPolicy.activeFrames(compactFrame: compact, expandedFrame: compact,
+                leftNotificationFrame: .zero, musicStripFrame: .zero, agentSurfaceFrames: [],
+                idleHidden: hidden, expanded: expanded, notificationActive: false, musicStripActive: false,
+                hoverFrames: [], meetingAssistantMagicVisible: visible)
+        }
+        XCTAssertTrue(frames(true).contains(extensionFrame))
+        XCTAssertFalse(frames(false).contains(extensionFrame))
+        XCTAssertFalse(frames(true, false).contains(extensionFrame))
+        XCTAssertFalse(frames(true, true, true).contains(extensionFrame))
+        XCTAssertFalse(frames(true).contains { $0.contains(CGPoint(x: 470, y: 719)) })
+        XCTAssertEqual(IslandMeetingAssistantControl.glow(at: 0), IslandMeetingAssistantControl.glow(at: 3.2), accuracy: 0.0001)
+    }
+
 }
 
 @MainActor

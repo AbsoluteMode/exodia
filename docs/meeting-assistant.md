@@ -19,18 +19,22 @@ session. Stop preserves recent transcript in memory for pending questions; close
 or changing Space clears it. Audio, transcript, images and conversations are not
 saved by this pilot.
 
-Once both model routes and a ready Space are selected, the hover controls show a
-**Meeting Assistant** switch with **Только эта встреча**. It shares the module's
-Listen/Stop state; connecting can be cancelled, and the short cleanup state is
-disabled. Newly created Spaces are refreshed when hover opens. Turning it off stops audio and new question extraction while keeping
-answers available. The tool/search/deep link still only opens the module.
+Once both model routes and a ready Space are selected, hovering over the island
+while Meeting Notes records reveals a **magic wand** immediately to the right of
+the recording timer. It is translucent when off and has a soft white/blue glow
+while listening. Click it to enable or stop Assistant for this meeting. Connecting
+has a visible outline and can be cancelled; cleanup is temporarily disabled.
+If Assistant was started manually without Notes, its active session also exposes
+this control on hover. It shares the module's Listen/Stop state and keeps answers
+when stopped. Newly created Spaces refresh when hover opens. The ordinary
+tool/search/deep link still only opens the module; hover alone never starts audio.
 
 This choice stays in memory and is off after close, sleep or restart. When the
 existing metadata-only probe has recognized meeting mic activity and that context
 ends for 15 seconds, listening stops. A brief reconnect cancels the pending stop;
 after a stop, a later meeting never starts listening by itself. No microphone
 samples are captured by the probe. Manual use before a recognized call remains
-possible; in that case use the switch or close the module to stop. Muting a call
+possible; in that case use the magic icon, Stop, or close the module to stop. Muting a call
 for long enough can look like an end, while calls without a detectable boundary
 cannot be distinguished: this is a context heuristic, not a calendar/call ID.
 

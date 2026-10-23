@@ -1325,42 +1325,39 @@ setting. Real sharing exclusion and native call interactions are installed
 acceptance; offscreen renders and test checks do not establish those guarantees.
 
 
-## Meeting Assistant — per-meeting hover switch, 2026-10-24
+## Meeting Assistant — per-meeting hover magic, 2026-10-24
 
-The user requested a forced on/off control for one meeting. Keep the approved
-right-hand module unchanged and add one 44pt row below hover search, only once
-both routes and a ready Space are configured. Reason: current session state must
-be reachable without finding or reopening its answer window. Tool/search/link
-activation remains show-only; opening a tool is never permission to capture.
+The user chose a magic icon right of the upper recording timer, replacing the
+proposed separate switch row before it shipped. Reason: this is a secondary
+meeting action and should sit beside recording rather than consume drawer space.
+Keep the approved right-hand answer module and tool/search show-only behavior.
+A configured Space and both routes expose the icon during Notes recording;
+an explicitly active Assistant session also exposes it when Notes is off.
+Only the controls hover shows it; agent, nudge, approval and other inline panels
+preempt it. Hover reveals a control, never capture permission.
 
-The row has the same 10pt outer inset as search, with its entire inner area as one toggle: Meeting Assistant, a short session/state subtitle,
-and a blue 30×18 switch using MacSwitch compact geometry and shared color tokens. Off says “Только эта встреча”; connecting is cancellable;
-listening and stopping are visible, and stopping is temporarily disabled. Hover
-and press highlight the complete row, keyboard focus adds an outline, disabled
-has no active highlight. Use the existing measured first-mouse bridge with its
-own hit region, independent of search results. Grow both the drawer and AppKit
-hit band by the same 44pt; other hover panels keep their geometry.
+The wand is 15pt in a fixed 28pt target, within a 36pt trailing extension of the
+same black island. The timer, Stop and drawer keep their original positions and
+height. Native hit routing claims exactly this visible extension while shown.
+The measured first-mouse target is only the icon, with separate hover, pressed,
+keyboard-focus and disabled feedback. Off is white at 52% opacity; listening
+is white/ice blue with a soft blue halo. Connecting uses a static partial outline
+and stays cancellable; stopping dims and disables the control. The active halo
+breathes gently over 3.2s without moving or scaling the glyph/target. Reduce Motion
+keeps the glow static and stops timeline frame updates. White icon on black at
+52% alpha has 5.66:1 contrast; the bright active core exceeds 3:1 throughout.
 
-The switch and the module's Listen/Stop use one model, preserving answers on
-Stop. No persisted auto-join preference is introduced. Passive startup and each hover opening only read
-Space/route metadata; it creates no panel, accesses no key and starts no capture.
-A recognized meeting-context end sustained for 15 seconds stops listening;
-brief reconnects cancel that stop. Manual sessions without recognized context
-require manual stop. That existing mic-activity heuristic cannot identify every
-call boundary or distinguish a long mute; real-call acceptance remains pending.
+One in-memory model backs icon and module Listen/Stop. Stop preserves answers;
+close/sleep/restart stop listening and no later meeting auto-enables it. Startup
+and hover refresh metadata without opening a panel, accessing keys or audio.
+A separate metadata-only probe stops an observed recognized call after 15s of
+inactivity; brief reconnects cancel the stop. Manual unrecognized calls require
+explicit Stop. Long mute/seamless call switches remain heuristic limitations.
 
-The switch slides its thumb with a 160ms ease when motion is allowed; reduced
-motion updates immediately. The feedback does not move the click target.
-
-Verification: native dark hover rows at 220/310/312/354pt, all four phases, plus
-hover/press/focus/disabled feedback using the live drawing surface. Compositions
-at 310/312/354pt use the native search/control/tool components and shared layout
-metrics. Hover is pinned darkAqua like IslandPanel; duplicate light pictures are
-not separate appearance evidence. The answer module retains light/dark proofs.
-On a solid #1a1a1a fixture, the caption is 10.45:1 and the blue track/white thumb
-is 5.59:1. Physical keyboard/VoiceOver, pointer, native glass compositing and OS
-reduced-motion acceptance remain for the installed app; the reduced-motion
-branch removes the thumb animation. Russian subtitles deliberately follow the
-approved Meeting Assistant module; its feature name stays in English. The probe
-is separate so this switch works with Meeting Notes off, without taking over its
-consumer or lifecycle.
+Verification uses native darkAqua render fixtures at 310/312/354pt with the live
+recording slot, four magic phases, hover/press/focus/disabled drawing surfaces,
+and unchanged drawer components. Reduced-motion fixture uses the live static
+branch. Pure geometry and fake-provider tests cover first mouse, scoped press
+cancellation, context end, preparation and repeated/cancelled starts. Physical
+pointer/keyboard/VoiceOver, native glass, actual calls and screen sharing remain
+installed acceptance; offscreen evidence does not establish those guarantees.
