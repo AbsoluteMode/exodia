@@ -11,6 +11,8 @@ public enum SidekeyAppMain {
             exit(valid ? 0 : 1)
         }
         guard InstallationGuard.canLaunch() else { return }
+        // Freeze the review deadline at startup, not a later first Calendar click.
+        _ = GoogleCalendarReviewSession.current
         guard ApplicationInstanceCoordinator.shared.canLaunch() else { return }
         // Restore before stores open or jobs start; a completed rollback can
         // safely continue, while an unfinished transaction keeps its originals.

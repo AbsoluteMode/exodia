@@ -44,7 +44,7 @@ final class AppControlControllerTests: XCTestCase {
         let controller: AppControlController
     }
 
-    private func env() throws -> Env {
+    private func env(googleReview: @escaping () -> Bool = { false }) throws -> Env {
         let suite = "app-control-tests-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(suite + ".json")
@@ -70,7 +70,7 @@ final class AppControlControllerTests: XCTestCase {
         let controller = AppControlController(routing: routing, models: models, preferences: preferences,
             languages: PrivacyPreferences(defaults: defaults), idle: IslandIdlePreferences(defaults: defaults),
             identity: AppBuildIdentity(info: ["CFBundleVersion": "test-42", "ExodiaSourceRevision": "fixture-sha"], bundleURL: URL(fileURLWithPath: "/tmp/Whytap.app")),
-            activity: { .object(["drop": .string("idle")]) })
+            activity: { .object(["drop": .string("idle")]) }, googleCalendarReview: googleReview)
         return Env(routing: routing, preferences: preferences, probe: probe, controller: controller)
     }
 
@@ -87,12 +87,27 @@ final class AppControlControllerTests: XCTestCase {
         let state = await e.controller.handle(AppControlRequest("get_state"))
         XCTAssertEqual(state.data.object?["build"], .string("test-42"))
         XCTAssertEqual(state.data.object?["sourceRevision"], .string("fixture-sha"))
-        XCTAssertEqual(state.data.object?["googleCalendarReviewActive"], .bool(GoogleCalendarReviewSession.current.isActive))
+        XCTAssertEqual(state.data.object?["googleCalendarReviewActive"], .bool(false))
         let settings = await e.controller.handle(AppControlRequest("get_settings"))
         let text = String(data: try JSONEncoder().encode([state, settings]), encoding: .utf8)!
         XCTAssertFalse(text.contains("fake-provider-key"))
         XCTAssertFalse(text.contains("private.otherSetting"))
         XCTAssertFalse(text.contains("fake-secret"))
+        let calls = await e.probe.calls
+        XCTAssertEqual(calls, 0)
+    }
+
+    func test_runtime_review_status_updates_without_exposing_the_session_configuration() async throws {
+        var active = true
+        let e = try env(googleReview: { active })
+        let started = await e.controller.handle(AppControlRequest("get_state"))
+        XCTAssertEqual(started.data.object?["googleCalendarReviewActive"], .bool(true))
+        active = false
+        let expired = await e.controller.handle(AppControlRequest("get_state"))
+        XCTAssertEqual(expired.data.object?["googleCalendarReviewActive"], .bool(false))
+        let encoded = String(data: try JSONEncoder().encode([started, expired]), encoding: .utf8)!
+        XCTAssertFalse(encoded.contains("WHYTAP_GOOGLE_CALENDAR_REVIEW"))
+        XCTAssertFalse(encoded.contains("expiresAt"))
         let calls = await e.probe.calls
         XCTAssertEqual(calls, 0)
     }

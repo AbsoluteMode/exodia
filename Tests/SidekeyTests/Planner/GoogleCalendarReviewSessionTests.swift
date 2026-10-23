@@ -30,5 +30,8 @@ final class GoogleCalendarReviewSessionTests: XCTestCase {
         XCTAssertTrue(review.isActive(at: start.addingTimeInterval(3599)))
         XCTAssertFalse(review.isActive(at: start.addingTimeInterval(3600)))
         XCTAssertFalse(review.isActive(at: start.addingTimeInterval(7200)))
+        let rejectedAtStartup = session(expiry: "1800010800")
+        XCTAssertFalse(rejectedAtStartup.isActive(at: start.addingTimeInterval(5400)),
+            "A rejected launch deadline must not become valid on a later Calendar click")
     }
 }

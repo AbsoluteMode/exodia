@@ -24,9 +24,10 @@ final class CalendarHoverTests: XCTestCase {
     }
 
     private func makeModel(now: (() -> Date)? = nil, activity: @escaping (Bool) -> Void = { _ in }) -> CalendarHoverModel {
-        CalendarHoverModel(store: PlannerStore(url: directory.appendingPathComponent("planner.json")),
-            connections: CalendarConnections(defaults: defaults), now: now ?? { self.day.addingTimeInterval(36000) },
-            activityChanged: activity)
+        let connections = CalendarConnections(defaults: defaults)
+        return CalendarHoverModel(store: PlannerStore(url: directory.appendingPathComponent("planner.json")),
+            connections: connections, now: now ?? { self.day.addingTimeInterval(36000) },
+            activityChanged: activity, connectionFlow: CalendarConnectionFlow(connections: connections, googleReview: { false }))
     }
 
     func testEveryOpeningResetsToTodayAndInlineNavigationDoesNotResetDay() {

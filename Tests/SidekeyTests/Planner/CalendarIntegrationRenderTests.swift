@@ -16,7 +16,7 @@ final class CalendarIntegrationRenderTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let pending: (CalendarProvider) -> CalendarConnectionReadiness = { provider in
-            .shared(provider, configuration: provider == .apple || provider == .zoom ? nil : .init(clientID: "fixture"))
+            .shared(provider, configuration: provider == .apple || provider == .zoom ? nil : .init(clientID: "fixture"), googleReview: false)
         }
         let connections = CalendarConnections(defaults: defaults)
         for dark in [false, true] {
@@ -52,7 +52,7 @@ final class CalendarIntegrationRenderTests: XCTestCase {
         for dark in [false, true] {
             for width in [500.0, 739.0, 1059.0] {
                 let authorization = AsyncThrowingStream<(code: String, redirect: String), Error>.makeStream()
-                let flow = CalendarConnectionFlow(connections: connections, authorize: { _, _, _, _ in
+                let flow = CalendarConnectionFlow(connections: connections, googleReview: { false }, authorize: { _, _, _, _ in
                     var iterator = authorization.stream.makeAsyncIterator()
                     guard let result = try await iterator.next() else { throw CancellationError() }
                     return result
