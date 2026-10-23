@@ -224,6 +224,55 @@ final class SelectionFallbackTests: XCTestCase {
         )
     }
 
+    func testUnavailableCopySkipsKeysPasteboardAndSuppression() {
+        var effects: [String] = []
+        var completions = 0
+        let env = makeEnv(
+            canCopy: { pid in
+                XCTAssertEqual(pid, 100)
+                return false
+            },
+            postCmdCRecorder: { effects.append("key") },
+            readPasteboard: { effects.append("read"); return "stale" },
+            setSuppressed: { _ in effects.append("suppress") },
+            scheduleUnsuppress: { _, _ in effects.append("schedule") },
+            pasteboardRestore: { _ in effects.append("restore") }
+        )
+        SelectionFallback.captureAsync(targetPID: 100, env: env.env) { result in
+            completions += 1
+            XCTAssertNil(result)
+        }
+        env.runDispatched()
+        XCTAssertEqual(completions, 1)
+        XCTAssertTrue(effects.isEmpty)
+    }
+
+    func testFocusChangeDuringCopyPreflightDoesNotPostKeys() {
+        var pid: pid_t = 100
+        var posted = false
+        let env = makeEnv(
+            frontmostPID: { pid },
+            canCopy: { _ in pid = 200; return true },
+            postCmdCRecorder: { posted = true }
+        )
+        SelectionFallback.captureAsync(targetPID: 100, env: env.env) { XCTAssertNil($0) }
+        env.runDispatched()
+        XCTAssertFalse(posted)
+    }
+
+    func testCopyPreflightRequiresEnabledBareCommandC() {
+        XCTAssertTrue(SelectionCopyAvailability.isEnabledCopyCommand(character: "C", virtualKey: nil, modifiers: 0, enabled: true))
+        XCTAssertTrue(SelectionCopyAvailability.isEnabledCopyCommand(character: "с", virtualKey: 8, modifiers: 0, enabled: true))
+        XCTAssertFalse(SelectionCopyAvailability.isEnabledCopyCommand(character: "C", virtualKey: nil, modifiers: 0, enabled: false))
+        XCTAssertFalse(SelectionCopyAvailability.isEnabledCopyCommand(character: "C", virtualKey: nil, modifiers: 0, enabled: nil))
+        XCTAssertFalse(SelectionCopyAvailability.isEnabledCopyCommand(character: "C", virtualKey: nil, modifiers: nil, enabled: true))
+        for modifiers in [1, 2, 4, 8] {
+            XCTAssertFalse(SelectionCopyAvailability.isEnabledCopyCommand(character: "C", virtualKey: nil, modifiers: modifiers, enabled: true))
+        }
+        XCTAssertFalse(SelectionCopyAvailability.isEnabledCopyCommand(character: "C", virtualKey: 9, modifiers: 0, enabled: true))
+        XCTAssertFalse(SelectionCopyAvailability.isEnabledCopyCommand(character: nil, virtualKey: nil, modifiers: 0, enabled: true))
+    }
+
     // MARK: - Pasteboard preserve correctness
 
     func testFallbackPreservesStringPasteboard() {
@@ -453,6 +502,7 @@ final class SelectionFallbackTests: XCTestCase {
     /// `DispatchQueue.main.async`.
     private func makeEnv(
         frontmostPID: @escaping () -> pid_t = { 100 },
+        canCopy: @escaping (pid_t) -> Bool = { _ in true },
         postCmdCRecorder: @escaping () -> Void = {},
         readPasteboard: @escaping () -> String? = { "captured" },
         setSuppressed: @escaping (Bool) -> Void = { _ in },
@@ -464,6 +514,7 @@ final class SelectionFallbackTests: XCTestCase {
     ) -> StubEnv {
         StubEnv(
             frontmostPID: frontmostPID,
+            canCopy: canCopy,
             postCmdCRecorder: postCmdCRecorder,
             readPasteboard: readPasteboard,
             setSuppressed: setSuppressed,
@@ -525,6 +576,7 @@ private final class StubEnv {
 
     init(
         frontmostPID: @escaping () -> pid_t,
+        canCopy: @escaping (pid_t) -> Bool = { _ in true },
         postCmdCRecorder: @escaping () -> Void,
         readPasteboard: @escaping () -> String?,
         setSuppressed: @escaping (Bool) -> Void,
@@ -542,6 +594,7 @@ private final class StubEnv {
         let dispatcher = customDispatcher ?? recordDispatch
         self.env = SelectionFallback.Env(
             frontmostPID: frontmostPID,
+            canCopy: canCopy,
             pasteboardSnapshot: pasteboardSnapshot,
             pasteboardRestore: pasteboardRestore,
             setSuppressed: setSuppressed,

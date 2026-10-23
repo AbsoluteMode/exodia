@@ -201,6 +201,9 @@ Agent flow (native Whytap runtime; OpenRouter, OpenAI or Anthropic):
        -> voice: the same STT factory as Drop, route of agentVoice
        -> NativeAgentProvider -> direct model HTTP -> local tool -> model loop
        -> final text and typed actions rendered in the island
+  Optional selection fallback sends Cmd+C only when the target app exposes an
+  enabled bare Command-C menu item. Unknown/disabled Copy, focus drift or a
+  Whytap key window skips it; text/voice submission continues without selection.
   No CLI installation, binary/version probe, MCP bootstrap, provider discovery,
   model catalog fetch or paid connection probe is needed to start a request.
   Settings -> API & Models chooses the exact Agent route/key. OpenRouter uses

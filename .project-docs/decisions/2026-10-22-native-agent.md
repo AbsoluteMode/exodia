@@ -6,8 +6,17 @@ summary: Replace OpenCode dispatch with a bounded direct model/tool loop, preser
 status: confirmed
 tags: [agent, native, tavily, search, workspace, context, actions, privacy]
 canonical_for: [agent-runtime, agent-web-search, agent-workspace]
-verified_at: 2026-10-22
+verified_at: 2026-10-23
 sources:
+  - type: user-confirmed
+    reference: On 2026-10-23 the user reported a system beep when releasing Agent in text and voice modes while submission still worked, and requested a fix.
+    confirmed_at: 2026-10-23
+  - type: repository
+    reference: Sources/Sidekey/Agent/SelectionCopyAvailability.swift
+    confirmed_at: 2026-10-23
+  - type: repository
+    reference: Sources/Sidekey/Agent/SelectionFallback.swift
+    confirmed_at: 2026-10-23
   - type: user-confirmed
     reference: On 2026-10-22 the user requested the selected model author's logo instead of the generic star while speaking to Agent, with inexpensive OpenRouter artwork refresh. They explicitly chose the existing voice mark rather than model-list decoration.
     confirmed_at: 2026-10-22
@@ -39,6 +48,26 @@ related: [../project.md, 2026-10-22-agent-answers-and-screen.md]
 ---
 
 # Decision
+
+## Quiet selection lookup
+
+Both text and voice submission share the optional Cmd+C fallback for apps
+whose Accessibility selection is empty. An empty selection alone no longer
+justifies sending a keyboard shortcut: this can invoke an unavailable Copy
+command and cause the system alert sound. First inspect the target's menu
+without opening it, requiring an explicitly enabled bare Command-C item
+(physical C is accepted for non-English layouts). A missing/disabled command,
+unknown Accessibility state, changed frontmost app, or a Whytap-owned key window
+skips the fallback and continues the request without selection. Existing AX
+selection needs no fallback. No global sound setting is changed.
+
+Menu lookup has a 120 ms work budget, a 10 ms timeout per AX message, a maximum
+of 192 nodes and 64 children per node through the normal menu-item depth.
+Unsupported menu layouts safely omit fallback context. The existing deferred
+copy, clipboard preservation, change-count validation and watcher suppression
+remain for an available Copy command. Automated fixtures verify skipped input,
+focus drift, shortcut matching and preserved clipboard behavior; the user's
+live text/voice sound acceptance remains separate.
 
 ## Voice model mark
 
