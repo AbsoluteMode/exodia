@@ -1209,9 +1209,12 @@ is separate from the removed app-managed speech/LLM models. Guide:
   from System Settings refreshes the status; it never gates launch/Drop readiness.
 
 - **Accessibility** gates `NSEvent.addGlobalMonitorForEvents`
-  (`RightCmdGestureMonitor`; `EscapeCloseEventMonitor` is a passive bare-Esc
-  close for the visible agent answer, WHY:
-  docs/decisions/2026-07-02-escape-close-passive-monitor.md), the AX check
+  (`RightCmdGestureMonitor`; `EscapeCloseEventMonitor` consumes only the first
+  bare Escape press for a visible Agent answer, drains its repeats/key-up and
+  releases the next press to the user's app. It yields during Drop recording, Screenshot,
+  Case approval and shortcut recording, and stays off in agent recording,
+  composing, acting-only and idle without an answer. WHY:
+  docs/decisions/2026-10-23-agent-answer-escape-consumption.md), the AX check
   of the focused field (`PasteTargetValidator`) and, empirically, the active
   `CGEventTap` in `SpaceHoldMonitor` and the optional Brightness keys tap
   (`BrightnessKeyEventTap`) and the Case approval tap (`CaseApprovalKeyTap`,

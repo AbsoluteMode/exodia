@@ -58,13 +58,13 @@ final class HelpWindowControllerTests: XCTestCase {
 
     func testHelpWindowDocumentsEscapeCloseHotkey() {
         // Guaranteed-Esc close: the agent answer window registers a fixed
-        // Carbon Escape hotkey while it is up, so Escape must be discoverable
+        // scoped Escape interceptor while it is up, so Escape must be discoverable
         // as a canonical Help row alongside the ⌥Q close.
         let rows = HelpWindowContent.hotkeyRows
 
         XCTAssertTrue(rows.contains(HelpHotkeyRowSpec(
             title: "Close",
-            detail: "Press Escape to close the Agent response window.",
+            detail: "The first Escape closes the visible Agent answer. The next reaches your app.",
             iconName: "escape",
             prefix: nil,
             contents: [.text("Esc")]
@@ -116,7 +116,7 @@ final class HelpWindowControllerTests: XCTestCase {
         // configuration) — it must appear regardless of the chosen combos.
         XCTAssertTrue(rows.contains(HelpHotkeyRowSpec(
             title: "Close",
-            detail: "Press Escape to close the Agent response window.",
+            detail: "The first Escape closes the visible Agent answer. The next reaches your app.",
             iconName: "escape",
             prefix: nil,
             contents: [.text("Esc")]
